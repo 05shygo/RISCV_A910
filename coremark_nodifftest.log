@@ -1,0 +1,21 @@
+make: Warning: File `/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv' has modification time 570 s in the future
+/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv +vcs+lic+wait +WAVE=waves +MAX_CYCLES=100000000 -l /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/sim.log
+Info: [VCS_SAVE_RESTORE_INFO] ASLR (Address Space Layout Randomization) is detected on the machine. To enable $save functionality, ASLR will be switched off and simv re-executed.
+Please use '-no_save' simv switch to avoid re-execution or '-suppress=ASLR_DETECTED_INFO' to suppress this message.
+Chronologic VCS simulator copyright 1991-2023
+Contains Synopsys proprietary information.
+Compiler version V-2023.12-SP2_Full64; Runtime version V-2023.12-SP2_Full64;  Sep 21 18:22 2026
+[INFO] Instruction ROM initialized with /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/meminit.bin
+[1;34mPeripheral name: MONITOR	base: 0x80000000	addr len: 0x00000008	
+[0m[1;34mPeripheral name: Digit	base: 0xfffff000	addr len: 0x00000004	
+[0m[INFO] Data RAM initialized with /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/meminit.bin
+[mycpu] Reset done.
+[difftest] Test Start!
+Timed out! Please check whether your CPU got stuck.
+$finish called from file "/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/tb/tb_miniRV_dpi.sv", line 91.
+$finish at simulation time         999999995000
+           V C S   S i m u l a t i o n   R e p o r t 
+Time: 999999995000 ps
+CPU Time:    177.300 seconds;       Data structure size:  32.0Mb
+Mon Sep 21 18:25:34 2026
+make: warning:  Clock skew detected.  Your build may be incomplete.

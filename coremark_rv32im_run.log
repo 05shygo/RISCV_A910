@@ -1,0 +1,102 @@
+/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv +vcs+lic+wait +WAVE=waves +MAX_CYCLES=100000000 -l /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/sim.log
+Info: [VCS_SAVE_RESTORE_INFO] ASLR (Address Space Layout Randomization) is detected on the machine. To enable $save functionality, ASLR will be switched off and simv re-executed.
+Please use '-no_save' simv switch to avoid re-execution or '-suppress=ASLR_DETECTED_INFO' to suppress this message.
+Chronologic VCS simulator copyright 1991-2023
+Contains Synopsys proprietary information.
+Compiler version V-2023.12-SP2_Full64; Runtime version V-2023.12-SP2_Full64;  Sep 21 17:54 2026
+[INFO] Instruction ROM initialized with /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/meminit.bin
+[1;34mPeripheral name: MONITOR	base: 0x80000000	addr len: 0x00000008	
+[0m[1;34mPeripheral name: Digit	base: 0xfffff000	addr len: 0x00000004	
+[0m[INFO] Data RAM initialized with /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/meminit.bin
+[mycpu] Reset done.
+[difftest] Test Start!
+[1;31mInvalid Insturction 02a6d533 at PC=0000273c
+[0m
+simv: /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/golden_model/stage/EX.c:38: EX: Assertion `0' failed.
+
+An unexpected termination has occurred in /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv due to a signal: Aborted
+Hostname localhost.localdomain
+
+During DPI-C function call Function="gm_check_step" from /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/tb/tb_miniRV_dpi.sv, 68
+
+Command line: /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv +vcs+lic+wait +WAVE=waves +MAX_CYCLES=100000000 -l /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/sim.log
+
+--- Stack trace follows:
+at /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/tb/tb_miniRV_dpi.sv, 68
+Dumping VCS Annotated Stack:
+#0  0x00002aaab489bb5d in read () from /lib64/libc.so.6
+#1  0x00002aaab4827d54 in __GI__IO_file_underflow () from /lib64/libc.so.6
+#2  0x00002aaab4828f22 in _IO_default_uflow () from /lib64/libc.so.6
+#3  0x00002aaab481bcd4 in _IO_getline_info () from /lib64/libc.so.6
+#4  0x00002aaab481aad6 in fgets () from /lib64/libc.so.6
+#5  0x00002aaaad04af10 in SNPSle_409ad56210c3698d909efb76f899f8f57605dbc6cd8aa78c7542c09e37e993c768b37adda332111a () from /mnt/tools/synopsys/vcs/V-2023.12-SP2/linux64/lib/libvcsnew.so
+#6  0x00002aaaad04b12b in SNPSle_e08b01419c243380eb74facca6f5b8b5 () from /mnt/tools/synopsys/vcs/V-2023.12-SP2/linux64/lib/libvcsnew.so
+#7  0x00002aaaad04ba57 in SNPSle_7a27828b82c1b8ebf7b75ba28ec02eb8 () from /mnt/tools/synopsys/vcs/V-2023.12-SP2/linux64/lib/libvcsnew.so
+#8  0x00002aaaacf8f02f in SNPSle_cff9e39cc881636e095f93d39f99b1e8 () from /mnt/tools/synopsys/vcs/V-2023.12-SP2/linux64/lib/libvcsnew.so
+#9  0x00002aaaacf84805 in SNPSle_f3d53024dde1078e () from /mnt/tools/synopsys/vcs/V-2023.12-SP2/linux64/lib/libvcsnew.so
+#10 0x00002aaab3f8dea5 in start_thread () from /lib64/libpthread.so.0
+#11 0x00002aaab48aab0d in clone () from /lib64/libc.so.6
+#0  0x00002aaab4871659 in waitpid () from /lib64/libc.so.6
+#1  0x00002aaab47eef62 in do_system () from /lib64/libc.so.6
+#2  0x00002aaab47ef311 in system () from /lib64/libc.so.6
+#3  0x00002aaaab564940 in SNPSle_10ee25eff68cd8461c9146fa1d0b35e87067f3c8015b313e639d2928478c79b3f673f99203bcf8be64600612100082236bffb2007f1e0ef9 () from /mnt/tools/synopsys/vcs/V-2023.12-SP2/linux64/lib/liberrorinf.so
+#4  0x00002aaaab566484 in SNPSle_10ee25eff68cd8461c9146fa1d0b35e87067f3c8015b313efba706aab251478fa49e66610e453774633a6c152e7ef778f93045171fb3645d () from /mnt/tools/synopsys/vcs/V-2023.12-SP2/linux64/lib/liberrorinf.so
+#5  0x00002aaaab55e633 in SNPSle_d35ca1ff70d465c2b9b1a72eee90a50630165806651fae96c1bbda5b5d02066c () from /mnt/tools/synopsys/vcs/V-2023.12-SP2/linux64/lib/liberrorinf.so
+#6  0x00002aaaadf785eb in SNPSle_64133461705005bb725549e2e6fa1b3f () from /mnt/tools/synopsys/vcs/V-2023.12-SP2/linux64/lib/libvcsnew.so
+#7  0x00002aaaad9f34dd in SNPSle_82244d58c54c18c70d63edc9becab634 () from /mnt/tools/synopsys/vcs/V-2023.12-SP2/linux64/lib/libvcsnew.so
+#9  0x00002aaab47e2387 in raise () from /lib64/libc.so.6
+#10 0x00002aaab47e3a78 in abort () from /lib64/libc.so.6
+#11 0x00002aaab47db1a6 in __assert_fail_base () from /lib64/libc.so.6
+#12 0x00002aaab47db252 in __assert_fail () from /lib64/libc.so.6
+#13 0x000000000040f4fc in EX ()
+#14 0x000000000040e12e in cpu_run_once ()
+#15 0x000000000040df54 in gm_check_step ()
+#16 0x00002aaaaaf0c4a1 in N_VCSgd_eMahC () from /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv.daidir/_22913_archive_1.so [tb_miniRV_dpi# /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/tb/tb_miniRV_dpi.sv:68]
+#17 0x00002aaaadc47e88 in SNPSle_63c7abb936d47b07d29d61775f9dbe8c1486beb9213552a3 () from /mnt/tools/synopsys/vcs/V-2023.12-SP2/linux64/lib/libvcsnew.so
+#18 0x00002aaaadf922d1 in SNPSle_490598bfebcc8e81efcf3d1815066cc9 () from /mnt/tools/synopsys/vcs/V-2023.12-SP2/linux64/lib/libvcsnew.so
+#19 0x00002aaaadfafea5 in SNPSle_490598bfebcc8e81 () from /mnt/tools/synopsys/vcs/V-2023.12-SP2/linux64/lib/libvcsnew.so
+#20 0x0000000000410177 in main ()
+[New LWP 2022]
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib64/libthread_db.so.1".
+0x00002aaab4871659 in waitpid () from /lib64/libc.so.6
+
+Thread 2 (Thread 0x2aaab98fc700 (LWP 2022) "simv"):
+#0  0x00002aaab48a1b43 in select () from /lib64/libc.so.6
+#1  0x00002aaaacfa0281 in SNPSle_fdb3c4d480541e5673417fc9fec394bc () from /mnt/tools/synopsys/vcs/V-2023.12-SP2/linux64/lib/libvcsnew.so
+#2  0x00002aaaacfa08d0 in SNPSle_953a10a85c0868de9018e2aea9a72b35 () from /mnt/tools/synopsys/vcs/V-2023.12-SP2/linux64/lib/libvcsnew.so
+#3  0x00002aaaacf86562 in SNPSle_8646896d8678b15bc12e3793dcf8ef27 () from /mnt/tools/synopsys/vcs/V-2023.12-SP2/linux64/lib/libvcsnew.so
+#4  0x00002aaaacf848b6 in SNPSle_f3d53024dde1078e () from /mnt/tools/synopsys/vcs/V-2023.12-SP2/linux64/lib/libvcsnew.so
+#5  0x00002aaab3f8dea5 in start_thread () from /lib64/libpthread.so.0
+#6  0x00002aaab48aab0d in clone () from /lib64/libc.so.6
+
+Thread 1 (Thread 0x2aaaaabb0240 (LWP 1972) "simv"):
+#0  0x00002aaab4871659 in waitpid () from /lib64/libc.so.6
+#1  0x00002aaab47eef62 in do_system () from /lib64/libc.so.6
+#2  0x00002aaab47ef311 in system () from /lib64/libc.so.6
+#3  0x00002aaaab564940 in SNPSle_10ee25eff68cd8461c9146fa1d0b35e87067f3c8015b313e639d2928478c79b3f673f99203bcf8be64600612100082236bffb2007f1e0ef9 () from /mnt/tools/synopsys/vcs/V-2023.12-SP2/linux64/lib/liberrorinf.so
+#4  0x00002aaaab564f50 in SNPSle_10ee25eff68cd8461c9146fa1d0b35e87067f3c8015b313e81c34e9ac4c8988ef4a6e067b3aa9271e9f15440f9e8f69e71727f1bc8d6ddca () from /mnt/tools/synopsys/vcs/V-2023.12-SP2/linux64/lib/liberrorinf.so
+#5  0x00002aaaab5665e0 in SNPSle_10ee25eff68cd8461c9146fa1d0b35e87067f3c8015b313efba706aab251478fa49e66610e453774633a6c152e7ef778f93045171fb3645d () from /mnt/tools/synopsys/vcs/V-2023.12-SP2/linux64/lib/liberrorinf.so
+#6  0x00002aaaab55e633 in SNPSle_d35ca1ff70d465c2b9b1a72eee90a50630165806651fae96c1bbda5b5d02066c () from /mnt/tools/synopsys/vcs/V-2023.12-SP2/linux64/lib/liberrorinf.so
+#7  0x00002aaaadf785eb in SNPSle_64133461705005bb725549e2e6fa1b3f () from /mnt/tools/synopsys/vcs/V-2023.12-SP2/linux64/lib/libvcsnew.so
+#8  0x00002aaaad9f34dd in SNPSle_82244d58c54c18c70d63edc9becab634 () from /mnt/tools/synopsys/vcs/V-2023.12-SP2/linux64/lib/libvcsnew.so
+#9  <signal handler called>
+#10 0x00002aaab47e2387 in raise () from /lib64/libc.so.6
+#11 0x00002aaab47e3a78 in abort () from /lib64/libc.so.6
+#12 0x00002aaab47db1a6 in __assert_fail_base () from /lib64/libc.so.6
+#13 0x00002aaab47db252 in __assert_fail () from /lib64/libc.so.6
+#14 0x000000000040f4fc in EX ()
+#15 0x000000000040e12e in cpu_run_once ()
+#16 0x000000000040df54 in gm_check_step ()
+#17 0x00002aaaaaf0c4a1 in N_VCSgd_eMahC () from /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv.daidir/_22913_archive_1.so
+#18 0x00002aaaadc47e88 in SNPSle_63c7abb936d47b07d29d61775f9dbe8c1486beb9213552a3 () from /mnt/tools/synopsys/vcs/V-2023.12-SP2/linux64/lib/libvcsnew.so
+#19 0x00002aaaadf922d1 in SNPSle_490598bfebcc8e81efcf3d1815066cc9 () from /mnt/tools/synopsys/vcs/V-2023.12-SP2/linux64/lib/libvcsnew.so
+#20 0x00002aaaadfafea5 in SNPSle_490598bfebcc8e81 () from /mnt/tools/synopsys/vcs/V-2023.12-SP2/linux64/lib/libvcsnew.so
+#21 0x0000000000410177 in main ()
+[Inferior 1 (process 1972) detached]
+
+Process VmPeak: 485048 kb, VmSize: 485044 kb
+System Free Memory: 113881916 kb, System Free Swap: 4194044 kb
+
+Completed context dump phase data location*
+make: *** [run] Error 1

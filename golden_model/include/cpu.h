@@ -53,7 +53,13 @@ typedef struct {
     __uint32_t wb_ena;
 } WB_info;
 
-typedef enum { OP_ADD, OP_SLT, OP_SLTU, OP_AND, OP_OR, OP_XOR, OP_SLL, OP_SRL, OP_SUB, OP_SRA, OP_INVALID, OP_ECALL } alu_op_t;
+// Pipeline state for multi-cycle operation support
+typedef struct {
+    int stall_cycles_remaining;  // How many cycles to stall
+    WB_info pending_wb;          // WB info to return after stall
+} Pipeline_state;
+
+typedef enum { OP_ADD, OP_SLT, OP_SLTU, OP_AND, OP_OR, OP_XOR, OP_SLL, OP_SRL, OP_SUB, OP_SRA, OP_MUL, OP_MULH, OP_MULHSU, OP_MULHU, OP_DIV, OP_DIVU, OP_REM, OP_REMU, OP_INVALID, OP_ECALL } alu_op_t;
 typedef enum { MEM_LB, MEM_LBU, MEM_LH, MEM_LHU, MEM_LW, MEM_SB, MEM_SH, MEM_SW } mem_op_t;
 typedef enum { BR_EQ, BR_NEQ, BR_GE, BR_GEU, BR_LT, BR_LTU, BR_JUMP, BR_JUMPREG } br_op_t;
 typedef enum { WB_ALU, WB_PC, WB_LOAD } wb_sel_t;

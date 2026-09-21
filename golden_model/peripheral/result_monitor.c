@@ -9,7 +9,7 @@ uint32_t read_monitor(uint32_t rel_addr, AccessMode mode){
     {
     case 0:
         return monitor_value_passed;
-    case 1:
+    case 4:
         return monitor_value_failed;
     default:
         panic("Access out of bound.");
@@ -22,8 +22,10 @@ void write_monitor(uint32_t rel_addr, AccessMode mode, uint32_t data) {
     {
     case 0:
         monitor_value_passed = data;
-    case 1:
+        break;
+    case 4:
         monitor_value_failed = data;
+        break;
     default:
         panic("Access out of bound.");
     }

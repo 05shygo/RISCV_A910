@@ -34,7 +34,7 @@ EX2MEM EX(ID2EX decode_info) {
     uint32_t src1 = decode_info.src1.value;
     uint32_t src2 = decode_info.src2.value;
     switch(decode_info.alu_op) {
-        case OP_INVALID: 
+        case OP_INVALID:
             panic("Invalid Insturction %8.8x at PC=%8.8x\n", decode_info.inst, decode_info.pc); break;
         case OP_ECALL:
             color_print("ECALL at PC = 0x%8.8x, Stop now.\n", decode_info.pc);
@@ -54,6 +54,30 @@ EX2MEM EX(ID2EX decode_info) {
             ALU_CASE_ENTRY(OP_SRL, src1 >> src2);
             ALU_CASE_ENTRY(OP_SUB, src1 - src2);
             ALU_CASE_ENTRY(OP_SRA, (int32_t)src1 >> src2);
+            // RV32M: Multiply instructions
+            ALU_CASE_ENTRY(OP_MUL, (uint32_t)((int64_t)(int32_t)src1 * (int64_t)(int32_t)src2));
+            ALU_CASE_ENTRY(OP_MULH, (uint32_t)(((int64_t)(int32_t)src1 * (int64_t)(int32_t)src2) >> 32));
+            ALU_CASE_ENTRY(OP_MULHSU, (uint32_t)(((int64_t)(int32_t)src1 * (uint64_t)src2) >> 32));
+            ALU_CASE_ENTRY(OP_MULHU, (uint32_t)(((uint64_t)src1 * (uint64_t)src2) >> 32));
+            // RV32M: Divide instructions
+            case OP_DIV:
+                if ((int32_t)src2 == 0) alu_result = 0xFFFFFFFF;
+                else if ((int32_t)src1 == 0x80000000 && (int32_t)src2 == -1) alu_result = 0x80000000;
+                else alu_result = (uint32_t)((int32_t)src1 / (int32_t)src2);
+                break;
+            case OP_DIVU:
+                if (src2 == 0) alu_result = 0xFFFFFFFF;
+                else alu_result = src1 / src2;
+                break;
+            case OP_REM:
+                if ((int32_t)src2 == 0) alu_result = src1;
+                else if ((int32_t)src1 == 0x80000000 && (int32_t)src2 == -1) alu_result = 0;
+                else alu_result = (uint32_t)((int32_t)src1 % (int32_t)src2);
+                break;
+            case OP_REMU:
+                if (src2 == 0) alu_result = src1;
+                else alu_result = src1 % src2;
+                break;
         default: alu_result = 0;
     }
     ret.alu_out = alu_result;

@@ -24,6 +24,15 @@ ID2EX ID_R(IF2ID inst) {
         PAIR_ENTRY(0, 7, OP_AND);
         PAIR_ENTRY(32, 0, OP_SUB);
         PAIR_ENTRY(32, 5, OP_SRA);
+        // RV32M instructions (funct7 = 1)
+        PAIR_ENTRY(1, 0, OP_MUL);
+        PAIR_ENTRY(1, 1, OP_MULH);
+        PAIR_ENTRY(1, 2, OP_MULHSU);
+        PAIR_ENTRY(1, 3, OP_MULHU);
+        PAIR_ENTRY(1, 4, OP_DIV);
+        PAIR_ENTRY(1, 5, OP_DIVU);
+        PAIR_ENTRY(1, 6, OP_REM);
+        PAIR_ENTRY(1, 7, OP_REMU);
         default: ret.alu_op = OP_INVALID;
     }
 

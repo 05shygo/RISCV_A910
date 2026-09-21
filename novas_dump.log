@@ -1,0 +1,334 @@
+#######################################################################################
+# log primitive debug message of FSDB dumping                                         #
+# This is for R&D to analyze when there are issues happening when FSDB dump           #
+#######################################################################################
+ANF: vcsd_get_serial_mode_status('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vcsd_get_serial_mode_status')
+ANF: vcsd_enable_sva_success_callback('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vcsd_enable_sva_success_callback')
+ANF: vcsd_disable_sva_success_callback('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vcsd_disable_sva_success_callback')
+ANF: vcsd_get_power_scope_name('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vcsd_get_power_scope_name')
+ANF: vcsd_dump_var_vpdg('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vcsd_dump_var_vpdg')
+ANF: vcsd_begin_no_value_var_info('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vcsd_begin_no_value_var_info')
+ANF: vcsd_end_no_value_var_info('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vcsd_end_no_value_var_info')
+ANF: vcsd_remove_xprop_merge_mode_callback('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vcsd_remove_xprop_merge_mode_callback')
+ANF: vhpi_get_cb_info('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhpi_get_cb_info')
+ANF: vhpi_free_handle('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhpi_free_handle')
+ANF: vhpi_fetch_vcsd_handle('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhpi_fetch_vcsd_handle')
+ANF: vhpi_fetch_vpi_handle('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhpi_fetch_vpi_handle')
+ANF: vhpi_has_verilog_parent('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhpi_has_verilog_parent')
+ANF: vhpi_is_verilog_scope('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhpi_is_verilog_scope')
+ANF: scsd_xprop_is_enabled('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: scsd_xprop_is_enabled')
+ANF: scsd_xprop_sig_is_promoted('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: scsd_xprop_sig_is_promoted')
+ANF: scsd_xprop_int_xvalue('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: scsd_xprop_int_xvalue')
+ANF: scsd_xprop_bool_xvalue('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: scsd_xprop_bool_xvalue')
+ANF: scsd_xprop_enum_xvalue('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: scsd_xprop_enum_xvalue')
+ANF: scsd_xprop_register_merge_mode_cb('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: scsd_xprop_register_merge_mode_cb')
+ANF: scsd_xprop_delete_merge_mode_cb('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: scsd_xprop_delete_merge_mode_cb')
+ANF: scsd_xprop_get_merge_mode('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: scsd_xprop_get_merge_mode')
+ANF: scsd_thread_get_info('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: scsd_thread_get_info')
+ANF: scsd_thread_vc_init('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: scsd_thread_vc_init')
+ANF: scsd_master_set_delta_sync_cbk('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: scsd_master_set_delta_sync_cbk')
+ANF: scsd_fgp_get_fsdb_cores('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: scsd_fgp_get_fsdb_cores')
+ANF: scsd_fgp_get_is_cpu_affinity_disabled('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: scsd_fgp_get_is_cpu_affinity_disabled')
+ANF: vhdi_dt_get_type('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_dt_get_type')
+ANF: vhdi_dt_get_key('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_dt_get_key')
+ANF: vhdi_dt_get_vhdl_enum_info('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_dt_get_vhdl_enum_info')
+ANF: vhdi_dt_get_vhdl_physical_info('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_dt_get_vhdl_physical_info')
+ANF: vhdi_dt_get_vhdl_array_info('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_dt_get_vhdl_array_info')
+ANF: vhdi_dt_get_vhdl_record_info('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_dt_get_vhdl_record_info')
+ANF: vhdi_dt_get_vhdl_integer_range_info('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_dt_get_vhdl_integer_range_info')
+ANF: vhdi_def_traverse_module('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_def_traverse_module')
+ANF: vhdi_def_traverse_scope('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_def_traverse_scope')
+ANF: vhdi_def_traverse_variable('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_def_traverse_variable')
+ANF: vhdi_def_get_module_id_by_vhpi('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_def_get_module_id_by_vhpi')
+ANF: vhdi_def_get_handle_by_module_id('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_def_get_handle_by_module_id')
+ANF: vhdi_def_get_variable_info_by_vhpi('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_def_get_variable_info_by_vhpi')
+ANF: vhdi_def_free('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_def_free')
+ANF: vhdi_ist_traverse_scope('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_ist_traverse_scope')
+ANF: vhdi_ist_traverse_variable('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_ist_traverse_variable')
+ANF: vhdi_ist_convert_by_vhpi('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_ist_convert_by_vhpi')
+ANF: vhdi_ist_clone('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_ist_clone')
+ANF: vhdi_ist_free('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_ist_free')
+ANF: vhdi_ist_hash_key('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_ist_hash_key')
+ANF: vhdi_ist_compare('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_ist_compare')
+ANF: vhdi_ist_get_value_addr('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_ist_get_value_addr')
+ANF: vhdi_set_scsd_callback('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_set_scsd_callback')
+ANF: vhdi_cbk_set_force_callback('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_cbk_set_force_callback')
+ANF: vhdi_trigger_init_force('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_trigger_init_force')
+ANF: vhdi_ist_check_scsd_callback('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_ist_check_scsd_callback')
+ANF: vhdi_ist_add_scsd_callback('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_ist_add_scsd_callback')
+ANF: vhdi_ist_remove_scsd_callback('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_ist_remove_scsd_callback')
+ANF: vhdi_ist_get_scsd_user_data('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_ist_get_scsd_user_data')
+ANF: vhdi_add_time_change_callback('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_add_time_change_callback')
+ANF: vhdi_get_real_value_by_value_addr('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_get_real_value_by_value_addr')
+ANF: vhdi_get_64_value_by_value_addr('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_get_64_value_by_value_addr')
+ANF: vhdi_xprop_inst_is_promoted('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_xprop_inst_is_promoted')
+ANF: vdi_ist_convert_by_vhdi('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vdi_ist_convert_by_vhdi')
+ANF: vhdi_ist_get_module_id('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_ist_get_module_id')
+ANF: vhdi_refine_foreign_scope_type('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_refine_foreign_scope_type')
+ANF: vhdi_flush_callback('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_flush_callback')
+ANF: vhdi_set_orig_name('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_set_orig_name')
+ANF: vhdi_set_dump_pt('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_set_dump_pt')
+ANF: vhdi_set_int_subtype('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_set_int_subtype')
+ANF: vhdi_set_fixed_point('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_set_fixed_point')
+ANF: vhdi_get_fsdb_option('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_get_fsdb_option')
+ANF: vhdi_fgp_get_mode('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_fgp_get_mode')
+ANF: vhdi_node_register_composite_var('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_node_register_composite_var')
+ANF: vhdi_node_analysis('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_node_analysis')
+ANF: vhdi_node_id('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_node_id')
+ANF: vhdi_node_ist_check_scsd_callback('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_node_ist_check_scsd_callback')
+ANF: vhdi_node_ist_add_scsd_callback('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_node_ist_add_scsd_callback')
+ANF: vhdi_node_ist_get_value_addr('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_node_ist_get_value_addr')
+ANF: vhdi_enc_def_traverse_module('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_enc_def_traverse_module')
+ANF: vhdi_enc_def_traverse_scope('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_enc_def_traverse_scope')
+ANF: vhdi_enc_def_traverse_variable('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_enc_def_traverse_variable')
+ANF: vhdi_enc_ist_traverse_scope('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_enc_ist_traverse_scope')
+ANF: vhdi_enc_ist_traverse_variable('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_enc_ist_traverse_variable')
+ANF: vhdi_enc_ist_get_module_id('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_enc_ist_get_module_id')
+ANF: vhdi_enc_def_get_handle_by_module_id('/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv: undefined symbol: vhdi_enc_def_get_handle_by_module_id')
+VCS compile option:
+ option[0]: /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv
+ option[1]: +vcs+lic+wait
+ option[2]: +WAVE=div_test
+ option[3]: +MAX_CYCLES=50000
+ option[4]: -l
+ option[5]: /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/sim.log
+ option[6]: /mnt/tools/synopsys/vcs/V-2023.12-SP2/linux64/bin/vcs1
+ option[7]: -Mcc=gcc
+ option[8]: -Mcplusplus=g++
+ option[9]: -Masflags=
+ option[10]: -Mcfl= -pipe -fPIC -DVCS -I/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/golden_model/include -O -I/mnt/tools/synopsys/vcs/V-2023.12-SP2/include 
+ option[11]: -Mxllcflags=
+ option[12]: -Mxcflags= -pipe -fPIC -I/mnt/tools/synopsys/vcs/V-2023.12-SP2/include
+ option[13]: -Mldflags= -Wl,-rpath,/mnt/tools/synopsys/verdi/V-2023.12-SP2/share/PLI/VCS/LINUX64 -Wl,-rpath,/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests -rdynamic 
+ option[14]: -Mout=/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv
+ option[15]: -Mamsrun=
+ option[16]: -Mvcsaceobjs=
+ option[17]: -Mobjects= /mnt/tools/synopsys/vcs/V-2023.12-SP2/linux64/lib/libvirsim.so /mnt/tools/synopsys/vcs/V-2023.12-SP2/linux64/lib/liberrorinf.so /mnt/tools/synopsys/vcs/V-2023.12-SP2/linux64/lib/libsnpsmalloc.so /mnt/tools/synopsys/vcs/V-2023.12-SP2/linux64/lib/libvfs.so /mnt/tools/synopsys/verdi/V-2023.12-SP2/share/PLI/VCS/LINUX64/pli.a 
+ option[18]: -Mexternalobj=
+ option[19]: -Msaverestoreobj=/mnt/tools/synopsys/vcs/V-2023.12-SP2/linux64/lib/vcs_save_restore_new.o
+ option[20]: -Mcrt0=
+ option[21]: -Mcrtn=
+ option[22]: -Mcsrc=/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/dpi/dpi_shim.c /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/golden_model/emu.c /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/golden_model/stage/MEM.c /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/golden_model/stage/ID.c /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/golden_model/stage/EX.c /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/golden_model/stage/WB.c /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/golden_model/stage/IF.c /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/golden_model/peripheral/result_monitor.c /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/golden_model/peripheral/onboard.c 
+ option[23]: -Mdir=/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/csrc
+ option[24]: -Msyslibs=/mnt/tools/synopsys/verdi/V-2023.12-SP2/share/PLI/VCS/LINUX64/pli.a -ldl -lm 
+ option[25]: -l
+ option[26]: /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/compile.log
+ option[27]: -full64
+ option[28]: -timescale=1ns/1ps
+ option[29]: -debug_access+all
+ option[30]: +vpi
+ option[31]: +vcsd1
+ option[32]: +itf+/mnt/tools/synopsys/vcs/V-2023.12-SP2/linux64/lib/vcsdp_lite.tab
+ option[33]: +v2k
+ option[34]: +define+PATH=/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/meminit.bin
+ option[35]: +define+FSDB
+ option[36]: -P
+ option[37]: /mnt/tools/synopsys/verdi/V-2023.12-SP2/share/PLI/VCS/LINUX64/novas.tab
+ option[38]: -top
+ option[39]: tb_miniRV_dpi
+ option[40]: -o
+ option[41]: /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv
+ option[42]: -picarchive
+ option[43]: -P
+ option[44]: /mnt/tools/synopsys/verdi/V-2023.12-SP2/share/PLI/VCS/LINUX64/verdi.tab
+ option[45]: -fsdb
+ option[46]: -sverilog
+ option[47]: -gen_obj
+ option[48]: +incdir+/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC
+ option[49]: +incdir+/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/vsrc
+ option[50]: /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/Control.v
+ option[51]: /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/ALU.v
+ option[52]: /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/MEM_WB.v
+ option[53]: /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/ID_EX.v
+ option[54]: /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/MUL_DIV.v
+ option[55]: /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/SEXT.v
+ option[56]: /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/ALU_input_MUX.v
+ option[57]: /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/RegFile.v
+ option[58]: /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/IF_ID.v
+ option[59]: /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/NPC.v
+ option[60]: /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/EX_wD_MUX1.v
+ option[61]: /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/EX_MEM.v
+ option[62]: /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/PC.v
+ option[63]: /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/MEM_wD_MUX.v
+ option[64]: /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/mycpu.v
+ option[65]: /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/Hazard_Detection.v
+ option[66]: /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/MEM.v
+ option[67]: /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/miniRV_SoC.v
+ option[68]: /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/vsrc/ram.v
+ option[69]: /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/tb/tb_miniRV_dpi.sv
+ option[70]: /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/tb/tb_miniRV.sv
+ option[71]: -load
+ option[72]: /mnt/tools/synopsys/verdi/V-2023.12-SP2/share/PLI/VCS/LINUX64/libnovas.so:FSDBDumpCmd
+ option[73]: timescale=1ns/1ps
+Chronologic Simulation VCS Release V-2023.12-SP2_Full64
+Linux 3.10.0-1160.119.1.el7.x86_64 #1 SMP Tue Jun 4 14:43:51 UTC 2024 x86_64
+CPU cores: 32
+Limit information:
+======================================
+cputime		unlimited
+filesize		unlimited
+datasize		unlimited
+stacksize		8192 kbytes
+coredumpsize		0 kbytes
+memoryuse		unlimited
+vmemoryuse		unlimited
+descriptors		4096
+memorylocked		64 kbytes
+maxproc		4096
+======================================
+(Special)Runtime environment variables:
+
+Runtime environment variables:
+XMODIFIERS=@im=ibus
+SHELL=/bin/bash
+VTE_VERSION=5204
+_=/bin/make
+HISTCONTROL=ignoredups
+XDG_DATA_DIRS=/home/IC1/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share:/usr/local/share:/usr/share
+LESSOPEN=||/usr/bin/lesspipe.sh %s
+PATH=/home/IC1/tools/cmake-3.24.0-linux-x86_64/bin:/home/IC1/tools/yosys_install/bin:/home/IC1/node18/bin:/home/IC1/bin:/home/IC1/tools/cmake-3.24.0-linux-x86_64/bin:/home/IC1/tools/yosys_install/bin:/home/IC1/node18/bin:/home/IC1/bin:/usr/lib64/qt-3.3/bin:/usr/local/bin:/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/home/IC1/.local/bin:/home/IC1/bin
+QT_GRAPHICSSYSTEM_CHECKED=1
+SESSION_MANAGER=local/unix:@/tmp/.ICE-unix/19349,unix/unix:/tmp/.ICE-unix/19349
+XDG_RUNTIME_DIR=/run/user/1008
+MAX_CYCLES=50000
+XDG_MENU_PREFIX=gnome-
+LS_COLORS=rs=0:di=38;5;27:ln=38;5;51:mh=44;38;5;15:pi=40;38;5;11:so=38;5;13:do=38;5;5:bd=48;5;232;38;5;11:cd=48;5;232;38;5;3:or=48;5;232;38;5;9:mi=05;48;5;232;38;5;15:su=48;5;196;38;5;15:sg=48;5;11;38;5;16:ca=48;5;196;38;5;226:tw=48;5;10;38;5;16:ow=48;5;10;38;5;21:st=48;5;21;38;5;15:ex=38;5;34:*.tar=38;5;9:*.tgz=38;5;9:*.arc=38;5;9:*.arj=38;5;9:*.taz=38;5;9:*.lha=38;5;9:*.lz4=38;5;9:*.lzh=38;5;9:*.lzma=38;5;9:*.tlz=38;5;9:*.txz=38;5;9:*.tzo=38;5;9:*.t7z=38;5;9:*.zip=38;5;9:*.z=38;5;9:*.Z=38;5;9:*.dz=38;5;9:*.gz=38;5;9:*.lrz=38;5;9:*.lz=38;5;9:*.lzo=38;5;9:*.xz=38;5;9:*.bz2=38;5;9:*.bz=38;5;9:*.tbz=38;5;9:*.tbz2=38;5;9:*.tz=38;5;9:*.deb=38;5;9:*.rpm=38;5;9:*.jar=38;5;9:*.war=38;5;9:*.ear=38;5;9:*.sar=38;5;9:*.rar=38;5;9:*.alz=38;5;9:*.ace=38;5;9:*.zoo=38;5;9:*.cpio=38;5;9:*.7z=38;5;9:*.rz=38;5;9:*.cab=38;5;9:*.jpg=38;5;13:*.jpeg=38;5;13:*.gif=38;5;13:*.bmp=38;5;13:*.pbm=38;5;13:*.pgm=38;5;13:*.ppm=38;5;13:*.tga=38;5;13:*.xbm=38;5;13:*.xpm=38;5;13:*.tif=38;5;13:*.tiff=38;5;13:*.png=38;5;13:*.svg=38;5;13:*.svgz=38;5;13:*.mng=38;5;13:*.pcx=38;5;13:*.mov=38;5;13:*.mpg=38;5;13:*.mpeg=38;5;13:*.m2v=38;5;13:*.mkv=38;5;13:*.webm=38;5;13:*.ogm=38;5;13:*.mp4=38;5;13:*.m4v=38;5;13:*.mp4v=38;5;13:*.vob=38;5;13:*.qt=38;5;13:*.nuv=38;5;13:*.wmv=38;5;13:*.asf=38;5;13:*.rm=38;5;13:*.rmvb=38;5;13:*.flc=38;5;13:*.avi=38;5;13:*.fli=38;5;13:*.flv=38;5;13:*.gl=38;5;13:*.dl=38;5;13:*.xcf=38;5;13:*.xwd=38;5;13:*.yuv=38;5;13:*.cgm=38;5;13:*.emf=38;5;13:*.axv=38;5;13:*.anx=38;5;13:*.ogv=38;5;13:*.ogx=38;5;13:*.aac=38;5;45:*.au=38;5;45:*.flac=38;5;45:*.mid=38;5;45:*.midi=38;5;45:*.mka=38;5;45:*.mp3=38;5;45:*.mpc=38;5;45:*.ogg=38;5;45:*.ra=38;5;45:*.wav=38;5;45:*.axa=38;5;45:*.oga=38;5;45:*.spx=38;5;45:*.xspf=38;5;45:
+SSH_AUTH_SOCK=/run/user/1008/keyring/ssh
+DISPLAY=:209
+GTK_IM_MODULE=ibus
+IMSETTINGS_INTEGRATE_DESKTOP=yes
+HOME=/home/IC1
+ASAP7_ROOT=/home/IC1/tools/asap7
+PWD=/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests
+SSH_AGENT_PID=19492
+DBUS_SESSION_BUS_ADDRESS=unix:abstract=/tmp/dbus-iMByaGbYMx,guid=067833138ecf32b506897a186a9be053
+LOGNAME=IC1
+GNOME_DESKTOP_SESSION_ID=this-is-deprecated
+HOSTNAME=localhost.localdomain
+TEST=div
+SSH_ASKPASS=/usr/libexec/openssh/gnome-ssh-askpass
+COLORTERM=truecolor
+QT_IM_MODULE=ibus
+SHLVL=4
+MAKEOVERRIDES=${-*-command-variables-*-}
+GNOME_SHELL_SESSION_MODE=classic
+XDG_SESSION_ID=c21
+USER=IC1
+QTLIB=/usr/lib64/qt-3.3/lib
+XDG_CURRENT_DESKTOP=GNOME
+VNCDESKTOP=localhost.localdomain:209 (IC1)
+OLDPWD=/x2025/GPrj1/IC1/riscv/RISCV_CPU
+IMSETTINGS_MODULE=none
+MAKEFLAGS=WAVE=div_test MAX_CYCLES=50000 TEST=div
+MFLAGS=
+MAIL=/var/spool/mail/IC1
+GNOME_TERMINAL_SCREEN=/org/gnome/Terminal/screen/cc85fe7c_3741_4e03_bb9a_c7ead61fb72e
+GNOME_TERMINAL_SERVICE=:1.104
+HISTSIZE=1000
+PDK_ROOT=/home/IC1/tools/asap7
+QTINC=/usr/lib64/qt-3.3/include
+QTDIR=/usr/lib64/qt-3.3
+LANG=en_US.UTF-8
+TERM=xterm-256color
+WAVE=div_test
+MAKELEVEL=1
+VCS_PATHMAP_PRELOAD_DONE=1
+VCS_STACK_EXEC=true
+VCS_EXEC_DONE=1
+SNPSLMD_LICENSE_FILE=27000@192.168.50.152
+VCS_HOME=/mnt/tools/synopsys/vcs/V-2023.12-SP2
+LC_ALL=C
+VERDI_HOME=/mnt/tools/synopsys/verdi/V-2023.12-SP2
+DVE=/mnt/tools/synopsys/vcs/V-2023.12-SP2/gui/dve
+SPECMAN_OUTPUT_TO_TTY=1
+FLEXLM_BORROWFILE=/home/IC1/.localhost.localdomain-borrow.txt
+Runtime command line arguments:
+argv[0]=/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv
+argv[1]=+vcs+lic+wait
+argv[2]=+WAVE=div_test
+argv[3]=+MAX_CYCLES=50000
+argv[4]=-l
+argv[5]=/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/sim.log
+251 profile - 100
+          CPU/Mem usage: 0.050 sys,  0.230 user,  506.43M mem
+252 Elapsed time:    0:00:03    Mon Sep 21 19:59:24 2026
+253 User CPU time used: 0 seconds
+254 System CPU time used: 0 seconds
+255 pliAppInit
+256 [SC]Init: MemoryConsumed=0.00MB ElapsedTime=0hour 0min. 0sec.
+257 FSDB_GATE is set.
+258 FSDB_RTL is set.
+259 FSDB_PACKED_MODE is enabled.
+260 FSDB_GATE_PACKED is enabled.
+261 FSDB_ALIAS_ARRAY_ELEM is set to 4294967295.
+262 Enable Parallel Dumping.
+263 pliAppMiscSet: New Sim Round
+264 pliEntryInit
+265 LIBSSCORE=found /mnt/tools/synopsys/verdi/V-2023.12-SP2/share/PLI/lib/LINUXAMD64/libsscore_vcs202312.so through $NOVAS_HOME setting.
+266 FSDB Dumper for VCS, Release Verdi_V-2023.12-SP2, Linux x86_64/64bit, 05/26/2024
+267 (C) 1996 - 2024 by Synopsys, Inc.
+268 sps_call_fsdbDumpfile_main at 0 : /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/tb/tb_miniRV_dpi.sv(46)
+269 argv[0]: (waveform/div_test.fsdb)
+270 *Verdi* : Create FSDB file 'waveform/div_test.fsdb'
+271 [spi_vcs_vd_ppi_create_root]: no upf option
+272 compile option from '/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv.daidir/vcs_rebuild'.
+273   "vcs '-full64' '-sverilog' '-timescale=1ns/1ps' '-debug_access+all' '+v2k' '+incdir+/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC' '+incdir+/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/vsrc' '+define+PATH=/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/meminit.bin' '+define+FSDB' '-P' '/mnt/tools/synopsys/verdi/V-2023.12-SP2/share/PLI/VCS/LINUX64/novas.tab' '/mnt/tools/synopsys/verdi/V-2023.12-SP2/share/PLI/VCS/LINUX64/pli.a' '-CFLAGS' '-DVCS' '-CFLAGS' '-I/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/golden_model/include' '-LDFLAGS' '-Wl,-rpath,/mnt/tools/synopsys/verdi/V-2023.12-SP2/share/PLI/VCS/LINUX64' '-LDFLAGS' '-Wl,-rpath,/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests' '-top' 'tb_miniRV_dpi' '-o' '/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv' '-Mdir=/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/csrc' '-l' '/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/compile.log' '/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/Control.v' '/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/ALU.v' '/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/MEM_WB.v' '/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/ID_EX.v' '/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/MUL_DIV.v' '/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/SEXT.v' '/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/ALU_input_MUX.v' '/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/RegFile.v' '/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/IF_ID.v' '/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/NPC.v' '/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/EX_wD_MUX1.v' '/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/EX_MEM.v' '/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/PC.v' '/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/MEM_wD_MUX.v' '/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/mycpu.v' '/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/Hazard_Detection.v' '/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/MEM.v' '/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/miniRV_SoC.v' '/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/vsrc/ram.v' '/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/tb/tb_miniRV_dpi.sv' '/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/tb/tb_miniRV.sv' '/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/dpi/dpi_shim.c' '/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/golden_model/emu.c' '/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/golden_model/stage/MEM.c' '/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/golden_model/stage/ID.c' '/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/golden_model/stage/EX.c' '/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/golden_model/stage/WB.c' '/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/golden_model/stage/IF.c' '/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/golden_model/peripheral/result_monitor.c' '/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/golden_model/peripheral/onboard.c' 2>&1"
+274 DVDI_is_vir_unload_enabled is enable
+275 FSDB_VCS_ENABLE_NATIVE_VC is enable
+276 sps_call_fsdbDumpvars_vd_main at 0 : /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/tb/tb_miniRV_dpi.sv(47)
+277 argv[0]: (0)
+278 argv[1]: (handle) tb_miniRV_dpi
+279 *Verdi* : Begin traversing the scope (tb_miniRV_dpi), layer (0).
+280 *Verdi* : End of traversing.
+281 pliAppHDL_DumpVarComplete traverse var: profile - 
+          CPU/Mem usage: 0.060 sys,  0.240 user,  604.59M mem
+                   incr: 0.000 sys,  0.010 user,  8.31M mem
+                   accu: 0.000 sys,  0.010 user,  8.31M mem
+              accu incr: 0.000 sys,  0.010 user,  8.31M mem
+
+          Count usage: 340 var,  232 idcode,  105 callback
+                 incr: 340 var,  232 idcode,  105 callback
+                 accu: 340 var,  232 idcode,  105 callback
+            accu incr: 340 var,  232 idcode,  105 callback
+282 Elapsed time:    0:00:03    Mon Sep 21 19:59:24 2026
+283 User CPU time used: 0 seconds
+284 System CPU time used: 0 seconds
+285 pliAppHDL_DumpVarComplete: profile - 
+          CPU/Mem usage: 0.060 sys,  0.240 user,  605.71M mem
+                   incr: 0.000 sys,  0.000 user,  1.12M mem
+                   accu: 0.000 sys,  0.010 user,  9.43M mem
+              accu incr: 0.000 sys,  0.000 user,  1.12M mem
+
+          Count usage: 340 var,  232 idcode,  105 callback
+                 incr: 0 var,  0 idcode,  0 callback
+                 accu: 340 var,  232 idcode,  105 callback
+            accu incr: 0 var,  0 idcode,  0 callback
+286 Elapsed time:    0:00:03    Mon Sep 21 19:59:24 2026
+287 User CPU time used: 0 seconds
+288 System CPU time used: 0 seconds
+289 Elapsed time:    0:00:03    Mon Sep 21 19:59:24 2026
+290 User CPU time used: 0 seconds
+291 System CPU time used: 0 seconds
+292 Sim process exit
+293 Memory usage: 616.829 M
+294 Maximum resident set size: 203 MB
+295 Hard page faults: 0
+296 Soft page faults: 32837
+297 Elapsed time:    0:00:03    Mon Sep 21 19:59:24 2026
+298 User CPU time used: 0 seconds
+299 System CPU time used: 0 seconds
+300 Begin FSDB profile info:
+301 FSDB Writer : bc1(295443) bcn(541828) mtf/stf(0/0)
+FSDB Writer elapsed time : flush(0.028666) io wait(0.000000) theadpool wait(0.000000)
+FSDB Writer cpu time : MT Compression : 0
+302 End FSDB profile info
+303 FSDB closed. Name: waveform/div_test.fsdb Size: 52248
+304 Parallel profile     - ProducerThread:1 ConsumerThread:1 Buffer:64MB
+305                      - BlockUsed:8 Acquire:0 BufferUsed:14229874
+306                      - Flush:3 Expand:0 ProducerWait:0 ConsumerWait:6
+307                      - MainProducerTime:0.372777107 TotalConsumerTime:0.035264136
+308                      - ElapsedTime:0.402748000
+309 Producer   0 profile - BlockUsed:8 Acquire:0 BufferUsed:14229874
+310 Consumer   0 profile - Affinity:-1 CPUTime:0.035264136 LifeTime:0.247740148 (0.14%)
+311                      - BlockUsed:8 Acquire:0 BufferUsed:14229874
+312 SimExit

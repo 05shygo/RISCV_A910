@@ -1,0 +1,2 @@
+import_DPI gm_init tb_miniRV_dpi
+import_DPI gm_check_step tb_miniRV_dpi

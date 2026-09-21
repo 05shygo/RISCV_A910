@@ -1,0 +1,74 @@
+# CoreMark build for RV32I CPU
+TOOLCHAIN_PATH = /x2025/GPrj1/IC1/riscv/RISCV_CPU/open_riscv_2035/tools/newlib/bin
+export PATH := $(TOOLCHAIN_PATH):$(PATH)
+
+CROSS_COMPILE = riscv64-unknown-elf-
+CC = $(CROSS_COMPILE)gcc
+OBJCOPY = $(CROSS_COMPILE)objcopy
+OBJDUMP = $(CROSS_COMPILE)objdump
+
+# RV32IM Configuration (base + multiply/divide extension)
+ARCH = rv32im
+ABI = ilp32
+CFLAGS = -march=$(ARCH) -mabi=$(ABI) -O2 -g -nostdlib -nostartfiles -fno-builtin
+CFLAGS += -Iriscv-port -I. -DITERATIONS=1 -DPERFORMANCE_RUN=1
+
+# Linker flags - use hardware multiply/divide (RV32M)
+LDFLAGS = -march=$(ARCH) -mabi=$(ABI) -nostdlib -nostartfiles
+LDFLAGS += -T riscv-port/link.ld
+
+# Source files
+CORE_SRCS = core_list_join.c core_main.c core_matrix.c core_state.c core_util.c
+PORT_SRCS = riscv-port/core_portme.c riscv-port/ee_printf.c riscv-port/softmul.c
+ASM_SRCS = riscv-port/start.S
+
+BUILD_DIR = build
+OBJS = $(addprefix $(BUILD_DIR)/, $(CORE_SRCS:.c=.o) $(notdir $(PORT_SRCS:.c=.o)) $(notdir $(ASM_SRCS:.S=.o)))
+
+TARGET = $(BUILD_DIR)/coremark
+BIN_TARGET = ../bin/coremark.bin
+
+.PHONY: all clean check
+
+all: $(BIN_TARGET)
+	@echo "=== CoreMark built successfully ==="
+	@ls -lh $(BIN_TARGET)
+
+$(BIN_TARGET): $(TARGET).bin
+	@cp $(TARGET).bin $(BIN_TARGET)
+	@echo "Copied to $(BIN_TARGET)"
+
+$(TARGET).bin: $(TARGET).elf
+	@echo "Creating binary..."
+	@$(OBJCOPY) -O binary $< $@
+
+$(TARGET).elf: $(OBJS)
+	@echo "Linking..."
+	@$(CC) $(LDFLAGS) $^ -o $@
+	@$(OBJDUMP) -D $@ > $(TARGET).dump
+	@echo "Created $@ ($(shell stat -c%s $@) bytes)"
+
+$(BUILD_DIR)/%.o: %.c | $(BUILD_DIR)
+	@echo "Compiling $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/%.o: riscv-port/%.c | $(BUILD_DIR)
+	@echo "Compiling $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/%.o: riscv-port/%.S | $(BUILD_DIR)
+	@echo "Compiling $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD_DIR):
+	@mkdir -p $(BUILD_DIR)
+
+check:
+	@which $(CC) > /dev/null || (echo "ERROR: RISC-V toolchain not found at $(TOOLCHAIN_PATH)"; exit 1)
+	@echo "Toolchain: $$($(CC) --version | head -1)"
+	@echo "Target: RV32I ($(ARCH)/$(ABI))"
+
+clean:
+	@rm -rf $(BUILD_DIR)
+	@echo "Cleaned build directory"
+

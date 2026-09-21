@@ -57,8 +57,12 @@ void mem_store(uint32_t addr, AccessMode mode, uint32_t value) {
         peripheral_descr p = peripherals[peripheral_id];
         return p.callback_w(addr - p.base_addr, mode, value);
     }
-    
-    // memory access
+
+    // memory access - with debug output
+    if (addr >= MEM_SZ) {
+        printf("[DEBUG] Memory access out of bound: addr=0x%08x, MEM_SZ=0x%08x, value=0x%08x\n",
+               addr, MEM_SZ, value);
+    }
     Assert(addr < MEM_SZ, "Memory access out of bound");
     switch (mode) {
         case ACCESS_BYTE : 
