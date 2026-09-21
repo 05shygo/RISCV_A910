@@ -91,6 +91,10 @@ module miniRV_SoC (
           .Bus_rdata          (Bus_rdata),
           .Bus_wen            (Bus_wen),
           .Bus_wdata          (Bus_wdata),
+          // 定时器中断请求: 由 perip_bridge 的 timer_int_flag 驱动(mtime>=mtimecmp).
+          // CPU 内部会再打一拍后使用, 与 TB 推给 golden model 的信号同源同级.
+          // (timer_int_flag 在本文件后面才声明, Verilog 里先后顺序无所谓)
+          .timer_irq_in       (timer_int_flag),
           .debug_wb_have_inst   (debug_wb_have_inst),   // ?????????
           .debug_wb_pc        (debug_wb_pc),
           .debug_wb_ena       (debug_wb_ena),
@@ -104,12 +108,35 @@ module miniRV_SoC (
           .spo        (inst)
       );
 
+      // 数据总线经外设桥: MMIO 地址(MONITOR/DIG/TIMER)不再被截断进 DRAM
+      logic        dram_we;
+      logic [15:0] dram_word_addr;
+      logic [31:0] dram_wdata;
+      logic [31:0] dram_rdata;
+      logic [31:0] seg_value;        // 数码管, 留给板级顶层
+      logic        timer_int_flag;   // 已接入 myCPU.timer_irq_in (MTIP 中断源)
+
+      perip_bridge u_bridge (
+          .clk            (cpu_clk),
+          .rst            (fpga_rst),
+          .Bus_addr       (Bus_addr),
+          .Bus_wen        (Bus_wen),
+          .Bus_wdata      (Bus_wdata),
+          .Bus_rdata      (Bus_rdata),
+          .dram_we        (dram_we),
+          .dram_word_addr (dram_word_addr),
+          .dram_wdata     (dram_wdata),
+          .dram_rdata     (dram_rdata),
+          .seg_value      (seg_value),
+          .timer_int_flag (timer_int_flag)
+      );
+
       DRAM Mem_DRAM (
           .clk        (cpu_clk),
-          .a          (Bus_addr[15:2]),
-          .spo        (Bus_rdata),
-          .we         (Bus_wen),
-          .d          (Bus_wdata)
+          .a          (dram_word_addr),
+          .spo        (dram_rdata),
+          .we         (dram_we),
+          .d         (dram_wdata)
       );
 
   endmodule

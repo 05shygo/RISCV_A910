@@ -1,0 +1,31 @@
+{
+  "date": "2026-09-21",
+  "module": "rv32_ifu_pcgen",
+  "maintenance": "hand-written RTL; no existing generator owns this module",
+  "style_reference": "D:\\Project\\bus\\yh_xbar550-main\\yh_xbar550-main\\cci550\\cci550_tablet\\verilog\\cci500_tt.v",
+  "sources": [
+    {
+      "path": "../ifu/rtl/ct_ifu_pcgen.v",
+      "sha256": "99641bf464fa063c6f32f88f154905f5d4f0212b5b97a5a603ef9f208782801e"
+    },
+    {
+      "path": "../ifu/doc/RV32I_C910_IFU_microarchitecture_spec_zh.md",
+      "sha256": "77834e77a3f42924d0c1e76cb0648c43e6b6bcc6e3dbc5b63d3dbd9d59925ab8"
+    },
+    {
+      "path": "../ifu/doc/RV32I_C910_IFU_interface_v1.1_noMMU.xlsx",
+      "sha256": "194a8327cff7de5ac0b8ebcf9632aff788a8464b92083c179052cbfe054b074b"
+    }
+  ],
+  "rtl_sha256": "f2d5ee978d3b3ee38d0111357e04f7b2000fcb20f9c531df709a9ab1dd3ea38c",
+  "changes": [
+    "32-bit physical byte PCs; 16-byte block increment",
+    "Remove MMU/RV64 high-address/H0/old RTU PC broadcast",
+    "Generated source selection, bank controls and register templates; continuous combinational assignments",
+    "PC and Way share IP reissue priority",
+    "Accepted debug command and actual L0 valid drive functional redirects",
+    "Bank number maps to word 3-bank in existing arrays",
+    "IU recovery flushes LBUF; initialization stops ordinary fetch"
+  ],
+  "verification": "scripts/check_pcgen.py; work/pcgen/result.json"
+}

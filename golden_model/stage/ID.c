@@ -1,13 +1,16 @@
 #include <cpu.h>
 #include <bin.h>
+#include <csr.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 #define pair(x, y) (((x) << 3) | (y))
 #define PAIR_ENTRY(x, y, OP) case pair(x,y): ret.alu_op = OP; break
 extern riscv32_CPU_state cpu;
 ID2EX ID_R(IF2ID inst) {
     // 10 instructions
     //ADD/SLT/SLTU/AND/OR/XOR/SLL/SRL/SUB/SRA
-    ID2EX ret;
+    ID2EX ret = {0};
     ret.inst_raw_split.inst_raw = inst.inst;
     ret.next_pc = inst.pc + 4;
     ret.pc = inst.pc;
@@ -45,17 +48,17 @@ ID2EX ID_R(IF2ID inst) {
 
     ret.src2.type = OP_TYPE_REG;
     ret.src2.value = cpu.gpr[ret.inst_raw_split.r.rs2];
-    
+
     ret.dst = ret.inst_raw_split.r.rd;
     ret.wb_sel = WB_ALU;
-    ret.wb_en = 1;
+    ret.wb_en = (ret.dst != 0);  // Don't write to x0
 
     return ret;
 }
 
 ID2EX ID_I_LOAD(IF2ID inst) {
     // LOAD
-    ID2EX ret;
+    ID2EX ret = {0};
     ret.inst_raw_split.inst_raw = inst.inst;
     ret.alu_op = OP_ADD;
     ret.next_pc = inst.pc + 4;
@@ -82,7 +85,7 @@ ID2EX ID_I_LOAD(IF2ID inst) {
     
     ret.dst = ret.inst_raw_split.r.rd;
     ret.wb_sel = WB_LOAD;
-    ret.wb_en = 1;
+    ret.wb_en = (ret.dst != 0);  // Don't write to x0
 
     return ret;
 }
@@ -91,7 +94,7 @@ ID2EX ID_I(IF2ID inst) {
     // 9 instructions
     // ADDI/SLTI/SLTIU/ANDI/ORI/XORI
     // SLLI/SRLI/SRAI
-    ID2EX ret;
+    ID2EX ret = {0};
     ret.inst_raw_split.inst_raw = inst.inst;
     ret.next_pc = inst.pc + 4;
     ret.pc = inst.pc;
@@ -120,17 +123,17 @@ ID2EX ID_I(IF2ID inst) {
 
     ret.src2.type = OP_TYPE_IMM;
     ret.src2.value = ret.inst_raw_split.i.simm11_0;
-    
+
     ret.dst = ret.inst_raw_split.r.rd;
     ret.wb_sel = WB_ALU;
-    ret.wb_en = 1;
+    ret.wb_en = (ret.dst != 0);  // Don't write to x0
 
     return ret;
 }
 ID2EX ID_S(IF2ID inst) {
     // 1 instruction
     // STORE
-    ID2EX ret;
+    ID2EX ret = {0};
     ret.inst_raw_split.inst_raw = inst.inst;
     ret.next_pc = inst.pc + 4;
     ret.pc = inst.pc;
@@ -165,7 +168,7 @@ ID2EX ID_S(IF2ID inst) {
 ID2EX ID_B(IF2ID inst) {
     // 6 instructions
     // BEQ/BNE/BLT/BLTU/BGE/BGEU
-    ID2EX ret;
+    ID2EX ret = {0};
     ret.inst_raw_split.inst_raw = inst.inst;
     uint32_t imm = (ret.inst_raw_split.b.simm12 << 12) | (ret.inst_raw_split.b.imm11 << 11) | (ret.inst_raw_split.b.imm10_5 << 5) | (ret.inst_raw_split.b.imm4_1 << 1);
     ret.next_pc = inst.pc + imm;
@@ -201,7 +204,7 @@ ID2EX ID_B(IF2ID inst) {
 ID2EX ID_U(IF2ID inst) {
     // 2 instructions
     // LUI/AUIPC
-    ID2EX ret;
+    ID2EX ret = {0};
     ret.inst_raw_split.inst_raw = inst.inst;
     ret.next_pc = inst.pc + 4;
     ret.pc = inst.pc;
@@ -222,14 +225,14 @@ ID2EX ID_U(IF2ID inst) {
     
     ret.dst = ret.inst_raw_split.u.rd;
     ret.wb_sel = WB_ALU;
-    ret.wb_en = 1;
+    ret.wb_en = (ret.dst != 0);  // Don't write to x0
 
     return ret;
 }
 
 ID2EX ID_J(IF2ID inst) {
     // JAL/JALR
-    ID2EX ret;
+    ID2EX ret = {0};
     ret.inst_raw_split.inst_raw = inst.inst;
     ret.next_pc = inst.pc + 4;
     ret.pc = inst.pc;
@@ -244,27 +247,98 @@ ID2EX ID_J(IF2ID inst) {
     if(ret.inst_raw_split.j.opcode6_2 == 0x1b) {  // JAL 
         ret.next_pc = inst.pc + jimm;
     } else { // JALR
-        ret.next_pc = cpu.gpr[ret.inst_raw_split.r.rs1] + ret.inst_raw_split.i.simm11_0;
+        ret.next_pc = (cpu.gpr[ret.inst_raw_split.r.rs1] + ret.inst_raw_split.i.simm11_0) & ~1u;
     }
 
     ret.dst = ret.inst_raw_split.j.rd;
     ret.wb_sel = WB_PC;
-    ret.wb_en = 1;
+    ret.wb_en = (ret.dst != 0);  // Don't write to x0
 
     return ret;
 }
 
+// SYSTEM (opcode 1110011): CSR 五条 + ecall/ebreak/mret, 其余非法.
+// 与 mySoC/Control.v 的 `OPCODE_SYSTEM 分支逐条对应.
+ID2EX ID_SYSTEM(IF2ID inst) {
+    ID2EX ret = {0};
+    ret.inst_raw_split.inst_raw = inst.inst;
+    ret.next_pc = inst.pc + 4;
+    ret.pc = inst.pc;
+    ret.inst = inst.inst;
+    ret.csr_op = CSR_OP_NONE;
+
+    uint32_t funct3 = ret.inst_raw_split.i.funct3;
+    uint32_t rs1    = ret.inst_raw_split.r.rs1;
+    uint32_t csr    = ret.inst_raw_split.csr.csr;   // inst[31:20]
+
+    ret.src1.type  = OP_TYPE_REG;
+    ret.src1.value = cpu.gpr[rs1];
+
+    switch (funct3) {
+        case 0: // PRIV: 用整条指令精确匹配
+            if      (inst.inst == 0x00000073u) ret.alu_op = OP_ECALL;
+            else if (inst.inst == 0x00100073u) ret.alu_op = OP_EBREAK;
+            else if (inst.inst == 0x30200073u) { ret.alu_op = OP_MRET; ret.is_mret = 1; }
+            else                               ret.alu_op = OP_INVALID;  // 含 WFI
+            break;
+        case 1: case 2: case 3: case 5: case 6: case 7: {
+            uint32_t imm_form = (funct3 == 5) || (funct3 == 6) || (funct3 == 7);
+            ret.csr_addr = csr;
+            //    1=CSRRW 5=CSRRWI -> RW ;  2=CSRRS 6=CSRRSI -> RS ;  3/7 -> RC
+            if      (funct3 == 1 || funct3 == 5) ret.csr_op = CSR_OP_RW;
+            else if (funct3 == 2 || funct3 == 6) ret.csr_op = CSR_OP_RS;
+            else                                 ret.csr_op = CSR_OP_RC;   // 3=CSRRC, 7=CSRRCI
+
+            // csrrwi/csrrsi/csrrci 的源是 rs1 域里的 5 位零扩展立即数
+            ret.src2.type  = imm_form ? OP_TYPE_IMM : OP_TYPE_REG;
+            ret.src2.value = imm_form ? rs1 : cpu.gpr[rs1];
+
+            // csrrw 总是写; csrrs/csrrc 只有 rs1 != x0 才写
+            // (csrrs rd, csr, x0 是纯读, 对只读 CSR 也必须合法)
+            ret.csr_we = (ret.csr_op == CSR_OP_RW) || (rs1 != 0);
+
+            ret.alu_op = OP_CSR;
+            ret.dst    = ret.inst_raw_split.r.rd;
+            ret.wb_sel = WB_ALU;
+            ret.wb_en  = (ret.dst != 0);
+
+            // 未实现地址, 或对只读 CSR 尝试写 -> 非法指令
+            if (!csr_is_known(csr) || (ret.csr_we && csr_is_readonly(csr)))
+                ret.alu_op = OP_INVALID;
+            break;
+        }
+        default:
+            ret.alu_op = OP_INVALID;
+            break;
+    }
+    return ret;
+}
+
 ID2EX ID(IF2ID inst) {
-    ID2EX ret;
+    ID2EX ret = {0};
     ret.inst_raw_split.inst_raw = inst.inst;
     ret.next_pc = inst.pc + 4;
     ret.pc = inst.pc;
     ret.inst = inst.inst;
     ret.wb_en = 0;
+
+    // 取指越界 (instruction access fault, cause 1).
+    // 与 DUT 的 id_inst_oob 对应: IROM 只有 64KB, PC 跑到更外面时取回来的
+    // 是地址回绕后的别的指令, 不能按它译码, 直接报异常并返回.
+    if (inst.pc >= MEM_SZ) {
+        ret.exc_valid = 1;
+        ret.exc_cause = EXC_INST_ACCESS;
+        ret.exc_tval  = inst.pc;
+        return ret;
+    }
+
     Log("OpCode is %8.8x",  ((ret.inst_raw_split.i.opcode6_2) << 2) | (ret.inst_raw_split.i.opcode1_0) );
     switch( ((ret.inst_raw_split.i.opcode6_2) << 2) | (ret.inst_raw_split.i.opcode1_0) ) { // funct7
-        case 0x73:        // ecall, treat as halt
-            ret.alu_op = OP_ECALL;
+        // 必须是【8 位】二进制: B8(B0) 展开成 0x##B0, 参数在 ## 旁边不会被
+        // 预展开, 所以写成 7 位的 B8(1110011) 会拼成字面量 0xB1110011 而不是
+        // 0x73 —— 这个 case 一直是死代码(以前的 ecall 只靠 emu.c 的偷看生效).
+        case B8(01110011):
+            ret = ID_SYSTEM(inst);
             break;
         case B8(00110111):
         case B8(00010111):
@@ -294,6 +368,21 @@ ID2EX ID(IF2ID inst) {
         default:
             ret.alu_op = OP_INVALID;
             break;
+    }
+
+    // ID 级同步异常: 非法指令 / ecall / ebreak.
+    // 与 DUT 一致 —— 非法指令的 mtval 记指令本身, ecall/ebreak 记 0.
+    // 非对齐是在 EX 级检出的, 那里再补.
+    if (ret.alu_op == OP_INVALID) {
+        ret.exc_valid = 1;
+        ret.exc_cause = EXC_ILLEGAL_INST;
+        ret.exc_tval  = inst.inst;
+    } else if (ret.alu_op == OP_ECALL) {
+        ret.exc_valid = 1;
+        ret.exc_cause = EXC_ECALL_M;
+    } else if (ret.alu_op == OP_EBREAK) {
+        ret.exc_valid = 1;
+        ret.exc_cause = EXC_BREAKPOINT;
     }
     return ret;
 }

@@ -208,10 +208,89 @@
 //`define FUNCT7_JAL	
 
 `define DIGIT 12'h000
+`define TIMER 12'h040
 `define LED 12'h060
 `define SWITCH 12'h070
 // ??I/O?????????
+// ===================== 系统指令 / 陷阱 / CSR =====================
+
+`define OPCODE_SYSTEM 7'b1110011
+`define FUNCT3_PRIV   3'b000
+`define FUNCT3_CSRRW  3'b001
+`define FUNCT3_CSRRS  3'b010
+`define FUNCT3_CSRRC  3'b011
+`define FUNCT3_CSRRWI 3'b101
+`define FUNCT3_CSRRSI 3'b110
+`define FUNCT3_CSRRCI 3'b111
+
+// funct3 == PRIV 时按整条指令精确匹配
+`define INST_ECALL  32'h0000_0073
+`define INST_EBREAK 32'h0010_0073
+`define INST_MRET   32'h3020_0073
+
+// CSR 子操作, 送到 EX 执行
+`define CSR_OP_NONE 3'd0
+`define CSR_OP_RW   3'd1   // csrrw / csrrwi : 直接写
+`define CSR_OP_RS   3'd2   // csrrs / csrrsi : 新值 = 旧值 | 源
+`define CSR_OP_RC   3'd3   // csrrc / csrrci : 新值 = 旧值 & ~源
+
+`define CSR_MSTATUS   12'h300
+`define CSR_MIE       12'h304
+`define CSR_MTVEC     12'h305
+`define CSR_MSCRATCH  12'h340
+`define CSR_MEPC      12'h341
+`define CSR_MCAUSE    12'h342
+`define CSR_MTVAL     12'h343
+`define CSR_MIP       12'h344
+`define CSR_MCYCLE    12'hB00
+`define CSR_MINSTRET  12'hB02
+`define CSR_MCYCLEH   12'hB80
+`define CSR_MINSTRETH 12'hB82
+`define CSR_CYCLE     12'hC00
+`define CSR_INSTRET   12'hC02
+`define CSR_CYCLEH    12'hC80
+`define CSR_INSTRETH  12'hC82
+
+// mstatus / mie / mip 用到的位号 (与规范一致: MIE=3, MPIE=7, MPP=[12:11], MTIE=MTIP=7)
+`define MSTATUS_MIE_BIT   3
+`define MSTATUS_MPIE_BIT  7
+`define MIE_MTIE_BIT      7
+`define MIP_MTIP_BIT      7
+
+// ---------------------------------------------------------------------------
+// 地址合法性判据 —— 必须只有这一处定义.
+//
+// perip_bridge.v 的 DRAM 写门控和 mycpu.v 的访问异常判据都用它.
+// 以前两边各说各话: 桥把 >=64KB 的地址截断后照写 DRAM(静默别名到 DRAM[0]),
+// 而 golden model 直接断言崩溃 —— 这正是"同一份地址映射被写了两遍"的后果.
+//
+// 数据侧: DRAM 只有低 64KB, 其余合法地址只有三个【已实现】的外设区间.
+// 取指侧: IROM 也只有 64KB, 别的地址一律 instruction access fault.
+// ---------------------------------------------------------------------------
+`define ADDR_IN_MAP(a) ( ((a) <= 32'h0000_FFFF)                            \
+                       || ((a) >= 32'h8000_0000 && (a) <= 32'h8000_0007) \
+                       || ((a) >= 32'hFFFF_F000 && (a) <= 32'hFFFF_F003) \
+                       || ((a) >= 32'hFFFF_F040 && (a) <= 32'hFFFF_F04F) )
+`define INST_ADDR_OK(a)  ((a) <= 32'h0000_FFFF)
+
+// 异常 cause (mcause[30:0]), 与规范编号一致
+`define EXC_INST_MISALIGNED  4'd0
+`define EXC_INST_ACCESS      4'd1
+`define EXC_ILLEGAL_INST     4'd2
+`define EXC_BREAKPOINT       4'd3
+`define EXC_LOAD_MISALIGNED  4'd4
+`define EXC_LOAD_ACCESS      4'd5
+`define EXC_STORE_MISALIGNED 4'd6
+`define EXC_STORE_ACCESS     4'd7
+`define EXC_ECALL_M          4'd11
+// 中断 mcause = {1'b1, 31'd7}
+`define INTR_MTIP_CAUSE  32'h8000_0007
+
+`define ALUB_SEL_ZERO 3'd2
+`define Sext_Z        5     // csrrwi 系列的 5 位零扩展立即数
+
 `define PERI_ADDR_DIG   32'hFFFF_F000
+`define PERI_ADDR_TIMER 32'hFFFF_F040
 `define PERI_ADDR_LED   32'hFFFF_F060
 `define PERI_ADDR_SW    32'hFFFF_F070
 `define PERI_ADDR_BTN   32'hFFFF_F078

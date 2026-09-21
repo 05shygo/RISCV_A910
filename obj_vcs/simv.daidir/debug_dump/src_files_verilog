@@ -1,5 +1,6 @@
 /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/ALU.v
 /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/ALU_input_MUX.v
+/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/CSR.v
 /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/Control.v
 /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/EX_MEM.v
 /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/EX_wD_MUX1.v
@@ -17,6 +18,7 @@
 /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/defines.vh
 /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/miniRV_SoC.v
 /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/mycpu.v
+/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/mySoC/perip_bridge.v
 /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/tb/tb_miniRV.sv
 /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/tb/tb_miniRV_dpi.sv
 /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/vsrc/ram.v

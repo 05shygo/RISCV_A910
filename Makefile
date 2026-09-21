@@ -1,151 +1,165 @@
-# VCS + Verdi Makefile for miniRV testing - COMPLETE VERSION
-# Usage: make vcs_fsdb TEST=addi
+VCS ?= vcs
+VERDI ?= verdi
 
-# Source files - INCLUDING VCS TOP MODULE
-VSRC = $(wildcard vsrc/ram.v mySoC/*.v)
-CSRC = $(wildcard golden_model/*.c) $(wildcard golden_model/stage/*.c) $(wildcard golden_model/peripheral/*.c) csrc/test_vcs.cpp
+PWD := $(shell pwd)
+TOP ?= tb_miniRV_dpi
+TEST ?= addi
+WAVE ?= waves
+FMT ?= auto
+MAX_CYCLES ?= 1000000
+# CoreMark 是唯一需要跑上千万周期的用例 (ITERATIONS=25 时约 11.0M 周期, 实测 ~41s).
+# 单测的 MAX_CYCLES 保持 1000000 不变, 这样真卡死的单测能快速暴露;
+# 只有 coremark 用这个更大的上限.
+COREMARK_MAX_CYCLES ?= 15000000
 
-# Test configuration
-TEST = addi
-TESTFILE = meminit.bin
-PWD = $(shell pwd)
+BUILD_DIR := $(PWD)/obj_vcs
+SIMV := $(BUILD_DIR)/simv
+TESTFILE := $(PWD)/meminit.bin
 
-# VCS compilation options - WITH -no_main AND INCLUDE PATH
-VCS_OPTS = -full64 -timescale=1ns/1ps -sverilog +v2k +define+PATH=$(TESTFILE) +incdir+$(PWD)/mySoC 
+RAM ?= ram.v
+VSRC := $(wildcard $(PWD)/mySoC/*.v) $(PWD)/vsrc/$(RAM)
+SVSRC := $(wildcard $(PWD)/tb/*.sv)
+DPIC := $(wildcard $(PWD)/dpi/*.c)
+CSRC_GM := $(wildcard $(PWD)/golden_model/*.c) $(wildcard $(PWD)/golden_model/stage/*.c) $(wildcard $(PWD)/golden_model/peripheral/*.c)
+INC  := +incdir+$(PWD)/mySoC +incdir+$(PWD)/vsrc
+DEFINES := +define+PATH=$(TESTFILE)
 
-# VCS runtime options
-VCS_RUN_OPTS = +define+PATH=$(TESTFILE)
+# FSDB (Verdi) detection
+# Enabled for debugging
+FSDB_HOME := $(if $(VERDI_HOME),$(VERDI_HOME),$(NOVAS_HOME))
+ifneq ($(strip $(FSDB_HOME)),)
+  FSDB_VCS := -P $(FSDB_HOME)/share/PLI/VCS/LINUX64/novas.tab $(FSDB_HOME)/share/PLI/VCS/LINUX64/pli.a
+  DEFINES += +define+FSDB
+endif
 
-# Directories
-WAVE_DIR = waveform
-SIM_DIR = simv_work
+VCS_FLAGS ?= -full64 -sverilog -timescale=1ns/1ps -debug_access+all +v2k
+VCS_FLAGS_EXTRA ?=
+SIM_ARGS ?= +WAVE=$(WAVE) +MAX_CYCLES=$(MAX_CYCLES)
+# -exitstatus 是必需的: 没有它时 VCS 的 $fatal(1,...) 也会让 simv 返回 0,
+# 于是 run-all 会把所有失败当成 PASS (difftest 不匹配同样如此 —— 实测确认过:
+# 打印了 "Fatal:" 但 $? 仍是 0). 加上它之后 $fatal(n) 才真正返回 3/$n.
+SIM_ARGS += -exitstatus
 
-# Default target
-all: vcs_build
+# ---------------------------------------------------------------------------
+# 汇编用例的构建规则.
+# 以前没有这条规则(asm/*.S 都是手敲命令建的), 加陷阱用例时补上.
+# 工具链必须用 open_riscv_2035 里的这套: ../tools/riscv/bin 下那套在本机
+# 因为 glibc 版本不匹配(缺 GLIBC_2.32/2.33/2.34)跑不起来.
+# -Wl,-Ttext=0 让镜像从地址 0 开始(CPU 复位后从 PC=0 取指),
+# objcopy -O binary 生成扁平镜像给 IROM/DRAM 的 $fread 用.
+# ---------------------------------------------------------------------------
+TOOLCHAIN ?= /x2025/GPrj1/IC1/riscv/RISCV_CPU/open_riscv_2035/tools/newlib/bin
+CROSS     ?= riscv64-unknown-elf-
+ASM_SRCS  := $(wildcard $(PWD)/asm/*.S)
+ASM_BINS  := $(patsubst $(PWD)/asm/%.S,$(PWD)/bin/%.bin,$(ASM_SRCS))
 
-# Check VCS installation first
-check_tools:
-	@echo "=== Checking VCS installation ==="
-	@which vcs > /dev/null 2>&1 || (echo "ERROR: vcs not found in PATH" && exit 1)
-	@echo "VCS found: $$(which vcs)"
-	@vcs -Version | head -1 || echo "WARNING: Cannot get VCS version"
-	@echo "=== Checking Verdi installation ==="
-	@which verdi > /dev/null 2>&1 || echo "WARNING: verdi not found (waveform viewing won't work)"
-	@echo "================================="
+.PHONY: all build run run-all verdi clean help coremark asm
 
-# VCS compilation target - COMPLETE
-vcs_build: check_tools $(VSRC) $(CSRC)
-	@mkdir -p $(WAVE_DIR) $(SIM_DIR)
-	@echo "=== Compiling with VCS ==="
-	@echo "Source files:"
-	@echo "  Verilog: $(VSRC)"
-	@echo "  C/C++:   $(CSRC)"
-	@echo "Options:   $(VCS_OPTS)"
-	vcs $(VCS_OPTS) $(VSRC) -top vcs_top $(CSRC) \
-		-CFLAGS -std=c99 -DPATH=$(TESTFILE) -CFLAGS -I$(PWD)/golden_model/include
-	@echo "=== Compilation completed ==="
+asm: $(ASM_BINS)
 
-# VCS simulation without waveform
-vcs_run: vcs_build
-	@echo "=== Running simulation (no waveform) ==="
-	@ln -sf bin/$(TEST).bin $(TESTFILE)
-	@./simv $(TEST) $(VCS_RUN_OPTS)
-	@result=$$?; rm -f $(TESTFILE); exit $$result
+$(PWD)/bin/%.bin: $(PWD)/asm/%.S
+	@mkdir -p $(PWD)/bin
+	@$(TOOLCHAIN)/$(CROSS)gcc -march=rv32im -mabi=ilp32 -nostdlib -nostartfiles \
+	    -Wl,-Ttext=0 $< -o $(PWD)/asm/$*.elf
+	@$(TOOLCHAIN)/$(CROSS)objdump -D $(PWD)/asm/$*.elf > $(PWD)/asm/$*.dump
+	@$(TOOLCHAIN)/$(CROSS)objcopy -O binary $(PWD)/asm/$*.elf $@
+	@echo "Built bin/$*.bin"
 
-# VCS simulation with VCD waveform
-vcs_vcd: vcs_build
-	@echo "=== Running simulation with VCD waveform ==="
-	@ln -sf bin/$(TEST).bin $(TESTFILE)
-	@./simv $(TEST) $(VCS_RUN_OPTS) +vcd+$(WAVE_DIR)/$(TEST).vcd
-	@result=$$?; rm -f $(TESTFILE); exit $$result
+all: run
 
-# VCS simulation with FSDB waveform (for Verdi)
-vcs_fsdb: vcs_build
-	@echo "=== Running simulation with FSDB waveform ==="
-	@ln -sf bin/$(TEST).bin $(TESTFILE)
-	@./simv $(TEST) $(VCS_RUN_OPTS) +fsdb+$(WAVE_DIR)/$(TEST).fsdb
-	@result=$$?; rm -f $(TESTFILE); exit $$result
+# Build CoreMark for RV32I
+coremark:
+	@echo "=== Building CoreMark for RV32I ==="
+	$(MAKE) -C coremark -f Makefile.coremark
+	@echo "CoreMark binary ready at bin/coremark.bin"
+	@echo "Run with: make run TEST=coremark MAX_CYCLES=10000000"
 
-# Simple test to verify VCS works
-test_vcs:
-	@echo "Testing VCS with simple command..."
-	vcs -help | head -3
+build: $(SIMV)
 
-# Open waveform with Verdi
-verdi: $(WAVE_DIR)/$(TEST).fsdb
-	@echo "Opening waveform with Verdi..."
-	verdi -ssf $(WAVE_DIR)/$(TEST).fsdb &
+$(SIMV): $(VSRC) $(SVSRC) $(DPIC) $(CSRC_GM)
+	@mkdir -p $(BUILD_DIR)
+	$(VCS) $(VCS_FLAGS) $(VCS_FLAGS_EXTRA) $(INC) $(DEFINES) $(FSDB_VCS) -CFLAGS -DVCS \
+	  -CFLAGS -I$(PWD)/golden_model/include \
+	  -LDFLAGS "-Wl,-rpath,$(FSDB_HOME)/share/PLI/VCS/LINUX64" \
+	  -LDFLAGS "-Wl,-rpath,$(PWD)" \
+	  -top $(TOP) -o $(SIMV) \
+	  -Mdir=$(BUILD_DIR)/csrc -l $(BUILD_DIR)/compile.log \
+	  $(VSRC) $(SVSRC) $(DPIC) $(CSRC_GM)
 
-# Open waveform with Verdi (specify test)
-verdi_%: $(WAVE_DIR)/%.fsdb
-	@echo "Opening waveform: $(WAVE_DIR)/$*.fsdb"
-	verdi -ssf $(WAVE_DIR)/$*.fsdb &
+run: build
+	@ln -sf $(PWD)/bin/$(TEST).bin $(TESTFILE)
+	@mkdir -p waveform
+	$(SIMV) +vcs+lic+wait $(SIM_ARGS) -l $(BUILD_DIR)/sim.log
 
-# Batch run all tests with waveform
-run_all_fsdb:
-	@echo "=== Running all tests with FSDB wave generation ==="
-	@success=0; fail=0; \
-	for test in $$(ls bin/*.bin | sed 's|bin/||' | sed 's|\.bin||'); do \
-		echo "Running test: $$test"; \
-		if make vcs_fsdb TEST=$$test; then \
-			success=$$((success + 1)); \
-			echo "? $$test PASSED"; \
-		else \
-			fail=$$((fail + 1)); \
-			echo "? $$test FAILED"; \
-		fi; \
-		echo "---"; \
+run-all: build
+	@mkdir -p waveform
+	@tests=$$(ls -1 $(PWD)/bin/*.bin 2>/dev/null || true); \
+	if [ -z "$$tests" ]; then echo "No tests found in $(PWD)/bin"; exit 0; fi; \
+	pass=""; fail=""; \
+	for f in $$tests; do \
+	  t=$$(basename $$f .bin); \
+	  mc=$(MAX_CYCLES); \
+	  if [ "$$t" = "coremark" ]; then mc=$(COREMARK_MAX_CYCLES); fi; \
+	  echo "==================== Running $$t (MAX_CYCLES=$$mc) ===================="; \
+	  if $(MAKE) -f $(PWD)/Makefile run TOP=$(TOP) RAM=$(RAM) TEST=$$t WAVE=$$t MAX_CYCLES=$$mc; then \
+	    pass="$$pass $$t"; \
+	  else \
+	    fail="$$fail $$t"; \
+	  fi; \
+	  echo "==================== $$t END ===================="; \
 	done; \
-	echo "=== SUMMARY ==="; \
-	echo "Total tests: $$(success + fail)"; \
-	echo "Passed: $$success"; \
-	echo "Failed: $$fail"; \
-	echo "Waveforms saved in $(WAVE_DIR)/"
+	echo; echo "==================== SUMMARY ===================="; \
+	echo "Passed Tests:"; \
+	if [ -n "$$pass" ]; then echo "$$pass" | sed -e 's/^ //; s/ /, /g'; else echo "(none)"; fi; \
+	echo "Failed Tests:"; \
+	if [ -n "$$fail" ]; then echo "$$fail" | sed -e 's/^ //; s/ /, /g'; else echo "(none)"; fi
 
-# Run all tests with VCD (faster, for debugging)
-run_all_vcd:
-	@echo "=== Running all tests with VCD wave generation ==="
-	@for test in $$(ls bin/*.bin | sed 's|bin/||' | sed 's|\.bin||'); do \
-		echo "Running test: $$test"; \
-		make vcs_vcd TEST=$$test || echo "Test $$test failed"; \
-	done
-	@echo "All tests completed. Waveforms saved in $(WAVE_DIR)/"
+WAVE_SSF := $(if $(wildcard waveform/waves.fsdb),-ssf waveform/waves.fsdb,)
 
-# Clean generated files
+verdi: build
+	# Open the specific waveform based on WAVE/FMT; prefer the newest name
+	if [ "$(FMT)" = "fsdb" ] && [ -f waveform/$(WAVE).fsdb ]; then \
+	  $(VERDI) -sverilog $(INC) $(VSRC) $(SVSRC) -top $(TOP) -ssf waveform/$(WAVE).fsdb ; \
+	elif [ "$(FMT)" = "vcd" ] && [ -f waveform/$(WAVE).vcd ]; then \
+	  $(VERDI) -sverilog $(INC) $(VSRC) $(SVSRC) -top $(TOP) -vcd waveform/$(WAVE).vcd ; \
+	elif [ -f waveform/$(WAVE).fsdb ]; then \
+	  $(VERDI) -sverilog $(INC) $(VSRC) $(SVSRC) -top $(TOP) -ssf waveform/$(WAVE).fsdb ; \
+	elif [ -f waveform/$(WAVE).vcd ]; then \
+	  $(VERDI) -sverilog $(INC) $(VSRC) $(SVSRC) -top $(TOP) -vcd waveform/$(WAVE).vcd ; \
+	elif [ -f waveform/waves.fsdb ]; then \
+	  $(VERDI) -sverilog $(INC) $(VSRC) $(SVSRC) -top $(TOP) -ssf waveform/waves.fsdb ; \
+	elif [ -f waveform/waves.vcd ]; then \
+	  $(VERDI) -sverilog $(INC) $(VSRC) $(SVSRC) -top $(TOP) -vcd waveform/waves.vcd ; \
+	else \
+	  echo "No FSDB/VCD found under waveform/. Run 'make run' first." ; \
+	fi
+
 clean:
-	@echo "Cleaning generated files..."
-	rm -rf simv* csrc/*.daidir $(WAVE_DIR) $(SIM_DIR) $(TESTFILE) \
-	       ucli.key vc_hdrs.h DVEfiles inter.vpd .vlogansetup.env \
-	       .vlogansetup.args .vlogansetup.env.out AN.DB
-	@echo "Clean completed."
+	rm -rf $(BUILD_DIR) $(TESTFILE) ./simv.daidir ./csrc ./ucli.key ./verdiLog novas.*
 
-# Clean only waveforms
-clean_wave:
-	@echo "Cleaning waveform files..."
-	rm -rf $(WAVE_DIR)/*.fsdb $(WAVE_DIR)/*.vcd
-	@echo "Waveform files cleaned."
-
-# Help target
 help:
-	@echo "Available targets:"
-	@echo "  check_tools  - Check VCS/Verdi installation"
-	@echo "  test_vcs     - Simple VCS test"
-	@echo "  vcs_build    - Compile with VCS"
-	@echo "  vcs_run      - Run simulation without waveform"
-	@echo "  vcs_vcd      - Run simulation with VCD waveform"
-	@echo "  vcs_fsdb     - Run simulation with FSDB waveform (Verdi)"
-	@echo "  verdi        - Open waveform with Verdi (uses TEST variable)"
-	@echo "  run_all_vcd  - Run all tests with VCD waves (faster)"
-	@echo "  run_all_fsdb - Run all tests with FSDB wave generation"
-	@echo "  clean        - Clean all generated files"
-	@echo "  clean_wave   - Clean only waveform files"
-	@echo ""
-	@echo "Example usage:"
-	@echo "  make check_tools          # Check installation"
-	@echo "  make test_vcs             # Test VCS"
-	@echo "  make vcs_vcd TEST=addi    # Run with VCD (try first)"
-	@echo "  make vcs_fsdb TEST=addi   # Run with FSDB (for Verdi)"
-	@echo "  make verdi TEST=addi      # Open waveform in Verdi"
-	@echo "  make run_all_vcd          # Run all tests (faster)"
+	@echo "Usage: make [target] [VAR=value]"
+	@echo
+	@echo "Targets:"
+	@echo "  build            Compile $(TOP) to $(SIMV) (includes tb/*.sv, mySoC/*.v, vsrc/*.v)"
+	@echo "  run              Run simulation (TEST=$(TEST)); link bin/$(TEST).bin -> meminit.bin; dumps waves to waveform/"
+	@echo "  run-all          Run all tests under bin/*.bin (per-test WAVE); prints pass/fail summary"
+	@echo "  asm              Build every asm/*.S into bin/*.bin"
+	@echo "  coremark         Build CoreMark benchmark for RV32I (output: bin/coremark.bin)"
+	@echo "  verdi            Open the project in Verdi (uses WAVE/FMT to select waveform)"
+	@echo "  clean            Remove generated files"
+	@echo
+	@echo "Variables:"
+	@echo "  TOP=$(TOP) (default tb_miniRV_dpi)"
+	@echo "  TEST=$(TEST)"
+	@echo "  RAM=$(RAM) (default ram.v; alternatives: ram0.v/ram1.v/ram2.v)"
+	@echo "  WAVE=$(WAVE) (wave name prefix, default 'waves')"
+	@echo "  FMT=$(FMT) (fsdb|vcd|auto)"
+	@echo "  MAX_CYCLES=$(MAX_CYCLES)"
+	@echo "  VCS=$(VCS)"
+	@echo "  VERDI=$(VERDI)"
+	@echo
+	@echo "Examples:"
+	@echo "  make coremark                    # Build CoreMark"
+	@echo "  make run TEST=coremark MAX_CYCLES=10000000  # Run CoreMark (needs more cycles)"
 
-.PHONY: all check_tools test_vcs vcs_build vcs_run vcs_fsdb vcs_vcd verdi run_all_fsdb run_all_vcd clean clean_wave help

@@ -29,6 +29,13 @@ typedef unsigned int   ee_size_t;
 #define CORETIMETYPE ee_u32
 typedef ee_u32 CORE_TICKS;
 
+// Cycle counter: mySoC/perip_bridge.v 里的 TIMER 外设 (mtime, 每拍 +1).
+// 之前 timer_counter 是个从没被赋值过的变量, 导致所有计时恒为 0.
+// 改成直接读 MMIO 后, get_vtimer()/start_time()/stop_time()/get_time()
+// 整条链都拿到真实周期数.
+#define CM_TIMER_ADDR  0xFFFFF040u
+#define timer_counter  (*(volatile ee_u32 *)CM_TIMER_ADDR)
+
 // Seed and memory method
 #define SEED_METHOD SEED_VOLATILE
 #define MEM_METHOD MEM_STACK

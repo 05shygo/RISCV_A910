@@ -45,7 +45,7 @@
 ### 4. 测试框架（已配置）
 
 #### 修改文件
-- **Makefile.vcs** - 启用FSDB波形支持
+- **Makefile** - 启用FSDB波形支持
 - **tb/tb_miniRV_dpi.sv** - difftest改为warning模式（不fatal）
 
 #### 测试脚本
@@ -87,18 +87,18 @@ cd /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests
 ./RUN_RV32M_TESTS.sh
 
 # 或者单独运行测试
-make -f Makefile.vcs run TEST=mul MAX_CYCLES=1000 WAVE=mul_debug
-make -f Makefile.vcs run TEST=div MAX_CYCLES=50000 WAVE=div_debug
+make run TEST=mul MAX_CYCLES=1000 WAVE=mul_debug
+make run TEST=div MAX_CYCLES=50000 WAVE=div_debug
 ```
 
 ### 步骤2：打开Verdi查看波形
 
 ```bash
 # 查看mul测试波形
-make -f Makefile.vcs verdi WAVE=mul_debug
+make verdi WAVE=mul_debug
 
 # 查看div测试波形
-make -f Makefile.vcs verdi WAVE=div_debug
+make verdi WAVE=div_debug
 ```
 
 ### 步骤3：波形中需要重点关注的信号
@@ -174,13 +174,13 @@ dut.Core_cpu.wb_wD        - 写回数据
 ### 修改代码后的步骤
 ```bash
 # 1. 重新编译
-make -f Makefile.vcs build
+make build
 
 # 2. 运行测试
-make -f Makefile.vcs run TEST=mul MAX_CYCLES=1000 WAVE=mul_fixed
+make run TEST=mul MAX_CYCLES=1000 WAVE=mul_fixed
 
 # 3. 查看波形
-make -f Makefile.vcs verdi WAVE=mul_fixed
+make verdi WAVE=mul_fixed
 ```
 
 ## 📊 预期性能（如果正常工作）
@@ -193,7 +193,7 @@ make -f Makefile.vcs verdi WAVE=mul_fixed
 ### CoreMark测试（如果mul/div工作正常）
 ```bash
 # CoreMark应该能在合理的周期内完成
-make -f Makefile.vcs run TEST=coremark MAX_CYCLES=100000000 WAVE=coremark_rv32im
+make run TEST=coremark MAX_CYCLES=100000000 WAVE=coremark_rv32im
 ```
 
 ## 📝 已知问题和限制

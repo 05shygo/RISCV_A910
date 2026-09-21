@@ -35,6 +35,7 @@ module Hazard_Detection(
     input              mem_rf_we    ,
     input              wb_rf_we     ,
     input              muldiv_stall , // RV32M stall signal
+    input              trap         , // 陷阱/中断重定向 (来自 WB 提交点)
     output reg         stall        ,
     output reg         flush_IF_ID  ,
     output reg         flush_ID_EX  ,
@@ -81,14 +82,17 @@ always @ (*) begin
     else                                 stall = 1'b0;
 end
 
+// 陷阱/中断重定向也是冲刷源, 且优先级最高(它来自 WB 提交点, 比 EX 级的分支
+// 更"老"). 必须 OR 进这两条既有信号里, 而不是另起一个名字: 下游模块只认
+// flush_IF_ID / flush_ID_EX, 另起名字会让 stall 在那两个模块里赢过陷阱.
 always @ (*) begin
-    if (branched) flush_IF_ID = 1'b1;
-    else          flush_IF_ID = 1'b0;
+    if (branched || trap) flush_IF_ID = 1'b1;
+    else                  flush_IF_ID = 1'b0;
 end
 
 always @ (*) begin
-    if (load_use_exist || branched) flush_ID_EX = 1'b1;
-    else                            flush_ID_EX = 1'b0;
+    if (load_use_exist || branched || trap) flush_ID_EX = 1'b1;
+    else                                    flush_ID_EX = 1'b0;
 end
 endmodule
 /*

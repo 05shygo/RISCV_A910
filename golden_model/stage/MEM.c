@@ -20,7 +20,11 @@ uint32_t mem_load(uint32_t addr, AccessMode mode, uint32_t is_signed) {
     }
     
     // memory access
-    Assert(addr < MEM_SZ, "Memory access out of bound");
+    // 到这里说明地址一定是合法的: 越界地址在 EX 级就已经被判成访问异常
+    // (cause 5/7) 并置了 exc_valid, MEM() 会跳过整次访存.
+    // 所以这条断言现在是【不变量】—— 它只可能因为我自己的漏洞而触发,
+    // 不是"越界导致模型崩溃"那条老路径了.
+    Assert(addr < MEM_SZ, "Memory access out of bound (EX 级的越界检查漏了)");
     uint32_t result;
     switch (mode) {
         case ACCESS_BYTE : 
@@ -58,12 +62,12 @@ void mem_store(uint32_t addr, AccessMode mode, uint32_t value) {
         return p.callback_w(addr - p.base_addr, mode, value);
     }
 
-    // memory access - with debug output
-    if (addr >= MEM_SZ) {
-        printf("[DEBUG] Memory access out of bound: addr=0x%08x, MEM_SZ=0x%08x, value=0x%08x\n",
-               addr, MEM_SZ, value);
-    }
-    Assert(addr < MEM_SZ, "Memory access out of bound");
+    // memory access
+    // 到这里说明地址一定是合法的: 越界地址在 EX 级就已经被判成访问异常
+    // (cause 5/7) 并置了 exc_valid, MEM() 会跳过整次访存.
+    // 所以这条断言现在是【不变量】—— 它只可能因为我自己的漏洞而触发,
+    // 不是"越界导致模型崩溃"那条老路径了.
+    Assert(addr < MEM_SZ, "Memory access out of bound (EX 级的越界检查漏了)");
     switch (mode) {
         case ACCESS_BYTE : 
             memory[index] = memory[index] & (~(0xFF << bit_off)) | ((value & 0xFF) << bit_off);
@@ -91,12 +95,19 @@ MEM2WB MEM(EX2MEM ex_info) {
     ret.target_pc = ex_info.target_pc;
     ret.inst = ex_info.inst;
     ret.pc = ex_info.pc;
+    ret.exc_valid = ex_info.exc_valid;
+    ret.exc_cause = ex_info.exc_cause;
+    ret.exc_tval  = ex_info.exc_tval;
+    ret.is_mret   = ex_info.is_mret;
     Log("PC = %8.8x", ret.pc);
     uint32_t load_result = 0;
     uint32_t is_store = 0;
     AccessMode mode = ACCESS_BYTE;
     uint32_t is_signed = 0;
-    if(ex_info.is_mem) {
+    // 已经陷入的访存【不能真的读/写内存】: 这和 DUT 侧用 mem_exc_valid
+    // 掐掉 Bus_wen 是同一件事. 少了这个门控, 一条非对齐的 store 会在
+    // golden model 里真的写下去, 而 DUT 侧没写.
+    if(ex_info.is_mem && !ret.exc_valid) {
         switch (ex_info.mem_op) {
             case MEM_SB: mode =  ACCESS_BYTE; is_store = 1; break;
             case MEM_SH: mode = ACCESS_HWORD; is_store = 1; break;

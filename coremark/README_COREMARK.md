@@ -44,11 +44,11 @@ coremark/
 
 ### 4. 集成到测试框架
 
-已集成到 `Makefile.vcs`，新增 target：
+已集成到 `Makefile`，新增 target：
 ```bash
-make -f Makefile.vcs coremark                    # 构建 CoreMark
-make -f Makefile.vcs run TEST=coremark           # 运行测试
-make -f Makefile.vcs help                        # 查看帮助
+make coremark                    # 构建 CoreMark
+make run TEST=coremark           # 运行测试
+make help                        # 查看帮助
 ```
 
 ## 📋 使用方法
@@ -56,8 +56,8 @@ make -f Makefile.vcs help                        # 查看帮助
 ### 构建 CoreMark
 
 ```bash
-# 方式1: 使用集成的 Makefile.vcs
-make -f Makefile.vcs coremark
+# 方式1: 使用集成的 Makefile
+make coremark
 
 # 方式2: 在 coremark 目录直接构建
 cd coremark
@@ -72,13 +72,13 @@ cd coremark
 
 ```bash
 # 基本运行（CoreMark 需要较多周期完成）
-make -f Makefile.vcs run TEST=coremark MAX_CYCLES=10000000
+make run TEST=coremark MAX_CYCLES=10000000
 
 # 生成波形
-make -f Makefile.vcs run TEST=coremark MAX_CYCLES=10000000 WAVE=coremark
+make run TEST=coremark MAX_CYCLES=10000000 WAVE=coremark
 
 # 用 Verdi 查看波形
-make -f Makefile.vcs verdi WAVE=coremark
+make verdi WAVE=coremark
 ```
 
 **注意**: CoreMark 是复杂的基准测试程序，需要比简单指令测试更多的周期才能完成。建议设置 `MAX_CYCLES=10000000` 或更高。
@@ -185,7 +185,7 @@ CoreMark 通过以下指标评估 CPU 性能：
 
 ## 📚 相关文件
 
-- `Makefile.vcs` - 主测试框架（已添加 coremark target）
+- `Makefile` - 主测试框架（已添加 coremark target）
 - `coremark/Makefile.coremark` - CoreMark 独立构建脚本
 - `coremark/riscv-port/*` - RV32I 移植实现
 - `bin/coremark.bin` - 可执行二进制文件

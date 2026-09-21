@@ -24,8 +24,7 @@ volatile ee_s32 seed3_volatile = 0x8;
 volatile ee_s32 seed4_volatile = ITERATIONS;
 volatile ee_s32 seed5_volatile = 0;
 
-// Cycle counter for timing - exposed for core_main.c
-volatile ee_u32 timer_counter = 0;
+// timer_counter 现在是 core_portme.h 里读 TIMER 外设的宏, 见那里说明
 static CORETIMETYPE start_time_val, stop_time_val;
 
 void start_time(void) {
@@ -43,9 +42,9 @@ CORE_TICKS get_time(void) {
 }
 
 secs_ret time_in_secs(CORE_TICKS ticks) {
-    // Simple approximation for simulation
-    secs_ret retval = (ticks > 0) ? 1 : 0;
-    return retval;
+    // 1 tick = 1 个周期. 按 1MHz 归一到"秒", 这样
+    // Iterations/Sec 与 CoreMark/MHz 数值一致(CoreMark/MHz 本身与频率无关).
+    return ticks / 1000000u;
 }
 
 ee_u32 default_num_contexts = 1;

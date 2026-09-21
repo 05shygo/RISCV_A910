@@ -1,0 +1,48 @@
+
+asm/peri.elf:     file format elf32-littleriscv
+
+
+Disassembly of section .text:
+
+00000000 <_start>:
+   0:	0040006f          	j	4 <reset_vector>
+
+00000004 <reset_vector>:
+   4:	00002903          	lw	s2,0(zero) # 0 <_start>
+   8:	800002b7          	lui	t0,0x80000
+   c:	12345337          	lui	t1,0x12345
+  10:	67830313          	addi	t1,t1,1656 # 12345678 <__global_pointer$+0x12343dec>
+  14:	0062a023          	sw	t1,0(t0) # 80000000 <__global_pointer$+0x7fffe774>
+  18:	0002a383          	lw	t2,0(t0)
+  1c:	06639063          	bne	t2,t1,7c <fail>
+  20:	fffff437          	lui	s0,0xfffff
+  24:	04040413          	addi	s0,s0,64 # fffff040 <__global_pointer$+0xffffd7b4>
+  28:	00042483          	lw	s1,0(s0)
+  2c:	00042983          	lw	s3,0(s0)
+  30:	40998a33          	sub	s4,s3,s1
+  34:	05405463          	blez	s4,7c <fail>
+  38:	00442a83          	lw	s5,4(s0)
+  3c:	040a9063          	bnez	s5,7c <fail>
+  40:	0000ab37          	lui	s6,0xa
+  44:	5a5b0b13          	addi	s6,s6,1445 # a5a5 <__global_pointer$+0x8d19>
+  48:	01642423          	sw	s6,8(s0)
+  4c:	00842b83          	lw	s7,8(s0)
+  50:	036b9663          	bne	s7,s6,7c <fail>
+  54:	fffff7b7          	lui	a5,0xfffff
+  58:	0000b837          	lui	a6,0xb
+  5c:	0cd80813          	addi	a6,a6,205 # b0cd <__global_pointer$+0x9841>
+  60:	0107a023          	sw	a6,0(a5) # fffff000 <__global_pointer$+0xffffd774>
+  64:	0007ac03          	lw	s8,0(a5)
+  68:	010c1a63          	bne	s8,a6,7c <fail>
+  6c:	00002c83          	lw	s9,0(zero) # 0 <_start>
+  70:	012c9663          	bne	s9,s2,7c <fail>
+  74:	00000513          	li	a0,0
+  78:	0080006f          	j	80 <end>
+
+0000007c <fail>:
+  7c:	00100513          	li	a0,1
+
+00000080 <end>:
+  80:	05d00893          	li	a7,93
+  84:	00000073          	ecall
+  88:	c0001073          	unimp

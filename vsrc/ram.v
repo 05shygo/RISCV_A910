@@ -26,6 +26,15 @@ module IROM # (
             $fatal;
         end
         $display("[INFO] Instruction ROM initialized with %s", `STRINGIFY(`PATH));
+        // mem_rd 必须先清零: $fread 只填镜像覆盖到的部分, 其余保持 X, 而下面
+        // 会把 mem_rd 的【每个字】都赋给 mem[]. 不清零的话, 凡是读到镜像之外的
+        // 地址都会得到 X, 与 golden model(零初始化)不一致 —— X 一旦进了寄存器就会
+        // 让分支误判并一路传播, 表现为难以定位的 difftest 不匹配.
+        for (i = 0; i < 2**20; i = i + 2**(20/2)) begin
+            for (j = i; j < i + 2**(20/2); j = j + 1) begin
+                mem_rd[j] = 0;
+            end
+        end
         $fread(mem_rd, mem_file);
         for (i = 0; i < 2**20; i = i + 2**(20/2)) begin
             for (j = i; j < i + 2**(20/2); j = j + 1) begin
@@ -66,6 +75,12 @@ module DRAM # (
             $fatal;
         end
         $display("[INFO] Data RAM initialized with %s", `STRINGIFY(`PATH));
+        // 同 IROM: 先清零, 否则镜像之外的读会返回 X
+        for (i = 0; i < 2**20; i = i + 2**(20/2)) begin
+            for (j = i; j < i + 2**(20/2); j = j + 1) begin
+                mem_rd[j] = 0;
+            end
+        end
         $fread(mem_rd, mem_file);
         for (i = 0; i < 2**20; i = i + 2**(20/2)) begin
             for (j = i; j < i + 2**(20/2); j = j + 1) begin

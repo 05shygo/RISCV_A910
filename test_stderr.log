@@ -1,0 +1,76 @@
+/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv +vcs+lic+wait +WAVE=verify_mul +MAX_CYCLES=1000 -l /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/sim.log
+Info: [VCS_SAVE_RESTORE_INFO] ASLR (Address Space Layout Randomization) is detected on the machine. To enable $save functionality, ASLR will be switched off and simv re-executed.
+Please use '-no_save' simv switch to avoid re-execution or '-suppress=ASLR_DETECTED_INFO' to suppress this message.
+Chronologic VCS simulator copyright 1991-2023
+Contains Synopsys proprietary information.
+Compiler version V-2023.12-SP2_Full64; Runtime version V-2023.12-SP2_Full64;  Sep 21 20:10 2026
+[INFO] Instruction ROM initialized with /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/meminit.bin
+*Verdi* WARNING: 'Enable FSDB dumping with option -debug/-debug_pp/-debug_all and option -P along with novas.tab file' will be deprecated in VERDI2024.09.
+*Verdi* WARNING: Please use '-debug_access' along with a proper setting on VERDI_HOME environment variable in vcs compilation. For details, please refer to VCS manual for -debug_access usage.
+*Verdi* Loading libsscore_vcs202312.so
+FSDB Dumper for VCS, Release Verdi_V-2023.12-SP2, Linux x86_64/64bit, 05/26/2024
+(C) 1996 - 2024 by Synopsys, Inc.
+*Verdi* : Create FSDB file 'waveform/verify_mul.fsdb'
+*Verdi* : Begin traversing the scope (tb_miniRV_dpi), layer (0).
+*Verdi* : End of traversing.
+[1;34mPeripheral name: MONITOR	base: 0x80000000	addr len: 0x00000008	
+[0m[1;34mPeripheral name: Digit	base: 0xfffff000	addr len: 0x00000004	
+[0m[INFO] Data RAM initialized with /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/meminit.bin
+[mycpu] Reset done.
+[difftest] Test Start!
+=========== Diffrence ===========
+SIGNAL NAME	REFERENCE	MYCPU
+debug_wb_pc	0x00000000	0x00000000
+debug_wb_ena	         0	         1
+debug_wb_reg	         0	         0
+debug_wb_value	0x00000000	0x00000004
+[difftest] WARNING: Mismatch detected but ignored for RV32M testing
+  Reference PC=0x00000000, DUT PC=0x00000000
+  Reference reg[0]=0x00000000, DUT reg[0]=0x00000004
+=========== Diffrence ===========
+SIGNAL NAME	REFERENCE	MYCPU
+debug_wb_pc	0x0000000c	0x00000004
+debug_wb_ena	         1	         1
+debug_wb_reg	         7	         5
+debug_wb_value	0x00000046	0x0000000a
+[difftest] WARNING: Mismatch detected but ignored for RV32M testing
+  Reference PC=0x00000004, DUT PC=0x00000004
+  Reference reg[5]=0x00000000, DUT reg[5]=0x0000000a
+=========== Diffrence ===========
+SIGNAL NAME	REFERENCE	MYCPU
+debug_wb_pc	0x00000010	0x00000008
+debug_wb_ena	         1	         1
+debug_wb_reg	         8	         6
+debug_wb_value	0x00000046	0x00000007
+[difftest] WARNING: Mismatch detected but ignored for RV32M testing
+  Reference PC=0x00000008, DUT PC=0x00000008
+  Reference reg[6]=0x00000000, DUT reg[6]=0x00000007
+=========== Diffrence ===========
+SIGNAL NAME	REFERENCE	MYCPU
+debug_wb_pc	0x00000014	0x00000008
+debug_wb_ena	         0	         1
+debug_wb_reg	-1150001152	         6
+debug_wb_value	0x00000046	0x00000007
+[difftest] WARNING: Mismatch detected but ignored for RV32M testing
+  Reference PC=0x00000008, DUT PC=0x00000008
+  Reference reg[6]=0x00000000, DUT reg[6]=0x00000007
+=========== Diffrence ===========
+SIGNAL NAME	REFERENCE	MYCPU
+debug_wb_pc	0x00000020	0x00000010
+debug_wb_ena	         1	         0
+debug_wb_reg	        10	         0
+debug_wb_value	0x00000000	0x00000046
+[difftest] WARNING: Mismatch detected but ignored for RV32M testing
+  Reference PC=0x00000010, DUT PC=0x00000010
+  Reference reg[0]=0x00000000, DUT reg[0]=0x00000046
+=========== Diffrence ===========
+SIGNAL NAME	REFERENCE	MYCPU
+debug_wb_pc	0x00000024	0x00000010
+debug_wb_ena	         1	         1
+debug_wb_reg	        17	         8
+debug_wb_value	0x0000005d	0x00000046
+[difftest] WARNING: Mismatch detected but ignored for RV32M testing
+  Reference PC=0x00000010, DUT PC=0x00000010
+  Reference reg[8]=0x00000000, DUT reg[8]=0x00000046
+[1;34mECALL at PC = 0x00000028, Stop now.
+[0mTest Point Pass!

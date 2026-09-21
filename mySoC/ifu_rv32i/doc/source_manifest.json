@@ -1,0 +1,38 @@
+[
+  {
+    "source": "ifu\\rtl\\ct_ifu_bht.v",
+    "sha256": "fd095d34af0a1e7059ad9fdb277998cf64490f5b8339585c5941e2afc3fde346",
+    "output": "rtl/rv32_ifu_bht.v",
+    "modification": "C910 Bi-Mode retained; H0 removed, P31, P15 flush, local GHR repair, drop counter."
+  },
+  {
+    "source": "ifu\\rtl\\ct_ifu_ras.v",
+    "sha256": "689a1b0feae8daf490af4ecb103374e7c23493167c415e05f6a76e9243f3e4be",
+    "output": "rtl/rv32_ifu_ras.v",
+    "modification": "all PCs are byte addresses; +4 link supplied by caller; synchronous clear and old-top valid added."
+  },
+  {
+    "source": "ifu\\rtl\\ct_ifu_ind_btb.v",
+    "sha256": "e5c3a74232500bb0ea8ad0594d265bfe2858b6875ac4075325f38159e8e65ca6",
+    "output": "rtl/rv32_ifu_ind_btb.v",
+    "modification": "35-bit {valid,priv[1:0],byte_target[31:0]}; path remains target byte[11:4]."
+  },
+  {
+    "source": "ifu\\rtl\\ct_ifu_bht_pre_array.v",
+    "sha256": "174cbe8a939eee4f79125102925bde322ef5ab4fe7d3d170d26cc99804c9fc78",
+    "output": "rtl/rv32_ifu_bht_pre_array.v",
+    "modification": "portable synchronous SRAM; original control polarity/read latency retained."
+  },
+  {
+    "source": "ifu\\rtl\\ct_ifu_bht_sel_array.v",
+    "sha256": "078f7406b1cdeee4d0e5efd438973830cc6d6ef841aa48e9e141b3f4332b223b",
+    "output": "rtl/rv32_ifu_bht_sel_array.v",
+    "modification": "portable synchronous SRAM; original control polarity/read latency retained."
+  },
+  {
+    "source": "ifu\\rtl\\ct_ifu_ind_btb_array.v",
+    "sha256": "2453b2d05a13dc79463d3b6acd826c19c6693c3d55569ab9364679ede6c8d891",
+    "output": "rtl/rv32_ifu_ind_btb_array.v",
+    "modification": "portable synchronous SRAM; original control polarity/read latency retained."
+  }
+]

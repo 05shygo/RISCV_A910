@@ -1,0 +1,12 @@
+rtl/rv32_ifu_clk_cell.v
+rtl/rv32_ifu_spram.v
+rtl/rv32_ifu_icache_tag_array.v
+rtl/rv32_ifu_icache_data_array0.v
+rtl/rv32_ifu_icache_predecd_array0.v
+rtl/rv32_ifu_icache_if.v
+rtl/rv32_ifu_region.v
+rtl/rv32_ifu_pcgen.v
+rtl/rv32_ifu_btb.v
+rtl/rv32_ifu_if_array.v
+rtl/rv32_ifu_ifctrl.v
+rtl/rv32_ifu_ifdp.v

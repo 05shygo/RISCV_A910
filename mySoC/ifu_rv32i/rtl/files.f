@@ -1,0 +1,13 @@
+rtl/rv32_ifu_spram.v
+rtl/rv32_ifu_clk_cell.v
+rtl/rv32_ifu_bht_pre_array.v
+rtl/rv32_ifu_bht_sel_array.v
+rtl/rv32_ifu_ind_btb_array.v
+rtl/rv32_ifu_bht.v
+rtl/rv32_ifu_ras.v
+rtl/rv32_ifu_ind_btb.v
+rtl/rv32_ifu_btb.v
+rtl/rv32_ifu_l0_btb.v
+rtl/rv32_ifu_bp_decode.v
+rtl/rv32_ifu_bp_target.v
+rtl/rv32_ifu_bp_top.v

@@ -1,0 +1,9 @@
+rtl/rv32_ifu_bp_decode.v
+rtl/rv32_ifu_ibuf.v
+rtl/rv32_ifu_pcfifo_if.v
+rtl/rv32_ifu_ipdp.v
+rtl/rv32_ifu_ipctrl.v
+rtl/rv32_ifu_addrgen.v
+rtl/rv32_ifu_ibdp.v
+rtl/rv32_ifu_ibctrl.v
+rtl/rv32_ifu_pipeline.v

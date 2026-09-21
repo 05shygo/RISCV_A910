@@ -1,0 +1,538 @@
+{
+  "forever_cpuclk": [
+    "input",
+    ""
+  ],
+  "cpurst_b": [
+    "input",
+    ""
+  ],
+  "iu_ifu_mispred_stall": [
+    "input",
+    ""
+  ],
+  "frontend_cancel": [
+    "input",
+    ""
+  ],
+  "bp_maint_vld": [
+    "input",
+    ""
+  ],
+  "bp_maint_mask": [
+    "input",
+    "[4:0]"
+  ],
+  "bp_init_done": [
+    "output",
+    ""
+  ],
+  "bp_maint_ready": [
+    "output",
+    ""
+  ],
+  "bp_maint_done": [
+    "output",
+    ""
+  ],
+  "bp_recovery_stall": [
+    "output",
+    ""
+  ],
+  "rtu_ifu_retire0_vld": [
+    "input",
+    ""
+  ],
+  "rtu_ifu_retire1_vld": [
+    "input",
+    ""
+  ],
+  "rtu_ifu_retire2_vld": [
+    "input",
+    ""
+  ],
+  "if_pc": [
+    "input",
+    "[31:0]"
+  ],
+  "if_query_pc": [
+    "input",
+    "[31:0]"
+  ],
+  "ib_query_ghr": [
+    "input",
+    "[7:0]"
+  ],
+  "ip_pc": [
+    "input",
+    "[31:0]"
+  ],
+  "ib_pred_target": [
+    "input",
+    "[31:0]"
+  ],
+  "local_recover_vld": [
+    "input",
+    ""
+  ],
+  "local_recover_ghr": [
+    "input",
+    "[21:0]"
+  ],
+  "bht_train_drop": [
+    "output",
+    ""
+  ],
+  "bht_train_drop_count": [
+    "output",
+    "[31:0]"
+  ],
+  "cp0_ifu_bht_en": [
+    "input",
+    ""
+  ],
+  "cp0_ifu_icg_en": [
+    "input",
+    ""
+  ],
+  "cp0_yy_clk_en": [
+    "input",
+    ""
+  ],
+  "ifctrl_bht_pipedown": [
+    "input",
+    ""
+  ],
+  "ifctrl_bht_stall": [
+    "input",
+    ""
+  ],
+  "ipctrl_bht_con_br_gateclk_en": [
+    "input",
+    ""
+  ],
+  "ipctrl_bht_con_br_taken": [
+    "input",
+    ""
+  ],
+  "ipctrl_bht_con_br_vld": [
+    "input",
+    ""
+  ],
+  "ipctrl_bht_more_br": [
+    "input",
+    ""
+  ],
+  "ipctrl_bht_vld": [
+    "input",
+    ""
+  ],
+  "iu_ifu_bht_check_vld": [
+    "input",
+    ""
+  ],
+  "iu_ifu_bht_condbr_taken": [
+    "input",
+    ""
+  ],
+  "iu_ifu_bht_pred": [
+    "input",
+    ""
+  ],
+  "iu_ifu_chgflw_vld": [
+    "input",
+    ""
+  ],
+  "iu_ifu_chk_idx": [
+    "input",
+    "[24:0]"
+  ],
+  "iu_ifu_cur_pc": [
+    "input",
+    "[31:0]"
+  ],
+  "lbuf_bht_active_state": [
+    "input",
+    ""
+  ],
+  "lbuf_bht_con_br_taken": [
+    "input",
+    ""
+  ],
+  "lbuf_bht_con_br_vld": [
+    "input",
+    ""
+  ],
+  "pad_yy_icg_scan_en": [
+    "input",
+    ""
+  ],
+  "pcgen_bht_chgflw": [
+    "input",
+    ""
+  ],
+  "pcgen_bht_chgflw_short": [
+    "input",
+    ""
+  ],
+  "pcgen_bht_seq_read": [
+    "input",
+    ""
+  ],
+  "rtu_ifu_flush": [
+    "input",
+    ""
+  ],
+  "rtu_ifu_retire0_condbr": [
+    "input",
+    ""
+  ],
+  "rtu_ifu_retire0_condbr_taken": [
+    "input",
+    ""
+  ],
+  "rtu_ifu_retire1_condbr": [
+    "input",
+    ""
+  ],
+  "rtu_ifu_retire1_condbr_taken": [
+    "input",
+    ""
+  ],
+  "rtu_ifu_retire2_condbr": [
+    "input",
+    ""
+  ],
+  "rtu_ifu_retire2_condbr_taken": [
+    "input",
+    ""
+  ],
+  "bht_ipdp_pre_array_data_ntake": [
+    "output",
+    "[31:0]"
+  ],
+  "bht_ipdp_pre_array_data_taken": [
+    "output",
+    "[31:0]"
+  ],
+  "bht_ipdp_pre_offset_onehot": [
+    "output",
+    "[15:0]"
+  ],
+  "bht_ipdp_sel_array_result": [
+    "output",
+    "[ 1:0]"
+  ],
+  "bht_ipdp_vghr": [
+    "output",
+    "[21:0]"
+  ],
+  "bht_lbuf_pre_ntaken_result": [
+    "output",
+    "[31:0]"
+  ],
+  "bht_lbuf_pre_taken_result": [
+    "output",
+    "[31:0]"
+  ],
+  "bht_lbuf_vghr": [
+    "output",
+    "[21:0]"
+  ],
+  "ras_top_valid": [
+    "output",
+    ""
+  ],
+  "cp0_ifu_ras_en": [
+    "input",
+    ""
+  ],
+  "cp0_yy_priv_mode": [
+    "input",
+    "[1:0]"
+  ],
+  "ibctrl_ras_inst_pcall": [
+    "input",
+    ""
+  ],
+  "ibctrl_ras_pcall_vld": [
+    "input",
+    ""
+  ],
+  "ibctrl_ras_pcall_vld_for_gateclk": [
+    "input",
+    ""
+  ],
+  "ibctrl_ras_preturn_vld": [
+    "input",
+    ""
+  ],
+  "ibctrl_ras_preturn_vld_for_gateclk": [
+    "input",
+    ""
+  ],
+  "ibdp_ras_push_pc": [
+    "input",
+    "[31:0]"
+  ],
+  "rtu_ifu_retire0_inc_pc": [
+    "input",
+    "[31:0]"
+  ],
+  "rtu_ifu_retire0_mispred": [
+    "input",
+    ""
+  ],
+  "rtu_ifu_retire0_pcall": [
+    "input",
+    ""
+  ],
+  "rtu_ifu_retire0_preturn": [
+    "input",
+    ""
+  ],
+  "ras_ipdp_data_vld": [
+    "output",
+    ""
+  ],
+  "ras_ipdp_pc": [
+    "output",
+    "[31:0]"
+  ],
+  "ras_l0_btb_pc": [
+    "output",
+    "[31:0]"
+  ],
+  "ras_l0_btb_push_pc": [
+    "output",
+    "[31:0]"
+  ],
+  "ras_l0_btb_ras_push": [
+    "output",
+    ""
+  ],
+  "ind_result_vld": [
+    "output",
+    ""
+  ],
+  "cp0_ifu_ind_btb_en": [
+    "input",
+    ""
+  ],
+  "ibctrl_ind_btb_check_vld": [
+    "input",
+    ""
+  ],
+  "ibctrl_ind_btb_fifo_stall": [
+    "input",
+    ""
+  ],
+  "ipctrl_ind_btb_con_br_vld": [
+    "input",
+    ""
+  ],
+  "ipdp_ind_btb_jmp_detect": [
+    "input",
+    ""
+  ],
+  "rtu_ifu_retire0_chk_idx": [
+    "input",
+    "[ 7:0]"
+  ],
+  "rtu_ifu_retire0_jmp": [
+    "input",
+    ""
+  ],
+  "rtu_ifu_retire0_jmp_mispred": [
+    "input",
+    ""
+  ],
+  "rtu_ifu_retire0_next_pc": [
+    "input",
+    "[31:0]"
+  ],
+  "rtu_ifu_retire1_chk_idx": [
+    "input",
+    "[ 7:0]"
+  ],
+  "rtu_ifu_retire1_jmp": [
+    "input",
+    ""
+  ],
+  "rtu_ifu_retire2_chk_idx": [
+    "input",
+    "[ 7:0]"
+  ],
+  "rtu_ifu_retire2_jmp": [
+    "input",
+    ""
+  ],
+  "ind_btb_ibctrl_dout": [
+    "output",
+    "[34:0]"
+  ],
+  "ind_btb_ibctrl_priv_mode": [
+    "output",
+    "[ 1:0]"
+  ],
+  "cp0_ifu_btb_en": [
+    "input",
+    ""
+  ],
+  "btb_lookup_vld": [
+    "input",
+    ""
+  ],
+  "btb_lookup_ready": [
+    "output",
+    ""
+  ],
+  "btb_lookup_pc": [
+    "input",
+    "[31:0]"
+  ],
+  "btb_result_vld": [
+    "output",
+    ""
+  ],
+  "btb_hit": [
+    "output",
+    "[3:0]"
+  ],
+  "btb_target": [
+    "output",
+    "[127:0]"
+  ],
+  "btb_way_hint": [
+    "output",
+    "[7:0]"
+  ],
+  "btb_update_vld": [
+    "input",
+    ""
+  ],
+  "btb_update_ready": [
+    "output",
+    ""
+  ],
+  "btb_update_pc": [
+    "input",
+    "[31:0]"
+  ],
+  "btb_update_target": [
+    "input",
+    "[31:0]"
+  ],
+  "btb_update_way": [
+    "input",
+    "[1:0]"
+  ],
+  "btb_if_vld": [
+    "output",
+    ""
+  ],
+  "btb_if_pc": [
+    "output",
+    "[31:0]"
+  ],
+  "btb_if_hit": [
+    "output",
+    "[3:0]"
+  ],
+  "btb_if_target": [
+    "output",
+    "[127:0]"
+  ],
+  "btb_if_way_hint": [
+    "output",
+    "[7:0]"
+  ],
+  "cp0_ifu_l0btb_en": [
+    "input",
+    ""
+  ],
+  "l0_lookup_vld": [
+    "input",
+    ""
+  ],
+  "l0_lookup_pc": [
+    "input",
+    "[31:0]"
+  ],
+  "l0_hit": [
+    "output",
+    ""
+  ],
+  "l0_hit_index": [
+    "output",
+    "[3:0]"
+  ],
+  "l0_hit_slot": [
+    "output",
+    "[1:0]"
+  ],
+  "l0_hit_type": [
+    "output",
+    "[2:0]"
+  ],
+  "l0_target": [
+    "output",
+    "[31:0]"
+  ],
+  "l0_way_hint": [
+    "output",
+    "[1:0]"
+  ],
+  "l0_update_vld": [
+    "input",
+    ""
+  ],
+  "l0_update_pc": [
+    "input",
+    "[31:0]"
+  ],
+  "l0_update_target": [
+    "input",
+    "[31:0]"
+  ],
+  "l0_update_type": [
+    "input",
+    "[2:0]"
+  ],
+  "l0_update_taken": [
+    "input",
+    ""
+  ],
+  "l0_update_ras": [
+    "input",
+    ""
+  ],
+  "l0_update_way": [
+    "input",
+    "[1:0]"
+  ],
+  "l0_directed_inv_vld": [
+    "input",
+    ""
+  ],
+  "l0_directed_inv_mask": [
+    "input",
+    "[15:0]"
+  ],
+  "bht_pred": [
+    "output",
+    ""
+  ],
+  "bht_chk_idx": [
+    "output",
+    "[24:0]"
+  ],
+  "ind_target_valid": [
+    "output",
+    ""
+  ],
+  "ind_target": [
+    "output",
+    "[31:0]"
+  ]
+}

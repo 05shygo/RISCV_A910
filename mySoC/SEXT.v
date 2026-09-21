@@ -33,6 +33,9 @@ always @(*) begin
         `Sext_B: sext = {{20{din[24]}}, din[0], din[23:18], din[4:1], {1'b0}};
         `Sext_U: sext = {din[24:5], 12'b0};
         `Sext_J: sext = {{12{din[24]}}, din[12:5], din[13], din[23:14], {1'b0}};
+        // csrrwi / csrrsi / csrrci 的 5 位零扩展立即数 uimm5 位于 rs1 域,
+        // 即 inst[19:15]. 本模块 din = inst[31:7], 所以 inst[19:15] = din[12:8].
+        `Sext_Z: sext = {{27{1'b0}}, din[12:8]};
         default: sext = 0;
     endcase 
 end

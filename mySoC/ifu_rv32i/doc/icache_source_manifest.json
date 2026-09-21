@@ -1,0 +1,73 @@
+[
+  {
+    "source": "ifu\\rtl\\ct_ifu_icache_tag_array.v",
+    "source_sha256": "c094545d84ce8bd844793e2123a0626da48ae128327fc94dfb29b458aefa564b",
+    "output": "rtl/rv32_ifu_icache_tag_array.v",
+    "private_names": {
+      "x_tag_clk": "u_tag_clk",
+      "x_ct_spsram_512x59": "u_ct_spsram_512x59"
+    }
+  },
+  {
+    "source": "ifu\\rtl\\ct_ifu_icache_data_array0.v",
+    "source_sha256": "842613ac965c73de6990e96567da35b46d3b221c53c8ed9dab2a51ced2364890",
+    "output": "rtl/rv32_ifu_icache_data_array0.v",
+    "private_names": {
+      "x_data_bank0_clk": "u_data_bank0_clk",
+      "x_data_bank1_clk": "u_data_bank1_clk",
+      "x_data_bank2_clk": "u_data_bank2_clk",
+      "x_data_bank3_clk": "u_data_bank3_clk",
+      "x_ct_spsram_2048x32_bank0": "u_ct_spsram_2048x32_bank0",
+      "x_ct_spsram_2048x32_bank1": "u_ct_spsram_2048x32_bank1",
+      "x_ct_spsram_2048x32_bank2": "u_ct_spsram_2048x32_bank2",
+      "x_ct_spsram_2048x32_bank3": "u_ct_spsram_2048x32_bank3"
+    }
+  },
+  {
+    "source": "ifu\\rtl\\ct_ifu_icache_data_array1.v",
+    "source_sha256": "359cc1fd57943aed281b2095758785c86aacddfcff4da43adaefc602234fa985",
+    "output": "rtl/rv32_ifu_icache_data_array1.v",
+    "private_names": {
+      "x_data_bank0_clk": "u_data_bank0_clk",
+      "x_data_bank1_clk": "u_data_bank1_clk",
+      "x_data_bank2_clk": "u_data_bank2_clk",
+      "x_data_bank3_clk": "u_data_bank3_clk",
+      "x_ct_spsram_2048x32_bank0": "u_ct_spsram_2048x32_bank0",
+      "x_ct_spsram_2048x32_bank1": "u_ct_spsram_2048x32_bank1",
+      "x_ct_spsram_2048x32_bank2": "u_ct_spsram_2048x32_bank2",
+      "x_ct_spsram_2048x32_bank3": "u_ct_spsram_2048x32_bank3"
+    }
+  },
+  {
+    "source": "ifu\\rtl\\ct_ifu_icache_predecd_array0.v",
+    "source_sha256": "f1109ebe7f816115ac18b2333bcf107931d9f5a15fff955beb3a80952e4d12d4",
+    "output": "rtl/rv32_ifu_icache_predecd_array0.v",
+    "private_names": {
+      "x_predecd_clk": "u_predecd_clk",
+      "x_ct_spsram_2048x32_split": "u_ct_spsram_2048x32_split"
+    }
+  },
+  {
+    "source": "ifu\\rtl\\ct_ifu_icache_predecd_array1.v",
+    "source_sha256": "b68afcd3efbd6fa5397c8a96551da1c361e2f53950954bff4e3d3deaa36df174",
+    "output": "rtl/rv32_ifu_icache_predecd_array1.v",
+    "private_names": {
+      "x_predecd_clk": "u_predecd_clk",
+      "x_ct_spsram_2048x32_split": "u_ct_spsram_2048x32_split"
+    }
+  },
+  {
+    "source": "ifu\\rtl\\ct_ifu_icache_if.v",
+    "source_sha256": "0683ba185db513af5ca81d4c92a7116a09e1234f1d62e81c59668c8fa2474b59",
+    "output": "rtl/rv32_ifu_icache_if.v",
+    "private_names": {
+      "icache_index_higher": "icache_index_higher",
+      "ifu_hpcp_icache_access_reg": "event_q[0]",
+      "ifu_hpcp_icache_miss_reg": "event_q[1]",
+      "x_rv32_ifu_icache_data_array0": "g_way[0].u_data_array",
+      "x_rv32_ifu_icache_data_array1": "g_way[1].u_data_array",
+      "x_rv32_ifu_icache_predecd_array0": "g_way[0].u_precode_array",
+      "x_rv32_ifu_icache_predecd_array1": "g_way[1].u_precode_array"
+    }
+  }
+]

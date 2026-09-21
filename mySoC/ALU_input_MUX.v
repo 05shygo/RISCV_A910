@@ -43,6 +43,7 @@ always @(*) begin
     case (alub_sel) 
         `ALUB_SEL_RD2: B = rD2;
         `ALUB_SEL_SEXT: B = sext;
+        `ALUB_SEL_ZERO: B = 32'b0;   // csrr* 让 A 口原样穿过 ALU 写回 rd
         default:B=0;
     endcase
 end

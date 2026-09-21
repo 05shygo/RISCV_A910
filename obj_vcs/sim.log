@@ -1,124 +1,25 @@
-Command: /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv +vcs+lic+wait +WAVE=div_test +MAX_CYCLES=50000 -l /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/sim.log
+Command: /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/simv +vcs+lic+wait +WAVE=waves +MAX_CYCLES=15000000 -exitstatus -l /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/obj_vcs/sim.log
 Chronologic VCS simulator copyright 1991-2023
 Contains Synopsys proprietary information.
-Compiler version V-2023.12-SP2_Full64; Runtime version V-2023.12-SP2_Full64;  Sep 21 19:59 2026
+Compiler version V-2023.12-SP2_Full64; Runtime version V-2023.12-SP2_Full64;  Sep 21 23:48 2026
 [INFO] Instruction ROM initialized with /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/meminit.bin
+[INFO] Data RAM initialized with /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/meminit.bin
 *Verdi* WARNING: 'Enable FSDB dumping with option -debug/-debug_pp/-debug_all and option -P along with novas.tab file' will be deprecated in VERDI2024.09.
 *Verdi* WARNING: Please use '-debug_access' along with a proper setting on VERDI_HOME environment variable in vcs compilation. For details, please refer to VCS manual for -debug_access usage.
 *Verdi* Loading libsscore_vcs202312.so
 FSDB Dumper for VCS, Release Verdi_V-2023.12-SP2, Linux x86_64/64bit, 05/26/2024
 (C) 1996 - 2024 by Synopsys, Inc.
-*Verdi* : Create FSDB file 'waveform/div_test.fsdb'
+*Verdi* FSDB WARNING: The FSDB file already exists. Overwriting the FSDB file may crash the programs that are using this file.
+*Verdi* : Create FSDB file 'waveform/waves.fsdb'
 *Verdi* : Begin traversing the scope (tb_miniRV_dpi), layer (0).
 *Verdi* : End of traversing.
-[INFO] Data RAM initialized with /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/meminit.bin
 [mycpu] Reset done.
 [difftest] Test Start!
-[difftest] WARNING: Mismatch detected but ignored for RV32M testing
-  Reference PC=0x00000000, DUT PC=0x00000000
-  Reference reg[0]=0x00000000, DUT reg[0]=0x00000004
-[difftest] WARNING: Mismatch detected but ignored for RV32M testing
-  Reference PC=0x00000004, DUT PC=0x00000004
-  Reference reg[5]=0x00000000, DUT reg[5]=0x00000064
-[difftest] WARNING: Mismatch detected but ignored for RV32M testing
-  Reference PC=0x00000008, DUT PC=0x00000008
-  Reference reg[6]=0x00000000, DUT reg[6]=0x00000007
-[difftest] WARNING: Mismatch detected but ignored for RV32M testing
-  Reference PC=0x00000008, DUT PC=0x00000008
-  Reference reg[6]=0x00000000, DUT reg[6]=0x00000007
-[difftest] WARNING: Mismatch detected but ignored for RV32M testing
-  Reference PC=0x00000010, DUT PC=0x00000010
-  Reference reg[0]=0x00000000, DUT reg[0]=0x0000000e
-[difftest] WARNING: Mismatch detected but ignored for RV32M testing
-  Reference PC=0x00000010, DUT PC=0x00000010
-  Reference reg[8]=0x00000000, DUT reg[8]=0x0000000e
-[difftest] WARNING: Mismatch detected but ignored for RV32M testing
-  Reference PC=0x00000014, DUT PC=0x00000014
-  Reference reg[12]=0x00000000, DUT reg[12]=0x0000000e
-[difftest] WARNING: Mismatch detected but ignored for RV32M testing
-  Reference PC=0x00000018, DUT PC=0x00000018
-  Reference reg[10]=0x00000000, DUT reg[10]=0x00000001
-[difftest] WARNING: Mismatch detected but ignored for RV32M testing
-  Reference PC=0x0000001c, DUT PC=0x0000001c
-  Reference reg[0]=0x00000000, DUT reg[0]=0x00000020
-[difftest] WARNING: Mismatch detected but ignored for RV32M testing
-  Reference PC=0x00000024, DUT PC=0x00000024
-  Reference reg[17]=0x00000000, DUT reg[17]=0x0000005d
-[difftest] WARNING: Mismatch detected but ignored for RV32M testing
-  Reference PC=0x00010000, DUT PC=0x00010000
-  Reference reg[0]=0x00000000, DUT reg[0]=0x00010004
-[difftest] WARNING: Mismatch detected but ignored for RV32M testing
-  Reference PC=0x00010004, DUT PC=0x00010004
-  Reference reg[5]=0x00000000, DUT reg[5]=0x00000064
-[difftest] WARNING: Mismatch detected but ignored for RV32M testing
-  Reference PC=0x00010008, DUT PC=0x00010008
-  Reference reg[6]=0x00000000, DUT reg[6]=0x00000007
-[difftest] WARNING: Mismatch detected but ignored for RV32M testing
-  Reference PC=0x00010008, DUT PC=0x00010008
-  Reference reg[6]=0x00000000, DUT reg[6]=0x00000007
-[difftest] WARNING: Mismatch detected but ignored for RV32M testing
-  Reference PC=0x00010010, DUT PC=0x00010010
-  Reference reg[0]=0x00000000, DUT reg[0]=0x0000000e
-[difftest] WARNING: Mismatch detected but ignored for RV32M testing
-  Reference PC=0x00010010, DUT PC=0x00010010
-  Reference reg[8]=0x00000000, DUT reg[8]=0x0000000e
-[difftest] WARNING: Mismatch detected but ignored for RV32M testing
-  Reference PC=0x00010014, DUT PC=0x00010014
-  Reference reg[12]=0x00000000, DUT reg[12]=0x0000000e
-[difftest] WARNING: Mismatch detected but ignored for RV32M testing
-  Reference PC=0x00010018, DUT PC=0x00010018
-  Reference reg[10]=0x00000000, DUT reg[10]=0x00000001
-[difftest] WARNING: Mismatch detected but ignored for RV32M testing
-  Reference PC=0x0001001c, DUT PC=0x0001001c
-  Reference reg[0]=0x00000000, DUT reg[0]=0x00010020
-[difftest] WARNING: Mismatch detected but ignored for RV32M testing
-  Reference PC=0x00010024, DUT PC=0x00010024
-  Reference reg[17]=0x00000000, DUT reg[17]=0x0000005d
-[difftest] WARNING: Mismatch detected but ignored for RV32M testing
-  Reference PC=0x00020000, DUT PC=0x00020000
-  Reference reg[0]=0x00000000, DUT reg[0]=0x00020004
-[difftest] WARNING: Mismatch detected but ignored for RV32M testing
-  Reference PC=0x00020004, DUT PC=0x00020004
-  Reference reg[5]=0x00000000, DUT reg[5]=0x00000064
-[difftest] WARNING: Mismatch detected but ignored for RV32M testing
-  Reference PC=0x00020008, DUT PC=0x00020008
-  Reference reg[6]=0x00000000, DUT reg[6]=0x00000007
-[difftest] WARNING: Mismatch detected but ignored for RV32M testing
-  Reference PC=0x00020008, DUT PC=0x00020008
-  Reference reg[6]=0x00000000, DUT reg[6]=0x00000007
-[difftest] WARNING: Mismatch detected but ignored for RV32M testing
-  Reference PC=0x00020010, DUT PC=0x00020010
-  Reference reg[0]=0x00000000, DUT reg[0]=0x0000000e
-[difftest] WARNING: Mismatch detected but ignored for RV32M testing
-  Reference PC=0x00020010, DUT PC=0x00020010
-  Reference reg[8]=0x00000000, DUT reg[8]=0x0000000e
-[difftest] WARNING: Mismatch detected but ignored for RV32M testing
-  Reference PC=0x00020014, DUT PC=0x00020014
-  Reference reg[12]=0x00000000, DUT reg[12]=0x0000000e
-[difftest] WARNING: Mismatch detected but ignored for RV32M testing
-  Reference PC=0x00020018, DUT PC=0x00020018
-  Reference reg[10]=0x00000000, DUT reg[10]=0x00000001
-[difftest] WARNING: Mismatch detected but ignored for RV32M testing
-  Reference PC=0x0002001c, DUT PC=0x0002001c
-  Reference reg[0]=0x00000000, DUT reg[0]=0x00020020
-[difftest] WARNING: Mismatch detected but ignored for RV32M testing
-  Reference PC=0x00020024, DUT PC=0x00020024
-  Reference reg[17]=0x00000000, DUT reg[17]=0x0000005d
-[difftest] WARNING: Mismatch detected but ignored for RV32M testing
-  Reference PC=0x00030000, DUT PC=0x00030000
-  Reference reg[0]=0x00000000, DUT reg[0]=0x00030004
-[difftest] WARNING: Mismatch detected but ignored for RV32M testing
-  Reference PC=0x00030004, DUT PC=0x00030004
-  Reference reg[5]=0x00000000, DUT reg[5]=0x00000064
-[difftest] WARNING: Mismatch detected but ignored for RV32M testing
-  Reference PC=0x00030008, DUT PC=0x00030008
-  Reference reg[6]=0x00000000, DUT reg[6]=0x00000007
-[difftest] WARNING: Mismatch detected but ignored for RV32M testing
-  Reference PC=0x00030008, DUT PC=0x00030008
-  Reference reg[6]=0x00000000, DUT reg[6]=0x00000007
-[difftest] WARNING: Mismatch detected but ignored for RV32M testing
-  Reference PC=0x00030010, DUT PC=0x00030010
-  Reference reg[0]=0x00000000, DUT reg[0]=0x0000000e
-[difftest] WARNING: Mismatch detected but ignored for RV32M testing
-  Reference PC=0x00030010, DUT PC=0x00030010
-  Reference reg[8]=0x00000000, DUT reg[8]=0x0000000e
+[difftest] Test finished at cycle 11056374
+Test Point Pass!
+$finish called from file "/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/tb/tb_miniRV_dpi.sv", line 157.
+$finish at simulation time         110563745000
+           V C S   S i m u l a t i o n   R e p o r t 
+Time: 110563745000 ps
+CPU Time:     96.130 seconds;       Data structure size:  32.0Mb
+Mon Sep 21 23:49:12 2026

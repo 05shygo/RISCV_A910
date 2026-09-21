@@ -17,7 +17,7 @@ cd /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests
 echo "----------------------------------------"
 echo "Test 1: MUL (10 × 7 = 70)"
 echo "----------------------------------------"
-make -f Makefile.vcs run TEST=mul MAX_CYCLES=1000 WAVE=mul_test 2>&1 | tee test_mul.log
+make run TEST=mul MAX_CYCLES=1000 WAVE=mul_test 2>&1 | tee test_mul.log
 
 if grep -q "Test Point Pass" test_mul.log || grep -q "ECALL.*0x00000024" test_mul.log; then
     echo -e "${GREEN}✓ MUL test completed${NC}"
@@ -34,7 +34,7 @@ echo ""
 echo "----------------------------------------"
 echo "Test 2: DIV (100 ÷ 7 = 14)"
 echo "----------------------------------------"
-make -f Makefile.vcs run TEST=div MAX_CYCLES=50000 WAVE=div_test 2>&1 | tee test_div.log
+make run TEST=div MAX_CYCLES=50000 WAVE=div_test 2>&1 | tee test_div.log
 
 if grep -q "Test Point Pass" test_div.log || grep -q "ECALL.*0x00000024" test_div.log; then
     echo -e "${GREEN}✓ DIV test completed${NC}"
@@ -61,8 +61,8 @@ echo "  - waveform/mul_test.fsdb"
 echo "  - waveform/div_test.fsdb"
 echo ""
 echo "To view waveforms:"
-echo "  make -f Makefile.vcs verdi WAVE=mul_test"
-echo "  make -f Makefile.vcs verdi WAVE=div_test"
+echo "  make verdi WAVE=mul_test"
+echo "  make verdi WAVE=div_test"
 echo ""
 echo "Key signals to check in waveform:"
 echo "  - dut.Core_cpu.U_MUL_DIV.valid_i"

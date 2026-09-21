@@ -1,0 +1,4118 @@
+--- ../ifu/rtl/ct_ifu_ifctrl.v
++++ rtl/rv32_ifu_ifctrl.v
+@@ -13,1384 +13,235 @@
+ limitations under the License.
+ */
+ 
+-// &ModuleBeg; @22
+-module ct_ifu_ifctrl(
+-  bht_ifctrl_inv_done,
+-  bht_ifctrl_inv_on,
+-  btb_ifctrl_inv_done,
+-  btb_ifctrl_inv_on,
+-  cp0_ifu_bht_inv,
+-  cp0_ifu_btb_inv,
+-  cp0_ifu_icache_inv,
+-  cp0_ifu_icache_read_index,
+-  cp0_ifu_icache_read_req,
+-  cp0_ifu_icache_read_tag,
+-  cp0_ifu_icache_read_way,
+-  cp0_ifu_icg_en,
+-  cp0_ifu_ind_btb_inv,
+-  cp0_ifu_no_op_req,
+-  cp0_yy_clk_en,
+-  cpurst_b,
+-  forever_cpuclk,
+-  hpcp_ifu_cnt_en,
+-  icache_if_ifctrl_inst_data0,
+-  icache_if_ifctrl_inst_data1,
+-  icache_if_ifctrl_tag_data0,
+-  icache_if_ifctrl_tag_data1,
+-  ifctrl_bht_inv,
+-  ifctrl_bht_pipedown,
+-  ifctrl_bht_stall,
+-  ifctrl_btb_inv,
+-  ifctrl_debug_if_pc_vld,
+-  ifctrl_debug_if_stall,
+-  ifctrl_debug_if_vld,
+-  ifctrl_debug_inv_st,
+-  ifctrl_debug_lsu_all_inv,
+-  ifctrl_debug_lsu_line_inv,
+-  ifctrl_debug_mmu_pavld,
+-  ifctrl_debug_way_pred_stall,
+-  ifctrl_icache_if_index,
+-  ifctrl_icache_if_inv_fifo,
+-  ifctrl_icache_if_inv_on,
+-  ifctrl_icache_if_read_req_data0,
+-  ifctrl_icache_if_read_req_data1,
+-  ifctrl_icache_if_read_req_index,
+-  ifctrl_icache_if_read_req_tag,
+-  ifctrl_icache_if_reset_req,
+-  ifctrl_icache_if_tag_req,
+-  ifctrl_icache_if_tag_wen,
+-  ifctrl_ifdp_cancel,
+-  ifctrl_ifdp_pipedown,
+-  ifctrl_ifdp_stall,
+-  ifctrl_ind_btb_inv,
+-  ifctrl_ipb_inv_on,
+-  ifctrl_ipctrl_if_pcload,
+-  ifctrl_ipctrl_vld,
+-  ifctrl_l0_btb_inv,
+-  ifctrl_l0_btb_stall,
+-  ifctrl_l1_refill_ins_inv,
+-  ifctrl_l1_refill_ins_inv_dn,
+-  ifctrl_l1_refill_inv_busy,
+-  ifctrl_l1_refill_inv_on,
+-  ifctrl_lbuf_ins_inv_on,
+-  ifctrl_lbuf_inv_req,
+-  ifctrl_pcgen_chgflw_no_stall_mask,
+-  ifctrl_pcgen_chgflw_vld,
+-  ifctrl_pcgen_ins_icache_inv_done,
+-  ifctrl_pcgen_pcload_pc,
+-  ifctrl_pcgen_reissue_pcload,
+-  ifctrl_pcgen_stall,
+-  ifctrl_pcgen_stall_short,
+-  ifctrl_pcgen_way_pred,
+-  ifu_cp0_bht_inv_done,
+-  ifu_cp0_btb_inv_done,
+-  ifu_cp0_icache_inv_done,
+-  ifu_cp0_icache_read_data,
+-  ifu_cp0_icache_read_data_vld,
+-  ifu_cp0_ind_btb_inv_done,
+-  ifu_had_no_op,
+-  ifu_hpcp_frontend_stall,
+-  ifu_lsu_icache_inv_done,
+-  ifu_no_op_req,
+-  ifu_yy_xx_no_op,
+-  ind_btb_ifctrl_inv_done,
+-  ind_btb_ifctrl_inv_on,
+-  ipb_ifctrl_prefetch_idle,
+-  ipctrl_ifctrl_bht_stall,
+-  ipctrl_ifctrl_stall,
+-  ipctrl_ifctrl_stall_short,
+-  l0_btb_ifctrl_chgflw_pc,
+-  l0_btb_ifctrl_chgflw_way_pred,
+-  l0_btb_ifctrl_chglfw_vld,
+-  l1_refill_ifctrl_ctc,
+-  l1_refill_ifctrl_idle,
+-  l1_refill_ifctrl_pc,
+-  l1_refill_ifctrl_refill_on,
+-  l1_refill_ifctrl_reissue,
+-  l1_refill_ifctrl_start,
+-  l1_refill_ifctrl_start_for_gateclk,
+-  l1_refill_ifctrl_trans_cmplt,
+-  l1_refill_inv_wfd_back,
+-  lsu_ifu_icache_all_inv,
+-  lsu_ifu_icache_index,
+-  lsu_ifu_icache_line_inv,
+-  lsu_ifu_icache_ptag,
+-  mmu_ifu_pavld,
+-  pad_yy_icg_scan_en,
+-  pcgen_ifctrl_cancel,
+-  pcgen_ifctrl_pc,
+-  pcgen_ifctrl_pipe_cancel,
+-  pcgen_ifctrl_reissue,
+-  pcgen_ifctrl_way_pred,
+-  pcgen_ifctrl_way_pred_stall,
+-  rtu_ifu_xx_dbgon,
+-  vector_ifctrl_reset_on,
+-  vector_ifctrl_sm_on,
+-  vector_ifctrl_sm_start
++// SPDX-License-Identifier: Apache-2.0
++// RV32I adaptation of the stage control in T-Head ct_ifu_ifctrl.v (2019-2021).
++// Cache arrays have no independent fetch/miss scheduler in this pipeline.
++// Coding style : CCI500-style Verilog-2001 (see doc/coding_style_zh.md)
++//------------------------------------------------------------------------------
++// Module Declaration
++//------------------------------------------------------------------------------
++module rv32_ifu_ifctrl (
++  input  wire        forever_cpuclk,
++  input  wire        cpurst_b,
++  input  wire        cp0_yy_clk_en,
++  input  wire        cp0_ifu_no_op_req,
++  input  wire        cp0_ifu_icache_en,
++  input  wire        cp0_ifu_btb_en,
++  input  wire        hpcp_ifu_cnt_en,
++  input  wire        rtu_ifu_dbgon,
++  input  wire        frontend_init_done,
++  input  wire        maintenance_busy,
++  input  wire        lbuf_ifctrl_active,
++  // Accepted redirect ABOVE IF L0/reissue; never connect pcgen_ifctrl_cancel here.
++  input  wire        frontend_redirect,
++  input  wire        pcgen_ifctrl_pipe_cancel,
++  input  wire        pcgen_ifctrl_reissue,
++  input  wire        control_ifctrl_reissue,
++  input  wire [31:0] pcgen_ifctrl_pc,
++  input  wire [31:0] pcgen_icache_if_index,
++  input  wire [ 1:0] pcgen_icache_if_way_pred,
++  input  wire [ 4:0] region_ifctrl_attr,
++  input  wire        ipctrl_ifctrl_stall,
++  input  wire        ipctrl_ifctrl_bht_stall,
++  input  wire        btb_ifctrl_ready,
++  // Persistent owner requests. Only grant permits an array access.
++  input  wire        maintenance_array_req,
++  input  wire        refill_array_req,
++  input  wire        ipb_array_req,
++  output wire [ 3:0] ifctrl_array_grant,
++  output wire        ifctrl_maintenance_grant,
++  output wire        ifctrl_refill_grant,
++  output wire        ifctrl_ipb_grant,
++  output wire        ifctrl_array_fetch,
++  output wire [31:0] ifctrl_array_pc,
++  output wire [ 1:0] ifctrl_array_way,
++  // A live critical-block response is held by refill until ready, independent
++  // of refill writes. An old transaction with the same PC is NOT live.
++  input  wire        l1_refill_ifctrl_active,
++  input  wire        l1_refill_ifctrl_live,
++  input  wire        l1_refill_ifctrl_vld,
++  input  wire [31:0] l1_refill_ifctrl_pc,
++  output wire        ifctrl_l1_refill_ready,
++  output wire        ifctrl_l1_refill_cancel,
++  // IFDP presents either the current SRAM response or its saved copy.
++  input  wire        ifdp_ifctrl_fault,
++  input  wire        ifdp_ifctrl_l0_vld,
++  input  wire [31:0] ifdp_ifctrl_l0_target,
++  input  wire [ 1:0] ifdp_ifctrl_l0_way,
++  output wire        ifctrl_ifdp_issue,
++  output wire [31:0] ifctrl_ifdp_issue_pc,
++  output wire [ 1:0] ifctrl_ifdp_issue_way,
++  output wire [ 1:0] ifctrl_ifdp_issue_kind,
++  output wire        ifctrl_ifdp_hold,
++  output wire        ifctrl_ifdp_held,
++  output wire        ifctrl_ifdp_pipedown,
++  output wire        ifctrl_ifdp_l0_accept,
++  output wire        ifctrl_ipctrl_vld,
++  output wire        ifctrl_ipctrl_if_pcload,
++  output wire        ifctrl_pcgen_stall,
++  output wire        ifctrl_pcgen_stall_short,
++  output wire        ifctrl_pcgen_reissue_pcload,
++  output wire        ifctrl_pcgen_chgflw_vld,
++  output wire        ifctrl_pcgen_chgflw_no_stall_mask,
++  output wire [31:0] ifctrl_pcgen_pcload_pc,
++  output wire [ 1:0] ifctrl_pcgen_way_pred,
++  output wire        ifctrl_btb_lookup_vld,
++  output wire [31:0] ifctrl_btb_lookup_pc,
++  output wire        ifctrl_bht_read,
++  output wire [ 9:0] ifctrl_bht_pcindex,
++  output wire        ifctrl_bht_pipedown,
++  output wire        ifctrl_bht_stall,
++  output wire        ifctrl_l0_btb_lookup_vld,
++  output wire        ifctrl_l0_btb_accept,
++  output wire        ifctrl_debug_if_vld,
++  output wire        ifctrl_debug_if_stall,
++  output wire        ifctrl_idle,
++  output wire        ifu_hpcp_frontend_stall
+ );
+-
+-// &Ports; @23
+-input            bht_ifctrl_inv_done;               
+-input            bht_ifctrl_inv_on;                 
+-input            btb_ifctrl_inv_done;               
+-input            btb_ifctrl_inv_on;                 
+-input            cp0_ifu_bht_inv;                   
+-input            cp0_ifu_btb_inv;                   
+-input            cp0_ifu_icache_inv;                
+-input   [16 :0]  cp0_ifu_icache_read_index;         
+-input            cp0_ifu_icache_read_req;           
+-input            cp0_ifu_icache_read_tag;           
+-input            cp0_ifu_icache_read_way;           
+-input            cp0_ifu_icg_en;                    
+-input            cp0_ifu_ind_btb_inv;               
+-input            cp0_ifu_no_op_req;                 
+-input            cp0_yy_clk_en;                     
+-input            cpurst_b;                          
+-input            forever_cpuclk;                    
+-input            hpcp_ifu_cnt_en;                   
+-input   [127:0]  icache_if_ifctrl_inst_data0;       
+-input   [127:0]  icache_if_ifctrl_inst_data1;       
+-input   [28 :0]  icache_if_ifctrl_tag_data0;        
+-input   [28 :0]  icache_if_ifctrl_tag_data1;        
+-input            ind_btb_ifctrl_inv_done;           
+-input            ind_btb_ifctrl_inv_on;             
+-input            ipb_ifctrl_prefetch_idle;          
+-input            ipctrl_ifctrl_bht_stall;           
+-input            ipctrl_ifctrl_stall;               
+-input            ipctrl_ifctrl_stall_short;         
+-input   [38 :0]  l0_btb_ifctrl_chgflw_pc;           
+-input   [1  :0]  l0_btb_ifctrl_chgflw_way_pred;     
+-input            l0_btb_ifctrl_chglfw_vld;          
+-input            l1_refill_ifctrl_ctc;              
+-input            l1_refill_ifctrl_idle;             
+-input   [38 :0]  l1_refill_ifctrl_pc;               
+-input            l1_refill_ifctrl_refill_on;        
+-input            l1_refill_ifctrl_reissue;          
+-input            l1_refill_ifctrl_start;            
+-input            l1_refill_ifctrl_start_for_gateclk; 
+-input            l1_refill_ifctrl_trans_cmplt;      
+-input            l1_refill_inv_wfd_back;            
+-input            lsu_ifu_icache_all_inv;            
+-input   [5  :0]  lsu_ifu_icache_index;              
+-input            lsu_ifu_icache_line_inv;           
+-input   [27 :0]  lsu_ifu_icache_ptag;               
+-input            mmu_ifu_pavld;                     
+-input            pad_yy_icg_scan_en;                
+-input            pcgen_ifctrl_cancel;               
+-input   [38 :0]  pcgen_ifctrl_pc;                   
+-input            pcgen_ifctrl_pipe_cancel;          
+-input            pcgen_ifctrl_reissue;              
+-input   [1  :0]  pcgen_ifctrl_way_pred;             
+-input            pcgen_ifctrl_way_pred_stall;       
+-input            rtu_ifu_xx_dbgon;                  
+-input            vector_ifctrl_reset_on;            
+-input            vector_ifctrl_sm_on;               
+-input            vector_ifctrl_sm_start;            
+-output           ifctrl_bht_inv;                    
+-output           ifctrl_bht_pipedown;               
+-output           ifctrl_bht_stall;                  
+-output           ifctrl_btb_inv;                    
+-output           ifctrl_debug_if_pc_vld;            
+-output           ifctrl_debug_if_stall;             
+-output           ifctrl_debug_if_vld;               
+-output  [3  :0]  ifctrl_debug_inv_st;               
+-output           ifctrl_debug_lsu_all_inv;          
+-output           ifctrl_debug_lsu_line_inv;         
+-output           ifctrl_debug_mmu_pavld;            
+-output           ifctrl_debug_way_pred_stall;       
+-output  [38 :0]  ifctrl_icache_if_index;            
+-output           ifctrl_icache_if_inv_fifo;         
+-output           ifctrl_icache_if_inv_on;           
+-output           ifctrl_icache_if_read_req_data0;   
+-output           ifctrl_icache_if_read_req_data1;   
+-output  [38 :0]  ifctrl_icache_if_read_req_index;   
+-output           ifctrl_icache_if_read_req_tag;     
+-output           ifctrl_icache_if_reset_req;        
+-output           ifctrl_icache_if_tag_req;          
+-output  [2  :0]  ifctrl_icache_if_tag_wen;          
+-output           ifctrl_ifdp_cancel;                
+-output           ifctrl_ifdp_pipedown;              
+-output           ifctrl_ifdp_stall;                 
+-output           ifctrl_ind_btb_inv;                
+-output           ifctrl_ipb_inv_on;                 
+-output           ifctrl_ipctrl_if_pcload;           
+-output           ifctrl_ipctrl_vld;                 
+-output           ifctrl_l0_btb_inv;                 
+-output           ifctrl_l0_btb_stall;               
+-output           ifctrl_l1_refill_ins_inv;          
+-output           ifctrl_l1_refill_ins_inv_dn;       
+-output           ifctrl_l1_refill_inv_busy;         
+-output           ifctrl_l1_refill_inv_on;           
+-output           ifctrl_lbuf_ins_inv_on;            
+-output           ifctrl_lbuf_inv_req;               
+-output           ifctrl_pcgen_chgflw_no_stall_mask; 
+-output           ifctrl_pcgen_chgflw_vld;           
+-output           ifctrl_pcgen_ins_icache_inv_done;  
+-output  [38 :0]  ifctrl_pcgen_pcload_pc;            
+-output           ifctrl_pcgen_reissue_pcload;       
+-output           ifctrl_pcgen_stall;                
+-output           ifctrl_pcgen_stall_short;          
+-output  [1  :0]  ifctrl_pcgen_way_pred;             
+-output           ifu_cp0_bht_inv_done;              
+-output           ifu_cp0_btb_inv_done;              
+-output           ifu_cp0_icache_inv_done;           
+-output  [127:0]  ifu_cp0_icache_read_data;          
+-output           ifu_cp0_icache_read_data_vld;      
+-output           ifu_cp0_ind_btb_inv_done;          
+-output           ifu_had_no_op;                     
+-output           ifu_hpcp_frontend_stall;           
+-output           ifu_lsu_icache_inv_done;           
+-output           ifu_no_op_req;                     
+-output           ifu_yy_xx_no_op;                   
+-
+-// &Regs; @24
+-reg     [4  :0]  addr_inv_count_reg;                
+-reg              bht_inv_dn_ff;                     
+-reg              bht_inv_ff;                        
+-reg              btb_inv_dn_ff;                     
+-reg              btb_inv_ff;                        
+-reg     [127:0]  icache_if_ifctrl_inst_data0_reg;   
+-reg     [127:0]  icache_if_ifctrl_inst_data1_reg;   
+-reg     [28 :0]  icache_if_ifctrl_tag_data0_reg;    
+-reg     [28 :0]  icache_if_ifctrl_tag_data1_reg;    
+-reg     [12 :0]  icache_inv_cnt;                    
+-reg     [3  :0]  icache_inv_cur_state;              
+-reg              icache_inv_fifo;                   
+-reg     [3  :0]  icache_inv_next_state;             
+-reg     [2  :0]  icache_inv_tag_wen;                
+-reg              ifctrl_ipctrl_if_pcload;           
+-reg              ifctrl_ipctrl_vld;                 
+-reg              ifctrl_pcgen_reissue_pcload;       
+-reg              ifu_hpcp_frontend_stall;           
+-reg              ifu_no_op_flop;                    
+-reg              ind_btb_inv_dn_ff;                 
+-reg              ind_btb_inv_ff;                    
+-reg     [27 :0]  ins_inv_ptag_flop;                 
+-reg     [1  :0]  tag_cmp_result;                    
+-reg     [28 :0]  tag_data0_reg;                     
+-reg     [28 :0]  tag_data1_reg;                     
+-
+-// &Wires; @25
+-wire             all_inv_req;                       
+-wire             bht_ifctrl_inv_done;               
+-wire             bht_ifctrl_inv_on;                 
+-wire             bht_inv_dn;                        
+-wire             bht_inv_flop_clk;                  
+-wire             bht_inv_flop_clk_en;               
+-wire             bht_inv_on;                        
+-wire             btb_ifctrl_inv_done;               
+-wire             btb_ifctrl_inv_on;                 
+-wire             btb_inv_dn;                        
+-wire             btb_inv_flop_clk;                  
+-wire             btb_inv_flop_clk_en;               
+-wire             btb_inv_on;                        
+-wire             cache_data_flop_clk;               
+-wire             cache_data_flop_clk_en;            
+-wire             cp0_ifu_bht_inv;                   
+-wire             cp0_ifu_btb_inv;                   
+-wire             cp0_ifu_icache_inv;                
+-wire    [16 :0]  cp0_ifu_icache_read_index;         
+-wire             cp0_ifu_icache_read_req;           
+-wire             cp0_ifu_icache_read_tag;           
+-wire             cp0_ifu_icache_read_way;           
+-wire             cp0_ifu_icg_en;                    
+-wire             cp0_ifu_ind_btb_inv;               
+-wire             cp0_ifu_no_op_req;                 
+-wire             cp0_yy_clk_en;                     
+-wire             cpurst_b;                          
+-wire             forever_cpuclk;                    
+-wire             hpcp_clk;                          
+-wire             hpcp_clk_en;                       
+-wire             hpcp_ifu_cnt_en;                   
+-wire             ibp_inv_flop_clk;                  
+-wire             ibp_inv_flop_clk_en;               
+-wire             icache_all_inv;                    
+-wire             icache_all_inv_done;               
+-wire    [127:0]  icache_if_ifctrl_inst_data0;       
+-wire    [127:0]  icache_if_ifctrl_inst_data1;       
+-wire    [28 :0]  icache_if_ifctrl_tag_data0;        
+-wire    [28 :0]  icache_if_ifctrl_tag_data1;        
+-wire             icache_inv_clk;                    
+-wire             icache_inv_clk_en;                 
+-wire             icache_inv_cnt_initial;            
+-wire             icache_inv_cnt_on;                 
+-wire    [12 :0]  icache_inv_cnt_sub;                
+-wire             icache_inv_done;                   
+-wire    [38 :0]  icache_inv_index;                  
+-wire             icache_inv_on;                     
+-wire             icache_inv_over;                   
+-wire             icache_inv_tag_req;                
+-wire             icache_inv_valid;                  
+-wire             icache_line_inv_done;              
+-wire    [38 :0]  icache_line_inv_index;             
+-wire             icache_read;                       
+-wire             icache_read_clk;                   
+-wire             icache_read_clk_en;                
+-wire             icache_read_done;                  
+-wire    [16 :0]  icache_read_index;                 
+-wire             icache_read_pipe_vld;              
+-wire             icache_read_req;                   
+-wire             icache_read_tag;                   
+-wire             icache_read_way;                   
+-wire             icache_refill_on;                  
+-wire             icache_reissue;                    
+-wire             icache_reset_inv_req;              
+-wire             if_cancel;                         
+-wire             if_frontend_stall;                 
+-wire             if_inst_data_vld;                  
+-wire             if_pc_vld;                         
+-wire             if_self_stall;                     
+-wire             if_stage_stall;                    
+-wire             if_vld;                            
+-wire             if_vld_clk;                        
+-wire             if_vld_clk_en;                     
+-wire             if_vld_for_gateclk;                
+-wire             ifctrl_bht_inv;                    
+-wire             ifctrl_bht_pipedown;               
+-wire             ifctrl_bht_stall;                  
+-wire             ifctrl_btb_inv;                    
+-wire             ifctrl_debug_if_pc_vld;            
+-wire             ifctrl_debug_if_stall;             
+-wire             ifctrl_debug_if_vld;               
+-wire    [3  :0]  ifctrl_debug_inv_st;               
+-wire             ifctrl_debug_lsu_all_inv;          
+-wire             ifctrl_debug_lsu_line_inv;         
+-wire             ifctrl_debug_mmu_pavld;            
+-wire             ifctrl_debug_way_pred_stall;       
+-wire    [38 :0]  ifctrl_icache_if_index;            
+-wire             ifctrl_icache_if_inv_fifo;         
+-wire             ifctrl_icache_if_inv_on;           
+-wire             ifctrl_icache_if_read_req_data0;   
+-wire             ifctrl_icache_if_read_req_data1;   
+-wire    [38 :0]  ifctrl_icache_if_read_req_index;   
+-wire             ifctrl_icache_if_read_req_tag;     
+-wire             ifctrl_icache_if_reset_req;        
+-wire             ifctrl_icache_if_tag_req;          
+-wire    [2  :0]  ifctrl_icache_if_tag_wen;          
+-wire             ifctrl_ifdp_cancel;                
+-wire             ifctrl_ifdp_pipedown;              
+-wire             ifctrl_ifdp_stall;                 
+-wire             ifctrl_ind_btb_inv;                
+-wire             ifctrl_ipb_inv_on;                 
+-wire             ifctrl_l0_btb_inv;                 
+-wire             ifctrl_l0_btb_stall;               
+-wire             ifctrl_l1_refill_ins_inv;          
+-wire             ifctrl_l1_refill_ins_inv_dn;       
+-wire             ifctrl_l1_refill_inv_busy;         
+-wire             ifctrl_l1_refill_inv_on;           
+-wire             ifctrl_lbuf_ins_inv_on;            
+-wire             ifctrl_lbuf_inv_req;               
+-wire             ifctrl_pcgen_chgflw_no_stall_mask; 
+-wire             ifctrl_pcgen_chgflw_vld;           
+-wire             ifctrl_pcgen_ins_icache_inv_done;  
+-wire    [38 :0]  ifctrl_pcgen_pcload_pc;            
+-wire             ifctrl_pcgen_stall;                
+-wire             ifctrl_pcgen_stall_short;          
+-wire    [1  :0]  ifctrl_pcgen_way_pred;             
+-wire             ifctrl_pcload;                     
+-wire             ifctrl_reissue_clk;                
+-wire             ifu_cp0_bht_inv_done;              
+-wire             ifu_cp0_btb_inv_done;              
+-wire             ifu_cp0_icache_inv_done;           
+-wire    [127:0]  ifu_cp0_icache_read_data;          
+-wire             ifu_cp0_icache_read_data_vld;      
+-wire             ifu_cp0_ind_btb_inv_done;          
+-wire             ifu_had_no_op;                     
+-wire             ifu_lsu_icache_inv_done;           
+-wire             ifu_no_op;                         
+-wire             ifu_no_op_for_gateclk;             
+-wire             ifu_no_op_req;                     
+-wire             ifu_no_op_updt_clk;                
+-wire             ifu_no_op_updt_clk_en;             
+-wire             ifu_yy_xx_no_op;                   
+-wire             ind_btb_ifctrl_inv_done;           
+-wire             ind_btb_ifctrl_inv_on;             
+-wire             ind_btb_inv_dn;                    
+-wire             ind_btb_inv_on;                    
+-wire             ins_addr_inv_req;                  
+-wire             ins_all_inv_req;                   
+-wire             ins_icache_inv_line_hit;           
+-wire             ins_inv_ptag_flop_clk;             
+-wire             ins_inv_ptag_flop_clk_en;          
+-wire    [1  :0]  ins_tag_cmp;                       
+-wire             ipb_ifctrl_prefetch_idle;          
+-wire             ipctrl_ifctrl_bht_stall;           
+-wire             ipctrl_ifctrl_stall;               
+-wire             ipctrl_ifctrl_stall_short;         
+-wire    [38 :0]  l0_btb_ifctrl_chgflw_pc;           
+-wire    [1  :0]  l0_btb_ifctrl_chgflw_way_pred;     
+-wire             l0_btb_ifctrl_chglfw_vld;          
+-wire             l1_refill_ifctrl_ctc;              
+-wire             l1_refill_ifctrl_idle;             
+-wire    [38 :0]  l1_refill_ifctrl_pc;               
+-wire             l1_refill_ifctrl_refill_on;        
+-wire             l1_refill_ifctrl_reissue;          
+-wire             l1_refill_ifctrl_start;            
+-wire             l1_refill_ifctrl_start_for_gateclk; 
+-wire             l1_refill_ifctrl_trans_cmplt;      
+-wire             l1_refill_inv_wfd_back;            
+-wire             lsu_ifu_icache_all_inv;            
+-wire    [5  :0]  lsu_ifu_icache_index;              
+-wire             lsu_ifu_icache_line_inv;           
+-wire    [27 :0]  lsu_ifu_icache_ptag;               
+-wire             mmu_ifu_pavld;                     
+-wire             pad_yy_icg_scan_en;                
+-wire             pcgen_ifctrl_cancel;               
+-wire    [38 :0]  pcgen_ifctrl_pc;                   
+-wire             pcgen_ifctrl_pipe_cancel;          
+-wire             pcgen_ifctrl_reissue;              
+-wire    [1  :0]  pcgen_ifctrl_way_pred;             
+-wire             pcgen_ifctrl_way_pred_stall;       
+-wire             refill_pc_hit;                     
+-wire             rtu_ifu_xx_dbgon;                  
+-wire             vector_ifctrl_reset_on;            
+-wire             vector_ifctrl_sm_on;               
+-wire             vector_ifctrl_sm_start;            
+-
+-
+-parameter PC_WIDTH = 40;
+-// &Force("bus","pcgen_ifctrl_pc",38,0); @28
+-// &Force("bus","l1_refill_ifctrl_pc",38,0); @29
+-//==========================================================
+-//             No_op Signal for Low Power
+-//==========================================================
+-assign ifu_no_op_req = cp0_ifu_no_op_req;
+-assign ifu_no_op     = l1_refill_ifctrl_idle && 
+-                       !l1_refill_ifctrl_start && 
+-                       ipb_ifctrl_prefetch_idle;
+-assign ifu_no_op_for_gateclk = l1_refill_ifctrl_idle && 
+-                               !l1_refill_ifctrl_start_for_gateclk && 
+-                               ipb_ifctrl_prefetch_idle;
+-
+-//Gate Clk
+-// &Instance("gated_clk_cell","x_ifu_no_op_updt_clk"); @42
+-gated_clk_cell  x_ifu_no_op_updt_clk (
+-  .clk_in                (forever_cpuclk       ),
+-  .clk_out               (ifu_no_op_updt_clk   ),
+-  .external_en           (1'b0                 ),
+-  .global_en             (cp0_yy_clk_en        ),
+-  .local_en              (ifu_no_op_updt_clk_en),
+-  .module_en             (cp0_ifu_icg_en       ),
+-  .pad_yy_icg_scan_en    (pad_yy_icg_scan_en   )
+-);
+-
+-// &Connect( .clk_in         (forever_cpuclk), @43
+-//           .clk_out        (ifu_no_op_updt_clk),//Out Clock @44
+-//           .external_en    (1'b0), @45
+-//           .global_en      (cp0_yy_clk_en), @46
+-//           .local_en       (ifu_no_op_updt_clk_en),//Local Condition @47
+-//           .module_en      (cp0_ifu_icg_en) @48
+-//         ); @49
+-assign ifu_no_op_updt_clk_en = ifu_no_op_flop != ifu_no_op_for_gateclk;
+-
+-always @(posedge ifu_no_op_updt_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-    ifu_no_op_flop <= 1'b0;
+-  else
+-    ifu_no_op_flop <= ifu_no_op;
+-end
+-assign ifu_yy_xx_no_op = ifu_no_op_flop && !l1_refill_ifctrl_start_for_gateclk;
+-//For had use
+-assign ifu_had_no_op = ifu_yy_xx_no_op;
+-// &Force("output","ifu_no_op_req"); @62
+-// &Force("output","ifu_yy_xx_no_op"); @63
+-//==========================================================
+-//             IF Stage Data Valid Signal
+-//==========================================================
+-//IF Stage Data Will Be Valid :
+-//  1.Refill not on : Data from L1 ICache, Data Valid When not way_pred_close
+-//  2.Refill     on : Data from Refill, Data Valid only when trans_cmplt && PC_hit
+-//  Refill on Valid When Enter Refill SM && NOT ask Change Flow,Which Means
+-//  WFD1-WFD4 or REQ 
+-assign if_inst_data_vld = (!l1_refill_ifctrl_refill_on && 
+-                           !(pcgen_ifctrl_way_pred[1:0] == 2'b0) ) || //not way_pred stall
+-                          (l1_refill_ifctrl_refill_on && 
+-                           l1_refill_ifctrl_trans_cmplt && 
+-                           refill_pc_hit);
+-assign refill_pc_hit = (pcgen_ifctrl_pc[PC_WIDTH-2:3] == l1_refill_ifctrl_pc[PC_WIDTH-2:3]);
+-
+-//==========================================================
+-//             IF Stage PC Valid Signal
+-//==========================================================
+-//IF Stage PC Will Be Valid :
+-//  1.MMU Trans success
+-//  2.MMU Trans expt
+-//  3.!ifu_no_op_req(in case of invalid inst fetch affect no_op)
+-assign if_pc_vld       = mmu_ifu_pavld && 
+-                         !ifu_no_op_req;
+-
+-//==========================================================
+-//             IF Stage Cancel Signal
+-//==========================================================
+-assign if_cancel = pcgen_ifctrl_cancel;
+-assign ifctrl_ifdp_cancel = if_cancel;
+-
+-//==========================================================
+-//             IF Stage Self_Stall Signal
+-//==========================================================
+-//IF Stage Self Stall is actually if_pcgen_stall
+-//IF Stage Self Stall will make if stage not valid and stall pcgen
+-//  1.Refill_on && !(trans_cmplt && PC_hit)
+-//  2.!pc_vld, which means MMU is Refilling
+-//  3.l1_icache_inv on
+-//  4.BHT_inv on
+-//  5.BTB_inv on,which contains BTB & Ind-BTB
+-//  6.Vector_SM on
+-//  7.Way Predict = 2'b00, Which Means
+-//  8.Rtu_yy_xx_dbgon
+-assign if_self_stall = (l1_refill_ifctrl_refill_on && 
+-                        !(l1_refill_ifctrl_trans_cmplt && refill_pc_hit)) ||
+-                       !if_pc_vld ||
+-                       icache_inv_on ||
+-                       bht_inv_on ||
+-                       btb_inv_on || 
+-                       ind_btb_inv_on || 
+-                       vector_ifctrl_sm_on ||
+-                       pcgen_ifctrl_way_pred_stall || 
+-                       rtu_ifu_xx_dbgon;
+-assign if_stage_stall      = if_self_stall || ipctrl_ifctrl_stall;
+-assign ifctrl_pcgen_stall  = if_stage_stall;
+-assign ifctrl_bht_stall    = if_stage_stall;
+-assign ifctrl_ifdp_stall   = if_stage_stall;
+-assign ifctrl_l0_btb_stall = if_stage_stall;
+-//for timing consideration
+-assign ifctrl_pcgen_stall_short = if_self_stall || ipctrl_ifctrl_stall_short;
+-
+-//==========================================================
+-//             IF Stage Valid Signal
+-//==========================================================
+-//IF Stage Valid when
+-//  1.if_inst_data_vld &&
+-//  2.if_pc_vld &&
+-//  3.!if_cancel &&
+-//  4.!if_self_stall
+-assign if_vld = if_inst_data_vld &&
+-                if_pc_vld &&
+-                !if_cancel &&
+-                !if_self_stall;
+-
+-assign if_vld_for_gateclk = if_inst_data_vld &&
+-                            !if_cancel &&
+-                            !if_self_stall;
+-
+-
+-//==========================================================
+-//                       IF Debug Signal
+-//==========================================================
+-assign if_frontend_stall = !if_inst_data_vld 
+-                        || !if_pc_vld 
+-                        || if_self_stall 
+-                        || ipctrl_ifctrl_stall;
+-
+-assign hpcp_clk_en       = hpcp_ifu_cnt_en;
+-// &Instance("gated_clk_cell","x_hpcp_clk"); @156
+-gated_clk_cell  x_hpcp_clk (
+-  .clk_in             (forever_cpuclk    ),
+-  .clk_out            (hpcp_clk          ),
+-  .external_en        (1'b0              ),
+-  .global_en          (cp0_yy_clk_en     ),
+-  .local_en           (hpcp_clk_en       ),
+-  .module_en          (cp0_ifu_icg_en    ),
+-  .pad_yy_icg_scan_en (pad_yy_icg_scan_en)
+-);
+-
+-// &Connect( .clk_in         (forever_cpuclk), @157
+-//           .clk_out        (hpcp_clk),//Out Clock @158
+-//           .external_en    (1'b0), @159
+-//           .global_en      (cp0_yy_clk_en), @160
+-//           .local_en       (hpcp_clk_en),//Local Condition @161
+-//           .module_en      (cp0_ifu_icg_en)); @162
+-
+-always @(posedge hpcp_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-    ifu_hpcp_frontend_stall <= 1'b0;
+-  else if(hpcp_ifu_cnt_en)
+-    ifu_hpcp_frontend_stall <= if_frontend_stall;
+-  else
+-    ifu_hpcp_frontend_stall <= ifu_hpcp_frontend_stall;
+-end
+-// &Force("output","ifu_hpcp_frontend_stall"); @173
+-
+-//==========================================================
+-//             IF Stage Pipedown Signal
+-//==========================================================
+-//IF Stage Data Will Pipedown When
+-//  1.!ip_if_Stall
+-//  2.if_vld
+-//  3.!pcgen_ifctrl_pipe_cancel(Only affect valid)
+-assign ifctrl_ifdp_pipedown = !ipctrl_ifctrl_stall &&
+-                              if_vld;
+-// &Force("output","ifctrl_ifdp_pipedown");                             @185
+-assign ifctrl_bht_pipedown = !ipctrl_ifctrl_bht_stall;
+-
+-//==========================================================
+-//             Valid Signal to IP Stage
+-//==========================================================
+-//Gate Clk
+-// &Instance("gated_clk_cell","x_if_vld_clk"); @192
+-gated_clk_cell  x_if_vld_clk (
+-  .clk_in             (forever_cpuclk    ),
+-  .clk_out            (if_vld_clk        ),
+-  .external_en        (1'b0              ),
+-  .global_en          (cp0_yy_clk_en     ),
+-  .local_en           (if_vld_clk_en     ),
+-  .module_en          (cp0_ifu_icg_en    ),
+-  .pad_yy_icg_scan_en (pad_yy_icg_scan_en)
+-);
+-
+-// &Connect( .clk_in         (forever_cpuclk), @193
+-//           .clk_out        (if_vld_clk),//Out Clock @194
+-//           .external_en    (1'b0), @195
+-//           .global_en      (cp0_yy_clk_en), @196
+-//           .local_en       (if_vld_clk_en),//Local Condition @197
+-//           .module_en      (cp0_ifu_icg_en) @198
+-//         ); @199
+-assign if_vld_clk_en = if_vld_for_gateclk || 
+-                       ifctrl_ipctrl_vld; 
+-//ipctrl_ifctrl_stall may set with higher priority cancel at 
+-//the same time
+-always @(posedge if_vld_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-    ifctrl_ipctrl_vld <= 1'b0;
+-  else if(pcgen_ifctrl_pipe_cancel)
+-    ifctrl_ipctrl_vld <= 1'b0;
+-  else if(!ipctrl_ifctrl_stall)
+-    ifctrl_ipctrl_vld <= if_vld;
+-  else
+-    ifctrl_ipctrl_vld <= ifctrl_ipctrl_vld;
+-end
+-// &Force("output", "ifctrl_ipctrl_vld"); @215
+-//==========================================================
+-//             IF Stage PC reissue
+-//==========================================================
+-//IF Stage PC Reissue When
+-//  1.Cache Refill Done
+-//  2.Cache INV Done
+-//  3.High priority change flow from Had/Vector and so on
+-//  Note That The Three Done Signal should Flop One Cycle
+-assign icache_reissue = l1_refill_ifctrl_reissue ||
+-                        (icache_inv_done || icache_read_done) && 
+-                        (
+-                          !l1_refill_ifctrl_ctc || 
+-                          l1_refill_inv_wfd_back
+-                        ) || 
+-                        pcgen_ifctrl_reissue;
+-//Gate Clk
+-// &Instance("gated_clk_cell","x_ifctrl_reissue_clk"); @232
+-gated_clk_cell  x_ifctrl_reissue_clk (
+-  .clk_in             (forever_cpuclk    ),
+-  .clk_out            (ifctrl_reissue_clk),
+-  .external_en        (1'b0              ),
+-  .global_en          (1'b1              ),
+-  .local_en           (1'b1              ),
+-  .module_en          (cp0_ifu_icg_en    ),
+-  .pad_yy_icg_scan_en (pad_yy_icg_scan_en)
+-);
+-
+-// &Connect( .clk_in         (forever_cpuclk), @233
+-//           .clk_out        (ifctrl_reissue_clk),//Out Clock @234
+-//           .external_en    (1'b0), @235
+-//           .global_en      (1'b1), @236
+-//           .local_en       (1'b1),//Local Condition @237
+-//           .module_en      (cp0_ifu_icg_en) @238
+-//         ); @239
+-        
+-always @(posedge ifctrl_reissue_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-    ifctrl_pcgen_reissue_pcload <= 1'b0;
+-  else
+-    ifctrl_pcgen_reissue_pcload <= icache_reissue;
+-end
+-// &Force("output","ifctrl_pcgen_reissue_pcload"); @248
+-
+-//==========================================================
+-//             IF Stage PCload
+-//==========================================================
+-assign ifctrl_pcload                = l0_btb_ifctrl_chglfw_vld 
+-                                   && !ipctrl_ifctrl_stall
+-                                   && !ifctrl_pcgen_reissue_pcload
+-                                   && if_inst_data_vld
+-//                                   && if_pc_vld
+-                                   && !if_self_stall;
+-                                   
+-assign ifctrl_pcgen_chgflw_no_stall_mask = l0_btb_ifctrl_chglfw_vld
+-                                        && !ifctrl_pcgen_reissue_pcload
+-                                        && if_inst_data_vld;
+-                                         
+-assign ifctrl_pcgen_chgflw_vld              = ifctrl_pcload;
+-assign ifctrl_pcgen_pcload_pc[PC_WIDTH-2:0] = l0_btb_ifctrl_chgflw_pc[PC_WIDTH-2:0];
+-assign ifctrl_pcgen_way_pred[1:0]           = (l0_btb_ifctrl_chglfw_vld)
+-                                              ? l0_btb_ifctrl_chgflw_way_pred[1:0]
+-                                              : 2'b11;
+-
+-always @(posedge if_vld_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-    ifctrl_ipctrl_if_pcload <= 1'b0;
+-  else if(pcgen_ifctrl_pipe_cancel)
+-    ifctrl_ipctrl_if_pcload <= 1'b0;
+-  else if(!ipctrl_ifctrl_stall)
+-    ifctrl_ipctrl_if_pcload <= ifctrl_pcload;
+-  else
+-    ifctrl_ipctrl_if_pcload <= ifctrl_ipctrl_if_pcload;
+-end
+-// &Force("output", "ifctrl_ipctrl_if_pcload"); @282
+-
+-
+-//==========================================================
+-//                    ICACHE INV SM
+-//==========================================================
+-
+-parameter IDLE        = 4'b0000;
+-parameter READ_REQ    = 4'b0010;
+-parameter READ_RD     = 4'b0011;
+-parameter READ_ST     = 4'b0100;
+-parameter INV_ALL     = 4'b0101;
+-parameter INS_TAG_REQ = 4'b1001;
+-parameter INS_TAG_RD  = 4'b1010;
+-parameter INS_CMP     = 4'b1011;
+-parameter INS_INV     = 4'b1100;
+-parameter INS_INV_ALL = 4'b1101;
+-
+-//==========================================================
+-//              Gate Clk of Icache Inv SM
+-//==========================================================
+-assign icache_inv_valid  = icache_all_inv || 
+-                           lsu_ifu_icache_line_inv || 
+-                           lsu_ifu_icache_all_inv || 
+-                           icache_read;
+-assign icache_all_inv    = cp0_ifu_icache_inv;
+-assign icache_read       = cp0_ifu_icache_read_req;
+-assign icache_refill_on  = l1_refill_ifctrl_refill_on;
+-
+-// &Instance("gated_clk_cell","x_icache_inv_clk"); @318
+-gated_clk_cell  x_icache_inv_clk (
+-  .clk_in             (forever_cpuclk    ),
+-  .clk_out            (icache_inv_clk    ),
+-  .external_en        (1'b0              ),
+-  .global_en          (1'b1              ),
+-  .local_en           (icache_inv_clk_en ),
+-  .module_en          (cp0_ifu_icg_en    ),
+-  .pad_yy_icg_scan_en (pad_yy_icg_scan_en)
+-);
+-
+-// &Connect( .clk_in         (forever_cpuclk), @319
+-//           .clk_out        (icache_inv_clk),//Out Clock @320
+-//           .external_en    (1'b0), @321
+-//           .global_en      (1'b1), //low power mode not affect icache inv @322
+-//           .local_en       (icache_inv_clk_en),//Local Condition @323
+-//           .module_en      (cp0_ifu_icg_en) @324
+-//         ); @325
+-assign icache_inv_clk_en = icache_inv_valid ||
+-                           (icache_inv_cur_state[3:0] != IDLE);
+-
+-//------------------FSM of ICache INV-----------------------
+-//State Description:
+-//IDLE        : Wait for Invalid Request
+-//INV_ALL     : Do Invalid All
+-//INS_TAG_REQ : (INST_INV) Send Tag Read Request to ICache
+-//INS_TAG_RD  : (INST_INV) Read The Tag Data of ICache
+-//INS_CMP     : (INST_INV) Compare The Request Tag and The Tag Read from ICache
+-//INS_INV     : (INST_INV) Do Line Invalid and Clear Valid Bit of Tag
+-//INS_INV_ALL : (INST_INV) Do Invalid All
+-always @(posedge icache_inv_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-    icache_inv_cur_state[3:0] <= IDLE;
+-  else
+-    icache_inv_cur_state[3:0] <= icache_inv_next_state[3:0];
+-end
+-
+-//cp0 will only maintain icache all inv
+-//ins_inv maintain icache all inv and line inv(Virtual Address)
+-// &CombBeg; @348
+-always @( all_inv_req
+-       or icache_read_req
+-       or ins_icache_inv_line_hit
+-       or icache_inv_cur_state[3:0]
+-       or icache_all_inv_done
+-       or ins_all_inv_req
+-       or ins_addr_inv_req
+-       or addr_inv_count_reg[4:0])
+-begin
+-case(icache_inv_cur_state[3:0])
+-//icache invalid start when refill state machine not on
+-IDLE        : if(ins_all_inv_req)
+-              icache_inv_next_state[3:0] = INS_INV_ALL;
+-              else if(ins_addr_inv_req)
+-              icache_inv_next_state[3:0] = INS_TAG_REQ;
+-              else if(all_inv_req)
+-              icache_inv_next_state[3:0] = INV_ALL;
+-              else if(icache_read_req)
+-              icache_inv_next_state[3:0] = READ_REQ;
+-              else
+-              icache_inv_next_state[3:0] = IDLE;
+-INV_ALL     : if(icache_all_inv_done)
+-              icache_inv_next_state[3:0] = IDLE;
+-              else
+-              icache_inv_next_state[3:0] = INV_ALL;
+-//Because VIPT icache
+-//the same PA may occur in different icache line
+-//Thus should ergodic 4/8 icache line in 32K/64K icache 
+-INS_TAG_REQ : icache_inv_next_state[3:0] = INS_TAG_RD;
+-INS_TAG_RD  : icache_inv_next_state[3:0] = INS_CMP;
+-INS_CMP     : if(ins_icache_inv_line_hit)
+-              icache_inv_next_state[3:0] = INS_INV;
+-              else if(!(addr_inv_count_reg[4:0] == 5'b00000))
+-              icache_inv_next_state[3:0] = INS_TAG_REQ;
+-              else
+-              icache_inv_next_state[3:0] = IDLE;
+-INS_INV     : if(!(addr_inv_count_reg[4:0] == 5'b00000))
+-              icache_inv_next_state[3:0] = INS_TAG_REQ;
+-              else
+-              icache_inv_next_state[3:0] = IDLE;
+-INS_INV_ALL : if(icache_all_inv_done)
+-              icache_inv_next_state[3:0] = IDLE;
+-              else
+-              icache_inv_next_state[3:0] = INS_INV_ALL;
+-READ_REQ    : icache_inv_next_state[3:0] = READ_RD;
+-READ_RD     : icache_inv_next_state[3:0] = READ_ST;
+-READ_ST     : icache_inv_next_state[3:0] = IDLE;
+-default     : icache_inv_next_state[3:0] = IDLE;
+-endcase
+-// &CombEnd; @389
+-end
+-
+-//------------------Condition Signal------------------------
+-//inst all inv
+-assign ins_all_inv_req   = lsu_ifu_icache_all_inv && //inv will not start at the same time with vec or refill
+-                           (!icache_refill_on && !vector_ifctrl_sm_start || 
+-                           l1_refill_ifctrl_ctc);//Low power mode not care lbuf idle
+-//inst line inv (icache.iva or icache.ipa)
+-assign ins_addr_inv_req  = lsu_ifu_icache_line_inv && 
+-                          (!icache_refill_on && !vector_ifctrl_sm_start || 
+-                           l1_refill_ifctrl_ctc);
+-//when there is ctc_req, loop buffer should be flushed instead of loop buffer
+-//contain old invalid instructions
+-assign ifctrl_lbuf_ins_inv_on = lsu_ifu_icache_all_inv || 
+-                                lsu_ifu_icache_line_inv;
+-assign ifctrl_lbuf_inv_req = ins_all_inv_req || ins_addr_inv_req;
+-
+-//cp0 all inv
+-assign all_inv_req     = icache_all_inv && 
+-                         !icache_refill_on && 
+-                         !vector_ifctrl_sm_start; //not care lbuf, for cp0 will flush lbuf
+-assign icache_read_req = icache_read && 
+-                         !icache_refill_on && 
+-                         !vector_ifctrl_sm_start;
+-//addr_inv_count_reg[2:0]
+-//addr_inv_count_reg used to deal with VIPT Icache address inv
+-//For 64K VIPT Icache, PC[13:11] should used as VIndex
+-//However, this three bit can not be detect by different process
+-//Thus, when va/pa inv, should inv 8 times for different [13:11]
+-//We use addr_inv_count_reg to finish this task
+-//For 32K ICache,PC[12:11]
+-//csky vperl_off
+-`ifdef ICACHE_256K
+-parameter CNT_REG_VAL = 5'b11111;
+-`endif
+-`ifdef ICACHE_128K
+-parameter CNT_REG_VAL = 5'b01111;
+-`endif
+-`ifdef ICACHE_64K
+-parameter CNT_REG_VAL = 5'b00111;
+-`endif  //ICACHE_32K
+-`ifdef ICACHE_32K
+-parameter CNT_REG_VAL = 5'b00011;
+-`endif //ICACHE_64K
+-//csky vperl_on
+-always @(posedge icache_inv_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-    addr_inv_count_reg[4:0] <= 5'b00000;
+-  else if( (icache_inv_cur_state[3:0] == IDLE) && 
+-           (ins_addr_inv_req) )
+-//csky vperl_off
+-    addr_inv_count_reg[4:0] <= CNT_REG_VAL;
+-//csky vperl_on
+-  else if( (icache_inv_cur_state[3:0] == INS_INV) || 
+-           (icache_inv_cur_state[3:0] == INS_CMP) && !ins_icache_inv_line_hit)
+-    if(!(addr_inv_count_reg[4:0] == 5'b000))
+-      addr_inv_count_reg[4:0] <= addr_inv_count_reg[4:0] - 5'b1;
+-    else
+-      addr_inv_count_reg[4:0] <= addr_inv_count_reg[4:0];
+-  else
+-      addr_inv_count_reg[4:0] <= addr_inv_count_reg[4:0];
+-end
+-
+-//------------------Control Singnal of FSM------------------
+-//icache_inv_on
+-assign icache_inv_on = (icache_inv_cur_state[3:0] != IDLE);
+-//assign ifctrl_vector_icache_inv_on = icache_inv_on;
+-//ins_icache_inv_line_hit
+-assign ins_icache_inv_line_hit = (|ins_tag_cmp[1:0]);                             
+-//icache_inv_tag_req for Inv SM Tag Read && Write
+-//  Read on TAG_REQ state
+-//  Write on INV state or INV_ALL state
+-assign icache_inv_tag_req       = (
+-                                   (icache_inv_cur_state[3:0] == INV_ALL) || 
+-                                   (icache_inv_cur_state[3:0] == INS_TAG_REQ) ||
+-                                   (icache_inv_cur_state[3:0] == INS_INV)     ||
+-                                   (icache_inv_cur_state[3:0] == INS_INV_ALL)
+-                                  ) &&
+-                                  (&icache_inv_cnt[1:0]);
+-assign icache_reset_inv_req     = (icache_inv_cur_state[3:0] == INV_ALL) && vector_ifctrl_reset_on;                         
+-//icache_inv_cnt_initial for all_line_inv counter initial
+-assign icache_inv_cnt_initial   = (icache_inv_cur_state[3:0] == IDLE) &&
+-                                  (icache_all_inv || lsu_ifu_icache_all_inv) && 
+-                                  !icache_refill_on && 
+-                                  !vector_ifctrl_sm_start;
+-//icache_inv_cnt_on for decreasing the all_line_inv counter
+-assign icache_inv_cnt_on        = (icache_inv_cur_state[3:0] == INV_ALL) || 
+-                                  (icache_inv_cur_state[3:0] == INS_INV_ALL);
+-//icache_inv_tag_wen[2:0]
+-//wen[2] for fifobit, fifobit point to the Way is going to be substitude 
+-// &CombBeg; @482
+-always @( icache_inv_cur_state[3:0]
+-       or tag_cmp_result[1:0])
+-begin
+-if(icache_inv_cur_state[3:0] == INS_INV_ALL)
+-  icache_inv_tag_wen[2:0] = 3'b0;
+-else if(icache_inv_cur_state[3:0] == INV_ALL)
+-  icache_inv_tag_wen[2:0] = 3'b0;
+-else if(icache_inv_cur_state[3:0] == INS_INV)
+-  icache_inv_tag_wen[2:0] = {1'b0, ~tag_cmp_result[1:0]};
+-else
+-  icache_inv_tag_wen[2:0] = 3'b111;
+-// &CombEnd; @491
+-end
+-//icache_inv_fifo Bit Value
+-// &CombBeg; @493
+-always @( tag_cmp_result[1]
+-       or icache_inv_cur_state[3:0])
+-begin
+-if(icache_inv_cur_state[3:0] == INS_INV_ALL)
+-  icache_inv_fifo = 1'b0;
+-else if(icache_inv_cur_state[3:0] == INV_ALL)
+-  icache_inv_fifo = 1'b0;
+-else if(icache_inv_cur_state[3:0] == INS_INV)
+-  icache_inv_fifo = tag_cmp_result[1];
+-else
+-  icache_inv_fifo = 1'b0;
+-// &CombEnd; @502
+-end
+-//tag_cmp_result[1:0]
+-//virtual pc mode tag cmp result
+-//CMP STATE result flop to INV STATE use
+-always @(posedge icache_inv_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-    tag_cmp_result[1:0] <= 2'b0;
+-  else if(icache_inv_cur_state[3:0] == INS_CMP)
+-    tag_cmp_result[1:0] <= ins_tag_cmp[1:0];
+-  else
+-    tag_cmp_result[1:0] <= tag_cmp_result[1:0];
+-end
+-
+-//Gate clk
+-// &Instance("gated_clk_cell","x_cache_data_flop_clk"); @517
+-gated_clk_cell  x_cache_data_flop_clk (
+-  .clk_in                 (forever_cpuclk        ),
+-  .clk_out                (cache_data_flop_clk   ),
+-  .external_en            (1'b0                  ),
+-  .global_en              (1'b1                  ),
+-  .local_en               (cache_data_flop_clk_en),
+-  .module_en              (cp0_ifu_icg_en        ),
+-  .pad_yy_icg_scan_en     (pad_yy_icg_scan_en    )
+-);
+-
+-// &Connect( .clk_in         (forever_cpuclk), @518
+-//           .clk_out        (cache_data_flop_clk),//Out Clock @519
+-//           .external_en    (1'b0), @520
+-//           //.global_en      (cp0_yy_clk_en), @521
+-//           .global_en      (1'b1), //low power mode not affect icache inv @522
+-//           .local_en       (cache_data_flop_clk_en),//Local Condition @523
+-//           .module_en      (cp0_ifu_icg_en) @524
+-//         ); @525
+-assign cache_data_flop_clk_en = (icache_inv_cur_state[3:0] == INS_TAG_RD);
+-//Flop icache dout for Tag Compare Next cycle 
+-always @(posedge cache_data_flop_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-  begin
+-    tag_data1_reg[28:0] <= 29'b0;
+-    tag_data0_reg[28:0] <= 29'b0;
+-  end
+-  else
+-  begin
+-    tag_data1_reg[28:0] <= icache_if_ifctrl_tag_data1[28:0];
+-    tag_data0_reg[28:0] <= icache_if_ifctrl_tag_data0[28:0];
+-  end
+-end
+-
+-// &Instance("gated_clk_cell","x_ins_inv_ptag_flop_clk"); @558
+-gated_clk_cell  x_ins_inv_ptag_flop_clk (
+-  .clk_in                   (forever_cpuclk          ),
+-  .clk_out                  (ins_inv_ptag_flop_clk   ),
+-  .external_en              (1'b0                    ),
+-  .global_en                (1'b1                    ),
+-  .local_en                 (ins_inv_ptag_flop_clk_en),
+-  .module_en                (cp0_ifu_icg_en          ),
+-  .pad_yy_icg_scan_en       (pad_yy_icg_scan_en      )
+-);
+-
+-// &Connect( .clk_in         (forever_cpuclk), @559
+-//           .clk_out        (ins_inv_ptag_flop_clk),//Out Clock @560
+-//           .external_en    (1'b0), @561
+-//           .global_en      (1'b1), //low power mode not affect icache inv @562
+-//           .local_en       (ins_inv_ptag_flop_clk_en),//Local Condition @563
+-//           .module_en      (cp0_ifu_icg_en) @564
+-//         ); @565
+-
+-assign ins_inv_ptag_flop_clk_en = (icache_inv_cur_state[3:0] == IDLE) && ins_addr_inv_req;
+-always @(posedge ins_inv_ptag_flop_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-    ins_inv_ptag_flop[27:0] <= 28'b0;
+-  else if(ins_addr_inv_req)
+-    ins_inv_ptag_flop[27:0] <= lsu_ifu_icache_ptag[27:0];
+-  else
+-    ins_inv_ptag_flop[27:0] <= ins_inv_ptag_flop[27:0];
+-end
+-
+-assign ins_tag_cmp[1] = (tag_data1_reg[28:0] == {1'b1, ins_inv_ptag_flop[27:0]});                   
+-assign ins_tag_cmp[0] = (tag_data0_reg[28:0] == {1'b1, ins_inv_ptag_flop[27:0]});                   
+-
+-//icache_inv_index
+-assign icache_inv_index[PC_WIDTH-2:0] = (icache_all_inv || lsu_ifu_icache_all_inv) 
+-                                      ? {23'b0, icache_inv_cnt[12:0], 3'b0}
+-                                      : icache_line_inv_index[PC_WIDTH-2:0];
+-assign icache_line_inv_index[PC_WIDTH-2:0] = {23'b0, addr_inv_count_reg[4:0], lsu_ifu_icache_index[5:0], 5'b0}; 
+-//---------------The Index to ICache Inv ALL----------------
+-//For 64K Cache, Index = 9Bit
+-//For 32K Cache, Index = 8Bit
+-//csky vperl_off
+-`ifdef ICACHE_256K
+-parameter INV_CNT_VAL = 13'b1111111111111;
+-`endif
+-`ifdef ICACHE_128K
+-parameter INV_CNT_VAL = 13'b0111111111111;
+-`endif
+-`ifdef ICACHE_64K
+-parameter INV_CNT_VAL = 13'b0011111111111;
+-`endif
+-`ifdef ICACHE_32K
+-parameter INV_CNT_VAL = 13'b0001111111111;
+-`endif //ICACHE_64K
+-//csky vperl_on
+-assign icache_inv_cnt_sub[12:0] = (vector_ifctrl_reset_on) ? 13'b1
+-                                                           : 13'b100;
+-always @(posedge icache_inv_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-    icache_inv_cnt[12:0] <= 13'b0;
+-  else if(icache_inv_cnt_initial)
+-//csky vperl_off
+-    icache_inv_cnt[12:0] <= INV_CNT_VAL;
+-//csky vperl_on
+-  else if(icache_inv_cnt_on)
+-    icache_inv_cnt[12:0] <= icache_inv_cnt[12:0] - icache_inv_cnt_sub[12:0];
+-  else
+-    icache_inv_cnt[12:0] <= icache_inv_cnt[12:0];
+-end
+-assign icache_inv_over = ~(|icache_inv_cnt[12:2]) && 
+-                         !(vector_ifctrl_reset_on && (|icache_inv_cnt[1:0]));
+-
+-//---------------ICache INV Done Signal---------------------
+-assign icache_all_inv_done     = (
+-                                   (icache_inv_cur_state[3:0] == INV_ALL) || 
+-                                   (icache_inv_cur_state[3:0] == INS_INV_ALL)
+-                                 ) && 
+-                                 icache_inv_over;
+-//icache_line_inv_done
+-assign icache_line_inv_done    = (icache_inv_cur_state[3:0] == INS_INV) && 
+-                                 (addr_inv_count_reg[4:0] == 5'b00000)    || 
+-                                 (icache_inv_cur_state[3:0] == INS_CMP) && 
+-                                 (addr_inv_count_reg[4:0] == 5'b00000)    &&
+-                                 !ins_icache_inv_line_hit;
+-
+-assign icache_inv_done         = icache_line_inv_done || icache_all_inv_done;
+-assign icache_read_done        = (icache_inv_cur_state[3:0] == READ_ST);
+-
+-assign ifu_lsu_icache_inv_done = icache_line_inv_done || 
+-                                 (icache_inv_cur_state[3:0] == INS_INV_ALL) && 
+-                                 icache_inv_over;
+-// &Force("output","ifu_lsu_icache_inv_done"); @650
+-assign ifu_cp0_icache_inv_done = (icache_inv_cur_state[3:0] == INV_ALL) && 
+-                                 icache_inv_over;
+-assign ifctrl_pcgen_ins_icache_inv_done = icache_line_inv_done || 
+-                                         (icache_inv_cur_state[3:0] == INS_INV_ALL) && 
+-                                          icache_inv_over;
+-//==========================================================
+-//            Interface with Icache Interface
+-//==========================================================
+-assign ifctrl_icache_if_tag_req              = icache_inv_tag_req;
+-assign ifctrl_icache_if_reset_req            = icache_reset_inv_req;
+-assign ifctrl_icache_if_inv_on               = (icache_inv_cur_state[3:0] != IDLE);
+-assign ifctrl_icache_if_tag_wen[2:0]         = icache_inv_tag_wen[2:0];
+-assign ifctrl_icache_if_inv_fifo             = icache_inv_fifo;
+-assign ifctrl_icache_if_index[PC_WIDTH-2:0]  = icache_inv_index[PC_WIDTH-2:0];
+-
+-assign ifctrl_icache_if_read_req_tag         = (icache_inv_cur_state[3:0] == READ_REQ) && 
+-                                                icache_read_tag;
+-assign ifctrl_icache_if_read_req_data0       = (icache_inv_cur_state[3:0] == READ_REQ) && 
+-                                               !icache_read_tag && !icache_read_way;
+-assign ifctrl_icache_if_read_req_data1       = (icache_inv_cur_state[3:0] == READ_REQ) && 
+-                                               !icache_read_tag &&  icache_read_way;                                             
+-assign ifctrl_icache_if_read_req_index[PC_WIDTH-2:0] = {23'b0,icache_read_index[16:1]};
+-
+-//==========================================================
+-//              Interface with L1 Refill
+-//==========================================================
+-//Keep Refill SM will not interupt INV SM
+-assign ifctrl_l1_refill_inv_on       = (icache_inv_cur_state[3:0] != IDLE) ||
+-                                       ( 
+-                                         (icache_inv_cur_state[3:0] == IDLE) &&
+-                                         (
+-                                           icache_all_inv || 
+-                                           lsu_ifu_icache_line_inv || 
+-                                           lsu_ifu_icache_all_inv || 
+-                                           icache_read
+-                                         )
+-                                       );
+-// &Force("output","ifctrl_l1_refill_inv_on"); @690
+-assign ifctrl_l1_refill_inv_busy     = (icache_inv_cur_state[3:0] != IDLE);
+-assign ifctrl_l1_refill_ins_inv      = lsu_ifu_icache_line_inv || 
+-                                       lsu_ifu_icache_all_inv;
+-assign ifctrl_l1_refill_ins_inv_dn   = ifu_lsu_icache_inv_done;
+-//==========================================================
+-//              Interface with ipb
+-//==========================================================
+-assign ifctrl_ipb_inv_on = ifctrl_l1_refill_inv_on;
+-
+-//==========================================================
+-//            The invalidation of BTB
+-//==========================================================
+-//The BTB invalidation signal is level signal, which should 
+-//be transfered to pulse signal
+-//Gate Clk                    
+-// &Instance("gated_clk_cell","x_btb_inv_flop_clk"); @707
+-gated_clk_cell  x_btb_inv_flop_clk (
+-  .clk_in              (forever_cpuclk     ),
+-  .clk_out             (btb_inv_flop_clk   ),
+-  .external_en         (1'b0               ),
+-  .global_en           (cp0_yy_clk_en      ),
+-  .local_en            (btb_inv_flop_clk_en),
+-  .module_en           (cp0_ifu_icg_en     ),
+-  .pad_yy_icg_scan_en  (pad_yy_icg_scan_en )
+-);
+-
+-// &Connect( .clk_in         (forever_cpuclk), @708
+-//           .clk_out        (btb_inv_flop_clk),//Out Clock @709
+-//           .external_en    (1'b0), @710
+-//           .global_en      (cp0_yy_clk_en), @711
+-//           .local_en       (btb_inv_flop_clk_en),//Local Condition @712
+-//           .module_en      (cp0_ifu_icg_en) @713
+-//         ); @714
+-assign btb_inv_flop_clk_en = cp0_ifu_btb_inv ^ btb_inv_ff ||
+-                             btb_inv_dn ^ btb_inv_dn_ff;
+-
+-always @(posedge btb_inv_flop_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-    btb_inv_ff <= 1'b0;
+-  else
+-    btb_inv_ff <= cp0_ifu_btb_inv;
+-end
+-assign ifctrl_btb_inv    = cp0_ifu_btb_inv &&
+-                           !btb_inv_ff;
+-assign ifctrl_l0_btb_inv = cp0_ifu_btb_inv &&
+-                           !btb_inv_ff;
+-
+-always @(posedge btb_inv_flop_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-    btb_inv_dn_ff <= 1'b1;
+-  else
+-    btb_inv_dn_ff <= btb_inv_dn;
+-end
+-assign btb_inv_on = btb_ifctrl_inv_on;
+-assign btb_inv_dn = btb_ifctrl_inv_done;
+-assign ifu_cp0_btb_inv_done = btb_inv_dn && 
+-                              !btb_inv_dn_ff;
+-// &Force("input","cp0_ifu_btb_inv"); @745
+-
+-//==========================================================
+-//            The invalidation of BHT
+-//==========================================================
+-//The BHT invalidation signal is level signal, which should 
+-//be transfered to pulse signal
+-//Gate Clk                    
+-// &Instance("gated_clk_cell","x_bht_inv_flop_clk"); @754
+-gated_clk_cell  x_bht_inv_flop_clk (
+-  .clk_in              (forever_cpuclk     ),
+-  .clk_out             (bht_inv_flop_clk   ),
+-  .external_en         (1'b0               ),
+-  .global_en           (cp0_yy_clk_en      ),
+-  .local_en            (bht_inv_flop_clk_en),
+-  .module_en           (cp0_ifu_icg_en     ),
+-  .pad_yy_icg_scan_en  (pad_yy_icg_scan_en )
+-);
+-
+-// &Connect( .clk_in         (forever_cpuclk), @755
+-//           .clk_out        (bht_inv_flop_clk),//Out Clock @756
+-//           .external_en    (1'b0), @757
+-//           .global_en      (cp0_yy_clk_en), @758
+-//           .local_en       (bht_inv_flop_clk_en),//Local Condition @759
+-//           .module_en      (cp0_ifu_icg_en) @760
+-//         ); @761
+-assign bht_inv_flop_clk_en = cp0_ifu_bht_inv ^ bht_inv_ff || 
+-                             bht_inv_dn ^ bht_inv_dn_ff;
+-
+-always @(posedge bht_inv_flop_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-    bht_inv_ff <= 1'b0;
+-  else
+-    bht_inv_ff <= cp0_ifu_bht_inv;
+-end
+-assign ifctrl_bht_inv = cp0_ifu_bht_inv &&
+-                        !bht_inv_ff;
+-
+-always @(posedge bht_inv_flop_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-    bht_inv_dn_ff <= 1'b1;
+-  else
+-    bht_inv_dn_ff <= bht_inv_dn;
+-end
+-assign bht_inv_on = bht_ifctrl_inv_on;
+-assign bht_inv_dn = bht_ifctrl_inv_done;
+-assign ifu_cp0_bht_inv_done = bht_inv_dn && 
+-                              !bht_inv_dn_ff;
+-
+-//==========================================================
+-//            The invalidation of IND_BTB
+-//==========================================================
+-//The IND_BTB invalidation signal is level signal, which should 
+-//be transfered to pulse signal
+-// &Instance("gated_clk_cell","x_ibp_inv_flop_clk"); @793
+-gated_clk_cell  x_ibp_inv_flop_clk (
+-  .clk_in              (forever_cpuclk     ),
+-  .clk_out             (ibp_inv_flop_clk   ),
+-  .external_en         (1'b0               ),
+-  .global_en           (cp0_yy_clk_en      ),
+-  .local_en            (ibp_inv_flop_clk_en),
+-  .module_en           (cp0_ifu_icg_en     ),
+-  .pad_yy_icg_scan_en  (pad_yy_icg_scan_en )
+-);
+-
+-// &Connect( .clk_in         (forever_cpuclk), @794
+-//           .clk_out        (ibp_inv_flop_clk),//Out Clock @795
+-//           .external_en    (1'b0), @796
+-//           .global_en      (cp0_yy_clk_en), @797
+-//           .local_en       (ibp_inv_flop_clk_en),//Local Condition @798
+-//           .module_en      (cp0_ifu_icg_en) @799
+-//         ); @800
+-assign ibp_inv_flop_clk_en = cp0_ifu_ind_btb_inv ^ ind_btb_inv_ff || 
+-                             ind_btb_inv_dn ^ ind_btb_inv_dn_ff;  
+-
+-always @(posedge ibp_inv_flop_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-    ind_btb_inv_ff <= 1'b0;
+-  else
+-    ind_btb_inv_ff <= cp0_ifu_ind_btb_inv;
+-end
+-assign ifctrl_ind_btb_inv = cp0_ifu_ind_btb_inv &&
+-                           !ind_btb_inv_ff;
+-
+-always @(posedge ibp_inv_flop_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-    ind_btb_inv_dn_ff <= 1'b1;
+-  else
+-    ind_btb_inv_dn_ff <= ind_btb_inv_dn;
+-end
+-assign ind_btb_inv_on = ind_btb_ifctrl_inv_on;
+-assign ind_btb_inv_dn = ind_btb_ifctrl_inv_done;
+-assign ifu_cp0_ind_btb_inv_done = ind_btb_inv_dn && 
+-                                 !ind_btb_inv_dn_ff;
+-
+-//==========================================================
+-//               The invalidation of CP0
+-//==========================================================
+-// &Force("bus","icache_read_index",16,0); @832
+-assign icache_read_tag                 = cp0_ifu_icache_read_tag; //1 for tag, 0 for data
+-assign icache_read_way                 = cp0_ifu_icache_read_way;
+-assign icache_read_index[16:0]         = cp0_ifu_icache_read_index[16:0];
+-
+-// &Instance("gated_clk_cell","x_icache_read_clk"); @840
+-gated_clk_cell  x_icache_read_clk (
+-  .clk_in             (forever_cpuclk    ),
+-  .clk_out            (icache_read_clk   ),
+-  .external_en        (1'b0              ),
+-  .global_en          (cp0_yy_clk_en     ),
+-  .local_en           (icache_read_clk_en),
+-  .module_en          (cp0_ifu_icg_en    ),
+-  .pad_yy_icg_scan_en (pad_yy_icg_scan_en)
+-);
+-
+-// &Connect( .clk_in         (forever_cpuclk), @841
+-//           .clk_out        (icache_read_clk),//Out Clock @842
+-//           .external_en    (1'b0), @843
+-//           .global_en      (cp0_yy_clk_en), @844
+-//           .local_en       (icache_read_clk_en),//Local Condition @845
+-//           .module_en      (cp0_ifu_icg_en) @846
+-//         ); @847
+-assign icache_read_clk_en   = icache_read_pipe_vld;
+-assign icache_read_pipe_vld = (icache_inv_cur_state[3:0] == READ_RD);
+-
+-
+-always @(posedge icache_read_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-  begin
+-    icache_if_ifctrl_tag_data0_reg[28:0]   <=  29'b0;
+-    icache_if_ifctrl_tag_data1_reg[28:0]   <=  29'b0;
+-    icache_if_ifctrl_inst_data0_reg[127:0] <= 128'b0;
+-    icache_if_ifctrl_inst_data1_reg[127:0] <= 128'b0;
+-  end
+-  else if(icache_read_pipe_vld)
+-  begin
+-    icache_if_ifctrl_tag_data0_reg[28:0]   <= icache_if_ifctrl_tag_data0[28:0];
+-    icache_if_ifctrl_tag_data1_reg[28:0]   <= icache_if_ifctrl_tag_data1[28:0];
+-    icache_if_ifctrl_inst_data0_reg[127:0] <= icache_if_ifctrl_inst_data0[127:0];
+-    icache_if_ifctrl_inst_data1_reg[127:0] <= icache_if_ifctrl_inst_data1[127:0];
+-  end
+-  else
+-  begin
+-    icache_if_ifctrl_tag_data0_reg[28:0]   <= icache_if_ifctrl_tag_data0_reg[28:0];
+-    icache_if_ifctrl_tag_data1_reg[28:0]   <= icache_if_ifctrl_tag_data1_reg[28:0];
+-    icache_if_ifctrl_inst_data0_reg[127:0] <= icache_if_ifctrl_inst_data0_reg[127:0];
+-    icache_if_ifctrl_inst_data1_reg[127:0] <= icache_if_ifctrl_inst_data1_reg[127:0];
+-  end
+-end  
+-
+-assign ifu_cp0_icache_read_data_vld    = (icache_inv_cur_state[3:0] == READ_ST);
+-assign ifu_cp0_icache_read_data[127:0] = (icache_read_tag)
+-                                       ? (icache_read_way)
+-                                         ? {96'b0, icache_if_ifctrl_tag_data1_reg[19:0], 11'b0, icache_if_ifctrl_tag_data1_reg[20]}
+-                                         : {96'b0, icache_if_ifctrl_tag_data0_reg[19:0], 11'b0, icache_if_ifctrl_tag_data0_reg[20]} 
+-                                       : (icache_read_way)
+-                                          ? icache_if_ifctrl_inst_data1_reg[127:0]
+-                                          : icache_if_ifctrl_inst_data0_reg[127:0];  
+-
+-//Debug_infor
+-assign ifctrl_debug_if_stall       = if_self_stall;
+-assign ifctrl_debug_if_pc_vld      = if_pc_vld;
+-assign ifctrl_debug_way_pred_stall = pcgen_ifctrl_way_pred_stall;
+-assign ifctrl_debug_if_vld         = if_vld;
+-assign ifctrl_debug_mmu_pavld      = mmu_ifu_pavld;
+-assign ifctrl_debug_lsu_all_inv    = lsu_ifu_icache_all_inv;
+-assign ifctrl_debug_lsu_line_inv   = lsu_ifu_icache_line_inv;
+-assign ifctrl_debug_inv_st[3:0]    = icache_inv_cur_state[3:0];
+-
+-// &ModuleEnd; @947
++  //----------------------------------------------------------------------------
++  // Central declarations. q bits: IF valid, IP valid, response saved,
++  // replay pending, IP's accepted L0 flag, performance event.
++  //----------------------------------------------------------------------------
++  localparam FLAG_COUNT = 6;
++  localparam OWNER_COUNT = 4;
++  localparam [FLAG_COUNT-1:0] RESET_FLAGS = 6'b001000;
++  localparam [1:0] CACHE = 2'd0, FAULT = 2'd1, BYPASS = 2'd2, REFILL = 2'd3;
++  genvar flag_index;
++  genvar owner;
++  reg  [ FLAG_COUNT-1:0] flag_q;
++  wire [ FLAG_COUNT-1:0] flag_nxt;
++  wire [ FLAG_COUNT-1:0] flag_en;
++  wire [OWNER_COUNT-1:0] owner_req;
++  wire                   delivery_enable;
++  wire                   fetch_enable;
++  wire                   kill_if;
++  wire                   ip_ready;
++  wire                   if_space;
++  wire                   issue_fault;
++  wire                   use_cache;
++  wire                   predictor_ready;
++  wire                   fetch_candidate;
++  wire                   fetch_fire;
++  wire                   forward_fire;
++  wire                   issue_fire;
++  wire                   l0_accept;
++  wire                   replay_set;
++
++  //----------------------------------------------------------------------------
++  // Stage transfer and PC cursor. IP decides hit/miss/Way replay, never IF.
++  //----------------------------------------------------------------------------
++  assign delivery_enable = cpurst_b && cp0_yy_clk_en && frontend_init_done && !maintenance_busy &&
++    !rtu_ifu_dbgon;
++  assign fetch_enable = delivery_enable && !cp0_ifu_no_op_req && !lbuf_ifctrl_active;
++  assign kill_if = frontend_redirect || pcgen_ifctrl_pipe_cancel || control_ifctrl_reissue;
++  assign ip_ready = !ipctrl_ifctrl_stall && !ipctrl_ifctrl_bht_stall;
++  assign ifctrl_ifdp_pipedown = flag_q[0] && delivery_enable && ip_ready && !kill_if;
++  assign if_space = !flag_q[0] || ifctrl_ifdp_pipedown || kill_if;
++  assign ifctrl_ifdp_hold = flag_q[0] && !flag_q[2] && !ifctrl_ifdp_pipedown && !kill_if;
++  assign ifctrl_ifdp_held = flag_q[2];
++
++  assign
++    issue_fault = (|pcgen_icache_if_index[1:0]) || !region_ifctrl_attr[4] || !region_ifctrl_attr[0];
++  assign use_cache = !issue_fault && region_ifctrl_attr[3] && cp0_ifu_icache_en;
++  assign predictor_ready = !cp0_ifu_btb_en || btb_ifctrl_ready;
++  assign fetch_candidate = fetch_enable && if_space && !pcgen_ifctrl_reissue &&
++    !control_ifctrl_reissue && !l1_refill_ifctrl_active && (!use_cache || predictor_ready);
++  assign owner_req = {
++    fetch_candidate && use_cache, ipb_array_req, refill_array_req, maintenance_array_req
++  };
++  generate
++    for (owner = 0; owner < OWNER_COUNT; owner = owner + 1) begin : g_owner
++      if (owner == 0) begin : g_first
++        assign ifctrl_array_grant[owner] = cpurst_b && cp0_yy_clk_en && owner_req[owner];
++      end else begin : g_later
++        assign ifctrl_array_grant[owner] = cpurst_b && cp0_yy_clk_en && owner_req[owner] &&
++          !(|owner_req[owner-1:0]);
++      end
++    end
++  endgenerate
++  assign ifctrl_maintenance_grant = ifctrl_array_grant[0];
++  assign ifctrl_refill_grant = ifctrl_array_grant[1];
++  assign ifctrl_ipb_grant = ifctrl_array_grant[2];
++  assign ifctrl_array_fetch = ifctrl_array_grant[3];
++  assign ifctrl_array_pc = pcgen_icache_if_index;
++  // Zero is a wait hint in C910. Retry reads both ways to avoid deadlock.
++  assign ifctrl_array_way = (|pcgen_icache_if_way_pred) ? pcgen_icache_if_way_pred : 2'b11;
++  assign fetch_fire = fetch_candidate && (!use_cache || ifctrl_array_fetch);
++
++  assign ifctrl_l1_refill_ready = delivery_enable && if_space && flag_q[3] &&
++    l1_refill_ifctrl_active && l1_refill_ifctrl_live && predictor_ready && !kill_if &&
++    (l1_refill_ifctrl_pc[31:4] == pcgen_ifctrl_pc[31:4]);
++  assign forward_fire = ifctrl_l1_refill_ready && l1_refill_ifctrl_vld;
++  assign ifctrl_l1_refill_cancel = kill_if;
++  assign issue_fire = fetch_fire || forward_fire;
++  assign ifctrl_ifdp_issue = issue_fire;
++  assign ifctrl_ifdp_issue_pc = forward_fire ? pcgen_ifctrl_pc : pcgen_icache_if_index;
++  assign ifctrl_ifdp_issue_way = forward_fire ? 2'b01 : use_cache ? ifctrl_array_way : 2'b00;
++  assign ifctrl_ifdp_issue_kind = forward_fire ? REFILL :
++    issue_fault ? FAULT : use_cache ? CACHE : BYPASS;
++
++  // L0 changes the next PC only when its source packet actually enters IP.
++  // Short hints never create prediction consumption or historical state.
++  assign l0_accept = ifctrl_ifdp_pipedown && !ifdp_ifctrl_fault && ifdp_ifctrl_l0_vld;
++  assign ifctrl_pcgen_chgflw_vld = l0_accept;
++  assign ifctrl_pcgen_chgflw_no_stall_mask = flag_q[0] && delivery_enable && !kill_if &&
++    !flag_q[3] && !ifdp_ifctrl_fault && ifdp_ifctrl_l0_vld;
++  assign ifctrl_pcgen_pcload_pc = ifdp_ifctrl_l0_target;
++  assign ifctrl_pcgen_way_pred = l0_accept ? ifdp_ifctrl_l0_way : 2'b11;
++  assign ifctrl_ifdp_l0_accept = l0_accept;
++  assign ifctrl_l0_btb_accept = l0_accept;
++  // A saved target has already entered PCGEN even if no array port was granted.
++  assign ifctrl_pcgen_reissue_pcload = flag_q[3] && fetch_enable && !frontend_redirect &&
++    !l1_refill_ifctrl_active;
++  assign ifctrl_pcgen_stall = !fetch_fire;
++  assign ifctrl_pcgen_stall_short = !fetch_fire;
++  assign
++    replay_set = frontend_redirect || pcgen_ifctrl_reissue || control_ifctrl_reissue || l0_accept;
++
++  assign ifctrl_btb_lookup_vld = issue_fire && cp0_ifu_btb_en &&
++    ((ifctrl_ifdp_issue_kind == CACHE) || forward_fire);
++  assign ifctrl_btb_lookup_pc = ifctrl_ifdp_issue_pc;
++  assign ifctrl_bht_read = issue_fire && ((ifctrl_ifdp_issue_kind == CACHE) || forward_fire);
++  assign ifctrl_bht_pcindex = ifctrl_ifdp_issue_pc[13:4];
++  assign ifctrl_bht_pipedown = ifctrl_ifdp_pipedown;
++  // C910's stall qualifies query index/read-response tracking, not IP transfer.
++  assign ifctrl_bht_stall = !ifctrl_bht_read;
++  assign ifctrl_l0_btb_lookup_vld = flag_q[0] && !kill_if;
++
++  //----------------------------------------------------------------------------
++  // Next values and generated reset/enable storage
++  //----------------------------------------------------------------------------
++  assign flag_en = {
++    1'b1,
++    pcgen_ifctrl_pipe_cancel || ip_ready,
++    1'b1,
++    1'b1,
++    pcgen_ifctrl_pipe_cancel || ip_ready,
++    1'b1
++  };
++  assign flag_nxt[0] = issue_fire || (flag_q[0] && !kill_if && !ifctrl_ifdp_pipedown);
++  assign flag_nxt[1] = !pcgen_ifctrl_pipe_cancel && ifctrl_ifdp_pipedown;
++  assign flag_nxt[2] = !issue_fire && !kill_if && !ifctrl_ifdp_pipedown &&
++    (flag_q[2] || ifctrl_ifdp_hold);
++  assign flag_nxt[3] = !issue_fire && (replay_set || flag_q[3]);
++  assign flag_nxt[4] = !pcgen_ifctrl_pipe_cancel && l0_accept;
++  assign flag_nxt[5] = hpcp_ifu_cnt_en && delivery_enable && !cp0_ifu_no_op_req &&
++    !lbuf_ifctrl_active && !ifctrl_ifdp_pipedown;
++  generate
++    for (flag_index = 0; flag_index < FLAG_COUNT; flag_index = flag_index + 1) begin : g_flag
++      always @(posedge forever_cpuclk or negedge cpurst_b) begin : p_flag
++        if (!cpurst_b) begin
++          flag_q[flag_index] <= RESET_FLAGS[flag_index];
++        end else if (flag_en[flag_index]) begin
++          flag_q[flag_index] <= flag_nxt[flag_index];
++        end
++      end
++    end
++  endgenerate
++  assign ifctrl_ipctrl_vld       = flag_q[1];
++  assign ifctrl_ipctrl_if_pcload = flag_q[4];
++  assign ifctrl_debug_if_vld     = flag_q[0];
++  assign ifctrl_debug_if_stall   = flag_q[0] && !ifctrl_ifdp_pipedown;
++  assign ifctrl_idle             = !flag_q[0] && !flag_q[1];
++  assign ifu_hpcp_frontend_stall = flag_q[5];
+ endmodule
+-
+-
+--- ../ifu/rtl/ct_ifu_ifdp.v
++++ rtl/rv32_ifu_ifdp.v
+@@ -1,2085 +1,362 @@
+ /*Copyright 2019-2021 T-Head Semiconductor Co., Ltd.
+-
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+-
+     http://www.apache.org/licenses/LICENSE-2.0
+-
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+ */
+-
+-// &ModuleBeg; @22
+-module ct_ifu_ifdp(
+-  btb_ifdp_way0_pred,
+-  btb_ifdp_way0_tag,
+-  btb_ifdp_way0_target,
+-  btb_ifdp_way0_vld,
+-  btb_ifdp_way1_pred,
+-  btb_ifdp_way1_tag,
+-  btb_ifdp_way1_target,
+-  btb_ifdp_way1_vld,
+-  btb_ifdp_way2_pred,
+-  btb_ifdp_way2_tag,
+-  btb_ifdp_way2_target,
+-  btb_ifdp_way2_vld,
+-  btb_ifdp_way3_pred,
+-  btb_ifdp_way3_tag,
+-  btb_ifdp_way3_target,
+-  btb_ifdp_way3_vld,
+-  cp0_ifu_icache_en,
+-  cp0_ifu_icg_en,
+-  cp0_yy_clk_en,
+-  cp0_yy_priv_mode,
+-  cpurst_b,
+-  forever_cpuclk,
+-  had_yy_xx_bkpta_base,
+-  had_yy_xx_bkpta_mask,
+-  had_yy_xx_bkpta_rc,
+-  had_yy_xx_bkptb_base,
+-  had_yy_xx_bkptb_mask,
+-  had_yy_xx_bkptb_rc,
+-  icache_if_ifdp_fifo,
+-  icache_if_ifdp_inst_data0,
+-  icache_if_ifdp_inst_data1,
+-  icache_if_ifdp_precode0,
+-  icache_if_ifdp_precode1,
+-  icache_if_ifdp_tag_data0,
+-  icache_if_ifdp_tag_data1,
+-  ifctrl_ifdp_cancel,
+-  ifctrl_ifdp_pipedown,
+-  ifctrl_ifdp_stall,
+-  ifdp_debug_acc_err_vld,
+-  ifdp_debug_mmu_expt_vld,
+-  ifdp_ipctrl_expt_vld,
+-  ifdp_ipctrl_expt_vld_dup,
+-  ifdp_ipctrl_fifo,
+-  ifdp_ipctrl_pa,
+-  ifdp_ipctrl_refill_on,
+-  ifdp_ipctrl_tsize,
+-  ifdp_ipctrl_vpc_2_0_onehot,
+-  ifdp_ipctrl_vpc_bry_mask,
+-  ifdp_ipctrl_w0_bry0_hit,
+-  ifdp_ipctrl_w0_bry1_hit,
+-  ifdp_ipctrl_w0b0_br_ntake,
+-  ifdp_ipctrl_w0b0_br_taken,
+-  ifdp_ipctrl_w0b0_bry_data,
+-  ifdp_ipctrl_w0b1_br_ntake,
+-  ifdp_ipctrl_w0b1_br_taken,
+-  ifdp_ipctrl_w0b1_bry_data,
+-  ifdp_ipctrl_w1_bry0_hit,
+-  ifdp_ipctrl_w1_bry1_hit,
+-  ifdp_ipctrl_w1b0_br_ntake,
+-  ifdp_ipctrl_w1b0_br_taken,
+-  ifdp_ipctrl_w1b0_bry_data,
+-  ifdp_ipctrl_w1b1_br_ntake,
+-  ifdp_ipctrl_w1b1_br_taken,
+-  ifdp_ipctrl_w1b1_bry_data,
+-  ifdp_ipctrl_way0_15_8_hit,
+-  ifdp_ipctrl_way0_15_8_hit_dup,
+-  ifdp_ipctrl_way0_23_16_hit,
+-  ifdp_ipctrl_way0_23_16_hit_dup,
+-  ifdp_ipctrl_way0_28_24_hit,
+-  ifdp_ipctrl_way0_28_24_hit_dup,
+-  ifdp_ipctrl_way0_7_0_hit,
+-  ifdp_ipctrl_way0_7_0_hit_dup,
+-  ifdp_ipctrl_way1_15_8_hit,
+-  ifdp_ipctrl_way1_23_16_hit,
+-  ifdp_ipctrl_way1_28_24_hit,
+-  ifdp_ipctrl_way1_7_0_hit,
+-  ifdp_ipctrl_way_pred,
+-  ifdp_ipdp_acc_err,
+-  ifdp_ipdp_bkpta,
+-  ifdp_ipdp_bkptb,
+-  ifdp_ipdp_btb_way0_pred,
+-  ifdp_ipdp_btb_way0_tag,
+-  ifdp_ipdp_btb_way0_target,
+-  ifdp_ipdp_btb_way0_vld,
+-  ifdp_ipdp_btb_way1_pred,
+-  ifdp_ipdp_btb_way1_tag,
+-  ifdp_ipdp_btb_way1_target,
+-  ifdp_ipdp_btb_way1_vld,
+-  ifdp_ipdp_btb_way2_pred,
+-  ifdp_ipdp_btb_way2_tag,
+-  ifdp_ipdp_btb_way2_target,
+-  ifdp_ipdp_btb_way2_vld,
+-  ifdp_ipdp_btb_way3_pred,
+-  ifdp_ipdp_btb_way3_tag,
+-  ifdp_ipdp_btb_way3_target,
+-  ifdp_ipdp_btb_way3_vld,
+-  ifdp_ipdp_h1_inst_high_way0,
+-  ifdp_ipdp_h1_inst_high_way1,
+-  ifdp_ipdp_h1_inst_low_way0,
+-  ifdp_ipdp_h1_inst_low_way1,
+-  ifdp_ipdp_h1_precode_way0,
+-  ifdp_ipdp_h1_precode_way1,
+-  ifdp_ipdp_h2_inst_high_way0,
+-  ifdp_ipdp_h2_inst_high_way1,
+-  ifdp_ipdp_h2_inst_low_way0,
+-  ifdp_ipdp_h2_inst_low_way1,
+-  ifdp_ipdp_h2_precode_way0,
+-  ifdp_ipdp_h2_precode_way1,
+-  ifdp_ipdp_h3_inst_high_way0,
+-  ifdp_ipdp_h3_inst_high_way1,
+-  ifdp_ipdp_h3_inst_low_way0,
+-  ifdp_ipdp_h3_inst_low_way1,
+-  ifdp_ipdp_h3_precode_way0,
+-  ifdp_ipdp_h3_precode_way1,
+-  ifdp_ipdp_h4_inst_high_way0,
+-  ifdp_ipdp_h4_inst_high_way1,
+-  ifdp_ipdp_h4_inst_low_way0,
+-  ifdp_ipdp_h4_inst_low_way1,
+-  ifdp_ipdp_h4_precode_way0,
+-  ifdp_ipdp_h4_precode_way1,
+-  ifdp_ipdp_h5_inst_high_way0,
+-  ifdp_ipdp_h5_inst_high_way1,
+-  ifdp_ipdp_h5_inst_low_way0,
+-  ifdp_ipdp_h5_inst_low_way1,
+-  ifdp_ipdp_h5_precode_way0,
+-  ifdp_ipdp_h5_precode_way1,
+-  ifdp_ipdp_h6_inst_high_way0,
+-  ifdp_ipdp_h6_inst_high_way1,
+-  ifdp_ipdp_h6_inst_low_way0,
+-  ifdp_ipdp_h6_inst_low_way1,
+-  ifdp_ipdp_h6_precode_way0,
+-  ifdp_ipdp_h6_precode_way1,
+-  ifdp_ipdp_h7_inst_high_way0,
+-  ifdp_ipdp_h7_inst_high_way1,
+-  ifdp_ipdp_h7_inst_low_way0,
+-  ifdp_ipdp_h7_inst_low_way1,
+-  ifdp_ipdp_h7_precode_way0,
+-  ifdp_ipdp_h7_precode_way1,
+-  ifdp_ipdp_h8_inst_high_way0,
+-  ifdp_ipdp_h8_inst_high_way1,
+-  ifdp_ipdp_h8_inst_low_way0,
+-  ifdp_ipdp_h8_inst_low_way1,
+-  ifdp_ipdp_h8_precode_way0,
+-  ifdp_ipdp_h8_precode_way1,
+-  ifdp_ipdp_l0_btb_counter,
+-  ifdp_ipdp_l0_btb_entry_hit,
+-  ifdp_ipdp_l0_btb_hit,
+-  ifdp_ipdp_l0_btb_mispred_pc,
+-  ifdp_ipdp_l0_btb_ras,
+-  ifdp_ipdp_l0_btb_target,
+-  ifdp_ipdp_l0_btb_way0_high_hit,
+-  ifdp_ipdp_l0_btb_way0_low_hit,
+-  ifdp_ipdp_l0_btb_way1_high_hit,
+-  ifdp_ipdp_l0_btb_way1_low_hit,
+-  ifdp_ipdp_l0_btb_way2_high_hit,
+-  ifdp_ipdp_l0_btb_way2_low_hit,
+-  ifdp_ipdp_l0_btb_way3_high_hit,
+-  ifdp_ipdp_l0_btb_way3_low_hit,
+-  ifdp_ipdp_l0_btb_way_pred,
+-  ifdp_ipdp_mmu_pgflt,
+-  ifdp_ipdp_sfp_hit_pc_lo,
+-  ifdp_ipdp_sfp_hit_type,
+-  ifdp_ipdp_sfp_pc_hit,
+-  ifdp_ipdp_vpc,
+-  ifdp_l1_refill_bufferable,
+-  ifdp_l1_refill_cacheable,
+-  ifdp_l1_refill_fifo,
+-  ifdp_l1_refill_machine_mode,
+-  ifdp_l1_refill_secure,
+-  ifdp_l1_refill_supv_mode,
+-  ifdp_l1_refill_tsize,
+-  ipctrl_ifdp_gateclk_en,
+-  ipctrl_ifdp_vpc_onehot_updt,
+-  ipctrl_ifdp_w0_bry0_hit_updt,
+-  ipctrl_ifdp_w0_bry1_hit_updt,
+-  ipctrl_ifdp_w0b0_br_ntake_updt,
+-  ipctrl_ifdp_w0b0_br_taken_updt,
+-  ipctrl_ifdp_w0b0_bry_updt_data,
+-  ipctrl_ifdp_w0b1_br_ntake_updt,
+-  ipctrl_ifdp_w0b1_br_taken_updt,
+-  ipctrl_ifdp_w0b1_bry_updt_data,
+-  ipctrl_ifdp_w1_bry0_hit_updt,
+-  ipctrl_ifdp_w1_bry1_hit_updt,
+-  ipctrl_ifdp_w1b0_br_ntake_updt,
+-  ipctrl_ifdp_w1b0_br_taken_updt,
+-  ipctrl_ifdp_w1b0_bry_updt_data,
+-  ipctrl_ifdp_w1b1_br_ntake_updt,
+-  ipctrl_ifdp_w1b1_br_taken_updt,
+-  ipctrl_ifdp_w1b1_bry_updt_data,
+-  l0_btb_ifdp_chgflw_pc,
+-  l0_btb_ifdp_chgflw_way_pred,
+-  l0_btb_ifdp_counter,
+-  l0_btb_ifdp_entry_hit,
+-  l0_btb_ifdp_hit,
+-  l0_btb_ifdp_ras,
+-  l1_refill_ifdp_acc_err,
+-  l1_refill_ifdp_inst_data,
+-  l1_refill_ifdp_precode,
+-  l1_refill_ifdp_refill_on,
+-  l1_refill_ifdp_tag_data,
+-  mmu_ifu_buf,
+-  mmu_ifu_ca,
+-  mmu_ifu_pa,
+-  mmu_ifu_pgflt,
+-  mmu_ifu_sec,
+-  mmu_xx_mmu_en,
+-  pad_yy_icg_scan_en,
+-  pcgen_ifdp_inc_pc,
+-  pcgen_ifdp_pc,
+-  pcgen_ifdp_way_pred,
+-  rtu_yy_xx_dbgon,
+-  sfp_ifdp_hit_pc_lo,
+-  sfp_ifdp_hit_type,
+-  sfp_ifdp_pc_hit
++// RV32I adaptation of ct_ifu_ifdp.v; generated by scripts/build_ifdp.py.
++// IF compares Tag slices; IP combines them and decides hit/miss/Way replay.
++// All full PCs are physical byte addresses. Word0 is data[31:0].
++// Coding style : CCI500-style Verilog-2001 (see doc/coding_style_zh.md)
++//------------------------------------------------------------------------------
++// Module Declaration
++//------------------------------------------------------------------------------
++module rv32_ifu_ifdp (
++  input  wire         forever_cpuclk,
++  input  wire         cpurst_b,
++  input  wire         cp0_ifu_icache_en,
++  input  wire [  1:0] cp0_yy_priv_mode,
++  input  wire [  4:0] region_ifdp_attr,
++  input  wire         ifctrl_ifdp_issue,
++  input  wire         ifctrl_ifdp_hold,
++  input  wire         ifctrl_ifdp_held,
++  input  wire         ifctrl_ifdp_pipedown,
++  input  wire [ 31:0] ifctrl_ifdp_issue_pc,
++  input  wire [  1:0] ifctrl_ifdp_issue_way,
++  input  wire [  1:0] ifctrl_ifdp_issue_kind,
++  input  wire [127:0] icache_if_ifdp_inst_data0,
++  input  wire [127:0] icache_if_ifdp_inst_data1,
++  input  wire [ 31:0] icache_if_ifdp_precode0,
++  input  wire [ 31:0] icache_if_ifdp_precode1,
++  input  wire [ 17:0] icache_if_ifdp_tag_data0,
++  input  wire [ 17:0] icache_if_ifdp_tag_data1,
++  input  wire         icache_if_ifdp_fifo,
++  input  wire         l1_refill_ifdp_acc_err,
++  input  wire [127:0] l1_refill_ifdp_inst_data,
++  input  wire [ 31:0] l1_refill_ifdp_precode,
++  input  wire         btb_ifdp_vld,
++  input  wire [ 31:0] btb_ifdp_pc,
++  input  wire [  3:0] btb_ifdp_hit,
++  input  wire [127:0] btb_ifdp_target,
++  input  wire [  7:0] btb_ifdp_way,
++  input  wire         l0_btb_ifdp_hit,
++  input  wire         bp_recovery_stall,
++  input  wire [  3:0] l0_btb_ifdp_index,
++  input  wire [  1:0] l0_btb_ifdp_slot,
++  input  wire [  1:0] l0_btb_ifdp_way,
++  input  wire [  2:0] l0_btb_ifdp_type,
++  input  wire [ 31:0] l0_btb_ifdp_target,
++  input  wire         had_ifu_bkpta_en,
++  input  wire         had_ifu_bkptb_en,
++  input  wire [ 31:0] had_yy_xx_bkpta_base,
++  input  wire [ 31:0] had_yy_xx_bkptb_base,
++  input  wire [ 31:0] had_yy_xx_bkpta_mask,
++  input  wire [ 31:0] had_yy_xx_bkptb_mask,
++  input  wire         sfp_ifdp_vld,
++  input  wire [ 31:0] sfp_ifdp_pc,
++  input  wire [  3:0] sfp_ifdp_no_spec,
++  output wire         ifdp_ifctrl_fault,
++  output wire         ifdp_ifctrl_l0_vld,
++  output wire [ 31:0] ifdp_ifctrl_l0_target,
++  output wire [ 31:0] ifdp_l0_btb_pc,
++  output wire [ 31:0] ifdp_bht_pc,
++  output wire [  1:0] ifdp_ifctrl_l0_way,
++  output wire [ 31:0] ifdp_ipdp_vpc,
++  output wire [  4:0] ifdp_ipdp_attr,
++  output wire [  1:0] ifdp_ipdp_priv_mode,
++  output wire [  1:0] ifdp_ipdp_way_pred,
++  output wire         ifdp_ipdp_refill_on,
++  output wire         ifdp_ipdp_cache_bypass,
++  output wire         ifdp_ipdp_fifo,
++  output wire         ifdp_ipdp_fault,
++  output wire [  3:0] ifdp_ipdp_cause,
++  output wire [  3:0] ifdp_ipdp_word_mask,
++  output wire [  3:0] ifdp_ipdp_bkpta,
++  output wire [  3:0] ifdp_ipdp_bkptb,
++  output wire [127:0] ifdp_ipdp_inst_data0,
++  output wire [127:0] ifdp_ipdp_inst_data1,
++  output wire [ 31:0] ifdp_ipdp_precode0,
++  output wire [ 31:0] ifdp_ipdp_precode1,
++  output wire [  2:0] ifdp_ipdp_tag_match0,
++  output wire [  2:0] ifdp_ipdp_tag_match1,
++  output wire         ifdp_ipdp_btb_vld,
++  output wire [  3:0] ifdp_ipdp_btb_hit,
++  output wire [127:0] ifdp_ipdp_btb_target,
++  output wire [  7:0] ifdp_ipdp_btb_way,
++  output wire         ifdp_ipdp_l0_hit,
++  output wire [  3:0] ifdp_ipdp_l0_index,
++  output wire [  1:0] ifdp_ipdp_l0_slot,
++  output wire [  2:0] ifdp_ipdp_l0_type,
++  output wire [ 31:0] ifdp_ipdp_l0_target,
++  output wire [  1:0] ifdp_ipdp_l0_way,
++  output wire [  3:0] ifdp_ipdp_no_spec,
++  output wire [ 31:0] ifdp_ipdp_seq_pc,
++  output wire [127:0] ifdp_ipdp_word_pc,
++  output wire [ 15:0] ifdp_ipdp_l0_entry_mask,
++  output wire [  3:0] ifdp_ipdp_l0_btb_target_match
+ );
+-
+-// &Ports; @23
+-input   [1  :0]  btb_ifdp_way0_pred;            
+-input   [9  :0]  btb_ifdp_way0_tag;             
+-input   [19 :0]  btb_ifdp_way0_target;          
+-input            btb_ifdp_way0_vld;             
+-input   [1  :0]  btb_ifdp_way1_pred;            
+-input   [9  :0]  btb_ifdp_way1_tag;             
+-input   [19 :0]  btb_ifdp_way1_target;          
+-input            btb_ifdp_way1_vld;             
+-input   [1  :0]  btb_ifdp_way2_pred;            
+-input   [9  :0]  btb_ifdp_way2_tag;             
+-input   [19 :0]  btb_ifdp_way2_target;          
+-input            btb_ifdp_way2_vld;             
+-input   [1  :0]  btb_ifdp_way3_pred;            
+-input   [9  :0]  btb_ifdp_way3_tag;             
+-input   [19 :0]  btb_ifdp_way3_target;          
+-input            btb_ifdp_way3_vld;             
+-input            cp0_ifu_icache_en;             
+-input            cp0_ifu_icg_en;                
+-input            cp0_yy_clk_en;                 
+-input   [1  :0]  cp0_yy_priv_mode;              
+-input            cpurst_b;                      
+-input            forever_cpuclk;                
+-input   [39 :0]  had_yy_xx_bkpta_base;          
+-input   [7  :0]  had_yy_xx_bkpta_mask;          
+-input            had_yy_xx_bkpta_rc;            
+-input   [39 :0]  had_yy_xx_bkptb_base;          
+-input   [7  :0]  had_yy_xx_bkptb_mask;          
+-input            had_yy_xx_bkptb_rc;            
+-input            icache_if_ifdp_fifo;           
+-input   [127:0]  icache_if_ifdp_inst_data0;     
+-input   [127:0]  icache_if_ifdp_inst_data1;     
+-input   [31 :0]  icache_if_ifdp_precode0;       
+-input   [31 :0]  icache_if_ifdp_precode1;       
+-input   [28 :0]  icache_if_ifdp_tag_data0;      
+-input   [28 :0]  icache_if_ifdp_tag_data1;      
+-input            ifctrl_ifdp_cancel;            
+-input            ifctrl_ifdp_pipedown;          
+-input            ifctrl_ifdp_stall;             
+-input            ipctrl_ifdp_gateclk_en;        
+-input   [7  :0]  ipctrl_ifdp_vpc_onehot_updt;   
+-input            ipctrl_ifdp_w0_bry0_hit_updt;  
+-input            ipctrl_ifdp_w0_bry1_hit_updt;  
+-input   [7  :0]  ipctrl_ifdp_w0b0_br_ntake_updt; 
+-input   [7  :0]  ipctrl_ifdp_w0b0_br_taken_updt; 
+-input   [7  :0]  ipctrl_ifdp_w0b0_bry_updt_data; 
+-input   [7  :0]  ipctrl_ifdp_w0b1_br_ntake_updt; 
+-input   [7  :0]  ipctrl_ifdp_w0b1_br_taken_updt; 
+-input   [7  :0]  ipctrl_ifdp_w0b1_bry_updt_data; 
+-input            ipctrl_ifdp_w1_bry0_hit_updt;  
+-input            ipctrl_ifdp_w1_bry1_hit_updt;  
+-input   [7  :0]  ipctrl_ifdp_w1b0_br_ntake_updt; 
+-input   [7  :0]  ipctrl_ifdp_w1b0_br_taken_updt; 
+-input   [7  :0]  ipctrl_ifdp_w1b0_bry_updt_data; 
+-input   [7  :0]  ipctrl_ifdp_w1b1_br_ntake_updt; 
+-input   [7  :0]  ipctrl_ifdp_w1b1_br_taken_updt; 
+-input   [7  :0]  ipctrl_ifdp_w1b1_bry_updt_data; 
+-input   [38 :0]  l0_btb_ifdp_chgflw_pc;         
+-input   [1  :0]  l0_btb_ifdp_chgflw_way_pred;   
+-input            l0_btb_ifdp_counter;           
+-input   [15 :0]  l0_btb_ifdp_entry_hit;         
+-input            l0_btb_ifdp_hit;               
+-input            l0_btb_ifdp_ras;               
+-input            l1_refill_ifdp_acc_err;        
+-input   [127:0]  l1_refill_ifdp_inst_data;      
+-input   [31 :0]  l1_refill_ifdp_precode;        
+-input            l1_refill_ifdp_refill_on;      
+-input   [28 :0]  l1_refill_ifdp_tag_data;       
+-input            mmu_ifu_buf;                   
+-input            mmu_ifu_ca;                    
+-input   [27 :0]  mmu_ifu_pa;                    
+-input            mmu_ifu_pgflt;                 
+-input            mmu_ifu_sec;                   
+-input            mmu_xx_mmu_en;                 
+-input            pad_yy_icg_scan_en;            
+-input   [38 :0]  pcgen_ifdp_inc_pc;             
+-input   [38 :0]  pcgen_ifdp_pc;                 
+-input   [1  :0]  pcgen_ifdp_way_pred;           
+-input            rtu_yy_xx_dbgon;               
+-input   [2  :0]  sfp_ifdp_hit_pc_lo;            
+-input   [3  :0]  sfp_ifdp_hit_type;             
+-input            sfp_ifdp_pc_hit;               
+-output           ifdp_debug_acc_err_vld;        
+-output           ifdp_debug_mmu_expt_vld;       
+-output           ifdp_ipctrl_expt_vld;          
+-output           ifdp_ipctrl_expt_vld_dup;      
+-output           ifdp_ipctrl_fifo;              
+-output  [27 :0]  ifdp_ipctrl_pa;                
+-output           ifdp_ipctrl_refill_on;         
+-output           ifdp_ipctrl_tsize;             
+-output  [7  :0]  ifdp_ipctrl_vpc_2_0_onehot;    
+-output  [7  :0]  ifdp_ipctrl_vpc_bry_mask;      
+-output           ifdp_ipctrl_w0_bry0_hit;       
+-output           ifdp_ipctrl_w0_bry1_hit;       
+-output  [7  :0]  ifdp_ipctrl_w0b0_br_ntake;     
+-output  [7  :0]  ifdp_ipctrl_w0b0_br_taken;     
+-output  [7  :0]  ifdp_ipctrl_w0b0_bry_data;     
+-output  [7  :0]  ifdp_ipctrl_w0b1_br_ntake;     
+-output  [7  :0]  ifdp_ipctrl_w0b1_br_taken;     
+-output  [7  :0]  ifdp_ipctrl_w0b1_bry_data;     
+-output           ifdp_ipctrl_w1_bry0_hit;       
+-output           ifdp_ipctrl_w1_bry1_hit;       
+-output  [7  :0]  ifdp_ipctrl_w1b0_br_ntake;     
+-output  [7  :0]  ifdp_ipctrl_w1b0_br_taken;     
+-output  [7  :0]  ifdp_ipctrl_w1b0_bry_data;     
+-output  [7  :0]  ifdp_ipctrl_w1b1_br_ntake;     
+-output  [7  :0]  ifdp_ipctrl_w1b1_br_taken;     
+-output  [7  :0]  ifdp_ipctrl_w1b1_bry_data;     
+-output           ifdp_ipctrl_way0_15_8_hit;     
+-output           ifdp_ipctrl_way0_15_8_hit_dup; 
+-output           ifdp_ipctrl_way0_23_16_hit;    
+-output           ifdp_ipctrl_way0_23_16_hit_dup; 
+-output           ifdp_ipctrl_way0_28_24_hit;    
+-output           ifdp_ipctrl_way0_28_24_hit_dup; 
+-output           ifdp_ipctrl_way0_7_0_hit;      
+-output           ifdp_ipctrl_way0_7_0_hit_dup;  
+-output           ifdp_ipctrl_way1_15_8_hit;     
+-output           ifdp_ipctrl_way1_23_16_hit;    
+-output           ifdp_ipctrl_way1_28_24_hit;    
+-output           ifdp_ipctrl_way1_7_0_hit;      
+-output  [1  :0]  ifdp_ipctrl_way_pred;          
+-output           ifdp_ipdp_acc_err;             
+-output  [7  :0]  ifdp_ipdp_bkpta;               
+-output  [7  :0]  ifdp_ipdp_bkptb;               
+-output  [1  :0]  ifdp_ipdp_btb_way0_pred;       
+-output  [9  :0]  ifdp_ipdp_btb_way0_tag;        
+-output  [19 :0]  ifdp_ipdp_btb_way0_target;     
+-output           ifdp_ipdp_btb_way0_vld;        
+-output  [1  :0]  ifdp_ipdp_btb_way1_pred;       
+-output  [9  :0]  ifdp_ipdp_btb_way1_tag;        
+-output  [19 :0]  ifdp_ipdp_btb_way1_target;     
+-output           ifdp_ipdp_btb_way1_vld;        
+-output  [1  :0]  ifdp_ipdp_btb_way2_pred;       
+-output  [9  :0]  ifdp_ipdp_btb_way2_tag;        
+-output  [19 :0]  ifdp_ipdp_btb_way2_target;     
+-output           ifdp_ipdp_btb_way2_vld;        
+-output  [1  :0]  ifdp_ipdp_btb_way3_pred;       
+-output  [9  :0]  ifdp_ipdp_btb_way3_tag;        
+-output  [19 :0]  ifdp_ipdp_btb_way3_target;     
+-output           ifdp_ipdp_btb_way3_vld;        
+-output  [13 :0]  ifdp_ipdp_h1_inst_high_way0;   
+-output  [13 :0]  ifdp_ipdp_h1_inst_high_way1;   
+-output  [1  :0]  ifdp_ipdp_h1_inst_low_way0;    
+-output  [1  :0]  ifdp_ipdp_h1_inst_low_way1;    
+-output  [3  :0]  ifdp_ipdp_h1_precode_way0;     
+-output  [3  :0]  ifdp_ipdp_h1_precode_way1;     
+-output  [13 :0]  ifdp_ipdp_h2_inst_high_way0;   
+-output  [13 :0]  ifdp_ipdp_h2_inst_high_way1;   
+-output  [1  :0]  ifdp_ipdp_h2_inst_low_way0;    
+-output  [1  :0]  ifdp_ipdp_h2_inst_low_way1;    
+-output  [3  :0]  ifdp_ipdp_h2_precode_way0;     
+-output  [3  :0]  ifdp_ipdp_h2_precode_way1;     
+-output  [13 :0]  ifdp_ipdp_h3_inst_high_way0;   
+-output  [13 :0]  ifdp_ipdp_h3_inst_high_way1;   
+-output  [1  :0]  ifdp_ipdp_h3_inst_low_way0;    
+-output  [1  :0]  ifdp_ipdp_h3_inst_low_way1;    
+-output  [3  :0]  ifdp_ipdp_h3_precode_way0;     
+-output  [3  :0]  ifdp_ipdp_h3_precode_way1;     
+-output  [13 :0]  ifdp_ipdp_h4_inst_high_way0;   
+-output  [13 :0]  ifdp_ipdp_h4_inst_high_way1;   
+-output  [1  :0]  ifdp_ipdp_h4_inst_low_way0;    
+-output  [1  :0]  ifdp_ipdp_h4_inst_low_way1;    
+-output  [3  :0]  ifdp_ipdp_h4_precode_way0;     
+-output  [3  :0]  ifdp_ipdp_h4_precode_way1;     
+-output  [13 :0]  ifdp_ipdp_h5_inst_high_way0;   
+-output  [13 :0]  ifdp_ipdp_h5_inst_high_way1;   
+-output  [1  :0]  ifdp_ipdp_h5_inst_low_way0;    
+-output  [1  :0]  ifdp_ipdp_h5_inst_low_way1;    
+-output  [3  :0]  ifdp_ipdp_h5_precode_way0;     
+-output  [3  :0]  ifdp_ipdp_h5_precode_way1;     
+-output  [13 :0]  ifdp_ipdp_h6_inst_high_way0;   
+-output  [13 :0]  ifdp_ipdp_h6_inst_high_way1;   
+-output  [1  :0]  ifdp_ipdp_h6_inst_low_way0;    
+-output  [1  :0]  ifdp_ipdp_h6_inst_low_way1;    
+-output  [3  :0]  ifdp_ipdp_h6_precode_way0;     
+-output  [3  :0]  ifdp_ipdp_h6_precode_way1;     
+-output  [13 :0]  ifdp_ipdp_h7_inst_high_way0;   
+-output  [13 :0]  ifdp_ipdp_h7_inst_high_way1;   
+-output  [1  :0]  ifdp_ipdp_h7_inst_low_way0;    
+-output  [1  :0]  ifdp_ipdp_h7_inst_low_way1;    
+-output  [3  :0]  ifdp_ipdp_h7_precode_way0;     
+-output  [3  :0]  ifdp_ipdp_h7_precode_way1;     
+-output  [13 :0]  ifdp_ipdp_h8_inst_high_way0;   
+-output  [13 :0]  ifdp_ipdp_h8_inst_high_way1;   
+-output  [1  :0]  ifdp_ipdp_h8_inst_low_way0;    
+-output  [1  :0]  ifdp_ipdp_h8_inst_low_way1;    
+-output  [3  :0]  ifdp_ipdp_h8_precode_way0;     
+-output  [3  :0]  ifdp_ipdp_h8_precode_way1;     
+-output           ifdp_ipdp_l0_btb_counter;      
+-output  [15 :0]  ifdp_ipdp_l0_btb_entry_hit;    
+-output           ifdp_ipdp_l0_btb_hit;          
+-output  [38 :0]  ifdp_ipdp_l0_btb_mispred_pc;   
+-output           ifdp_ipdp_l0_btb_ras;          
+-output  [38 :0]  ifdp_ipdp_l0_btb_target;       
+-output           ifdp_ipdp_l0_btb_way0_high_hit; 
+-output           ifdp_ipdp_l0_btb_way0_low_hit; 
+-output           ifdp_ipdp_l0_btb_way1_high_hit; 
+-output           ifdp_ipdp_l0_btb_way1_low_hit; 
+-output           ifdp_ipdp_l0_btb_way2_high_hit; 
+-output           ifdp_ipdp_l0_btb_way2_low_hit; 
+-output           ifdp_ipdp_l0_btb_way3_high_hit; 
+-output           ifdp_ipdp_l0_btb_way3_low_hit; 
+-output  [1  :0]  ifdp_ipdp_l0_btb_way_pred;     
+-output           ifdp_ipdp_mmu_pgflt;           
+-output  [2  :0]  ifdp_ipdp_sfp_hit_pc_lo;       
+-output  [3  :0]  ifdp_ipdp_sfp_hit_type;        
+-output           ifdp_ipdp_sfp_pc_hit;          
+-output  [38 :0]  ifdp_ipdp_vpc;                 
+-output           ifdp_l1_refill_bufferable;     
+-output           ifdp_l1_refill_cacheable;      
+-output           ifdp_l1_refill_fifo;           
+-output           ifdp_l1_refill_machine_mode;   
+-output           ifdp_l1_refill_secure;         
+-output           ifdp_l1_refill_supv_mode;      
+-output           ifdp_l1_refill_tsize;          
+-
+-// &Regs; @24
+-reg     [1  :0]  btb_way0_pred;                 
+-reg     [9  :0]  btb_way0_tag;                  
+-reg     [19 :0]  btb_way0_target;               
+-reg              btb_way0_vld;                  
+-reg     [1  :0]  btb_way1_pred;                 
+-reg     [9  :0]  btb_way1_tag;                  
+-reg     [19 :0]  btb_way1_target;               
+-reg              btb_way1_vld;                  
+-reg     [1  :0]  btb_way2_pred;                 
+-reg     [9  :0]  btb_way2_tag;                  
+-reg     [19 :0]  btb_way2_target;               
+-reg              btb_way2_vld;                  
+-reg     [1  :0]  btb_way3_pred;                 
+-reg     [9  :0]  btb_way3_tag;                  
+-reg     [19 :0]  btb_way3_target;               
+-reg              btb_way3_vld;                  
+-reg              cp0_ifu_icache_en_flop;        
+-reg     [7  :0]  if_vpc_2_0_onehot;             
+-reg              ifdp_ipctrl_expt_vld_dup;      
+-reg              ifdp_ipctrl_fifo;              
+-reg     [27 :0]  ifdp_ipctrl_pa;                
+-reg              ifdp_ipctrl_refill_on;         
+-reg     [7  :0]  ifdp_ipctrl_vpc_2_0_onehot;    
+-reg     [7  :0]  ifdp_ipctrl_vpc_bry_mask;      
+-reg              ifdp_ipctrl_w0_bry0_hit;       
+-reg              ifdp_ipctrl_w0_bry1_hit;       
+-reg     [7  :0]  ifdp_ipctrl_w0b0_br_ntake;     
+-reg     [7  :0]  ifdp_ipctrl_w0b0_br_taken;     
+-reg     [7  :0]  ifdp_ipctrl_w0b0_bry_data;     
+-reg     [7  :0]  ifdp_ipctrl_w0b1_br_ntake;     
+-reg     [7  :0]  ifdp_ipctrl_w0b1_br_taken;     
+-reg     [7  :0]  ifdp_ipctrl_w0b1_bry_data;     
+-reg              ifdp_ipctrl_w1_bry0_hit;       
+-reg              ifdp_ipctrl_w1_bry1_hit;       
+-reg     [7  :0]  ifdp_ipctrl_w1b0_br_ntake;     
+-reg     [7  :0]  ifdp_ipctrl_w1b0_br_taken;     
+-reg     [7  :0]  ifdp_ipctrl_w1b0_bry_data;     
+-reg     [7  :0]  ifdp_ipctrl_w1b1_br_ntake;     
+-reg     [7  :0]  ifdp_ipctrl_w1b1_br_taken;     
+-reg     [7  :0]  ifdp_ipctrl_w1b1_bry_data;     
+-reg              ifdp_ipctrl_way0_15_8_hit;     
+-reg              ifdp_ipctrl_way0_15_8_hit_dup; 
+-reg              ifdp_ipctrl_way0_23_16_hit;    
+-reg              ifdp_ipctrl_way0_23_16_hit_dup; 
+-reg              ifdp_ipctrl_way0_28_24_hit;    
+-reg              ifdp_ipctrl_way0_28_24_hit_dup; 
+-reg              ifdp_ipctrl_way0_7_0_hit;      
+-reg              ifdp_ipctrl_way0_7_0_hit_dup;  
+-reg              ifdp_ipctrl_way1_15_8_hit;     
+-reg              ifdp_ipctrl_way1_23_16_hit;    
+-reg              ifdp_ipctrl_way1_28_24_hit;    
+-reg              ifdp_ipctrl_way1_7_0_hit;      
+-reg     [1  :0]  ifdp_ipctrl_way_pred;          
+-reg              ifdp_ipdp_acc_err;             
+-reg     [7  :0]  ifdp_ipdp_bkpta;               
+-reg     [7  :0]  ifdp_ipdp_bkptb;               
+-reg              ifdp_ipdp_expt_vld;            
+-reg     [13 :0]  ifdp_ipdp_h1_inst_high_way0;   
+-reg     [13 :0]  ifdp_ipdp_h1_inst_high_way1;   
+-reg     [1  :0]  ifdp_ipdp_h1_inst_low_way0;    
+-reg     [1  :0]  ifdp_ipdp_h1_inst_low_way1;    
+-reg     [3  :0]  ifdp_ipdp_h1_precode_way0;     
+-reg     [3  :0]  ifdp_ipdp_h1_precode_way1;     
+-reg     [13 :0]  ifdp_ipdp_h2_inst_high_way0;   
+-reg     [13 :0]  ifdp_ipdp_h2_inst_high_way1;   
+-reg     [1  :0]  ifdp_ipdp_h2_inst_low_way0;    
+-reg     [1  :0]  ifdp_ipdp_h2_inst_low_way1;    
+-reg     [3  :0]  ifdp_ipdp_h2_precode_way0;     
+-reg     [3  :0]  ifdp_ipdp_h2_precode_way1;     
+-reg     [13 :0]  ifdp_ipdp_h3_inst_high_way0;   
+-reg     [13 :0]  ifdp_ipdp_h3_inst_high_way1;   
+-reg     [1  :0]  ifdp_ipdp_h3_inst_low_way0;    
+-reg     [1  :0]  ifdp_ipdp_h3_inst_low_way1;    
+-reg     [3  :0]  ifdp_ipdp_h3_precode_way0;     
+-reg     [3  :0]  ifdp_ipdp_h3_precode_way1;     
+-reg     [13 :0]  ifdp_ipdp_h4_inst_high_way0;   
+-reg     [13 :0]  ifdp_ipdp_h4_inst_high_way1;   
+-reg     [1  :0]  ifdp_ipdp_h4_inst_low_way0;    
+-reg     [1  :0]  ifdp_ipdp_h4_inst_low_way1;    
+-reg     [3  :0]  ifdp_ipdp_h4_precode_way0;     
+-reg     [3  :0]  ifdp_ipdp_h4_precode_way1;     
+-reg     [13 :0]  ifdp_ipdp_h5_inst_high_way0;   
+-reg     [13 :0]  ifdp_ipdp_h5_inst_high_way1;   
+-reg     [1  :0]  ifdp_ipdp_h5_inst_low_way0;    
+-reg     [1  :0]  ifdp_ipdp_h5_inst_low_way1;    
+-reg     [3  :0]  ifdp_ipdp_h5_precode_way0;     
+-reg     [3  :0]  ifdp_ipdp_h5_precode_way1;     
+-reg     [13 :0]  ifdp_ipdp_h6_inst_high_way0;   
+-reg     [13 :0]  ifdp_ipdp_h6_inst_high_way1;   
+-reg     [1  :0]  ifdp_ipdp_h6_inst_low_way0;    
+-reg     [1  :0]  ifdp_ipdp_h6_inst_low_way1;    
+-reg     [3  :0]  ifdp_ipdp_h6_precode_way0;     
+-reg     [3  :0]  ifdp_ipdp_h6_precode_way1;     
+-reg     [13 :0]  ifdp_ipdp_h7_inst_high_way0;   
+-reg     [13 :0]  ifdp_ipdp_h7_inst_high_way1;   
+-reg     [1  :0]  ifdp_ipdp_h7_inst_low_way0;    
+-reg     [1  :0]  ifdp_ipdp_h7_inst_low_way1;    
+-reg     [3  :0]  ifdp_ipdp_h7_precode_way0;     
+-reg     [3  :0]  ifdp_ipdp_h7_precode_way1;     
+-reg     [13 :0]  ifdp_ipdp_h8_inst_high_way0;   
+-reg     [13 :0]  ifdp_ipdp_h8_inst_high_way1;   
+-reg     [1  :0]  ifdp_ipdp_h8_inst_low_way0;    
+-reg     [1  :0]  ifdp_ipdp_h8_inst_low_way1;    
+-reg     [3  :0]  ifdp_ipdp_h8_precode_way0;     
+-reg     [3  :0]  ifdp_ipdp_h8_precode_way1;     
+-reg              ifdp_ipdp_mmu_pgflt;           
+-reg     [2  :0]  ifdp_ipdp_sfp_hit_pc_lo;       
+-reg     [3  :0]  ifdp_ipdp_sfp_hit_type;        
+-reg              ifdp_ipdp_sfp_pc_hit;          
+-reg     [38 :0]  ifdp_ipdp_vpc;                 
+-reg              ifdp_l1_refill_bufferable;     
+-reg              ifdp_l1_refill_cacheable;      
+-reg              ifdp_l1_refill_fifo;           
+-reg              ifdp_l1_refill_machine_mode;   
+-reg              ifdp_l1_refill_secure;         
+-reg              ifdp_l1_refill_supv_mode;      
+-reg              ifdp_l1_refill_tsize;          
+-reg              l0_btb_counter;                
+-reg     [15 :0]  l0_btb_entry_hit;              
+-reg              l0_btb_hit;                    
+-reg     [38 :0]  l0_btb_mispred_pc;             
+-reg              l0_btb_ras;                    
+-reg     [38 :0]  l0_btb_target;                 
+-reg              l0_btb_way0_high_hit;          
+-reg              l0_btb_way0_low_hit;           
+-reg              l0_btb_way1_high_hit;          
+-reg              l0_btb_way1_low_hit;           
+-reg              l0_btb_way2_high_hit;          
+-reg              l0_btb_way2_low_hit;           
+-reg              l0_btb_way3_high_hit;          
+-reg              l0_btb_way3_low_hit;           
+-reg     [1  :0]  l0_btb_way_pred;               
+-reg     [7  :0]  vpc_bry_mask;                  
+-
+-// &Wires; @25
+-wire    [39 :0]  bkpta_base;                    
+-wire             bkpta_hit_0;                   
+-wire             bkpta_hit_1;                   
+-wire             bkpta_hit_2;                   
+-wire             bkpta_hit_3;                   
+-wire             bkpta_hit_4;                   
+-wire             bkpta_hit_5;                   
+-wire             bkpta_hit_6;                   
+-wire             bkpta_hit_7;                   
+-wire    [39 :0]  bkpta_mask;                    
+-wire    [39 :0]  bkptb_base;                    
+-wire             bkptb_hit_0;                   
+-wire             bkptb_hit_1;                   
+-wire             bkptb_hit_2;                   
+-wire             bkptb_hit_3;                   
+-wire             bkptb_hit_4;                   
+-wire             bkptb_hit_5;                   
+-wire             bkptb_hit_6;                   
+-wire             bkptb_hit_7;                   
+-wire    [39 :0]  bkptb_mask;                    
+-wire    [1  :0]  btb_ifdp_way0_pred;            
+-wire    [9  :0]  btb_ifdp_way0_tag;             
+-wire    [19 :0]  btb_ifdp_way0_target;          
+-wire             btb_ifdp_way0_vld;             
+-wire    [1  :0]  btb_ifdp_way1_pred;            
+-wire    [9  :0]  btb_ifdp_way1_tag;             
+-wire    [19 :0]  btb_ifdp_way1_target;          
+-wire             btb_ifdp_way1_vld;             
+-wire    [1  :0]  btb_ifdp_way2_pred;            
+-wire    [9  :0]  btb_ifdp_way2_tag;             
+-wire    [19 :0]  btb_ifdp_way2_target;          
+-wire             btb_ifdp_way2_vld;             
+-wire    [1  :0]  btb_ifdp_way3_pred;            
+-wire    [9  :0]  btb_ifdp_way3_tag;             
+-wire    [19 :0]  btb_ifdp_way3_target;          
+-wire             btb_ifdp_way3_vld;             
+-wire    [38 :0]  btb_mispred_pc;                
+-wire             btb_way0_high_hit;             
+-wire             btb_way0_low_hit;              
+-wire             btb_way1_high_hit;             
+-wire             btb_way1_low_hit;              
+-wire             btb_way2_high_hit;             
+-wire             btb_way2_low_hit;              
+-wire             btb_way3_high_hit;             
+-wire             btb_way3_low_hit;              
+-wire             cp0_ifu_icache_en;             
+-wire             cp0_ifu_icg_en;                
+-wire             cp0_yy_clk_en;                 
+-wire    [1  :0]  cp0_yy_priv_mode;              
+-wire             cpurst_b;                      
+-wire             forever_cpuclk;                
+-wire    [39 :0]  had_yy_xx_bkpta_base;          
+-wire    [7  :0]  had_yy_xx_bkpta_mask;          
+-wire             had_yy_xx_bkpta_rc;            
+-wire    [39 :0]  had_yy_xx_bkptb_base;          
+-wire    [7  :0]  had_yy_xx_bkptb_mask;          
+-wire             had_yy_xx_bkptb_rc;            
+-wire    [13 :0]  half1_inst_high_way0;          
+-wire    [13 :0]  half1_inst_high_way1;          
+-wire    [1  :0]  half1_inst_low_way0;           
+-wire    [1  :0]  half1_inst_low_way1;           
+-wire    [3  :0]  half1_precode_way0;            
+-wire    [3  :0]  half1_precode_way1;            
+-wire    [13 :0]  half2_inst_high_way0;          
+-wire    [13 :0]  half2_inst_high_way1;          
+-wire    [1  :0]  half2_inst_low_way0;           
+-wire    [1  :0]  half2_inst_low_way1;           
+-wire    [3  :0]  half2_precode_way0;            
+-wire    [3  :0]  half2_precode_way1;            
+-wire    [13 :0]  half3_inst_high_way0;          
+-wire    [13 :0]  half3_inst_high_way1;          
+-wire    [1  :0]  half3_inst_low_way0;           
+-wire    [1  :0]  half3_inst_low_way1;           
+-wire    [3  :0]  half3_precode_way0;            
+-wire    [3  :0]  half3_precode_way1;            
+-wire    [13 :0]  half4_inst_high_way0;          
+-wire    [13 :0]  half4_inst_high_way1;          
+-wire    [1  :0]  half4_inst_low_way0;           
+-wire    [1  :0]  half4_inst_low_way1;           
+-wire    [3  :0]  half4_precode_way0;            
+-wire    [3  :0]  half4_precode_way1;            
+-wire    [13 :0]  half5_inst_high_way0;          
+-wire    [13 :0]  half5_inst_high_way1;          
+-wire    [1  :0]  half5_inst_low_way0;           
+-wire    [1  :0]  half5_inst_low_way1;           
+-wire    [3  :0]  half5_precode_way0;            
+-wire    [3  :0]  half5_precode_way1;            
+-wire    [13 :0]  half6_inst_high_way0;          
+-wire    [13 :0]  half6_inst_high_way1;          
+-wire    [1  :0]  half6_inst_low_way0;           
+-wire    [1  :0]  half6_inst_low_way1;           
+-wire    [3  :0]  half6_precode_way0;            
+-wire    [3  :0]  half6_precode_way1;            
+-wire    [13 :0]  half7_inst_high_way0;          
+-wire    [13 :0]  half7_inst_high_way1;          
+-wire    [1  :0]  half7_inst_low_way0;           
+-wire    [1  :0]  half7_inst_low_way1;           
+-wire    [3  :0]  half7_precode_way0;            
+-wire    [3  :0]  half7_precode_way1;            
+-wire    [13 :0]  half8_inst_high_way0;          
+-wire    [13 :0]  half8_inst_high_way1;          
+-wire    [1  :0]  half8_inst_low_way0;           
+-wire    [1  :0]  half8_inst_low_way1;           
+-wire    [3  :0]  half8_precode_way0;            
+-wire    [3  :0]  half8_precode_way1;            
+-wire             icache_flop_clk;               
+-wire             icache_flop_clk_en;            
+-wire             icache_if_ifdp_fifo;           
+-wire    [127:0]  icache_if_ifdp_inst_data0;     
+-wire    [127:0]  icache_if_ifdp_inst_data1;     
+-wire    [31 :0]  icache_if_ifdp_precode0;       
+-wire    [31 :0]  icache_if_ifdp_precode1;       
+-wire    [28 :0]  icache_if_ifdp_tag_data0;      
+-wire    [28 :0]  icache_if_ifdp_tag_data1;      
+-wire             icache_tag_way0_15_8_hit;      
+-wire             icache_tag_way0_23_16_hit;     
+-wire             icache_tag_way0_28_24_hit;     
+-wire             icache_tag_way0_7_0_hit;       
+-wire             icache_tag_way1_15_8_hit;      
+-wire             icache_tag_way1_23_16_hit;     
+-wire             icache_tag_way1_28_24_hit;     
+-wire             icache_tag_way1_7_0_hit;       
+-wire    [7  :0]  if_bkpta;                      
+-wire    [7  :0]  if_bkptb;                      
+-wire             if_mmu_expt_vld;               
+-wire             if_refill_expt_vld;            
+-wire             ifctrl_ifdp_cancel;            
+-wire             ifctrl_ifdp_pipedown;          
+-wire             ifctrl_ifdp_stall;             
+-wire             ifdp_clk;                      
+-wire             ifdp_clk_en;                   
+-wire             ifdp_debug_acc_err_vld;        
+-wire             ifdp_debug_mmu_expt_vld;       
+-wire             ifdp_expt_vld;                 
+-wire             ifdp_fifo_bit;                 
+-wire             ifdp_icache_way0_15_8_hit;     
+-wire             ifdp_icache_way0_23_16_hit;    
+-wire             ifdp_icache_way0_28_24_hit;    
+-wire             ifdp_icache_way0_7_0_hit;      
+-wire             ifdp_icache_way1_15_8_hit;     
+-wire             ifdp_icache_way1_23_16_hit;    
+-wire             ifdp_icache_way1_28_24_hit;    
+-wire             ifdp_icache_way1_7_0_hit;      
+-wire    [127:0]  ifdp_inst_data0;               
+-wire    [127:0]  ifdp_inst_data1;               
+-wire    [31 :0]  ifdp_inst_precode0;            
+-wire    [31 :0]  ifdp_inst_precode1;            
+-wire             ifdp_ipctrl_expt_vld;          
+-wire             ifdp_ipctrl_tsize;             
+-wire    [1  :0]  ifdp_ipdp_btb_way0_pred;       
+-wire    [9  :0]  ifdp_ipdp_btb_way0_tag;        
+-wire    [19 :0]  ifdp_ipdp_btb_way0_target;     
+-wire             ifdp_ipdp_btb_way0_vld;        
+-wire    [1  :0]  ifdp_ipdp_btb_way1_pred;       
+-wire    [9  :0]  ifdp_ipdp_btb_way1_tag;        
+-wire    [19 :0]  ifdp_ipdp_btb_way1_target;     
+-wire             ifdp_ipdp_btb_way1_vld;        
+-wire    [1  :0]  ifdp_ipdp_btb_way2_pred;       
+-wire    [9  :0]  ifdp_ipdp_btb_way2_tag;        
+-wire    [19 :0]  ifdp_ipdp_btb_way2_target;     
+-wire             ifdp_ipdp_btb_way2_vld;        
+-wire    [1  :0]  ifdp_ipdp_btb_way3_pred;       
+-wire    [9  :0]  ifdp_ipdp_btb_way3_tag;        
+-wire    [19 :0]  ifdp_ipdp_btb_way3_target;     
+-wire             ifdp_ipdp_btb_way3_vld;        
+-wire             ifdp_ipdp_l0_btb_counter;      
+-wire    [15 :0]  ifdp_ipdp_l0_btb_entry_hit;    
+-wire             ifdp_ipdp_l0_btb_hit;          
+-wire    [38 :0]  ifdp_ipdp_l0_btb_mispred_pc;   
+-wire             ifdp_ipdp_l0_btb_ras;          
+-wire    [38 :0]  ifdp_ipdp_l0_btb_target;       
+-wire             ifdp_ipdp_l0_btb_way0_high_hit; 
+-wire             ifdp_ipdp_l0_btb_way0_low_hit; 
+-wire             ifdp_ipdp_l0_btb_way1_high_hit; 
+-wire             ifdp_ipdp_l0_btb_way1_low_hit; 
+-wire             ifdp_ipdp_l0_btb_way2_high_hit; 
+-wire             ifdp_ipdp_l0_btb_way2_low_hit; 
+-wire             ifdp_ipdp_l0_btb_way3_high_hit; 
+-wire             ifdp_ipdp_l0_btb_way3_low_hit; 
+-wire    [1  :0]  ifdp_ipdp_l0_btb_way_pred;     
+-wire             ifdp_spe_clk;                  
+-wire             ifdp_spe_clk_en;               
+-wire             ipctrl_ifdp_gateclk_en;        
+-wire    [7  :0]  ipctrl_ifdp_vpc_onehot_updt;   
+-wire             ipctrl_ifdp_w0_bry0_hit_updt;  
+-wire             ipctrl_ifdp_w0_bry1_hit_updt;  
+-wire    [7  :0]  ipctrl_ifdp_w0b0_br_ntake_updt; 
+-wire    [7  :0]  ipctrl_ifdp_w0b0_br_taken_updt; 
+-wire    [7  :0]  ipctrl_ifdp_w0b0_bry_updt_data; 
+-wire    [7  :0]  ipctrl_ifdp_w0b1_br_ntake_updt; 
+-wire    [7  :0]  ipctrl_ifdp_w0b1_br_taken_updt; 
+-wire    [7  :0]  ipctrl_ifdp_w0b1_bry_updt_data; 
+-wire             ipctrl_ifdp_w1_bry0_hit_updt;  
+-wire             ipctrl_ifdp_w1_bry1_hit_updt;  
+-wire    [7  :0]  ipctrl_ifdp_w1b0_br_ntake_updt; 
+-wire    [7  :0]  ipctrl_ifdp_w1b0_br_taken_updt; 
+-wire    [7  :0]  ipctrl_ifdp_w1b0_bry_updt_data; 
+-wire    [7  :0]  ipctrl_ifdp_w1b1_br_ntake_updt; 
+-wire    [7  :0]  ipctrl_ifdp_w1b1_br_taken_updt; 
+-wire    [7  :0]  ipctrl_ifdp_w1b1_bry_updt_data; 
+-wire    [38 :0]  l0_btb_ifdp_chgflw_pc;         
+-wire    [1  :0]  l0_btb_ifdp_chgflw_way_pred;   
+-wire             l0_btb_ifdp_counter;           
+-wire    [15 :0]  l0_btb_ifdp_entry_hit;         
+-wire             l0_btb_ifdp_hit;               
+-wire             l0_btb_ifdp_ras;               
+-wire             l1_refill_ifdp_acc_err;        
+-wire    [127:0]  l1_refill_ifdp_inst_data;      
+-wire    [31 :0]  l1_refill_ifdp_precode;        
+-wire             l1_refill_ifdp_refill_on;      
+-wire    [28 :0]  l1_refill_ifdp_tag_data;       
+-wire             mmu_ifu_buf;                   
+-wire             mmu_ifu_ca;                    
+-wire    [27 :0]  mmu_ifu_pa;                    
+-wire             mmu_ifu_pgflt;                 
+-wire             mmu_ifu_sec;                   
+-wire             mmu_xx_mmu_en;                 
+-wire             pad_yy_icg_scan_en;            
+-wire    [38 :0]  pcgen_ifdp_inc_pc;             
+-wire    [38 :0]  pcgen_ifdp_pc;                 
+-wire    [1  :0]  pcgen_ifdp_way_pred;           
+-wire             refill_tag_15_8_hit;           
+-wire             refill_tag_23_16_hit;          
+-wire             refill_tag_28_24_hit;          
+-wire             refill_tag_7_0_hit;            
+-wire             rtu_yy_xx_dbgon;               
+-wire    [2  :0]  sfp_ifdp_hit_pc_lo;            
+-wire    [3  :0]  sfp_ifdp_hit_type;             
+-wire             sfp_ifdp_pc_hit;               
+-wire    [7  :0]  w0_ab_br;                      
+-wire    [7  :0]  w0_br;                         
+-wire             w0_bry0_hit;                   
+-wire             w0_bry1_hit;                   
+-wire    [7  :0]  w0b0_br_ntake;                 
+-wire    [7  :0]  w0b0_br_taken;                 
+-wire    [7  :0]  w0b0_bry;                      
+-wire    [7  :0]  w0b0_bry_data;                 
+-wire    [7  :0]  w0b1_br_ntake;                 
+-wire    [7  :0]  w0b1_br_taken;                 
+-wire    [7  :0]  w0b1_bry;                      
+-wire    [7  :0]  w0b1_bry_data;                 
+-wire    [7  :0]  w1_ab_br;                      
+-wire    [7  :0]  w1_br;                         
+-wire             w1_bry0_hit;                   
+-wire             w1_bry1_hit;                   
+-wire    [7  :0]  w1b0_br_ntake;                 
+-wire    [7  :0]  w1b0_br_taken;                 
+-wire    [7  :0]  w1b0_bry;                      
+-wire    [7  :0]  w1b0_bry_data;                 
+-wire    [7  :0]  w1b1_br_ntake;                 
+-wire    [7  :0]  w1b1_br_taken;                 
+-wire    [7  :0]  w1b1_bry;                      
+-wire    [7  :0]  w1b1_bry_data;                 
+-
+-// &Force("bus","btb_ifdp_way0_tag",9,0); @27
+-// &Force("bus","btb_ifdp_way1_tag",9,0); @28
+-// &Force("bus","btb_ifdp_way2_tag",9,0); @29
+-// &Force("bus","btb_ifdp_way3_tag",9,0); @30
+-
+-parameter PC_WIDTH = 40;
+-// &Instance("gated_clk_cell","x_ifdp_clk"); @34
+-gated_clk_cell  x_ifdp_clk (
+-  .clk_in             (forever_cpuclk    ),
+-  .clk_out            (ifdp_clk          ),
+-  .external_en        (1'b0              ),
+-  .global_en          (cp0_yy_clk_en     ),
+-  .local_en           (ifdp_clk_en       ),
+-  .module_en          (cp0_ifu_icg_en    ),
+-  .pad_yy_icg_scan_en (pad_yy_icg_scan_en)
+-);
+-
+-// &Connect( .clk_in         (forever_cpuclk), @35
+-//           .clk_out        (ifdp_clk),//Out Clock @36
+-//           .external_en    (1'b0), @37
+-//           .global_en      (cp0_yy_clk_en), @38
+-//           .local_en       (ifdp_clk_en),//Local Condition @39
+-//           .module_en      (cp0_ifu_icg_en) @40
+-//         ); @41
+-assign ifdp_clk_en = ipctrl_ifdp_gateclk_en;
+-
+-//==========================================================
+-//              Instruction Data Related
+-//==========================================================
+-//IF Stage Inst May from three Source:
+-//  1.L1 ICache 
+-//  2.Prefetch Buffer
+-//  3.Off Chip Memory
+-//Way0 Data can be from cache or refill
+-assign ifdp_inst_data0[127:0] = (l1_refill_ifdp_refill_on)
+-                              ? l1_refill_ifdp_inst_data[127:0]
+-                              : icache_if_ifdp_inst_data0[127:0];
+-
+-//Way1 Data can be only from cache
+-assign ifdp_inst_data1[127:0] = icache_if_ifdp_inst_data1[127:0];
+-
+-//Way0 precode can be from cache or refill
+-assign ifdp_inst_precode0[31:0]  = (l1_refill_ifdp_refill_on)
+-                                 ? l1_refill_ifdp_precode[31:0]
+-                                 : icache_if_ifdp_precode0[31:0];
+-
+-//Way1 precode can be only from cache
+-assign ifdp_inst_precode1[31:0]  = icache_if_ifdp_precode1[31:0];
+-
+-//==========================================================
+-//                  Half Word Data
+-//==========================================================
+-//Way 1
+-assign half1_inst_high_way1[13:0] = ifdp_inst_data1[127:114];
+-assign half2_inst_high_way1[13:0] = ifdp_inst_data1[111: 98];
+-assign half3_inst_high_way1[13:0] = ifdp_inst_data1[ 95: 82];
+-assign half4_inst_high_way1[13:0] = ifdp_inst_data1[ 79: 66];
+-assign half5_inst_high_way1[13:0] = ifdp_inst_data1[ 63: 50];
+-assign half6_inst_high_way1[13:0] = ifdp_inst_data1[ 47: 34];
+-assign half7_inst_high_way1[13:0] = ifdp_inst_data1[ 31: 18];
+-assign half8_inst_high_way1[13:0] = ifdp_inst_data1[ 15:  2];
+-
+-assign half1_inst_low_way1[1:0]   = ifdp_inst_data1[113:112];
+-assign half2_inst_low_way1[1:0]   = ifdp_inst_data1[ 97: 96];
+-assign half3_inst_low_way1[1:0]   = ifdp_inst_data1[ 81: 80];
+-assign half4_inst_low_way1[1:0]   = ifdp_inst_data1[ 65: 64];
+-assign half5_inst_low_way1[1:0]   = ifdp_inst_data1[ 49: 48];
+-assign half6_inst_low_way1[1:0]   = ifdp_inst_data1[ 33: 32];
+-assign half7_inst_low_way1[1:0]   = ifdp_inst_data1[ 17: 16];
+-assign half8_inst_low_way1[1:0]   = ifdp_inst_data1[  1:  0];
+-
+-assign half1_precode_way1[3:0]   = ifdp_inst_precode1[31:28];
+-assign half2_precode_way1[3:0]   = ifdp_inst_precode1[27:24];
+-assign half3_precode_way1[3:0]   = ifdp_inst_precode1[23:20];
+-assign half4_precode_way1[3:0]   = ifdp_inst_precode1[19:16];
+-assign half5_precode_way1[3:0]   = ifdp_inst_precode1[15:12];
+-assign half6_precode_way1[3:0]   = ifdp_inst_precode1[11: 8];
+-assign half7_precode_way1[3:0]   = ifdp_inst_precode1[7 : 4];
+-assign half8_precode_way1[3:0]   = ifdp_inst_precode1[3 : 0];
+-
+-//Way 0
+-assign half1_inst_high_way0[13:0] = ifdp_inst_data0[127:114];
+-assign half2_inst_high_way0[13:0] = ifdp_inst_data0[111: 98];
+-assign half3_inst_high_way0[13:0] = ifdp_inst_data0[ 95: 82];
+-assign half4_inst_high_way0[13:0] = ifdp_inst_data0[ 79: 66];
+-assign half5_inst_high_way0[13:0] = ifdp_inst_data0[ 63: 50];
+-assign half6_inst_high_way0[13:0] = ifdp_inst_data0[ 47: 34];
+-assign half7_inst_high_way0[13:0] = ifdp_inst_data0[ 31: 18];
+-assign half8_inst_high_way0[13:0] = ifdp_inst_data0[ 15:  2];
+-
+-assign half1_inst_low_way0[1:0]   = ifdp_inst_data0[113:112];
+-assign half2_inst_low_way0[1:0]   = ifdp_inst_data0[ 97: 96];
+-assign half3_inst_low_way0[1:0]   = ifdp_inst_data0[ 81: 80];
+-assign half4_inst_low_way0[1:0]   = ifdp_inst_data0[ 65: 64];
+-assign half5_inst_low_way0[1:0]   = ifdp_inst_data0[ 49: 48];
+-assign half6_inst_low_way0[1:0]   = ifdp_inst_data0[ 33: 32];
+-assign half7_inst_low_way0[1:0]   = ifdp_inst_data0[ 17: 16];
+-assign half8_inst_low_way0[1:0]   = ifdp_inst_data0[  1:  0];
+-
+-assign half1_precode_way0[3:0]   = ifdp_inst_precode0[31:28];
+-assign half2_precode_way0[3:0]   = ifdp_inst_precode0[27:24];
+-assign half3_precode_way0[3:0]   = ifdp_inst_precode0[23:20];
+-assign half4_precode_way0[3:0]   = ifdp_inst_precode0[19:16];
+-assign half5_precode_way0[3:0]   = ifdp_inst_precode0[15:12];
+-assign half6_precode_way0[3:0]   = ifdp_inst_precode0[11: 8];
+-assign half7_precode_way0[3:0]   = ifdp_inst_precode0[7 : 4];
+-assign half8_precode_way0[3:0]   = ifdp_inst_precode0[3 : 0];
+-
+-
+-//==========================================================
+-//                     ifdp to ipdp
+-//==========================================================
+-always @(posedge ifdp_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-  begin
+-    ifdp_ipdp_h1_inst_high_way1[13:0]        <= 14'b0;
+-    ifdp_ipdp_h2_inst_high_way1[13:0]        <= 14'b0;
+-    ifdp_ipdp_h3_inst_high_way1[13:0]        <= 14'b0;
+-    ifdp_ipdp_h4_inst_high_way1[13:0]        <= 14'b0;
+-    ifdp_ipdp_h5_inst_high_way1[13:0]        <= 14'b0;
+-    ifdp_ipdp_h6_inst_high_way1[13:0]        <= 14'b0;
+-    ifdp_ipdp_h7_inst_high_way1[13:0]        <= 14'b0;
+-    ifdp_ipdp_h8_inst_high_way1[13:0]        <= 14'b0;
+-
+-    ifdp_ipdp_h1_inst_low_way1[1:0]          <= 2'b0;
+-    ifdp_ipdp_h2_inst_low_way1[1:0]          <= 2'b0;
+-    ifdp_ipdp_h3_inst_low_way1[1:0]          <= 2'b0;
+-    ifdp_ipdp_h4_inst_low_way1[1:0]          <= 2'b0;
+-    ifdp_ipdp_h5_inst_low_way1[1:0]          <= 2'b0;
+-    ifdp_ipdp_h6_inst_low_way1[1:0]          <= 2'b0;
+-    ifdp_ipdp_h7_inst_low_way1[1:0]          <= 2'b0;
+-    ifdp_ipdp_h8_inst_low_way1[1:0]          <= 2'b0;
+-
+-    ifdp_ipdp_h1_precode_way1[3:0]           <= 4'b0;
+-    ifdp_ipdp_h2_precode_way1[3:0]           <= 4'b0;
+-    ifdp_ipdp_h3_precode_way1[3:0]           <= 4'b0;
+-    ifdp_ipdp_h4_precode_way1[3:0]           <= 4'b0;
+-    ifdp_ipdp_h5_precode_way1[3:0]           <= 4'b0;
+-    ifdp_ipdp_h6_precode_way1[3:0]           <= 4'b0;
+-    ifdp_ipdp_h7_precode_way1[3:0]           <= 4'b0;
+-    ifdp_ipdp_h8_precode_way1[3:0]           <= 4'b0;
+-
+-    ifdp_ipdp_h1_inst_high_way0[13:0]        <= 14'b0;
+-    ifdp_ipdp_h2_inst_high_way0[13:0]        <= 14'b0;
+-    ifdp_ipdp_h3_inst_high_way0[13:0]        <= 14'b0;
+-    ifdp_ipdp_h4_inst_high_way0[13:0]        <= 14'b0;
+-    ifdp_ipdp_h5_inst_high_way0[13:0]        <= 14'b0;
+-    ifdp_ipdp_h6_inst_high_way0[13:0]        <= 14'b0;
+-    ifdp_ipdp_h7_inst_high_way0[13:0]        <= 14'b0;
+-    ifdp_ipdp_h8_inst_high_way0[13:0]        <= 14'b0;
+-
+-    ifdp_ipdp_h1_inst_low_way0[1:0]          <= 2'b0;
+-    ifdp_ipdp_h2_inst_low_way0[1:0]          <= 2'b0;
+-    ifdp_ipdp_h3_inst_low_way0[1:0]          <= 2'b0;
+-    ifdp_ipdp_h4_inst_low_way0[1:0]          <= 2'b0;
+-    ifdp_ipdp_h5_inst_low_way0[1:0]          <= 2'b0;
+-    ifdp_ipdp_h6_inst_low_way0[1:0]          <= 2'b0;
+-    ifdp_ipdp_h7_inst_low_way0[1:0]          <= 2'b0;
+-    ifdp_ipdp_h8_inst_low_way0[1:0]          <= 2'b0;
+-
+-    ifdp_ipdp_h1_precode_way0[3:0]           <= 4'b0;
+-    ifdp_ipdp_h2_precode_way0[3:0]           <= 4'b0;
+-    ifdp_ipdp_h3_precode_way0[3:0]           <= 4'b0;
+-    ifdp_ipdp_h4_precode_way0[3:0]           <= 4'b0;
+-    ifdp_ipdp_h5_precode_way0[3:0]           <= 4'b0;
+-    ifdp_ipdp_h6_precode_way0[3:0]           <= 4'b0;
+-    ifdp_ipdp_h7_precode_way0[3:0]           <= 4'b0;
+-    ifdp_ipdp_h8_precode_way0[3:0]           <= 4'b0;
++  localparam PACKET_WIDTH = 576;
++  localparam P_VPC = 544;
++  localparam P_ATTR = 539;
++  localparam P_PRIV_MODE = 537;
++  localparam P_WAY_PRED = 535;
++  localparam P_REFILL_ON = 534;
++  localparam P_CACHE_BYPASS = 533;
++  localparam P_FIFO = 532;
++  localparam P_FAULT = 531;
++  localparam P_CAUSE = 527;
++  localparam P_WORD_MASK = 523;
++  localparam P_BKPTA = 519;
++  localparam P_BKPTB = 515;
++  localparam P_INST_DATA0 = 387;
++  localparam P_INST_DATA1 = 259;
++  localparam P_PRECODE0 = 227;
++  localparam P_PRECODE1 = 195;
++  localparam P_TAG_MATCH0 = 192;
++  localparam P_TAG_MATCH1 = 189;
++  localparam P_BTB_VLD = 188;
++  localparam P_BTB_HIT = 184;
++  localparam P_BTB_TARGET = 56;
++  localparam P_BTB_WAY = 48;
++  localparam P_L0_HIT = 47;
++  localparam P_L0_INDEX = 43;
++  localparam P_L0_SLOT = 41;
++  localparam P_L0_TYPE = 38;
++  localparam P_L0_TARGET = 6;
++  localparam P_L0_WAY = 4;
++  localparam P_NO_SPEC = 0;
++
++  localparam [1:0] CACHE = 2'd0, FAULT = 2'd1, BYPASS = 2'd2, REFILL = 2'd3;
++  localparam META_WIDTH = 213;
++  genvar capture;
++  genvar way;
++  genvar part;
++  genvar slot;
++  genvar breakpoint;
++  genvar entry;
++  reg  [  META_WIDTH-1:0] meta_q;
++  wire [  META_WIDTH-1:0] meta_nxt;
++  wire                    meta_en;
++  reg  [PACKET_WIDTH-1:0] packet_q            [0:1];
++  wire [PACKET_WIDTH-1:0] packet_nxt          [0:1];
++  wire [             1:0] packet_en;
++  wire [PACKET_WIDTH-1:0] response_packet;
++  wire [PACKET_WIDTH-1:0] selected_packet;
++  wire [            31:0] if_pc;
++  wire [             4:0] if_attr;
++  wire [             1:0] if_priv;
++  wire [             1:0] if_way;
++  wire [             1:0] if_kind;
++  wire                    if_cache_en;
++  wire [           127:0] forward_data;
++  wire [            31:0] forward_precode;
++  wire                    forward_error;
++  wire [             3:0] breakpoint_hit      [0:1];
++  wire [             3:0] breakpoint_issue_hit[0:1];
++  wire [            63:0] breakpoint_base;
++  wire [            63:0] breakpoint_mask;
++  wire [             1:0] breakpoint_enable;
++  wire                    is_cache;
++  wire                    is_refill;
++  wire                    is_bypass;
++  wire                    if_fault;
++  wire [             3:0] if_cause;
++  wire [             3:0] word_mask;
++  wire                    raw_fifo;
++  wire                    btb_match;
++  wire                    l0_eligible;
++  wire [             3:0] sfp_mask;
++  wire [           127:0] array_data          [0:1];
++  wire [            31:0] array_precode       [0:1];
++  wire [            17:0] array_tag           [0:1];
++  wire [           127:0] way_data            [0:1];
++  wire [            31:0] way_precode         [0:1];
++  wire [             2:0] tag_match           [0:1];
++
++  //----------------------------------------------------------------------------
++  // Metadata belongs to the granted request, never to a later live PC bus.
++  //----------------------------------------------------------------------------
++  assign meta_en = ifctrl_ifdp_issue;
++  assign meta_nxt = {
++    ifctrl_ifdp_issue_pc,
++    region_ifdp_attr,
++    cp0_yy_priv_mode,
++    ifctrl_ifdp_issue_way,
++    ifctrl_ifdp_issue_kind,
++    cp0_ifu_icache_en,
++    l1_refill_ifdp_inst_data,
++    l1_refill_ifdp_precode,
++    l1_refill_ifdp_acc_err,
++    breakpoint_issue_hit[1],
++    breakpoint_issue_hit[0]
++  };
++  assign {if_pc, if_attr, if_priv, if_way, if_kind, if_cache_en, forward_data, forward_precode,
++          forward_error, breakpoint_hit[1], breakpoint_hit[0]} = meta_q;
++  always @(posedge forever_cpuclk or negedge cpurst_b) begin : p_meta
++    if (!cpurst_b) begin
++      meta_q <= {META_WIDTH{1'b0}};
++    end else if (meta_en) begin
++      meta_q <= meta_nxt;
++    end
+   end
+-  else if(ifctrl_ifdp_pipedown)
+-  begin
+-    ifdp_ipdp_h1_inst_high_way1[13:0]        <= half1_inst_high_way1[13:0];
+-    ifdp_ipdp_h2_inst_high_way1[13:0]        <= half2_inst_high_way1[13:0];
+-    ifdp_ipdp_h3_inst_high_way1[13:0]        <= half3_inst_high_way1[13:0];
+-    ifdp_ipdp_h4_inst_high_way1[13:0]        <= half4_inst_high_way1[13:0];
+-    ifdp_ipdp_h5_inst_high_way1[13:0]        <= half5_inst_high_way1[13:0];
+-    ifdp_ipdp_h6_inst_high_way1[13:0]        <= half6_inst_high_way1[13:0];
+-    ifdp_ipdp_h7_inst_high_way1[13:0]        <= half7_inst_high_way1[13:0];
+-    ifdp_ipdp_h8_inst_high_way1[13:0]        <= half8_inst_high_way1[13:0];
+-
+-    ifdp_ipdp_h1_inst_low_way1[1:0]          <= half1_inst_low_way1[1:0];
+-    ifdp_ipdp_h2_inst_low_way1[1:0]          <= half2_inst_low_way1[1:0];
+-    ifdp_ipdp_h3_inst_low_way1[1:0]          <= half3_inst_low_way1[1:0];
+-    ifdp_ipdp_h4_inst_low_way1[1:0]          <= half4_inst_low_way1[1:0];
+-    ifdp_ipdp_h5_inst_low_way1[1:0]          <= half5_inst_low_way1[1:0];
+-    ifdp_ipdp_h6_inst_low_way1[1:0]          <= half6_inst_low_way1[1:0];
+-    ifdp_ipdp_h7_inst_low_way1[1:0]          <= half7_inst_low_way1[1:0];
+-    ifdp_ipdp_h8_inst_low_way1[1:0]          <= half8_inst_low_way1[1:0];
+-
+-    ifdp_ipdp_h1_precode_way1[3:0]           <= half1_precode_way1[3:0];
+-    ifdp_ipdp_h2_precode_way1[3:0]           <= half2_precode_way1[3:0];
+-    ifdp_ipdp_h3_precode_way1[3:0]           <= half3_precode_way1[3:0];
+-    ifdp_ipdp_h4_precode_way1[3:0]           <= half4_precode_way1[3:0];
+-    ifdp_ipdp_h5_precode_way1[3:0]           <= half5_precode_way1[3:0];
+-    ifdp_ipdp_h6_precode_way1[3:0]           <= half6_precode_way1[3:0];
+-    ifdp_ipdp_h7_precode_way1[3:0]           <= half7_precode_way1[3:0];
+-    ifdp_ipdp_h8_precode_way1[3:0]           <= half8_precode_way1[3:0];
+-
+-    ifdp_ipdp_h1_inst_high_way0[13:0]        <= half1_inst_high_way0[13:0];
+-    ifdp_ipdp_h2_inst_high_way0[13:0]        <= half2_inst_high_way0[13:0];
+-    ifdp_ipdp_h3_inst_high_way0[13:0]        <= half3_inst_high_way0[13:0];
+-    ifdp_ipdp_h4_inst_high_way0[13:0]        <= half4_inst_high_way0[13:0];
+-    ifdp_ipdp_h5_inst_high_way0[13:0]        <= half5_inst_high_way0[13:0];
+-    ifdp_ipdp_h6_inst_high_way0[13:0]        <= half6_inst_high_way0[13:0];
+-    ifdp_ipdp_h7_inst_high_way0[13:0]        <= half7_inst_high_way0[13:0];
+-    ifdp_ipdp_h8_inst_high_way0[13:0]        <= half8_inst_high_way0[13:0];
+-
+-    ifdp_ipdp_h1_inst_low_way0[1:0]          <= half1_inst_low_way0[1:0];
+-    ifdp_ipdp_h2_inst_low_way0[1:0]          <= half2_inst_low_way0[1:0];
+-    ifdp_ipdp_h3_inst_low_way0[1:0]          <= half3_inst_low_way0[1:0];
+-    ifdp_ipdp_h4_inst_low_way0[1:0]          <= half4_inst_low_way0[1:0];
+-    ifdp_ipdp_h5_inst_low_way0[1:0]          <= half5_inst_low_way0[1:0];
+-    ifdp_ipdp_h6_inst_low_way0[1:0]          <= half6_inst_low_way0[1:0];
+-    ifdp_ipdp_h7_inst_low_way0[1:0]          <= half7_inst_low_way0[1:0];
+-    ifdp_ipdp_h8_inst_low_way0[1:0]          <= half8_inst_low_way0[1:0];
+-
+-    ifdp_ipdp_h1_precode_way0[3:0]           <= half1_precode_way0[3:0];
+-    ifdp_ipdp_h2_precode_way0[3:0]           <= half2_precode_way0[3:0];
+-    ifdp_ipdp_h3_precode_way0[3:0]           <= half3_precode_way0[3:0];
+-    ifdp_ipdp_h4_precode_way0[3:0]           <= half4_precode_way0[3:0];
+-    ifdp_ipdp_h5_precode_way0[3:0]           <= half5_precode_way0[3:0];
+-    ifdp_ipdp_h6_precode_way0[3:0]           <= half6_precode_way0[3:0];
+-    ifdp_ipdp_h7_precode_way0[3:0]           <= half7_precode_way0[3:0];
+-    ifdp_ipdp_h8_precode_way0[3:0]           <= half8_precode_way0[3:0];
+-  end
+-  else
+-  begin
+-    ifdp_ipdp_h1_inst_high_way1[13:0]        <= ifdp_ipdp_h1_inst_high_way1[13:0];
+-    ifdp_ipdp_h2_inst_high_way1[13:0]        <= ifdp_ipdp_h2_inst_high_way1[13:0];
+-    ifdp_ipdp_h3_inst_high_way1[13:0]        <= ifdp_ipdp_h3_inst_high_way1[13:0];
+-    ifdp_ipdp_h4_inst_high_way1[13:0]        <= ifdp_ipdp_h4_inst_high_way1[13:0];
+-    ifdp_ipdp_h5_inst_high_way1[13:0]        <= ifdp_ipdp_h5_inst_high_way1[13:0];
+-    ifdp_ipdp_h6_inst_high_way1[13:0]        <= ifdp_ipdp_h6_inst_high_way1[13:0];
+-    ifdp_ipdp_h7_inst_high_way1[13:0]        <= ifdp_ipdp_h7_inst_high_way1[13:0];
+-    ifdp_ipdp_h8_inst_high_way1[13:0]        <= ifdp_ipdp_h8_inst_high_way1[13:0];
+-
+-    ifdp_ipdp_h1_inst_low_way1[1:0]          <= ifdp_ipdp_h1_inst_low_way1[1:0];
+-    ifdp_ipdp_h2_inst_low_way1[1:0]          <= ifdp_ipdp_h2_inst_low_way1[1:0];
+-    ifdp_ipdp_h3_inst_low_way1[1:0]          <= ifdp_ipdp_h3_inst_low_way1[1:0];
+-    ifdp_ipdp_h4_inst_low_way1[1:0]          <= ifdp_ipdp_h4_inst_low_way1[1:0];
+-    ifdp_ipdp_h5_inst_low_way1[1:0]          <= ifdp_ipdp_h5_inst_low_way1[1:0];
+-    ifdp_ipdp_h6_inst_low_way1[1:0]          <= ifdp_ipdp_h6_inst_low_way1[1:0];
+-    ifdp_ipdp_h7_inst_low_way1[1:0]          <= ifdp_ipdp_h7_inst_low_way1[1:0];
+-    ifdp_ipdp_h8_inst_low_way1[1:0]          <= ifdp_ipdp_h8_inst_low_way1[1:0];
+-
+-    ifdp_ipdp_h1_precode_way1[3:0]           <= ifdp_ipdp_h1_precode_way1[3:0];
+-    ifdp_ipdp_h2_precode_way1[3:0]           <= ifdp_ipdp_h2_precode_way1[3:0];
+-    ifdp_ipdp_h3_precode_way1[3:0]           <= ifdp_ipdp_h3_precode_way1[3:0];
+-    ifdp_ipdp_h4_precode_way1[3:0]           <= ifdp_ipdp_h4_precode_way1[3:0];
+-    ifdp_ipdp_h5_precode_way1[3:0]           <= ifdp_ipdp_h5_precode_way1[3:0];
+-    ifdp_ipdp_h6_precode_way1[3:0]           <= ifdp_ipdp_h6_precode_way1[3:0];
+-    ifdp_ipdp_h7_precode_way1[3:0]           <= ifdp_ipdp_h7_precode_way1[3:0];
+-    ifdp_ipdp_h8_precode_way1[3:0]           <= ifdp_ipdp_h8_precode_way1[3:0];
+-
+-    ifdp_ipdp_h1_inst_high_way0[13:0]        <= ifdp_ipdp_h1_inst_high_way0[13:0];
+-    ifdp_ipdp_h2_inst_high_way0[13:0]        <= ifdp_ipdp_h2_inst_high_way0[13:0];
+-    ifdp_ipdp_h3_inst_high_way0[13:0]        <= ifdp_ipdp_h3_inst_high_way0[13:0];
+-    ifdp_ipdp_h4_inst_high_way0[13:0]        <= ifdp_ipdp_h4_inst_high_way0[13:0];
+-    ifdp_ipdp_h5_inst_high_way0[13:0]        <= ifdp_ipdp_h5_inst_high_way0[13:0];
+-    ifdp_ipdp_h6_inst_high_way0[13:0]        <= ifdp_ipdp_h6_inst_high_way0[13:0];
+-    ifdp_ipdp_h7_inst_high_way0[13:0]        <= ifdp_ipdp_h7_inst_high_way0[13:0];
+-    ifdp_ipdp_h8_inst_high_way0[13:0]        <= ifdp_ipdp_h8_inst_high_way0[13:0];
+-
+-    ifdp_ipdp_h1_inst_low_way0[1:0]          <= ifdp_ipdp_h1_inst_low_way0[1:0];
+-    ifdp_ipdp_h2_inst_low_way0[1:0]          <= ifdp_ipdp_h2_inst_low_way0[1:0];
+-    ifdp_ipdp_h3_inst_low_way0[1:0]          <= ifdp_ipdp_h3_inst_low_way0[1:0];
+-    ifdp_ipdp_h4_inst_low_way0[1:0]          <= ifdp_ipdp_h4_inst_low_way0[1:0];
+-    ifdp_ipdp_h5_inst_low_way0[1:0]          <= ifdp_ipdp_h5_inst_low_way0[1:0];
+-    ifdp_ipdp_h6_inst_low_way0[1:0]          <= ifdp_ipdp_h6_inst_low_way0[1:0];
+-    ifdp_ipdp_h7_inst_low_way0[1:0]          <= ifdp_ipdp_h7_inst_low_way0[1:0];
+-    ifdp_ipdp_h8_inst_low_way0[1:0]          <= ifdp_ipdp_h8_inst_low_way0[1:0];
+-
+-    ifdp_ipdp_h1_precode_way0[3:0]           <= ifdp_ipdp_h1_precode_way0[3:0];
+-    ifdp_ipdp_h2_precode_way0[3:0]           <= ifdp_ipdp_h2_precode_way0[3:0];
+-    ifdp_ipdp_h3_precode_way0[3:0]           <= ifdp_ipdp_h3_precode_way0[3:0];
+-    ifdp_ipdp_h4_precode_way0[3:0]           <= ifdp_ipdp_h4_precode_way0[3:0];
+-    ifdp_ipdp_h5_precode_way0[3:0]           <= ifdp_ipdp_h5_precode_way0[3:0];
+-    ifdp_ipdp_h6_precode_way0[3:0]           <= ifdp_ipdp_h6_precode_way0[3:0];
+-    ifdp_ipdp_h7_precode_way0[3:0]           <= ifdp_ipdp_h7_precode_way0[3:0];
+-    ifdp_ipdp_h8_precode_way0[3:0]           <= ifdp_ipdp_h8_precode_way0[3:0];
+-  end    
+-end
+-
+-
+-// &Force("output","ifdp_ipdp_h1_inst_high_way1"); @319
+-// &Force("output","ifdp_ipdp_h2_inst_high_way1"); @320
+-// &Force("output","ifdp_ipdp_h3_inst_high_way1"); @321
+-// &Force("output","ifdp_ipdp_h4_inst_high_way1"); @322
+-// &Force("output","ifdp_ipdp_h5_inst_high_way1"); @323
+-// &Force("output","ifdp_ipdp_h6_inst_high_way1"); @324
+-// &Force("output","ifdp_ipdp_h7_inst_high_way1"); @325
+-// &Force("output","ifdp_ipdp_h8_inst_high_way1"); @326
+-
+-// &Force("output","ifdp_ipdp_h1_inst_low_way1"); @328
+-// &Force("output","ifdp_ipdp_h2_inst_low_way1"); @329
+-// &Force("output","ifdp_ipdp_h3_inst_low_way1"); @330
+-// &Force("output","ifdp_ipdp_h4_inst_low_way1"); @331
+-// &Force("output","ifdp_ipdp_h5_inst_low_way1"); @332
+-// &Force("output","ifdp_ipdp_h6_inst_low_way1"); @333
+-// &Force("output","ifdp_ipdp_h7_inst_low_way1"); @334
+-// &Force("output","ifdp_ipdp_h8_inst_low_way1"); @335
+-
+-// &Force("output","ifdp_ipdp_h1_precode_way1");   @337
+-// &Force("output","ifdp_ipdp_h2_precode_way1");   @338
+-// &Force("output","ifdp_ipdp_h3_precode_way1");   @339
+-// &Force("output","ifdp_ipdp_h4_precode_way1");   @340
+-// &Force("output","ifdp_ipdp_h5_precode_way1");   @341
+-// &Force("output","ifdp_ipdp_h6_precode_way1");   @342
+-// &Force("output","ifdp_ipdp_h7_precode_way1");   @343
+-// &Force("output","ifdp_ipdp_h8_precode_way1");   @344
+-
+-// &Force("output","ifdp_ipdp_h1_inst_high_way0"); @346
+-// &Force("output","ifdp_ipdp_h2_inst_high_way0"); @347
+-// &Force("output","ifdp_ipdp_h3_inst_high_way0"); @348
+-// &Force("output","ifdp_ipdp_h4_inst_high_way0"); @349
+-// &Force("output","ifdp_ipdp_h5_inst_high_way0"); @350
+-// &Force("output","ifdp_ipdp_h6_inst_high_way0"); @351
+-// &Force("output","ifdp_ipdp_h7_inst_high_way0"); @352
+-// &Force("output","ifdp_ipdp_h8_inst_high_way0"); @353
+-
+-// &Force("output","ifdp_ipdp_h1_inst_low_way0"); @355
+-// &Force("output","ifdp_ipdp_h2_inst_low_way0"); @356
+-// &Force("output","ifdp_ipdp_h3_inst_low_way0"); @357
+-// &Force("output","ifdp_ipdp_h4_inst_low_way0"); @358
+-// &Force("output","ifdp_ipdp_h5_inst_low_way0"); @359
+-// &Force("output","ifdp_ipdp_h6_inst_low_way0"); @360
+-// &Force("output","ifdp_ipdp_h7_inst_low_way0"); @361
+-// &Force("output","ifdp_ipdp_h8_inst_low_way0"); @362
+-
+-// &Force("output","ifdp_ipdp_h1_precode_way0");   @364
+-// &Force("output","ifdp_ipdp_h2_precode_way0");   @365
+-// &Force("output","ifdp_ipdp_h3_precode_way0");   @366
+-// &Force("output","ifdp_ipdp_h4_precode_way0");   @367
+-// &Force("output","ifdp_ipdp_h5_precode_way0");   @368
+-// &Force("output","ifdp_ipdp_h6_precode_way0");   @369
+-// &Force("output","ifdp_ipdp_h7_precode_way0");   @370
+-// &Force("output","ifdp_ipdp_h8_precode_way0"); @371
+-
+-// &Instance("gated_clk_cell","x_parity_check_clk"); @374
+-// &Connect( .clk_in         (forever_cpuclk), @375
+-//           .clk_out        (parity_check_clk),//Out Clock @376
+-//           .external_en    (1'b0), @377
+-//           .global_en      (cp0_yy_clk_en), @378
+-//           .local_en       (parity_check_clk_en),//Local Condition @379
+-//           .module_en      (cp0_ifu_icg_en) @380
+-//         ); @381
+-// &Force("output","ifdp_ipdp_inst_parity1"); @409
+-// &Force("output","ifdp_ipdp_precode_parity1"); @410
+-// &Force("output","ifdp_ipdp_inst_parity0"); @411
+-// &Force("output","ifdp_ipdp_precode_parity0"); @412
+-
+-//==========================================================
+-//             Way Predict Infor Pipedown
+-//==========================================================
+-//Way predict Infor Pipedown for IP Stage Data Valid
+-always @(posedge ifdp_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-    ifdp_ipctrl_way_pred[1:0] <= 2'b0;
+-  else if(ifctrl_ifdp_pipedown)
+-    ifdp_ipctrl_way_pred[1:0] <= pcgen_ifdp_way_pred[1:0];
+-  else
+-    ifdp_ipctrl_way_pred[1:0] <= ifdp_ipctrl_way_pred[1:0];
+-end
+-// &Force("output", "ifdp_ipctrl_way_pred"); @428
+-
+-//==========================================================
+-//             Refill on State Pipedown
+-//==========================================================
+-//Refill Infor Pipedown for IP Stage Data Valid
+-always @(posedge ifdp_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-    ifdp_ipctrl_refill_on <= 1'b0;
+-  else if(ifctrl_ifdp_pipedown)
+-    ifdp_ipctrl_refill_on <= l1_refill_ifdp_refill_on;
+-  else
+-    ifdp_ipctrl_refill_on <= ifdp_ipctrl_refill_on;
+-end
+-// &Force("output", "ifdp_ipctrl_refill_on"); @443
+-//==========================================================
+-//                  Tag Data Related
+-//==========================================================
+-//Tag[28] is the Valid Bit
+-//Tag[27:0] is Physical Tag(VIPT)
+-//For Timing consider, Tag compare split to four part
+-//Way0 Data can be from cache or refill
+-assign ifdp_icache_way0_28_24_hit = (l1_refill_ifdp_refill_on)
+-                                  ? refill_tag_28_24_hit
+-                                  : cp0_ifu_icache_en_flop && 
+-                                    icache_tag_way0_28_24_hit;
+-assign refill_tag_28_24_hit       = (l1_refill_ifdp_tag_data[28:24]  == {1'b1,mmu_ifu_pa[27:24]});
+-assign icache_tag_way0_28_24_hit  = (icache_if_ifdp_tag_data0[28:24] == {1'b1,mmu_ifu_pa[27:24]});
+-//Way1 Data can be only from cache
+-assign ifdp_icache_way1_28_24_hit = (l1_refill_ifdp_refill_on)
+-                                  ? 1'b0
+-                                  : cp0_ifu_icache_en_flop && 
+-                                    icache_tag_way1_28_24_hit;
+-assign icache_tag_way1_28_24_hit  = (icache_if_ifdp_tag_data1[28:24] == {1'b1,mmu_ifu_pa[27:24]});
+-
+-//Way0 Data can be from cache or refill
+-assign ifdp_icache_way0_23_16_hit = (l1_refill_ifdp_refill_on)
+-                                  ? refill_tag_23_16_hit
+-                                  : icache_tag_way0_23_16_hit;
+-assign refill_tag_23_16_hit       = (l1_refill_ifdp_tag_data[23:16]  == mmu_ifu_pa[23:16]);
+-assign icache_tag_way0_23_16_hit  = (icache_if_ifdp_tag_data0[23:16] == mmu_ifu_pa[23:16]);
+-//Way1 Data can be only from cache
+-assign ifdp_icache_way1_23_16_hit = (l1_refill_ifdp_refill_on)
+-                                  ? 1'b0
+-                                  : icache_tag_way1_23_16_hit;
+-assign icache_tag_way1_23_16_hit  = (icache_if_ifdp_tag_data1[23:16] == mmu_ifu_pa[23:16]);
+-
+-//Way0 Data can be from cache or refill
+-assign ifdp_icache_way0_15_8_hit = (l1_refill_ifdp_refill_on)
+-                                 ? refill_tag_15_8_hit
+-                                 : icache_tag_way0_15_8_hit;
+-assign refill_tag_15_8_hit       = (l1_refill_ifdp_tag_data[15:8]  == mmu_ifu_pa[15:8]);
+-assign icache_tag_way0_15_8_hit  = (icache_if_ifdp_tag_data0[15:8] == mmu_ifu_pa[15:8]);
+-//Way1 Data can be only from cache
+-assign ifdp_icache_way1_15_8_hit = (l1_refill_ifdp_refill_on)
+-                                  ? 1'b0
+-                                  : icache_tag_way1_15_8_hit;
+-assign icache_tag_way1_15_8_hit  = (icache_if_ifdp_tag_data1[15:8] == mmu_ifu_pa[15:8]);
+-
+-
+-assign ifdp_icache_way0_7_0_hit  = (l1_refill_ifdp_refill_on)
+-                                 ? refill_tag_7_0_hit
+-                                 : icache_tag_way0_7_0_hit;
+-assign refill_tag_7_0_hit        = (l1_refill_ifdp_tag_data[7:0]  == mmu_ifu_pa[7:0]);
+-assign icache_tag_way0_7_0_hit   = (icache_if_ifdp_tag_data0[7:0] == mmu_ifu_pa[7:0]);
+-//Way1 Data can be only from cache
+-assign ifdp_icache_way1_7_0_hit  = (l1_refill_ifdp_refill_on)
+-                                 ? 1'b0
+-                                 : icache_tag_way1_7_0_hit;
+-assign icache_tag_way1_7_0_hit   = (icache_if_ifdp_tag_data1[7:0] == mmu_ifu_pa[7:0]);
+-
+-
+-//fifo bit
+-assign ifdp_fifo_bit             = icache_if_ifdp_fifo;
+-
+-
+-
+-//Gate Clk                    
+-// &Instance("gated_clk_cell","x_icache_flop_clk"); @531
+-gated_clk_cell  x_icache_flop_clk (
+-  .clk_in             (forever_cpuclk    ),
+-  .clk_out            (icache_flop_clk   ),
+-  .external_en        (1'b0              ),
+-  .global_en          (cp0_yy_clk_en     ),
+-  .local_en           (icache_flop_clk_en),
+-  .module_en          (cp0_ifu_icg_en    ),
+-  .pad_yy_icg_scan_en (pad_yy_icg_scan_en)
+-);
+-
+-// &Connect( .clk_in         (forever_cpuclk), @532
+-//           .clk_out        (icache_flop_clk),//Out Clock @533
+-//           .external_en    (1'b0), @534
+-//           .global_en      (cp0_yy_clk_en), @535
+-//           .local_en       (icache_flop_clk_en),//Local Condition @536
+-//           .module_en      (cp0_ifu_icg_en) @537
+-//         ); @538
+-assign icache_flop_clk_en = cp0_ifu_icache_en ^ 
+-                            cp0_ifu_icache_en_flop; 
+-//record icache state and flop it 
+-//Because icache is read in pcgen while use in if stage
+-always @(posedge icache_flop_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-    cp0_ifu_icache_en_flop <= 1'b0;
+-  else if(!ifctrl_ifdp_stall || ifctrl_ifdp_cancel)
+-    cp0_ifu_icache_en_flop <= cp0_ifu_icache_en;
+-  else
+-    cp0_ifu_icache_en_flop <= cp0_ifu_icache_en_flop;
+-end
+-
+-always @(posedge ifdp_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b) begin
+-    ifdp_ipctrl_way0_28_24_hit <= 1'b0;
+-    ifdp_ipctrl_way0_23_16_hit <= 1'b0;
+-    ifdp_ipctrl_way0_15_8_hit  <= 1'b0;
+-    ifdp_ipctrl_way0_7_0_hit   <= 1'b0;
+-    ifdp_ipctrl_way1_28_24_hit <= 1'b0;
+-    ifdp_ipctrl_way1_23_16_hit <= 1'b0;
+-    ifdp_ipctrl_way1_15_8_hit  <= 1'b0;
+-    ifdp_ipctrl_way1_7_0_hit   <= 1'b0;
+-  end
+-  else if(ifctrl_ifdp_pipedown) begin
+-    ifdp_ipctrl_way0_28_24_hit <= ifdp_icache_way0_28_24_hit;
+-    ifdp_ipctrl_way0_23_16_hit <= ifdp_icache_way0_23_16_hit;
+-    ifdp_ipctrl_way0_15_8_hit  <= ifdp_icache_way0_15_8_hit;
+-    ifdp_ipctrl_way0_7_0_hit   <= ifdp_icache_way0_7_0_hit;
+-    ifdp_ipctrl_way1_28_24_hit <= ifdp_icache_way1_28_24_hit;
+-    ifdp_ipctrl_way1_23_16_hit <= ifdp_icache_way1_23_16_hit;
+-    ifdp_ipctrl_way1_15_8_hit  <= ifdp_icache_way1_15_8_hit;
+-    ifdp_ipctrl_way1_7_0_hit   <= ifdp_icache_way1_7_0_hit;
+-  end
+-  else begin
+-    ifdp_ipctrl_way0_28_24_hit <= ifdp_ipctrl_way0_28_24_hit;
+-    ifdp_ipctrl_way0_23_16_hit <= ifdp_ipctrl_way0_23_16_hit;
+-    ifdp_ipctrl_way0_15_8_hit  <= ifdp_ipctrl_way0_15_8_hit;
+-    ifdp_ipctrl_way0_7_0_hit   <= ifdp_ipctrl_way0_7_0_hit;
+-    ifdp_ipctrl_way1_28_24_hit <= ifdp_ipctrl_way1_28_24_hit;
+-    ifdp_ipctrl_way1_23_16_hit <= ifdp_ipctrl_way1_23_16_hit;
+-    ifdp_ipctrl_way1_15_8_hit  <= ifdp_ipctrl_way1_15_8_hit;
+-    ifdp_ipctrl_way1_7_0_hit   <= ifdp_ipctrl_way1_7_0_hit;
+-  end
+-end
+-// &Force("output", "ifdp_ipctrl_way0_28_24_hit"); @586
+-// &Force("output", "ifdp_ipctrl_way0_23_16_hit"); @587
+-// &Force("output", "ifdp_ipctrl_way0_15_8_hit"); @588
+-// &Force("output", "ifdp_ipctrl_way0_7_0_hit"); @589
+-// &Force("output", "ifdp_ipctrl_way1_28_24_hit"); @590
+-// &Force("output", "ifdp_ipctrl_way1_23_16_hit"); @591
+-// &Force("output", "ifdp_ipctrl_way1_15_8_hit"); @592
+-// &Force("output", "ifdp_ipctrl_way1_7_0_hit"); @593
+-
+-//way 0 fanout is too big, it will insert buffer,which
+-//will have side effect on timing,so we will duplicate it 
+-//for timing critical path use
+-always @(posedge ifdp_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b) begin
+-    ifdp_ipctrl_way0_28_24_hit_dup <= 1'b0;
+-    ifdp_ipctrl_way0_23_16_hit_dup <= 1'b0;
+-    ifdp_ipctrl_way0_15_8_hit_dup  <= 1'b0;
+-    ifdp_ipctrl_way0_7_0_hit_dup   <= 1'b0;
+-  end
+-  else if(ifctrl_ifdp_pipedown) begin
+-    ifdp_ipctrl_way0_28_24_hit_dup <= ifdp_icache_way0_28_24_hit;
+-    ifdp_ipctrl_way0_23_16_hit_dup <= ifdp_icache_way0_23_16_hit;
+-    ifdp_ipctrl_way0_15_8_hit_dup  <= ifdp_icache_way0_15_8_hit;
+-    ifdp_ipctrl_way0_7_0_hit_dup   <= ifdp_icache_way0_7_0_hit;
+-  end
+-  else begin
+-    ifdp_ipctrl_way0_28_24_hit_dup <= ifdp_ipctrl_way0_28_24_hit_dup;
+-    ifdp_ipctrl_way0_23_16_hit_dup <= ifdp_ipctrl_way0_23_16_hit_dup;
+-    ifdp_ipctrl_way0_15_8_hit_dup  <= ifdp_ipctrl_way0_15_8_hit_dup;
+-    ifdp_ipctrl_way0_7_0_hit_dup   <= ifdp_ipctrl_way0_7_0_hit_dup;
+-  end
+-end
+-// &Force("output", "ifdp_ipctrl_way0_28_24_hit_dup"); @619
+-// &Force("output", "ifdp_ipctrl_way0_23_16_hit_dup"); @620
+-// &Force("output", "ifdp_ipctrl_way0_15_8_hit_dup"); @621
+-// &Force("output", "ifdp_ipctrl_way0_7_0_hit_dup"); @622
+-
+-// &Force("output", "ifdp_ipctrl_way0_29_24_parity"); @658
+-// &Force("output", "ifdp_ipctrl_way0_23_16_parity"); @659
+-// &Force("output", "ifdp_ipctrl_way0_15_8_parity"); @660
+-// &Force("output", "ifdp_ipctrl_way0_7_0_parity"); @661
+-// &Force("output", "ifdp_ipctrl_way1_29_24_parity"); @662
+-// &Force("output", "ifdp_ipctrl_way1_23_16_parity"); @663
+-// &Force("output", "ifdp_ipctrl_way1_15_8_parity"); @664
+-// &Force("output", "ifdp_ipctrl_way1_7_0_parity"); @665
+-
+-always @(posedge ifdp_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-    ifdp_ipctrl_fifo <= 1'b0;
+-  else if(ifctrl_ifdp_pipedown)
+-    ifdp_ipctrl_fifo <= ifdp_fifo_bit;
+-  else
+-    ifdp_ipctrl_fifo <= ifdp_ipctrl_fifo;
+-end
+-// &Force("output", "ifdp_ipctrl_fifo"); @678
+-
+-always @(posedge ifdp_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-    ifdp_l1_refill_fifo <= 1'b0;
+-  else if(ifctrl_ifdp_pipedown)
+-    ifdp_l1_refill_fifo <= ifdp_fifo_bit;
+-  else
+-    ifdp_l1_refill_fifo <= ifdp_l1_refill_fifo;
+-end
+-// &Force("output", "ifdp_l1_refill_fifo"); @690
+-
+-//==========================================================
+-//                      PC Related
+-//==========================================================
+-//Virtual PC
+-// &CombBeg; @696
+-always @( pcgen_ifdp_pc[2:0])
+-begin
+-case(pcgen_ifdp_pc[2:0])
+-  3'b000  : if_vpc_2_0_onehot[7:0] = 8'b10000000;
+-  3'b001  : if_vpc_2_0_onehot[7:0] = 8'b01000000;
+-  3'b010  : if_vpc_2_0_onehot[7:0] = 8'b00100000;
+-  3'b011  : if_vpc_2_0_onehot[7:0] = 8'b00010000;
+-  3'b100  : if_vpc_2_0_onehot[7:0] = 8'b00001000;
+-  3'b101  : if_vpc_2_0_onehot[7:0] = 8'b00000100;
+-  3'b110  : if_vpc_2_0_onehot[7:0] = 8'b00000010;
+-  3'b111  : if_vpc_2_0_onehot[7:0] = 8'b00000001;
+-  default : if_vpc_2_0_onehot[7:0] = 8'b00000000;
+-endcase
+-// &CombEnd; @708
+-end
+-
+-always @(posedge ifdp_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-    ifdp_ipctrl_vpc_2_0_onehot[7:0] <= 8'b0;
+-  else if(rtu_yy_xx_dbgon)
+-    ifdp_ipctrl_vpc_2_0_onehot[7:0] <= 8'b10000000;
+-  else if(ifctrl_ifdp_pipedown)
+-    ifdp_ipctrl_vpc_2_0_onehot[7:0] <= if_vpc_2_0_onehot[7:0];
+-  else
+-    ifdp_ipctrl_vpc_2_0_onehot[7:0] <= ipctrl_ifdp_vpc_onehot_updt[7:0];
+-end
+-// &Force("output", "ifdp_ipctrl_vpc_2_0_onehot"); @721
+-
+-always @(posedge ifdp_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-    ifdp_ipdp_vpc[PC_WIDTH-2:0] <= {PC_WIDTH-1{1'b0}};
+-  else if(ifctrl_ifdp_pipedown)
+-    ifdp_ipdp_vpc[PC_WIDTH-2:0] <= pcgen_ifdp_pc[PC_WIDTH-2:0];
+-  else
+-    ifdp_ipdp_vpc[PC_WIDTH-2:0] <= ifdp_ipdp_vpc[PC_WIDTH-2:0];
+-end
+-// &Force("output", "ifdp_ipdp_vpc"); @732
+-//assign ifdp_l1_refill_vpc[PC_WIDTH-2:0] = ifdp_ipdp_vpc[PC_WIDTH-2:0];
+-
+-//Physical PC
+-always @(posedge ifdp_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-    ifdp_ipctrl_pa[27:0] <= 28'b0;
+-  else if(ifctrl_ifdp_pipedown)
+-    ifdp_ipctrl_pa[27:0] <= mmu_ifu_pa[27:0];
+-  else
+-    ifdp_ipctrl_pa[27:0] <= ifdp_ipctrl_pa[27:0];
+-end
+-// &Force("output", "ifdp_ipctrl_pa"); @745
+-
+-//===========ifdp_ipctrl predecode information==============
+-assign w1b0_bry[7:0]             = {ifdp_inst_precode1[28],
+-                                    ifdp_inst_precode1[24],
+-                                    ifdp_inst_precode1[20],
+-                                    ifdp_inst_precode1[16],
+-                                    ifdp_inst_precode1[12],
+-                                    ifdp_inst_precode1[ 8],
+-                                    ifdp_inst_precode1[ 4],
+-                                    ifdp_inst_precode1[ 0]};
+-assign w1b1_bry[7:0]             = {ifdp_inst_precode1[29],
+-                                    ifdp_inst_precode1[25],
+-                                    ifdp_inst_precode1[21],
+-                                    ifdp_inst_precode1[17],
+-                                    ifdp_inst_precode1[13],
+-                                    ifdp_inst_precode1[ 9],
+-                                    ifdp_inst_precode1[ 5],
+-                                    ifdp_inst_precode1[ 1]};
+-assign w1_br[7:0]                = {ifdp_inst_precode1[30],
+-                                    ifdp_inst_precode1[26],
+-                                    ifdp_inst_precode1[22],
+-                                    ifdp_inst_precode1[18],
+-                                    ifdp_inst_precode1[14],
+-                                    ifdp_inst_precode1[10],
+-                                    ifdp_inst_precode1[ 6],
+-                                    ifdp_inst_precode1[ 2]};
+-assign w1_ab_br[7:0]             = {ifdp_inst_precode1[31],
+-                                    ifdp_inst_precode1[27],
+-                                    ifdp_inst_precode1[23],
+-                                    ifdp_inst_precode1[19],
+-                                    ifdp_inst_precode1[15],
+-                                    ifdp_inst_precode1[11],
+-                                    ifdp_inst_precode1[ 7],
+-                                    ifdp_inst_precode1[ 3]};
+-assign w0b0_bry[7:0]             = {ifdp_inst_precode0[28],
+-                                    ifdp_inst_precode0[24],
+-                                    ifdp_inst_precode0[20],
+-                                    ifdp_inst_precode0[16],
+-                                    ifdp_inst_precode0[12],
+-                                    ifdp_inst_precode0[ 8],
+-                                    ifdp_inst_precode0[ 4],
+-                                    ifdp_inst_precode0[ 0]};
+-assign w0b1_bry[7:0]             = {ifdp_inst_precode0[29],
+-                                    ifdp_inst_precode0[25],
+-                                    ifdp_inst_precode0[21],
+-                                    ifdp_inst_precode0[17],
+-                                    ifdp_inst_precode0[13],
+-                                    ifdp_inst_precode0[ 9],
+-                                    ifdp_inst_precode0[ 5],
+-                                    ifdp_inst_precode0[ 1]};
+-assign w0_br[7:0]                = {ifdp_inst_precode0[30],
+-                                    ifdp_inst_precode0[26],
+-                                    ifdp_inst_precode0[22],
+-                                    ifdp_inst_precode0[18],
+-                                    ifdp_inst_precode0[14],
+-                                    ifdp_inst_precode0[10],
+-                                    ifdp_inst_precode0[ 6],
+-                                    ifdp_inst_precode0[ 2]};
+-assign w0_ab_br[7:0]             = {ifdp_inst_precode0[31],
+-                                    ifdp_inst_precode0[27],
+-                                    ifdp_inst_precode0[23],
+-                                    ifdp_inst_precode0[19],
+-                                    ifdp_inst_precode0[15],
+-                                    ifdp_inst_precode0[11],
+-                                    ifdp_inst_precode0[ 7],
+-                                    ifdp_inst_precode0[ 3]};
+-
+-//bry data
+-assign w0b0_bry_data[7:0] =  w0b0_bry[7:0] & vpc_bry_mask[7:0];
+-assign w0b1_bry_data[7:0] =  w0b1_bry[7:0] & vpc_bry_mask[7:0];
+-assign w1b0_bry_data[7:0] =  w1b0_bry[7:0] & vpc_bry_mask[7:0];
+-assign w1b1_bry_data[7:0] =  w1b1_bry[7:0] & vpc_bry_mask[7:0];
+-
+-//bry hit signal
+-assign w0_bry1_hit = |(w0b1_bry[7:0] & if_vpc_2_0_onehot[7:0]);
+-assign w1_bry1_hit = |(w1b1_bry[7:0] & if_vpc_2_0_onehot[7:0]);
+-assign w0_bry0_hit = |(w0b0_bry[7:0] & if_vpc_2_0_onehot[7:0]);
+-assign w1_bry0_hit = |(w1b0_bry[7:0] & if_vpc_2_0_onehot[7:0]);
+-
+-//bry masked predecode information
+-assign w0b0_br_taken[7:0] = w0_br[7:0] & vpc_bry_mask[7:0] & w0b0_bry[7:0];
+-assign w0b1_br_taken[7:0] = w0_br[7:0] & vpc_bry_mask[7:0] & w0b1_bry[7:0];
+-assign w1b0_br_taken[7:0] = w1_br[7:0] & vpc_bry_mask[7:0] & w1b0_bry[7:0];
+-assign w1b1_br_taken[7:0] = w1_br[7:0] & vpc_bry_mask[7:0] & w1b1_bry[7:0];
+-
+-assign w0b0_br_ntake[7:0] = w0_ab_br[7:0] & vpc_bry_mask[7:0] & w0b0_bry[7:0];
+-assign w0b1_br_ntake[7:0] = w0_ab_br[7:0] & vpc_bry_mask[7:0] & w0b1_bry[7:0];
+-assign w1b0_br_ntake[7:0] = w1_ab_br[7:0] & vpc_bry_mask[7:0] & w1b0_bry[7:0];
+-assign w1b1_br_ntake[7:0] = w1_ab_br[7:0] & vpc_bry_mask[7:0] & w1b1_bry[7:0];
+-
+-always @(posedge ifdp_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-  begin
+-  ifdp_ipctrl_w0b0_bry_data[7:0] <= 8'b0;
+-  ifdp_ipctrl_w0b1_bry_data[7:0] <= 8'b0;
+-  ifdp_ipctrl_w1b0_bry_data[7:0] <= 8'b0;
+-  ifdp_ipctrl_w1b1_bry_data[7:0] <= 8'b0;
+-  ifdp_ipctrl_w0b0_br_taken[7:0] <= 8'b0;
+-  ifdp_ipctrl_w0b1_br_taken[7:0] <= 8'b0;
+-  ifdp_ipctrl_w1b0_br_taken[7:0] <= 8'b0;
+-  ifdp_ipctrl_w1b1_br_taken[7:0] <= 8'b0;
+-  ifdp_ipctrl_w0b0_br_ntake[7:0] <= 8'b0;
+-  ifdp_ipctrl_w0b1_br_ntake[7:0] <= 8'b0;
+-  ifdp_ipctrl_w1b0_br_ntake[7:0] <= 8'b0;
+-  ifdp_ipctrl_w1b1_br_ntake[7:0] <= 8'b0;
+-  ifdp_ipctrl_w0_bry1_hit        <= 1'b0;
+-  ifdp_ipctrl_w1_bry1_hit        <= 1'b0;
+-  ifdp_ipctrl_w0_bry0_hit        <= 1'b0;
+-  ifdp_ipctrl_w1_bry0_hit        <= 1'b0;
+-  end
+-  else if(ifctrl_ifdp_pipedown)
+-  begin
+-  ifdp_ipctrl_w0b0_bry_data[7:0] <= w0b0_bry_data[7:0];
+-  ifdp_ipctrl_w0b1_bry_data[7:0] <= w0b1_bry_data[7:0];
+-  ifdp_ipctrl_w1b0_bry_data[7:0] <= w1b0_bry_data[7:0];
+-  ifdp_ipctrl_w1b1_bry_data[7:0] <= w1b1_bry_data[7:0];
+-  ifdp_ipctrl_w0b0_br_taken[7:0] <= w0b0_br_taken[7:0];
+-  ifdp_ipctrl_w0b1_br_taken[7:0] <= w0b1_br_taken[7:0];
+-  ifdp_ipctrl_w1b0_br_taken[7:0] <= w1b0_br_taken[7:0];
+-  ifdp_ipctrl_w1b1_br_taken[7:0] <= w1b1_br_taken[7:0];
+-  ifdp_ipctrl_w0b0_br_ntake[7:0] <= w0b0_br_ntake[7:0];
+-  ifdp_ipctrl_w0b1_br_ntake[7:0] <= w0b1_br_ntake[7:0];
+-  ifdp_ipctrl_w1b0_br_ntake[7:0] <= w1b0_br_ntake[7:0];
+-  ifdp_ipctrl_w1b1_br_ntake[7:0] <= w1b1_br_ntake[7:0];
+-  ifdp_ipctrl_w0_bry1_hit        <= w0_bry1_hit;
+-  ifdp_ipctrl_w1_bry1_hit        <= w1_bry1_hit;
+-  ifdp_ipctrl_w0_bry0_hit        <= w0_bry0_hit;
+-  ifdp_ipctrl_w1_bry0_hit        <= w1_bry0_hit;
+-  end
+-  else
+-  begin
+-  ifdp_ipctrl_w0b0_bry_data[7:0] <= ipctrl_ifdp_w0b0_bry_updt_data[7:0];
+-  ifdp_ipctrl_w0b1_bry_data[7:0] <= ipctrl_ifdp_w0b1_bry_updt_data[7:0];
+-  ifdp_ipctrl_w1b0_bry_data[7:0] <= ipctrl_ifdp_w1b0_bry_updt_data[7:0];
+-  ifdp_ipctrl_w1b1_bry_data[7:0] <= ipctrl_ifdp_w1b1_bry_updt_data[7:0];
+-  ifdp_ipctrl_w0b0_br_taken[7:0] <= ipctrl_ifdp_w0b0_br_taken_updt[7:0];
+-  ifdp_ipctrl_w0b1_br_taken[7:0] <= ipctrl_ifdp_w0b1_br_taken_updt[7:0];
+-  ifdp_ipctrl_w1b0_br_taken[7:0] <= ipctrl_ifdp_w1b0_br_taken_updt[7:0];
+-  ifdp_ipctrl_w1b1_br_taken[7:0] <= ipctrl_ifdp_w1b1_br_taken_updt[7:0];
+-  ifdp_ipctrl_w0b0_br_ntake[7:0] <= ipctrl_ifdp_w0b0_br_ntake_updt[7:0];
+-  ifdp_ipctrl_w0b1_br_ntake[7:0] <= ipctrl_ifdp_w0b1_br_ntake_updt[7:0];
+-  ifdp_ipctrl_w1b0_br_ntake[7:0] <= ipctrl_ifdp_w1b0_br_ntake_updt[7:0];
+-  ifdp_ipctrl_w1b1_br_ntake[7:0] <= ipctrl_ifdp_w1b1_br_ntake_updt[7:0];
+-  ifdp_ipctrl_w0_bry0_hit        <= ipctrl_ifdp_w0_bry0_hit_updt;
+-  ifdp_ipctrl_w0_bry1_hit        <= ipctrl_ifdp_w0_bry1_hit_updt;
+-  ifdp_ipctrl_w1_bry0_hit        <= ipctrl_ifdp_w1_bry0_hit_updt;
+-  ifdp_ipctrl_w1_bry1_hit        <= ipctrl_ifdp_w1_bry1_hit_updt;
+-  end
+-end
+-
+-// &Force("output","ifdp_ipctrl_w0b0_bry_data"); @897
+-// &Force("output","ifdp_ipctrl_w0b1_bry_data"); @898
+-// &Force("output","ifdp_ipctrl_w1b0_bry_data"); @899
+-// &Force("output","ifdp_ipctrl_w1b1_bry_data"); @900
+-// &Force("output","ifdp_ipctrl_w0b0_br_taken"); @901
+-// &Force("output","ifdp_ipctrl_w0b1_br_taken"); @902
+-// &Force("output","ifdp_ipctrl_w1b0_br_taken"); @903
+-// &Force("output","ifdp_ipctrl_w1b1_br_taken"); @904
+-// &Force("output","ifdp_ipctrl_w0b0_br_ntake"); @905
+-// &Force("output","ifdp_ipctrl_w0b1_br_ntake"); @906
+-// &Force("output","ifdp_ipctrl_w1b0_br_ntake"); @907
+-// &Force("output","ifdp_ipctrl_w1b1_br_ntake"); @908
+-// &Force("output","ifdp_ipctrl_w0_bry1_hit"); @909
+-// &Force("output","ifdp_ipctrl_w1_bry1_hit"); @910
+-// &Force("output","ifdp_ipctrl_w0_bry0_hit"); @911
+-// &Force("output","ifdp_ipctrl_w1_bry0_hit"); @912
+-
+-
+-// &CombBeg; @915
+-always @( pcgen_ifdp_pc[2:0])
+-begin
+-case(pcgen_ifdp_pc[2:0])
+-  3'b000  : vpc_bry_mask[7:0] = 8'b11111111;
+-  3'b001  : vpc_bry_mask[7:0] = 8'b01111111;
+-  3'b010  : vpc_bry_mask[7:0] = 8'b00111111;
+-  3'b011  : vpc_bry_mask[7:0] = 8'b00011111;
+-  3'b100  : vpc_bry_mask[7:0] = 8'b00001111;
+-  3'b101  : vpc_bry_mask[7:0] = 8'b00000111;
+-  3'b110  : vpc_bry_mask[7:0] = 8'b00000011;
+-  3'b111  : vpc_bry_mask[7:0] = 8'b00000001;
+-  default : vpc_bry_mask[7:0] = 8'b11111111;
+-endcase
+-// &CombEnd; @927
+-end
+-
+-//vpc_bry_mask
+-//for timing consideration, form vpc_bry_mask in IF stage
+-always @(posedge ifdp_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-    ifdp_ipctrl_vpc_bry_mask[7:0] <= 8'b0;
+-  else if(ifctrl_ifdp_pipedown)
+-    ifdp_ipctrl_vpc_bry_mask[7:0] <= vpc_bry_mask[7:0] & {8{~ifdp_expt_vld}};
+-  else
+-    ifdp_ipctrl_vpc_bry_mask[7:0] <= ifdp_ipctrl_vpc_bry_mask[7:0];
+-end
+-// &Force("output", "ifdp_ipctrl_vpc_bry_mask"); @940
+-
+-//=================Had inst bkpt about=====================
+-assign bkpta_base[PC_WIDTH-1:0] =(mmu_xx_mmu_en)
+-                                ? {had_yy_xx_bkpta_base[PC_WIDTH-2],had_yy_xx_bkpta_base[PC_WIDTH-2:0]}
+-                                : had_yy_xx_bkpta_base[PC_WIDTH-1:0];
+-assign bkptb_base[PC_WIDTH-1:0] =(mmu_xx_mmu_en)
+-                                ? {had_yy_xx_bkptb_base[PC_WIDTH-2],had_yy_xx_bkptb_base[PC_WIDTH-2:0]}
+-                                : had_yy_xx_bkptb_base[PC_WIDTH-1:0];
+-assign bkpta_mask[PC_WIDTH-1:0] = {32'hffffffff,had_yy_xx_bkpta_mask[7:0]};
+-assign bkptb_mask[PC_WIDTH-1:0] = {32'hffffffff,had_yy_xx_bkptb_mask[7:0]};
+-
+-assign bkpta_hit_0 = ((bkpta_base[PC_WIDTH-1:0] & bkpta_mask[PC_WIDTH-1:0]) == ({pcgen_ifdp_pc[PC_WIDTH-2:3],4'b0000} & bkpta_mask[PC_WIDTH-1:0]))^had_yy_xx_bkpta_rc;
+-assign bkpta_hit_1 = ((bkpta_base[PC_WIDTH-1:0] & bkpta_mask[PC_WIDTH-1:0]) == ({pcgen_ifdp_pc[PC_WIDTH-2:3],4'b0010} & bkpta_mask[PC_WIDTH-1:0]))^had_yy_xx_bkpta_rc;
+-assign bkpta_hit_2 = ((bkpta_base[PC_WIDTH-1:0] & bkpta_mask[PC_WIDTH-1:0]) == ({pcgen_ifdp_pc[PC_WIDTH-2:3],4'b0100} & bkpta_mask[PC_WIDTH-1:0]))^had_yy_xx_bkpta_rc;
+-assign bkpta_hit_3 = ((bkpta_base[PC_WIDTH-1:0] & bkpta_mask[PC_WIDTH-1:0]) == ({pcgen_ifdp_pc[PC_WIDTH-2:3],4'b0110} & bkpta_mask[PC_WIDTH-1:0]))^had_yy_xx_bkpta_rc;
+-assign bkpta_hit_4 = ((bkpta_base[PC_WIDTH-1:0] & bkpta_mask[PC_WIDTH-1:0]) == ({pcgen_ifdp_pc[PC_WIDTH-2:3],4'b1000} & bkpta_mask[PC_WIDTH-1:0]))^had_yy_xx_bkpta_rc;
+-assign bkpta_hit_5 = ((bkpta_base[PC_WIDTH-1:0] & bkpta_mask[PC_WIDTH-1:0]) == ({pcgen_ifdp_pc[PC_WIDTH-2:3],4'b1010} & bkpta_mask[PC_WIDTH-1:0]))^had_yy_xx_bkpta_rc;
+-assign bkpta_hit_6 = ((bkpta_base[PC_WIDTH-1:0] & bkpta_mask[PC_WIDTH-1:0]) == ({pcgen_ifdp_pc[PC_WIDTH-2:3],4'b1100} & bkpta_mask[PC_WIDTH-1:0]))^had_yy_xx_bkpta_rc;
+-assign bkpta_hit_7 = ((bkpta_base[PC_WIDTH-1:0] & bkpta_mask[PC_WIDTH-1:0]) == ({pcgen_ifdp_pc[PC_WIDTH-2:3],4'b1110} & bkpta_mask[PC_WIDTH-1:0]))^had_yy_xx_bkpta_rc;
+-assign bkptb_hit_0 = ((bkptb_base[PC_WIDTH-1:0] & bkptb_mask[PC_WIDTH-1:0]) == ({pcgen_ifdp_pc[PC_WIDTH-2:3],4'b0000} & bkptb_mask[PC_WIDTH-1:0]))^had_yy_xx_bkptb_rc;
+-assign bkptb_hit_1 = ((bkptb_base[PC_WIDTH-1:0] & bkptb_mask[PC_WIDTH-1:0]) == ({pcgen_ifdp_pc[PC_WIDTH-2:3],4'b0010} & bkptb_mask[PC_WIDTH-1:0]))^had_yy_xx_bkptb_rc;
+-assign bkptb_hit_2 = ((bkptb_base[PC_WIDTH-1:0] & bkptb_mask[PC_WIDTH-1:0]) == ({pcgen_ifdp_pc[PC_WIDTH-2:3],4'b0100} & bkptb_mask[PC_WIDTH-1:0]))^had_yy_xx_bkptb_rc;
+-assign bkptb_hit_3 = ((bkptb_base[PC_WIDTH-1:0] & bkptb_mask[PC_WIDTH-1:0]) == ({pcgen_ifdp_pc[PC_WIDTH-2:3],4'b0110} & bkptb_mask[PC_WIDTH-1:0]))^had_yy_xx_bkptb_rc;
+-assign bkptb_hit_4 = ((bkptb_base[PC_WIDTH-1:0] & bkptb_mask[PC_WIDTH-1:0]) == ({pcgen_ifdp_pc[PC_WIDTH-2:3],4'b1000} & bkptb_mask[PC_WIDTH-1:0]))^had_yy_xx_bkptb_rc;
+-assign bkptb_hit_5 = ((bkptb_base[PC_WIDTH-1:0] & bkptb_mask[PC_WIDTH-1:0]) == ({pcgen_ifdp_pc[PC_WIDTH-2:3],4'b1010} & bkptb_mask[PC_WIDTH-1:0]))^had_yy_xx_bkptb_rc;
+-assign bkptb_hit_6 = ((bkptb_base[PC_WIDTH-1:0] & bkptb_mask[PC_WIDTH-1:0]) == ({pcgen_ifdp_pc[PC_WIDTH-2:3],4'b1100} & bkptb_mask[PC_WIDTH-1:0]))^had_yy_xx_bkptb_rc;
+-assign bkptb_hit_7 = ((bkptb_base[PC_WIDTH-1:0] & bkptb_mask[PC_WIDTH-1:0]) == ({pcgen_ifdp_pc[PC_WIDTH-2:3],4'b1110} & bkptb_mask[PC_WIDTH-1:0]))^had_yy_xx_bkptb_rc;
+-
+-assign if_bkpta[7:0]    = {bkpta_hit_0,
+-                           bkpta_hit_1,
+-                           bkpta_hit_2,
+-                           bkpta_hit_3,
+-                           bkpta_hit_4,
+-                           bkpta_hit_5,
+-                           bkpta_hit_6,
+-                           bkpta_hit_7};
+-assign if_bkptb[7:0]    = {bkptb_hit_0,
+-                           bkptb_hit_1,
+-                           bkptb_hit_2,
+-                           bkptb_hit_3,
+-                           bkptb_hit_4,
+-                           bkptb_hit_5,
+-                           bkptb_hit_6,
+-                           bkptb_hit_7};
+-
+-always @(posedge ifdp_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-    ifdp_ipdp_bkpta[7:0] <= 8'b0;
+-  else if(ifctrl_ifdp_pipedown)
+-    ifdp_ipdp_bkpta[7:0] <= if_bkpta[7:0];
+-  else
+-    ifdp_ipdp_bkpta[7:0] <= ifdp_ipdp_bkpta[7:0];
+-end
+-// &Force("output", "ifdp_ipdp_bkpta"); @995
+-
+-always @(posedge ifdp_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-    ifdp_ipdp_bkptb[7:0] <= 8'b0;
+-  else if(ifctrl_ifdp_pipedown)
+-    ifdp_ipdp_bkptb[7:0] <= if_bkptb[7:0];
+-  else
+-    ifdp_ipdp_bkptb[7:0] <= ifdp_ipdp_bkptb[7:0];
+-end
+-// &Force("output", "ifdp_ipdp_bkptb"); @1006
+-
+-//==========================================================
+-//                      Expt Related
+-//==========================================================
+-assign if_mmu_expt_vld          = mmu_ifu_pgflt;
+-assign if_refill_expt_vld       = l1_refill_ifdp_acc_err;
+-assign ifdp_expt_vld            = if_refill_expt_vld || 
+-                                  if_mmu_expt_vld;
+-//assign ifdp_vector_mmu_expt_vld = if_mmu_expt_vld;
+-
+-
+-// &Instance("gated_clk_cell","x_ifdp_spe_clk"); @1018
+-gated_clk_cell  x_ifdp_spe_clk (
+-  .clk_in             (forever_cpuclk    ),
+-  .clk_out            (ifdp_spe_clk      ),
+-  .external_en        (1'b0              ),
+-  .global_en          (cp0_yy_clk_en     ),
+-  .local_en           (ifdp_spe_clk_en   ),
+-  .module_en          (cp0_ifu_icg_en    ),
+-  .pad_yy_icg_scan_en (pad_yy_icg_scan_en)
+-);
+-
+-// &Connect( .clk_in         (forever_cpuclk), @1019
+-//           .clk_out        (ifdp_spe_clk),//Out Clock @1020
+-//           .external_en    (1'b0), @1021
+-//           .global_en      (cp0_yy_clk_en), @1022
+-//           .local_en       (ifdp_spe_clk_en),//Local Condition @1023
+-//           .module_en      (cp0_ifu_icg_en) @1024
+-//         ); @1025
+-assign ifdp_spe_clk_en = ifdp_ipdp_expt_vld      || 
+-                         ifdp_expt_vld; 
+-                     
+-always @(posedge ifdp_spe_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-  begin
+-    ifdp_ipdp_expt_vld       <= 1'b0;
+-    ifdp_ipctrl_expt_vld_dup <= 1'b0;
+-    ifdp_ipdp_mmu_pgflt      <= 1'b0;
+-    ifdp_ipdp_acc_err        <= 1'b0;
+-  end
+-  else if(ifctrl_ifdp_pipedown)
+-  begin
+-    ifdp_ipdp_expt_vld       <= ifdp_expt_vld;
+-    ifdp_ipctrl_expt_vld_dup <= ifdp_expt_vld;
+-    ifdp_ipdp_mmu_pgflt      <= mmu_ifu_pgflt;
+-    ifdp_ipdp_acc_err        <= l1_refill_ifdp_acc_err;
+-  end
+-  else
+-  begin
+-    ifdp_ipdp_expt_vld       <= ifdp_ipdp_expt_vld;
+-    ifdp_ipctrl_expt_vld_dup <= ifdp_ipctrl_expt_vld_dup;
+-    ifdp_ipdp_mmu_pgflt      <= ifdp_ipdp_mmu_pgflt;
+-    ifdp_ipdp_acc_err        <= ifdp_ipdp_acc_err;
+-  end
+-end
+-// &Force("output", "ifdp_ipdp_mmu_pgflt"); @1053
+-// &Force("output", "ifdp_ipdp_acc_err"); @1054
+-// &Force("output", "ifdp_ipctrl_expt_vld_dup"); @1055
+-assign ifdp_ipctrl_expt_vld = ifdp_ipdp_expt_vld;
+-
+-// &Force("output", "ifdp_ipdp_ecc_err"); @1068
+-
+-//==========================================================
+-//                      BTB Related
+-//==========================================================
+-//L0 BTB target pc will compare with L1 BTB target PC
+-//for timing consideration,we compare target pc at IF stage
+-assign btb_way0_high_hit    = btb_ifdp_way0_target[19:10] == l0_btb_ifdp_chgflw_pc[19:10];
+-assign btb_way0_low_hit     = btb_ifdp_way0_target[9:0]   == l0_btb_ifdp_chgflw_pc[9:0];
+-assign btb_way1_high_hit    = btb_ifdp_way1_target[19:10] == l0_btb_ifdp_chgflw_pc[19:10];
+-assign btb_way1_low_hit     = btb_ifdp_way1_target[9:0]   == l0_btb_ifdp_chgflw_pc[9:0];
+-assign btb_way2_high_hit    = btb_ifdp_way2_target[19:10] == l0_btb_ifdp_chgflw_pc[19:10];
+-assign btb_way2_low_hit     = btb_ifdp_way2_target[9:0]   == l0_btb_ifdp_chgflw_pc[9:0];
+-assign btb_way3_high_hit    = btb_ifdp_way3_target[19:10] == l0_btb_ifdp_chgflw_pc[19:10];
+-assign btb_way3_low_hit     = btb_ifdp_way3_target[9:0]   == l0_btb_ifdp_chgflw_pc[9:0];
+-assign btb_mispred_pc[PC_WIDTH-2:0] = pcgen_ifdp_inc_pc[PC_WIDTH-2:0];
+-
+-always @(posedge ifdp_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-  begin
+-  btb_way0_tag[9:0]     <= 10'b0;
+-  btb_way0_target[19:0] <= 20'b0;
+-  btb_way0_pred[1:0]    <= 2'b0;
+-  btb_way0_vld          <= 1'b0;
+-  btb_way1_tag[9:0]     <= 10'b0;
+-  btb_way1_target[19:0] <= 20'b0;
+-  btb_way1_pred[1:0]    <= 2'b0;
+-  btb_way1_vld          <= 1'b0;
+-  btb_way2_tag[9:0]     <= 10'b0;
+-  btb_way2_target[19:0] <= 20'b0;
+-  btb_way2_pred[1:0]    <= 2'b0;
+-  btb_way2_vld          <= 1'b0;
+-  btb_way3_tag[9:0]     <= 10'b0;
+-  btb_way3_target[19:0] <= 20'b0;
+-  btb_way3_pred[1:0]    <= 2'b0;
+-  btb_way3_vld          <= 1'b0;
+-  end
+-  else if(ifctrl_ifdp_pipedown)
+-  begin
+-  btb_way0_tag[9:0]     <= btb_ifdp_way0_tag[9:0];
+-  btb_way0_target[19:0] <= btb_ifdp_way0_target[19:0];
+-  btb_way0_pred[1:0]    <= btb_ifdp_way0_pred[1:0];
+-  btb_way0_vld          <= btb_ifdp_way0_vld;
+-  btb_way1_tag[9:0]     <= btb_ifdp_way1_tag[9:0];
+-  btb_way1_target[19:0] <= btb_ifdp_way1_target[19:0];
+-  btb_way1_pred[1:0]    <= btb_ifdp_way1_pred[1:0];
+-  btb_way1_vld          <= btb_ifdp_way1_vld;
+-  btb_way2_tag[9:0]     <= btb_ifdp_way2_tag[9:0];
+-  btb_way2_target[19:0] <= btb_ifdp_way2_target[19:0];
+-  btb_way2_pred[1:0]    <= btb_ifdp_way2_pred[1:0];
+-  btb_way2_vld          <= btb_ifdp_way2_vld;
+-  btb_way3_tag[9:0]     <= btb_ifdp_way3_tag[9:0];
+-  btb_way3_target[19:0] <= btb_ifdp_way3_target[19:0];
+-  btb_way3_pred[1:0]    <= btb_ifdp_way3_pred[1:0];
+-  btb_way3_vld          <= btb_ifdp_way3_vld;
+-  end
+-  else
+-  begin
+-  btb_way0_tag[9:0]     <= btb_way0_tag[9:0];
+-  btb_way0_target[19:0] <= btb_way0_target[19:0];
+-  btb_way0_pred[1:0]    <= btb_way0_pred[1:0];
+-  btb_way0_vld          <= btb_way0_vld;
+-  btb_way1_tag[9:0]     <= btb_way1_tag[9:0];
+-  btb_way1_target[19:0] <= btb_way1_target[19:0];
+-  btb_way1_pred[1:0]    <= btb_way1_pred[1:0];
+-  btb_way1_vld          <= btb_way1_vld;
+-  btb_way2_tag[9:0]     <= btb_way2_tag[9:0];
+-  btb_way2_target[19:0] <= btb_way2_target[19:0];
+-  btb_way2_pred[1:0]    <= btb_way2_pred[1:0];
+-  btb_way2_vld          <= btb_way2_vld;
+-  btb_way3_tag[9:0]     <= btb_way3_tag[9:0];
+-  btb_way3_target[19:0] <= btb_way3_target[19:0];
+-  btb_way3_pred[1:0]    <= btb_way3_pred[1:0];
+-  btb_way3_vld          <= btb_way3_vld;
+-  end
+-end
+-
+-always @(posedge ifdp_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-  begin
+-  l0_btb_hit                      <= 1'b0;
+-  l0_btb_target[PC_WIDTH-2:0]     <= {PC_WIDTH-1{1'b0}};
+-  l0_btb_way_pred[1:0]            <= 2'b0;
+-  l0_btb_counter                  <= 1'b0;
+-  l0_btb_ras                      <= 1'b0;
+-  l0_btb_entry_hit[15:0]          <= 16'b0;
+-  l0_btb_way0_high_hit            <= 1'b0;
+-  l0_btb_way0_low_hit             <= 1'b0;
+-  l0_btb_way1_high_hit            <= 1'b0;
+-  l0_btb_way1_low_hit             <= 1'b0;
+-  l0_btb_way2_high_hit            <= 1'b0;
+-  l0_btb_way2_low_hit             <= 1'b0;
+-  l0_btb_way3_high_hit            <= 1'b0;
+-  l0_btb_way3_low_hit             <= 1'b0;
+-  l0_btb_mispred_pc[PC_WIDTH-2:0] <= {PC_WIDTH-1{1'b0}};
+-  end
+-  else if(ifctrl_ifdp_pipedown)
+-  begin
+-  l0_btb_hit                      <= l0_btb_ifdp_hit;
+-  l0_btb_target[PC_WIDTH-2:0]     <= l0_btb_ifdp_chgflw_pc[PC_WIDTH-2:0];
+-  l0_btb_way_pred[1:0]            <= l0_btb_ifdp_chgflw_way_pred[1:0];
+-  l0_btb_counter                  <= l0_btb_ifdp_counter;
+-  l0_btb_ras                      <= l0_btb_ifdp_ras;
+-  l0_btb_entry_hit[15:0]          <= l0_btb_ifdp_entry_hit[15:0];
+-  l0_btb_way0_high_hit            <= btb_way0_high_hit;
+-  l0_btb_way0_low_hit             <= btb_way0_low_hit;
+-  l0_btb_way1_high_hit            <= btb_way1_high_hit;
+-  l0_btb_way1_low_hit             <= btb_way1_low_hit;
+-  l0_btb_way2_high_hit            <= btb_way2_high_hit;
+-  l0_btb_way2_low_hit             <= btb_way2_low_hit;
+-  l0_btb_way3_high_hit            <= btb_way3_high_hit;
+-  l0_btb_way3_low_hit             <= btb_way3_low_hit;
+-  l0_btb_mispred_pc[PC_WIDTH-2:0] <= btb_mispred_pc[PC_WIDTH-2:0];
+-  end
+-  else
+-  begin
+-  l0_btb_hit                      <= l0_btb_hit;
+-  l0_btb_target[PC_WIDTH-2:0]     <= l0_btb_target[PC_WIDTH-2:0];
+-  l0_btb_way_pred[1:0]            <= l0_btb_way_pred[1:0];
+-  l0_btb_counter                  <= l0_btb_counter;
+-  l0_btb_ras                      <= l0_btb_ras;
+-  l0_btb_entry_hit[15:0]          <= l0_btb_entry_hit[15:0];
+-  l0_btb_way0_high_hit            <= l0_btb_way0_high_hit;
+-  l0_btb_way0_low_hit             <= l0_btb_way0_low_hit;
+-  l0_btb_way1_high_hit            <= l0_btb_way1_high_hit;
+-  l0_btb_way1_low_hit             <= l0_btb_way1_low_hit;
+-  l0_btb_way2_high_hit            <= l0_btb_way2_high_hit;
+-  l0_btb_way2_low_hit             <= l0_btb_way2_low_hit;
+-  l0_btb_way3_high_hit            <= l0_btb_way3_high_hit;
+-  l0_btb_way3_low_hit             <= l0_btb_way3_low_hit;
+-  l0_btb_mispred_pc[PC_WIDTH-2:0] <= l0_btb_mispred_pc[PC_WIDTH-2:0];
+-  end
+-end
+-
+-assign ifdp_ipdp_btb_way0_tag[9:0]              = btb_way0_tag[9:0];
+-assign ifdp_ipdp_btb_way0_target[19:0]          = btb_way0_target[19:0];
+-assign ifdp_ipdp_btb_way0_pred[1:0]             = btb_way0_pred[1:0];
+-assign ifdp_ipdp_btb_way0_vld                   = btb_way0_vld;
+-assign ifdp_ipdp_btb_way1_tag[9:0]              = btb_way1_tag[9:0];
+-assign ifdp_ipdp_btb_way1_target[19:0]          = btb_way1_target[19:0];
+-assign ifdp_ipdp_btb_way1_pred[1:0]             = btb_way1_pred[1:0];
+-assign ifdp_ipdp_btb_way1_vld                   = btb_way1_vld;
+-assign ifdp_ipdp_btb_way2_tag[9:0]              = btb_way2_tag[9:0];
+-assign ifdp_ipdp_btb_way2_target[19:0]          = btb_way2_target[19:0];
+-assign ifdp_ipdp_btb_way2_pred[1:0]             = btb_way2_pred[1:0];
+-assign ifdp_ipdp_btb_way2_vld                   = btb_way2_vld;
+-assign ifdp_ipdp_btb_way3_tag[9:0]              = btb_way3_tag[9:0];
+-assign ifdp_ipdp_btb_way3_target[19:0]          = btb_way3_target[19:0];
+-assign ifdp_ipdp_btb_way3_pred[1:0]             = btb_way3_pred[1:0];
+-assign ifdp_ipdp_btb_way3_vld                   = btb_way3_vld;
+-assign ifdp_ipdp_l0_btb_hit                     = l0_btb_hit;
+-assign ifdp_ipdp_l0_btb_target[PC_WIDTH-2:0]    = l0_btb_target[PC_WIDTH-2:0];
+-assign ifdp_ipdp_l0_btb_way_pred[1:0]           = l0_btb_way_pred[1:0];
+-assign ifdp_ipdp_l0_btb_counter                 = l0_btb_counter;
+-assign ifdp_ipdp_l0_btb_ras                     = l0_btb_ras;
+-assign ifdp_ipdp_l0_btb_entry_hit[15:0]         = l0_btb_entry_hit[15:0];
+-assign ifdp_ipdp_l0_btb_way0_high_hit           = l0_btb_way0_high_hit;
+-assign ifdp_ipdp_l0_btb_way0_low_hit            = l0_btb_way0_low_hit;
+-assign ifdp_ipdp_l0_btb_way1_high_hit           = l0_btb_way1_high_hit;
+-assign ifdp_ipdp_l0_btb_way1_low_hit            = l0_btb_way1_low_hit;
+-assign ifdp_ipdp_l0_btb_way2_high_hit           = l0_btb_way2_high_hit;
+-assign ifdp_ipdp_l0_btb_way2_low_hit            = l0_btb_way2_low_hit;
+-assign ifdp_ipdp_l0_btb_way3_high_hit           = l0_btb_way3_high_hit;
+-assign ifdp_ipdp_l0_btb_way3_low_hit            = l0_btb_way3_low_hit;
+-assign ifdp_ipdp_l0_btb_mispred_pc[PC_WIDTH-2:0] = l0_btb_mispred_pc[PC_WIDTH-2:0]; 
+-
+-//==========================================================
+-//              Spec Fail Predict Data
+-//==========================================================
+-always @(posedge ifdp_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b) 
+-  begin
+-    ifdp_ipdp_sfp_pc_hit         <= 1'b0;
+-    ifdp_ipdp_sfp_hit_type[3:0]  <= 4'b0;
+-    ifdp_ipdp_sfp_hit_pc_lo[2:0] <= 3'b0;
+-  end
+-  else if(ifctrl_ifdp_pipedown)
+-  begin
+-    ifdp_ipdp_sfp_pc_hit         <= sfp_ifdp_pc_hit;
+-    ifdp_ipdp_sfp_hit_type[3:0]  <= sfp_ifdp_hit_type[3:0];
+-    ifdp_ipdp_sfp_hit_pc_lo[2:0] <= sfp_ifdp_hit_pc_lo[2:0];
+-  end
+-  else
+-  begin
+-    ifdp_ipdp_sfp_pc_hit         <= ifdp_ipdp_sfp_pc_hit;
+-    ifdp_ipdp_sfp_hit_type[3:0]  <= ifdp_ipdp_sfp_hit_type[3:0];
+-    ifdp_ipdp_sfp_hit_pc_lo[2:0] <= ifdp_ipdp_sfp_hit_pc_lo[2:0];
+-  end
+-end
+-// &Force("output", "ifdp_ipdp_sfp_pc_hit"); @1276
+-// &Force("output", "ifdp_ipdp_sfp_hit_type"); @1277
+-// &Force("output", "ifdp_ipdp_sfp_hit_pc_lo"); @1278
+-
+-//==========================================================
+-//              MMU Tsize & Prot Bits
+-//==========================================================
+-//These bit will be sent to BIU for Request Data from BUS
+-//Machine mode
+-always @(posedge ifdp_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-    ifdp_l1_refill_machine_mode <= 1'b0;
+-  else if(ifctrl_ifdp_pipedown)
+-    ifdp_l1_refill_machine_mode <= (cp0_yy_priv_mode[1:0] == 2'b11);
+-  else
+-    ifdp_l1_refill_machine_mode <= ifdp_l1_refill_machine_mode;
+-end
+-// &Force("output", "ifdp_l1_refill_machine_mode"); @1294
+-
+-//Superviser mode
+-always @(posedge ifdp_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-    ifdp_l1_refill_supv_mode <= 1'b0;
+-  else if(ifctrl_ifdp_pipedown)
+-    ifdp_l1_refill_supv_mode <= cp0_yy_priv_mode[0];
+-  else
+-    ifdp_l1_refill_supv_mode <= ifdp_l1_refill_supv_mode;
+-end
+-// &Force("output", "ifdp_l1_refill_supv_mode"); @1306
+-
+-//Tsize Bit : acc_ca
+-always @(posedge ifdp_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-    ifdp_l1_refill_tsize <= 1'b0;
+-  else if(ifctrl_ifdp_pipedown)
+-    ifdp_l1_refill_tsize <= cp0_ifu_icache_en && mmu_ifu_ca;
+-  else
+-    ifdp_l1_refill_tsize <= ifdp_l1_refill_tsize;
+-end
+-// &Force("output", "ifdp_l1_refill_tsize"); @1318
+-assign ifdp_ipctrl_tsize = ifdp_l1_refill_tsize;
+-
+-//Bufferable Bit
+-always @(posedge ifdp_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-    ifdp_l1_refill_bufferable <= 1'b0;
+-  else if(ifctrl_ifdp_pipedown)
+-    ifdp_l1_refill_bufferable <= mmu_ifu_buf;
+-  else
+-    ifdp_l1_refill_bufferable <= ifdp_l1_refill_bufferable;
+-end
+-// &Force("output", "ifdp_l1_refill_bufferable"); @1331
+-
+-//Secure Bit
+-always @(posedge ifdp_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-    ifdp_l1_refill_secure <= 1'b0;
+-  else if(ifctrl_ifdp_pipedown)
+-    ifdp_l1_refill_secure <= mmu_ifu_sec;
+-  else
+-    ifdp_l1_refill_secure <= ifdp_l1_refill_secure;
+-end
+-// &Force("output", "ifdp_l1_refill_secure"); @1343
+-
+-//Cacheable Bit
+-always @(posedge ifdp_clk or negedge cpurst_b)
+-begin
+-  if(!cpurst_b)
+-    ifdp_l1_refill_cacheable <= 1'b0;
+-  else if(ifctrl_ifdp_pipedown)
+-    ifdp_l1_refill_cacheable <= mmu_ifu_ca;
+-  else
+-    ifdp_l1_refill_cacheable <= ifdp_l1_refill_cacheable;
+-end
+-// &Force("output", "ifdp_l1_refill_cacheable"); @1355
+-
+-// &Force("output", "ifdp_ipctrl_data_from_pbuf"); @1368
+-// &Force("output", "ifdp_ipctrl_data_from_biu"); @1380
+-// &Force("output", "ifdp_ipctrl_cache_en"); @1392
+-// &Force("output", "ifdp_ipctrl_ca"); @1404
+-
+-//Debug_infor
+-assign ifdp_debug_mmu_expt_vld = if_mmu_expt_vld;
+-assign ifdp_debug_acc_err_vld  = if_refill_expt_vld;
+-
+-// &ModuleEnd; @1412
++
++  assign breakpoint_base   = {had_yy_xx_bkptb_base, had_yy_xx_bkpta_base};
++  assign breakpoint_mask   = {had_yy_xx_bkptb_mask, had_yy_xx_bkpta_mask};
++  assign breakpoint_enable = {had_ifu_bkptb_en, had_ifu_bkpta_en};
++  generate
++    for (breakpoint = 0; breakpoint < 2; breakpoint = breakpoint + 1) begin : g_breakpoint
++      for (slot = 0; slot < 4; slot = slot + 1) begin : g_slot
++        localparam [1:0] SLOT = slot;
++        wire [31:0] word_pc;
++        assign word_pc = {ifctrl_ifdp_issue_pc[31:4], SLOT, 2'b00};
++        // Excel mask bit=1 means ignore this bit.
++        assign breakpoint_issue_hit[breakpoint][slot] = breakpoint_enable[breakpoint] &&
++          ((word_pc & ~breakpoint_mask[breakpoint*32+:32]) ==
++           (breakpoint_base[breakpoint*32+:32] & ~breakpoint_mask[breakpoint*32+:32]));
++      end
++    end
++  endgenerate
++
++  //----------------------------------------------------------------------------
++  // Raw IF data selection and partial physical Tag comparisons.
++  //----------------------------------------------------------------------------
++  assign is_cache         = (if_kind == CACHE);
++  assign is_refill        = (if_kind == REFILL);
++  assign is_bypass        = (if_kind == BYPASS);
++  assign if_fault         = (if_kind == FAULT) || (is_refill && forward_error);
++  assign if_cause         = (|if_pc[1:0]) ? 4'd0 : 4'd1;
++  assign array_data[0]    = icache_if_ifdp_inst_data0;
++  assign array_data[1]    = icache_if_ifdp_inst_data1;
++  assign array_precode[0] = icache_if_ifdp_precode0;
++  assign array_precode[1] = icache_if_ifdp_precode1;
++  assign array_tag[0]     = icache_if_ifdp_tag_data0;
++  assign array_tag[1]     = icache_if_ifdp_tag_data1;
++  assign raw_fifo         = is_cache && icache_if_ifdp_fifo;
++  generate
++    for (way = 0; way < 2; way = way + 1) begin : g_way
++      assign way_data[way] = if_fault ? 128'b0 : is_refill ? ((way == 0) ? forward_data : 128'b0) :
++        array_data[way] & {128{is_cache && if_way[way]}};
++      assign way_precode[way] = if_fault ? 32'b0 : is_refill ?
++        ((way == 0) ? forward_precode : 32'b0) : array_precode[way] & {32{is_cache && if_way[way]}};
++      for (part = 0; part < 3; part = part + 1) begin : g_tag_part
++        wire equal_part;
++        if (part == 2) begin : g_valid_and_high
++          assign equal_part = array_tag[way][17:16] == {1'b1, if_pc[31]};
++        end else begin : g_low
++          assign equal_part = array_tag[way][part*8+:8] == if_pc[15+part*8+:8];
++        end
++        assign tag_match[way][part] = !if_fault &&
++          ((is_refill && (way == 0)) || (is_cache && if_cache_en && equal_part));
++      end
++    end
++    for (slot = 0; slot < 4; slot = slot + 1) begin : g_word
++      localparam [1:0] SLOT = slot;
++      assign word_mask[slot] = if_fault ? (SLOT == if_pc[3:2]) : (SLOT >= if_pc[3:2]);
++      assign ifdp_ipdp_word_pc[slot*32+:32] = {ifdp_ipdp_vpc[31:4], SLOT, 2'b00};
++      assign ifdp_ipdp_l0_btb_target_match[slot] = ifdp_ipdp_btb_vld && ifdp_ipdp_btb_hit[slot] &&
++        ifdp_ipdp_l0_hit && (ifdp_ipdp_btb_target[slot*32+:32] == ifdp_ipdp_l0_target);
++    end
++    for (entry = 0; entry < 16; entry = entry + 1) begin : g_l0_entry
++      localparam [3:0] ENTRY = entry;
++      assign ifdp_ipdp_l0_entry_mask[entry] = ifdp_ipdp_l0_hit && (ifdp_ipdp_l0_index == ENTRY);
++    end
++  endgenerate
++
++  assign btb_match = btb_ifdp_vld && (btb_ifdp_pc == if_pc) && !if_fault && !is_bypass;
++  assign l0_eligible = l0_btb_ifdp_hit && !if_fault && !is_bypass &&
++    (l0_btb_ifdp_slot >= if_pc[3:2]) && !(|l0_btb_ifdp_target[1:0]);
++  assign sfp_mask = (sfp_ifdp_vld && (sfp_ifdp_pc == if_pc) && !if_fault) ? sfp_ifdp_no_spec : 4'b0;
++  assign response_packet = {
++    if_pc,
++    if_attr,
++    if_priv,
++    if_way,
++    is_refill,
++    is_bypass,
++    raw_fifo,
++    if_fault,
++    if_cause,
++    word_mask,
++    breakpoint_hit[0] & word_mask,
++    breakpoint_hit[1] & word_mask,
++    way_data[0],
++    way_data[1],
++    way_precode[0],
++    way_precode[1],
++    tag_match[0],
++    tag_match[1],
++    btb_match,
++    btb_ifdp_hit & {4{btb_match}},
++    btb_ifdp_target & {128{btb_match}},
++    btb_ifdp_way & {8{btb_match}},
++    l0_eligible,
++    l0_btb_ifdp_index,
++    l0_btb_ifdp_slot,
++    l0_btb_ifdp_type,
++    l0_btb_ifdp_target,
++    l0_btb_ifdp_way,
++    sfp_mask & word_mask
++  };
++
++  // First stalled edge saves the complete response before another array owner
++  // can overwrite SRAM Q. Subsequent stalls never re-sample changing predictors.
++  assign selected_packet = ifctrl_ifdp_held ? packet_q[0] : response_packet;
++  assign packet_en = {ifctrl_ifdp_pipedown, ifctrl_ifdp_hold};
++  assign packet_nxt[0] = response_packet;
++  assign packet_nxt[1] = selected_packet;
++  generate
++    for (capture = 0; capture < 2; capture = capture + 1) begin : g_capture
++      always @(posedge forever_cpuclk or negedge cpurst_b) begin : p_packet
++        if (!cpurst_b) begin
++          packet_q[capture] <= {PACKET_WIDTH{1'b0}};
++        end else if (packet_en[capture]) begin
++          packet_q[capture] <= packet_nxt[capture];
++        end
++      end
++    end
++  endgenerate
++  assign ifdp_ifctrl_fault = selected_packet[P_FAULT];
++  // C910 defers speculative RAS/IND repair until the recovery retirement point.
++  // A held indirect L0 hint must also be suppressed while that state is unsafe.
++  assign ifdp_ifctrl_l0_vld = selected_packet[P_L0_HIT] && !selected_packet[P_FAULT] &&
++    !((selected_packet[P_L0_TYPE+:3] == 3'd3) && bp_recovery_stall);
++  assign ifdp_ifctrl_l0_target = selected_packet[P_L0_TARGET+:32];
++  assign ifdp_ifctrl_l0_way = selected_packet[P_L0_WAY+:2];
++  assign ifdp_l0_btb_pc = if_pc;
++  assign ifdp_bht_pc = if_pc;
++  assign ifdp_ipdp_vpc = packet_q[1][P_VPC+:32];
++  assign ifdp_ipdp_attr = packet_q[1][P_ATTR+:5];
++  assign ifdp_ipdp_priv_mode = packet_q[1][P_PRIV_MODE+:2];
++  assign ifdp_ipdp_way_pred = packet_q[1][P_WAY_PRED+:2];
++  assign ifdp_ipdp_refill_on = packet_q[1][P_REFILL_ON+:1];
++  assign ifdp_ipdp_cache_bypass = packet_q[1][P_CACHE_BYPASS+:1];
++  assign ifdp_ipdp_fifo = packet_q[1][P_FIFO+:1];
++  assign ifdp_ipdp_fault = packet_q[1][P_FAULT+:1];
++  assign ifdp_ipdp_cause = packet_q[1][P_CAUSE+:4];
++  assign ifdp_ipdp_word_mask = packet_q[1][P_WORD_MASK+:4];
++  assign ifdp_ipdp_bkpta = packet_q[1][P_BKPTA+:4];
++  assign ifdp_ipdp_bkptb = packet_q[1][P_BKPTB+:4];
++  assign ifdp_ipdp_inst_data0 = packet_q[1][P_INST_DATA0+:128];
++  assign ifdp_ipdp_inst_data1 = packet_q[1][P_INST_DATA1+:128];
++  assign ifdp_ipdp_precode0 = packet_q[1][P_PRECODE0+:32];
++  assign ifdp_ipdp_precode1 = packet_q[1][P_PRECODE1+:32];
++  assign ifdp_ipdp_tag_match0 = packet_q[1][P_TAG_MATCH0+:3];
++  assign ifdp_ipdp_tag_match1 = packet_q[1][P_TAG_MATCH1+:3];
++  assign ifdp_ipdp_btb_vld = packet_q[1][P_BTB_VLD+:1];
++  assign ifdp_ipdp_btb_hit = packet_q[1][P_BTB_HIT+:4];
++  assign ifdp_ipdp_btb_target = packet_q[1][P_BTB_TARGET+:128];
++  assign ifdp_ipdp_btb_way = packet_q[1][P_BTB_WAY+:8];
++  assign ifdp_ipdp_l0_hit = packet_q[1][P_L0_HIT+:1];
++  assign ifdp_ipdp_l0_index = packet_q[1][P_L0_INDEX+:4];
++  assign ifdp_ipdp_l0_slot = packet_q[1][P_L0_SLOT+:2];
++  assign ifdp_ipdp_l0_type = packet_q[1][P_L0_TYPE+:3];
++  assign ifdp_ipdp_l0_target = packet_q[1][P_L0_TARGET+:32];
++  assign ifdp_ipdp_l0_way = packet_q[1][P_L0_WAY+:2];
++  assign ifdp_ipdp_no_spec = packet_q[1][P_NO_SPEC+:4];
++  assign ifdp_ipdp_seq_pc = {ifdp_ipdp_vpc[31:4] + 28'd1, 4'b0};
+ endmodule
+-
+-
+--- work/if_stage_before/rtl/rv32_ifu_btb.v
++++ rtl/rv32_ifu_btb.v
+@@ -29,6 +29,12 @@
+   output wire [  3:0] hit,
+   output wire [127:0] target,
+   output wire [  7:0] way_hint,
++  // Synchronous SRAM result in IF, before the legacy result register.
++  output wire         if_vld,
++  output wire [ 31:0] if_pc,
++  output wire [  3:0] if_hit,
++  output wire [127:0] if_target,
++  output wire [  7:0] if_way_hint,
+   input  wire         update_vld,
+   output wire         update_ready,
+   input  wire [ 31:0] update_pc,
+@@ -117,6 +123,11 @@
+   assign sweep_last   = &sweep_row_q;
+   assign active       = !invalidate && !sweeping_q;
+   assign response_en  = active && rd_pending_q && !cancel;
++  assign if_vld       = response_en && enable;
++  assign if_pc        = rd_pc_q;
++  assign if_hit       = slot_hit & {4{if_vld}};
++  assign if_target    = slot_target;
++  assign if_way_hint  = slot_way_hint;
+   assign tag_cen      = !(sweeping_q || write_buf || rd);
+   assign tag_gwen     = !(sweeping_q || write_buf);
+   assign data_cen     = !(write_buf || rd);
+--- work/if_stage_before/rtl/rv32_ifu_bp_top.v
++++ rtl/rv32_ifu_bp_top.v
+@@ -163,6 +163,11 @@
+   input wire [31:0] btb_update_pc,
+   input wire [31:0] btb_update_target,
+   input wire [1:0] btb_update_way,
++  output wire  btb_if_vld,
++  output wire [31:0] btb_if_pc,
++  output wire [3:0] btb_if_hit,
++  output wire [127:0] btb_if_target,
++  output wire [7:0] btb_if_way_hint,
+ 
+   // Clock, reset and configuration
+   input wire  cp0_ifu_l0btb_en,
+@@ -414,6 +419,11 @@
+     .update_pc(btb_update_pc),
+     .update_target(btb_update_target),
+     .update_way(btb_update_way),
++    .if_vld(btb_if_vld),
++    .if_pc(btb_if_pc),
++    .if_hit(btb_if_hit),
++    .if_target(btb_if_target),
++    .if_way_hint(btb_if_way_hint),
+     .init_done(btb_init_done),
+     .cancel(!frontend_ok)
+   );
+--- work/if_stage_before/scripts/build_cluster.py
++++ scripts/build_cluster.py
+@@ -95,7 +95,8 @@
+  ('input','lookup_pc','[31:0]'),('output','result_vld',''),('output','hit','[3:0]'),
+  ('output','target','[127:0]'),('output','way_hint','[7:0]'),('input','update_vld',''),
+  ('output','update_ready',''),('input','update_pc','[31:0]'),('input','update_target','[31:0]'),
+- ('input','update_way','[1:0]')],
++ ('input','update_way','[1:0]'), ('output','if_vld',''), ('output','if_pc','[31:0]'),
++ ('output','if_hit','[3:0]'), ('output','if_target','[127:0]'), ('output','if_way_hint','[7:0]')],
+  'l0_btb': [('input','enable',''),('input','lookup_vld',''),('input','lookup_pc','[31:0]'),
+  ('output','hit',''),('output','hit_index','[3:0]'),('output','hit_slot','[1:0]'),
+  ('output','hit_type','[2:0]'),('output','target','[31:0]'),('output','way_hint','[1:0]'),

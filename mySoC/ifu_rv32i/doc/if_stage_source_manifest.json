@@ -1,0 +1,81 @@
+{
+  "date": "2026-09-21",
+  "sources": [
+    {
+      "path": "../ifu/rtl/ct_ifu_ifctrl.v",
+      "sha256": "219d5e4611a9a30df5636ed91f77e7388d98d06d9720368dc6444632b62b75be"
+    },
+    {
+      "path": "../ifu/rtl/ct_ifu_ifdp.v",
+      "sha256": "16f73ca60478a6afec5bfce4299f077b5abf9ecb92f6547b424f66791ed22194"
+    },
+    {
+      "path": "../ifu/rtl/ct_ifu_pcgen.v",
+      "sha256": "99641bf464fa063c6f32f88f154905f5d4f0212b5b97a5a603ef9f208782801e"
+    },
+    {
+      "path": "../ifu/rtl/ct_ifu_ipctrl.v",
+      "sha256": "ba4cf96ab33fda199f559d4849902bce1105c8b5cdc50f8d74e79b7400b7b3d8"
+    },
+    {
+      "path": "../ifu/rtl/ct_ifu_ibctrl.v",
+      "sha256": "a1eead25e57e8a50aca01ff99b87ae73fefa17c3304ca322cfefa6a3275d18f2"
+    },
+    {
+      "path": "../ifu/rtl/ct_ifu_addrgen.v",
+      "sha256": "4b61709654abd56494e65169ac93e81a10f8f1bca5a2662324ad50a91111c286"
+    },
+    {
+      "path": "../ifu/rtl/ct_ifu_bht.v",
+      "sha256": "fd095d34af0a1e7059ad9fdb277998cf64490f5b8339585c5941e2afc3fde346"
+    },
+    {
+      "path": "../ifu/rtl/ct_ifu_ras.v",
+      "sha256": "689a1b0feae8daf490af4ecb103374e7c23493167c415e05f6a76e9243f3e4be"
+    },
+    {
+      "path": "../ifu/rtl/ct_ifu_ind_btb.v",
+      "sha256": "e5c3a74232500bb0ea8ad0594d265bfe2858b6875ac4075325f38159e8e65ca6"
+    },
+    {
+      "path": "../ifu/doc/RV32I_C910_IFU_microarchitecture_spec_zh.md",
+      "sha256": "77834e77a3f42924d0c1e76cb0648c43e6b6bcc6e3dbc5b63d3dbd9d59925ab8"
+    },
+    {
+      "path": "../ifu/doc/RV32I_C910_IFU_interface_v1.1_noMMU.xlsx",
+      "sha256": "194a8327cff7de5ac0b8ebcf9632aff788a8464b92083c179052cbfe054b074b"
+    }
+  ],
+  "new_products": {
+    "rtl/rv32_ifu_ifctrl.v": "2d7379417d817bed5c3b0e1cbb3b2d39eb8d92891c205b74c234f80cf0bff0be",
+    "rtl/rv32_ifu_ifdp.v": "78187ca21ace33063dfe81be0605a8ce6969d071229e7f38ca9882356623b980",
+    "rtl/rv32_ifu_if_array.v": "200921d361f29f5a2f4a3e9238e975bd3b53a7898342e2eee818204634a205c2",
+    "rtl/if_stage_files.f": "09b6832795316ddced472c5dc5539af7f11db2b8aff0d9515e44f8a30e1aca54",
+    "scripts/build_ifdp.py": "c19be9178e6a10faf1893dce8f54ccf9e57440dfe2c8b49b308e74b826d9b7e2",
+    "scripts/build_if_array.py": "8d9cff0410c8cda85f3395dcee764cee5a81862c8053234674b14d631cab1765",
+    "scripts/check_if_stage.py": "57bafb3dee1ef171992961e06f95248f1306610fc3be5935f993daba0d58d494",
+    "tb/tb_if_stage_body.svh": "5110a4ce3cb6fc135899efc5f697c33d2497534e8ee65f42b4235331b8f4d0ee"
+  },
+  "modified_products": {
+    "rtl/rv32_ifu_btb.v": {
+      "before_sha256": "0ba8dfb9af808a81ef0daf335e7ed311aa72d62bb42b3cb2816c1b834ba0d2f5",
+      "sha256": "6303a59fdc7e9a295a122064224daa7b3fb3dab9e52875bc41a0f8f6eae2850d"
+    },
+    "rtl/rv32_ifu_bp_top.v": {
+      "before_sha256": "ff7dbbe992c2e3bbf559029703962955cf2a70905b4e88ef5adb5279fbd6779b",
+      "sha256": "c9dbba59dc85556be0fd77a1d8428a605f7be8e52d5efa1fa86c34d2187bc679"
+    },
+    "scripts/build_cluster.py": {
+      "before_sha256": "67940360e9ca6fca22876177ba4590aac47c63b2ad3b53155a1e3c9af79dbd24",
+      "sha256": "f47026de8be81f7ae8980ede7cfba1e681750ab915d672c0c2b8e724ce49008e"
+    },
+    "doc/ports.json": {
+      "before_sha256": "ecc0de6bb82bf87a4feccb9909ecf06831b0dc452a1b535b18ee2bd72c7ccbf9",
+      "sha256": "3b25ec0edbe19d234e1626959aec9fd82a900b9f294f80aeb6d6e8e7ebe16710"
+    }
+  },
+  "ownership": "IFCTRL alone grants array access; IP owns full hit/miss/Way replay; standalone icache_top excluded",
+  "recovery": "C910-style IF no historical-state update, IP GHR events, IB RAS/path events, IU redirect and RTU deferred recovery",
+  "style_reference": "D:\\Project\\bus\\yh_xbar550-main\\yh_xbar550-main\\cci550\\cci550_tablet\\verilog\\cci500_tt.v",
+  "verification": "scripts/check_if_stage.py; work/if_stage/result.json"
+}

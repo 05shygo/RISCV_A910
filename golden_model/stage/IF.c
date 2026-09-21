@@ -5,8 +5,11 @@ extern uint32_t memory[];
 
 IF2ID IF(uint32_t npc) {
     IF2ID ret;
-    Assert(npc < MEM_SZ, "PC out of boundary!\n");
-    ret.inst = memory[npc >> 2];
+    // 越界取指【不能】用 Assert 崩掉仿真进程: 宿主崩溃不是任何合法的架构
+    // 行为, 而且 memory[] 只有 16K 个字, npc>>2 越界会直接段错误.
+    // 这里给 0 占位, 真正的处理是 ID 级把它判成 instruction access fault
+    // (cause 1) —— 与 DUT 的 id_inst_oob 对应.
+    ret.inst = (npc < MEM_SZ) ? memory[npc >> 2] : 0u;
     ret.pc = npc;
     cpu.pc = npc;
     Log("\n=====");

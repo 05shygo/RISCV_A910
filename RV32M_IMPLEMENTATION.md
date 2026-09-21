@@ -119,7 +119,7 @@ make -f Makefile.coremark
 
 # 运行测试（预计时间大幅缩短）
 cd ..
-make -f Makefile.vcs run TEST=coremark MAX_CYCLES=200000000
+make run TEST=coremark MAX_CYCLES=200000000
 ```
 
 ## 编译说明

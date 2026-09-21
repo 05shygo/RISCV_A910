@@ -27,10 +27,10 @@ CoreMark Score: X.XXX (iterations/sec)/MHz
 
 ```bash
 # 基本测试（迭代1次，需要较多周期）
-make -f Makefile.vcs run TEST=coremark MAX_CYCLES=100000000
+make run TEST=coremark MAX_CYCLES=100000000
 
 # 保存日志
-make -f Makefile.vcs run TEST=coremark MAX_CYCLES=100000000 | tee coremark_result.log
+make run TEST=coremark MAX_CYCLES=100000000 | tee coremark_result.log
 
 # 查看结果
 tail -100 obj_vcs/sim.log | grep -A 10 "CoreMark"

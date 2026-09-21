@@ -23,7 +23,7 @@ cdp-tests/
 │   │   ├── start.S              # 启动代码
 │   │   └── link.ld              # 链接脚本(16KB配置)
 │   └── build/
-├── Makefile.vcs                 # 已集成coremark target
+├── Makefile                    # 已集成coremark target
 └── RUN_COREMARK.md             # 使用说明
 ```
 
@@ -71,16 +71,16 @@ void mem_store(uint32_t addr, AccessMode mode, uint32_t value) {
 创建一个最小的测试程序来验证基本功能：
 ```bash
 # 测试简单程序是否能正常运行
-make -f Makefile.vcs run TEST=addi MAX_CYCLES=1000
+make run TEST=addi MAX_CYCLES=1000
 ```
 
 ### 4. 查看波形
 ```bash
 # 生成波形文件
-make -f Makefile.vcs run TEST=coremark MAX_CYCLES=100000 WAVE=coremark
+make run TEST=coremark MAX_CYCLES=100000 WAVE=coremark
 
 # 用Verdi查看
-make -f Makefile.vcs verdi WAVE=coremark
+make verdi WAVE=coremark
 ```
 在波形中查找：
 - PC在哪里停止

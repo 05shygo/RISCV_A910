@@ -3,13 +3,14 @@
 uint32_t digit_value;
 
 uint32_t read_seven_seg(uint32_t rel_addr, AccessMode mode)  {
-    panic("7-segment display cannot be read.");
+    // RTL 侧 (perip_bridge.v 的 dig_reg) 是可回读的, 这里保持一致
+    Assert(mode == ACCESS_WORD && rel_addr == 0, "Access violation");
+    return digit_value;
 }
 
 void write_seven_seg(uint32_t rel_addr, AccessMode mode, uint32_t data)  {
     Assert(mode == ACCESS_WORD && rel_addr == 0, "Access violation");
     digit_value = data;
-    printf("Digit: 0x%x\n", digit_value);
 }
 
 uint32_t read_keyboard(uint32_t rel_addr, AccessMode mode)  {

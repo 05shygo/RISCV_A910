@@ -36,8 +36,20 @@ module ID_EX(
     input [31:0]                        id_sext      ,
     input [31:0]                        id_A         ,
     input [31:0]                        id_B         ,
+    // CSR 的源操作数是 rs1, 走 A 通路的转发; ALU 的 A 口已经被 CSR 旧值占了,
+    // 所以这里单独再锁存一份"已转发的 rs1"
+    input [31:0]                        id_rD1       ,
+    input                               id_csr_imm   ,
     input [4:0]                         id_wR        ,
     input                               id_is_muldiv , // RV32M signal
+    // ---- 系统指令 / CSR / 陷阱 ----
+    input [2:0]                         id_csr_op    ,
+    input [11:0]                        id_csr_addr  ,
+    input                               id_csr_we    ,
+    input                               id_is_mret   ,
+    input                               id_exc_valid ,
+    input [3:0]                         id_exc_cause ,
+    input [31:0]                        id_exc_tval  ,
     input                               Forward_A_en ,
     input                               Forward_B_en ,
     input [31:0]                        A_forward    ,
@@ -52,9 +64,19 @@ module ID_EX(
     output reg [31:0]                   ex_pc4       ,
     output reg [31:0]                   ex_A         ,
     output reg [31:0]                   ex_B         ,
+    output reg [31:0]                   ex_rD1       ,
+    output reg                          ex_csr_imm   ,
     output reg [4:0]                    ex_wR        ,
     output reg [`NPC_SEL_WIDTH-1:0]     ex_npc_op    ,
-    output reg                          ex_is_muldiv // RV32M signal
+    output reg                          ex_is_muldiv , // RV32M signal
+    // ---- 系统指令 / CSR / 陷阱 ----
+    output reg [2:0]                    ex_csr_op    ,
+    output reg [11:0]                   ex_csr_addr  ,
+    output reg                          ex_csr_we    ,
+    output reg                          ex_is_mret   ,
+    output reg                          ex_exc_valid ,
+    output reg [3:0]                    ex_exc_cause ,
+    output reg [31:0]                   ex_exc_tval
 
     //trace
     ,input  wire [31:0] pc_i       ,
@@ -66,10 +88,15 @@ module ID_EX(
 always @(posedge clk or posedge rst) begin
     if(rst) begin
         ex_A        <= 0;
+        ex_rD1      <= 0;
     end else if(Forward_A_en) begin
-        ex_A <= A_forward;
+        // 两条一起走 A 通路的转发: ex_A 是给 ALU 的 A 口(CSR 指令时是 CSR
+        // 旧值), ex_rD1 始终是"转发后的 rs1", 给 CSR 的源用.
+        ex_A        <= A_forward;
+        ex_rD1      <= A_forward;
     end else begin
         ex_A        <= id_A;
+        ex_rD1      <= id_rD1;
     end
 end
 
@@ -102,6 +129,14 @@ always @(posedge clk or posedge rst) begin
         ex_pc4      <= 0;
         ex_wR       <= 0;
         ex_npc_op   <= 0;
+        ex_csr_op   <= `CSR_OP_NONE;
+        ex_csr_addr <= 0;
+        ex_csr_we   <= 0;
+        ex_csr_imm  <= 0;
+        ex_is_mret  <= 0;
+        ex_exc_valid<= 0;
+        ex_exc_cause<= 0;
+        ex_exc_tval <= 0;
     end else if(flush) begin
         ex_alu_op   <= 0;
         ex_rf_we    <= 0;
@@ -113,19 +148,21 @@ always @(posedge clk or posedge rst) begin
         ex_pc4      <= 0;
         ex_wR       <= 0;
         ex_npc_op   <= 0;
-    end else if(stall) begin
-        // 插入bubble（NOP）
-        ex_alu_op   <= 0;
-        ex_rf_we    <= 0;
-        ex_ram_we   <= 0;
-        ex_rf_wsel  <= 0;
-        ex_dram_sel <= 0;
-        ex_is_muldiv <= 0;
-        ex_sext     <= 0;
-        ex_pc4      <= 0;
-        ex_wR       <= 0;
-        ex_npc_op   <= 0;
-    end else begin
+        ex_csr_op   <= `CSR_OP_NONE;
+        ex_csr_addr <= 0;
+        ex_csr_we   <= 0;
+        ex_csr_imm  <= 0;
+        ex_is_mret  <= 0;
+        ex_exc_valid<= 0;
+        ex_exc_cause<= 0;
+        ex_exc_tval <= 0;
+    end else if(!stall) begin
+        // 注意: 这里不能再用 stall 分支去清零 payload.
+        // stall = load_use_exist | muldiv_stall, 而 muldiv_stall 期间正需要把
+        // 这条 MUL/DIV 保持在 EX 级等 ready: 清零会抹掉 ex_rf_we/ex_wR,
+        // 使结果算出来也无处写回, 并且 ex_is_muldiv 归零会让 muldiv_stall
+        // 下一拍就自我解除.
+        // 停顿(两个分支都不命中) => 寄存器保持; 清零只由 flush 负责.
         ex_alu_op   <= id_alu_op  ;
         ex_rf_we    <= id_rf_we   ;
         ex_ram_we   <= id_ram_we  ;
@@ -136,19 +173,29 @@ always @(posedge clk or posedge rst) begin
         ex_pc4      <= id_pc4     ;
         ex_wR       <= id_wR      ;
         ex_npc_op   <= id_npc_op  ;
+        ex_csr_op   <= id_csr_op  ;
+        ex_csr_addr <= id_csr_addr;
+        ex_csr_we   <= id_csr_we  ;
+        ex_csr_imm  <= id_csr_imm ;
+        ex_is_mret  <= id_is_mret ;
+        ex_exc_valid<= id_exc_valid;
+        ex_exc_cause<= id_exc_cause;
+        ex_exc_tval <= id_exc_tval;
     end
 end
 
 //trace
+// 条件链必须与上面的 payload 块一致: 停顿时保持, 否则会向流水线注入一条
+// have_inst=1 但 payload 已清零、且 pc 属于尚未执行的 ID 级指令的"幽灵指令".
 always @ (posedge clk or posedge rst) begin
     if (rst) pc_o <= 32'b0;
     else if (flush) pc_o <= 32'b0;
-    else        pc_o <= pc_i;
+    else if (!stall) pc_o <= pc_i;
 end
 always @ (posedge clk or posedge rst) begin
     if (rst) have_inst_o <= 1'b0;
     else if(flush)  have_inst_o <= 1'b0;
-    else        have_inst_o <= have_inst_i;
+    else if(!stall) have_inst_o <= have_inst_i;
 end
 
 endmodule

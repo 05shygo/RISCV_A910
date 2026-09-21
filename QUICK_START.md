@@ -13,20 +13,20 @@ cd /x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests
 
 ```bash
 # 测试 MUL 指令 (10 × 7 = 70)
-make -f Makefile.vcs run TEST=mul MAX_CYCLES=1000 WAVE=mul_test
+make run TEST=mul MAX_CYCLES=1000 WAVE=mul_test
 
 # 测试 DIV 指令 (100 ÷ 7 = 14)  
-make -f Makefile.vcs run TEST=div MAX_CYCLES=50000 WAVE=div_test
+make run TEST=div MAX_CYCLES=50000 WAVE=div_test
 ```
 
 ## 📊 查看波形
 
 ```bash
 # 打开 Verdi 查看 MUL 测试波形
-make -f Makefile.vcs verdi WAVE=mul_test
+make verdi WAVE=mul_test
 
 # 打开 Verdi 查看 DIV 测试波形
-make -f Makefile.vcs verdi WAVE=div_test
+make verdi WAVE=div_test
 ```
 
 ## 🔍 波形中关键信号

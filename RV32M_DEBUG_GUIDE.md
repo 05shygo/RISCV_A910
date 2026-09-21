@@ -32,7 +32,7 @@ Golden Model 是单周期模拟器，无法准确模拟多周期 mul/div 操作�
 # 或者修改让它只输出警告而不是 fatal
 
 # 运行 mul 测试
-make -f Makefile.vcs run TEST=mul MAX_CYCLES=1000 WAVE=mul_debug
+make run TEST=mul MAX_CYCLES=1000 WAVE=mul_debug
 
 # 检查输出 - 查找 ECALL 信息
 grep -A5 "ECALL" obj_vcs/sim.log
@@ -41,7 +41,7 @@ grep -A5 "ECALL" obj_vcs/sim.log
 ### 步骤 2: 打开波形分析
 
 ```bash
-make -f Makefile.vcs verdi WAVE=mul_debug
+make verdi WAVE=mul_debug
 ```
 
 ### 步骤 3: 波形中需要关注的信号
@@ -153,11 +153,11 @@ cp tb/tb_miniRV_dpi.sv tb/tb_miniRV_dpi.sv.backup
 sed -i 's/$fatal(1, "\[difftest\] Test Failed!");/$display("[difftest] WARNING: Test mismatch (ignored for RV32M testing)");/g' tb/tb_miniRV_dpi.sv
 
 # 重新编译
-make -f Makefile.vcs build
+make build
 
 # 运行测试
-make -f Makefile.vcs run TEST=mul MAX_CYCLES=1000
-make -f Makefile.vcs run TEST=div MAX_CYCLES=50000
+make run TEST=mul MAX_CYCLES=1000
+make run TEST=div MAX_CYCLES=50000
 
 # 恢复原文件
 cp tb/tb_miniRV_dpi.sv.backup tb/tb_miniRV_dpi.sv

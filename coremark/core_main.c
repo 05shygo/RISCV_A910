@@ -24,8 +24,8 @@ Original Author: Shay Gal-on
 #include "coremark.h"
 
 #ifdef VCUNT_SIM
-// Cycle counter for performance measurement
-extern unsigned int timer_counter;
+// Cycle counter for performance measurement.
+// timer_counter 是 core_portme.h 里读 TIMER(0xFFFFF040) 的宏.
 static int vtimer_start;
 static int vtimer_end;
 static int vcycles;
@@ -35,12 +35,15 @@ static inline unsigned int get_vtimer(void) {
     return timer_counter;
 }
 
-// Simulation end
-static inline void sim_end(void) {
+// Simulation end: 往 MONITOR 写 pass/fail 标志.
+// testbench/golden model 检测到标志就结束仿真, 所以这里的死循环实际只跑一拍
+// ("停住 CPU"的惯用写法). 之前它写在 iterate() 里面, 导致 main() 永远走不到
+// CRC 校验和结果报告.
+static inline void sim_end(int pass) {
     volatile unsigned int *monitor = (volatile unsigned int *)0x80000000;
-    *monitor = 0x0000BEEF; // Test PASS flag
+    *monitor = pass ? 0x0000BEEFu : 0x0000DEADu;
     while(1) {
-        *monitor = 0x0000BEEF;
+        *monitor = pass ? 0x0000BEEFu : 0x0000DEADu;
     }
 }
 #endif
@@ -85,9 +88,14 @@ iterate(void *pres)
 
 #ifdef VCUNT_SIM
     vtimer_start = get_vtimer();
-    ee_printf("[CoreMark] Starting list benchmark, iterations=%d\n", iterations);
 #endif
 
+    // 这里【只】跑 list 循环, 这就是标准 CoreMark 的结构:
+    // matrix 和 state 是通过 core_list_join.c 的 calc_func() 在 list 内部被间接
+    // 调用的, 并在那里设置 crcmatrix / crcstate:
+    //     if (res->crcstate  == 0) res->crcstate  = retval;
+    //     if (res->crcmatrix == 0) res->crcmatrix = retval;
+    // 再在这里补显式循环是错的 —— 会覆盖 calc_func 已经算好的值.
     for (i = 0; i < iterations; i++)
     {
         crc      = core_bench_list(res, 1);
@@ -99,29 +107,8 @@ iterate(void *pres)
     }
 
 #ifdef VCUNT_SIM
-    #define FREQ 100000000
-
     vtimer_end = get_vtimer();
-    vcycles = vtimer_end - vtimer_start;
-
-    ee_printf("\n========================================\n");
-    ee_printf("CoreMark Performance Results\n");
-    ee_printf("========================================\n");
-    ee_printf("Total iterations: %d\n", iterations);
-    ee_printf("Total cycles: %d\n", vcycles);
-
-    // Calculate average cycles per iteration
-    int avg_cycles = vcycles / iterations;
-    ee_printf("Average cycles/iteration: %d\n", avg_cycles);
-
-    // Calculate score: (iterations/sec)/MHz = 1000000 / avg_cycles
-    // Use integer arithmetic to avoid floating point
-    int score_int = 1000000 / avg_cycles;
-    int score_frac = (1000000 % avg_cycles) * 1000 / avg_cycles;
-    ee_printf("CoreMark Score: %d.%03d (iterations/sec)/MHz\n", score_int, score_frac);
-    ee_printf("========================================\n\n");
-
-    sim_end();
+    vcycles    = vtimer_end - vtimer_start;
 #endif
 
     return NULL;
@@ -492,6 +479,36 @@ for (i = 0; i < MULTITHREAD; i++)
 #endif
     /* And last call any target specific code for finalizing */
     portable_fini(&(results[0].port));
+
+#ifdef VCUNT_SIM
+    // 周期精确的跑分报告. 放在这里(而不是 iterate() 里): 这样覆盖全部三个
+    // 工作负载, 而且已经过上面的 CRC 校验, 还能反映 total_errors.
+    {
+        ee_u32 iters = results[0].iterations;
+        int    avg_cycles =
+            (vcycles > 0 && iters > 0) ? (int)((ee_u32)vcycles / iters) : 0;
+
+        ee_printf("\n========================================\n");
+        ee_printf("CoreMark Performance Results\n");
+        ee_printf("========================================\n");
+        ee_printf("Total iterations: %lu\n", (long unsigned)iters);
+        ee_printf("Total cycles: %d\n", vcycles);
+        if (avg_cycles > 0)
+        {
+            int score_int  = 1000000 / avg_cycles;
+            int score_frac = (1000000 % avg_cycles) * 1000 / avg_cycles;
+            ee_printf("Average cycles/iteration: %d\n", avg_cycles);
+            ee_printf("CoreMark Score: %d.%03d (iterations/sec)/MHz\n",
+                      score_int, score_frac);
+        }
+        else
+        {
+            ee_printf("Average cycles/iteration: 0 (timer did not advance)\n");
+        }
+        ee_printf("========================================\n\n");
+    }
+    sim_end(total_errors == 0);
+#endif
 
     return MAIN_RETURN_VAL;
 }

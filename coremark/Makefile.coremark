@@ -11,7 +11,13 @@ OBJDUMP = $(CROSS_COMPILE)objdump
 ARCH = rv32im
 ABI = ilp32
 CFLAGS = -march=$(ARCH) -mabi=$(ABI) -O2 -g -nostdlib -nostartfiles -fno-builtin
-CFLAGS += -Iriscv-port -I. -DITERATIONS=1 -DPERFORMANCE_RUN=1
+# 迭代次数可覆盖: CoreMark 规定一次有效跑分必须持续 >= 10 秒, 而本 port 里
+# 1 周期 = 1 tick = 1us(按 1MHz 归一, 这样分数就是 CoreMark/MHz), 所以
+# ITERATIONS=1 时 total_time 不足 10 秒, 会被判 "Must execute for at least
+# 10 secs for a valid result". 想要一个完全有效、带 CRC 校验的分数就用
+#   make -f Makefile.coremark ITERATIONS=25
+ITERATIONS ?= 1
+CFLAGS += -Iriscv-port -I. -DITERATIONS=$(ITERATIONS) -DPERFORMANCE_RUN=1
 
 # Linker flags - use hardware multiply/divide (RV32M)
 LDFLAGS = -march=$(ARCH) -mabi=$(ABI) -nostdlib -nostartfiles
