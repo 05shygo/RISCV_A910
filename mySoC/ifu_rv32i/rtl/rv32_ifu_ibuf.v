@@ -11,10 +11,12 @@ module rv32_ifu_ibuf (
   input  wire         flush,
   input  wire [  2:0] in_count,
   input  wire [511:0] in_packet,
+  input  wire [ 99:0] in_chk,
   output wire         in_ready,
   input  wire [  1:0] idu_ifu_accept_num,
   output wire [  1:0] out_count,
   output wire [383:0] out_packet,
+  output wire [ 74:0] out_chk,
   output wire [  5:0] occupancy,
   output wire         empty
 );
@@ -25,6 +27,12 @@ module rv32_ifu_ibuf (
   reg  [127:0] entry_q  [0:31];
   wire [127:0] entry_nxt[0:31];
   wire [ 31:0] entry_en;
+  // The BHT check snapshot is queued in lockstep with the instruction so that a
+  // backend stall — during which this FIFO keeps filling — cannot slip a record
+  // out of step with the packet it describes.
+  reg  [ 24:0] chk_q    [0:31];
+  wire [ 24:0] chk_nxt  [0:31];
+  wire [ 24:0] in_chk_lane[0:3];
   reg [4:0] head_q, tail_q;
   wire [4:0] head_nxt, tail_nxt;
   reg  [5:0] count_q;
@@ -62,6 +70,9 @@ module rv32_ifu_ibuf (
     else if (pointer_en) count_q <= count_nxt;
   end
   generate
+    for (lane = 0; lane < 4; lane = lane + 1) begin : g_in_chk_lane
+      assign in_chk_lane[lane] = in_chk[lane*25+:25];
+    end
     for (entry = 0; entry < 32; entry = entry + 1) begin : g_entry
       localparam [4:0] INDEX = entry;
       wire [4:0] distance;
@@ -70,9 +81,14 @@ module rv32_ifu_ibuf (
       assign source           = distance[2:0] + bypass_count;
       assign entry_en[entry]  = !flush && ({1'b0, distance} < {3'b0, push_count});
       assign entry_nxt[entry] = in_packet[{source, 7'b0}+:128];
+      assign chk_nxt[entry]   = in_chk_lane[source[1:0]];
       always @(posedge forever_cpuclk or negedge cpurst_b) begin : p_entry
         if (!cpurst_b) entry_q[entry] <= 128'b0;
         else if (entry_en[entry]) entry_q[entry] <= entry_nxt[entry];
+      end
+      always @(posedge forever_cpuclk or negedge cpurst_b) begin : p_chk
+        if (!cpurst_b) chk_q[entry] <= 25'b0;
+        else if (entry_en[entry]) chk_q[entry] <= chk_nxt[entry];
       end
     end
     for (lane = 0; lane < 3; lane = lane + 1) begin : g_lane
@@ -83,6 +99,8 @@ module rv32_ifu_ibuf (
       assign source = LANE - count_q;
       assign out_packet[lane*128+:128] = (LANE >= {4'b0, out_count}) ?
         128'b0 : (LANE < count_q) ? entry_q[index] : in_packet[{source, 7'b0}+:128];
+      assign out_chk[lane*25+:25] = (LANE >= {4'b0, out_count}) ?
+        25'b0 : (LANE < count_q) ? chk_q[index] : in_chk_lane[source[1:0]];
     end
   endgenerate
 

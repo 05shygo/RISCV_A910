@@ -32,6 +32,8 @@ module ID_EX(
     input [`DRAM_SEL_WIDTH-1:0]         id_dram_sel  ,
     input [31:0]                        id_rD2       ,
     input [31:0]                        id_pc4       ,
+    // 预测后继 PC (IFU 集成): 带到 EX 级与真实后继比较
+    input [31:0]                        id_pred_npc  ,
     input [`NPC_SEL_WIDTH-1:0]          id_npc_op    ,
     input [31:0]                        id_sext      ,
     input [31:0]                        id_A         ,
@@ -50,6 +52,10 @@ module ID_EX(
     input                               id_exc_valid ,
     input [3:0]                         id_exc_cause ,
     input [31:0]                        id_exc_tval  ,
+    // BHT 检查快照 (IFU 集成): 预测当时的 {计数器低位, 选择器, 分支前 VGHR}
+    // 与当时的方向预测. EX 级解析条件分支时回送给 BHT 做训练/VGHR 修复.
+    input [24:0]                        id_bht_chk   ,
+    input                               id_bht_pred  ,
     input                               Forward_A_en ,
     input                               Forward_B_en ,
     input [31:0]                        A_forward    ,
@@ -62,6 +68,7 @@ module ID_EX(
     output reg [`RegBus]                ex_rD2       ,
     output reg [31:0]                   ex_sext      ,
     output reg [31:0]                   ex_pc4       ,
+    output reg [31:0]                   ex_pred_npc  ,
     output reg [31:0]                   ex_A         ,
     output reg [31:0]                   ex_B         ,
     output reg [31:0]                   ex_rD1       ,
@@ -76,7 +83,9 @@ module ID_EX(
     output reg                          ex_is_mret   ,
     output reg                          ex_exc_valid ,
     output reg [3:0]                    ex_exc_cause ,
-    output reg [31:0]                   ex_exc_tval
+    output reg [31:0]                   ex_exc_tval  ,
+    output reg [24:0]                   ex_bht_chk   ,
+    output reg                          ex_bht_pred
 
     //trace
     ,input  wire [31:0] pc_i       ,
@@ -127,6 +136,7 @@ always @(posedge clk or posedge rst) begin
         ex_is_muldiv <= 0;
         ex_sext     <= 0;
         ex_pc4      <= 0;
+        ex_pred_npc <= 0;
         ex_wR       <= 0;
         ex_npc_op   <= 0;
         ex_csr_op   <= `CSR_OP_NONE;
@@ -137,6 +147,8 @@ always @(posedge clk or posedge rst) begin
         ex_exc_valid<= 0;
         ex_exc_cause<= 0;
         ex_exc_tval <= 0;
+        ex_bht_chk  <= 0;
+        ex_bht_pred <= 0;
     end else if(flush) begin
         ex_alu_op   <= 0;
         ex_rf_we    <= 0;
@@ -146,6 +158,7 @@ always @(posedge clk or posedge rst) begin
         ex_is_muldiv <= 0;
         ex_sext     <= 0;
         ex_pc4      <= 0;
+        ex_pred_npc <= 0;
         ex_wR       <= 0;
         ex_npc_op   <= 0;
         ex_csr_op   <= `CSR_OP_NONE;
@@ -156,6 +169,8 @@ always @(posedge clk or posedge rst) begin
         ex_exc_valid<= 0;
         ex_exc_cause<= 0;
         ex_exc_tval <= 0;
+        ex_bht_chk  <= 0;
+        ex_bht_pred <= 0;
     end else if(!stall) begin
         // 注意: 这里不能再用 stall 分支去清零 payload.
         // stall = load_use_exist | muldiv_stall, 而 muldiv_stall 期间正需要把
@@ -171,6 +186,7 @@ always @(posedge clk or posedge rst) begin
         ex_is_muldiv <= id_is_muldiv;
         ex_sext     <= id_sext    ;
         ex_pc4      <= id_pc4     ;
+        ex_pred_npc <= id_pred_npc;
         ex_wR       <= id_wR      ;
         ex_npc_op   <= id_npc_op  ;
         ex_csr_op   <= id_csr_op  ;
@@ -181,6 +197,8 @@ always @(posedge clk or posedge rst) begin
         ex_exc_valid<= id_exc_valid;
         ex_exc_cause<= id_exc_cause;
         ex_exc_tval <= id_exc_tval;
+        ex_bht_chk  <= id_bht_chk ;
+        ex_bht_pred <= id_bht_pred;
     end
 end
 

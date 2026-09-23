@@ -62,7 +62,7 @@ module rv32_ifu_ipctrl (
   wire wrong_way, miss, valid_data, terminal, done;
   wire [  1:0] last_index;
   wire [191:0] last_packet;
-  wire reaches_l0, l0_correct, path_change, short_block;
+  wire reaches_l0, l0_in_fragment, l0_correct, path_change, short_block;
   genvar lane, bit_index;
   assign remaining_mask = ifdp_ipdp_word_mask & ~processed_q;
   assign wrong_way      = !ifdp_ipdp_fault && !ifdp_ipdp_cache_bypass && (|tag_hit) && !(|data_hit);
@@ -124,13 +124,20 @@ module rv32_ifu_ipctrl (
   assign bht_more = valid_data && !terminal && (|(remaining_mask & ~fragment_mask));
   assign reaches_l0 = ifctrl_ipctrl_if_pcload &&
     (terminal || fragment_mask[ifdp_ipdp_l0_slot] || fragment_mask == remaining_mask);
+  // L0 预测的那条分支就在本 fragment 里. 这时 IF 级已经按 L0 的目标改向过了, 而
+  // IP 级译码发现它其实没跳 (L0 的 taken 位是粘滞的, BHT 翻转后仍可能留着武装
+  // 状态) —— 必须把取指拉回该分支的【顺序后继】, 也就是本 fragment 最后一个已
+  // 派发 slot 的 npc. 用 {vpc[31:4]+1,4'b0} (下一个 16B 块) 会把这之后还没取过
+  // 的 slot 整个跳过 (实测: coremark 里 bltu 在 slot1, 0x858/0x85c 被丢掉).
+  // 只有 "整块都走过、始终没碰到 L0 那条分支" 时才该顺序切到下一块.
+  assign l0_in_fragment = ifctrl_ipctrl_if_pcload && fragment_mask[ifdp_ipdp_l0_slot];
   assign l0_correct = ifdp_ipdp_l0_hit && last_index == ifdp_ipdp_l0_slot && last_packet[108:106] ==
     ifdp_ipdp_l0_type && last_packet[122] && last_packet[95:64] == ifdp_ipdp_l0_target;
   assign short_block = !terminal && fragment_mask == remaining_mask && last_index != 3;
   assign
     path_change = terminal ? (!ifctrl_ipctrl_if_pcload || !l0_correct) : reaches_l0 || short_block;
   assign redirect = fragment_fire && !ifdp_ipdp_fault && path_change;
-  assign redirect_pc = (terminal || short_block) ?
+  assign redirect_pc = (terminal || short_block || l0_in_fragment) ?
     last_packet[95:64] : {ifdp_ipdp_vpc[31:4] + 28'd1, 4'b0};
   assign l0_invalidate = fragment_fire && reaches_l0 && !l0_correct;
   assign l0_invalidate_mask = ifdp_ipdp_l0_entry_mask;

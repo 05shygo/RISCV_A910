@@ -17,12 +17,17 @@ SIMV := $(BUILD_DIR)/simv
 TESTFILE := $(PWD)/meminit.bin
 
 RAM ?= ram.v
-VSRC := $(wildcard $(PWD)/mySoC/*.v) $(PWD)/vsrc/$(RAM)
+# IFU=1: 用 ifu_rv32i (C910 派生前端) 替换取指级; IFU=0: 旧 PC/NPC/IROM 通路.
+IFU ?= 1
+VSRC := $(wildcard $(PWD)/mySoC/*.v) $(wildcard $(PWD)/mySoC/ifu_rv32i/rtl/*.v) $(PWD)/vsrc/$(RAM)
 SVSRC := $(wildcard $(PWD)/tb/*.sv)
 DPIC := $(wildcard $(PWD)/dpi/*.c)
 CSRC_GM := $(wildcard $(PWD)/golden_model/*.c) $(wildcard $(PWD)/golden_model/stage/*.c) $(wildcard $(PWD)/golden_model/peripheral/*.c)
 INC  := +incdir+$(PWD)/mySoC +incdir+$(PWD)/vsrc
 DEFINES := +define+PATH=$(TESTFILE)
+ifeq ($(IFU),1)
+DEFINES += +define+USE_IFU
+endif
 
 # FSDB (Verdi) detection
 # Enabled for debugging
@@ -76,7 +81,18 @@ coremark:
 
 build: $(SIMV)
 
-$(SIMV): $(VSRC) $(SVSRC) $(DPIC) $(CSRC_GM)
+# IFU 开关只影响 DEFINES, 不是 $(SIMV) 的依赖 —— 不额外记一个 stamp 的话
+# `make build IFU=0` 会因为"源文件没变"而跳过重编译, 静默沿用上一个 IFU=1
+# 的 simv (实测踩过: 两次 coremark 周期数一模一样才发现)。
+IFU_CFG := $(BUILD_DIR)/.ifu_cfg
+
+$(IFU_CFG): FORCE
+	@mkdir -p $(BUILD_DIR)
+	@echo "$(IFU)" | cmp -s - $@ || echo "$(IFU)" > $@
+
+FORCE:
+
+$(SIMV): $(VSRC) $(SVSRC) $(DPIC) $(CSRC_GM) $(IFU_CFG)
 	@mkdir -p $(BUILD_DIR)
 	$(VCS) $(VCS_FLAGS) $(VCS_FLAGS_EXTRA) $(INC) $(DEFINES) $(FSDB_VCS) -CFLAGS -DVCS \
 	  -CFLAGS -I$(PWD)/golden_model/include \

@@ -45,10 +45,13 @@ module rv32_ifu_top #(
   output wire [127:0] ifu_cp0_icache_read_data,
   output wire         ifu_idu_ib_inst0_vld,
   output wire [127:0] ifu_idu_ib_inst0_data,
+  output wire [ 24:0] ifu_idu_ib_inst0_chk,
   output wire         ifu_idu_ib_inst1_vld,
   output wire [127:0] ifu_idu_ib_inst1_data,
+  output wire [ 24:0] ifu_idu_ib_inst1_chk,
   output wire         ifu_idu_ib_inst2_vld,
   output wire [127:0] ifu_idu_ib_inst2_data,
+  output wire [ 24:0] ifu_idu_ib_inst2_chk,
   output wire         ifu_idu_ib_pipedown_gateclk,
   output wire         ifu_idu_flush,
   input  wire [  1:0] idu_ifu_accept_num,
@@ -489,6 +492,7 @@ module rv32_ifu_top #(
   wire [ 49:0] create_chk;
   wire [  1:0] out_count;
   wire [383:0] out_packet;
+  wire [ 74:0] out_chk;
   wire [  5:0] occupancy;
   wire         ibuf_empty;
   wire         memory_cancel;
@@ -695,10 +699,13 @@ module rv32_ifu_top #(
   assign sfp_retire_pc = {rtu_ifu_retire2_cur_pc, rtu_ifu_retire1_cur_pc, rtu_ifu_retire0_cur_pc};
   assign ifu_idu_ib_inst0_vld = out_count > 0;
   assign ifu_idu_ib_inst0_data = out_packet[0+:128];
+  assign ifu_idu_ib_inst0_chk = out_chk[0+:25];
   assign ifu_idu_ib_inst1_vld = out_count > 1;
   assign ifu_idu_ib_inst1_data = out_packet[128+:128];
+  assign ifu_idu_ib_inst1_chk = out_chk[25+:25];
   assign ifu_idu_ib_inst2_vld = out_count > 2;
   assign ifu_idu_ib_inst2_data = out_packet[256+:128];
+  assign ifu_idu_ib_inst2_chk = out_chk[50+:25];
   assign ifu_iu_pcfifo_create0_en = create_en[0];
   assign ifu_iu_pcfifo_create0_gateclk_en = create_en[0];
   assign ifu_iu_pcfifo_create0_cur_pc = create_pc[0+:32];
@@ -1141,6 +1148,7 @@ module rv32_ifu_top #(
     .idu_ifu_accept_num        (idu_ifu_accept_num),
     .out_count                 (out_count),
     .out_packet                (out_packet),
+    .out_chk                   (out_chk),
     .occupancy                 (occupancy),
     .ibuf_empty                (ibuf_empty)
   );

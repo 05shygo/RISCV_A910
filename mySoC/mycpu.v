@@ -6,10 +6,11 @@ module myCPU (
     input  wire         cpu_rst,
     input  wire         cpu_clk,
 
+`ifndef USE_IFU
     // Interface to IROM
     output wire [13:0]  inst_addr,
     input  wire [31:0]  inst,
-    
+`endif
     // Interface to Bridge
     output wire [31:0]  Bus_addr,
     input  wire [31:0]  Bus_rdata,
@@ -34,13 +35,22 @@ wire [31:0] pc_EX, pc_MEM, pc_WB;
 wire        have_inst_ID, have_inst_EX, have_inst_MEM, have_inst_WB;
 
 
+`ifndef USE_IFU
 wire [31:0] if_npc;
+`endif
 wire [31:0] if_pc;
 wire [31:0] id_pc;
 wire [31:0] wb_pc;
 wire [31:0] if_pc4;
 wire [31:0] id_pc4;
 wire [31:0] ex_pc4;
+// 预测后继 PC 与取指故障包 (IFU 集成), 沿 IF_ID / ID_EX 传递
+wire [31:0] id_pred_npc;
+wire [31:0] ex_pred_npc;
+wire [24:0] ex_bht_chk;
+wire        ex_bht_pred;
+wire        id_fault;
+wire [ 3:0] id_cause;
 
 //wire [31:0] pc4;
 wire [31:0] id_sext;
@@ -90,7 +100,9 @@ wire [31:0] mem_wD;
 wire [31:0] wb_wD;
 wire [31:0] mem_wD_temp;
 
+`ifndef USE_IFU
 assign inst_addr = if_pc[15:2];
+`endif
 //assign Bus_wen = ram_we;
 //assign Bus_wdata = rD2;
 //assign Bus_addr = alu_c;
@@ -183,6 +195,126 @@ wire retire_now   = have_inst_WB & ~irq_taken;
 // (陷阱自己的 mepc/mcause/mstatus 写发生在重定向边沿, 所以也排除 redirect.)
 wire csr_quiescent = ~redirect & ~ex_csr_we & ~mem_csr_we & ~wb_csr_we;
 
+`ifdef USE_IFU
+// ===================== IFU (rv32_ifu_top) 取指 =====================
+// 每拍只消费 lane0 一条。无效槽的 data 是全 0 (会被译码成"非法指令"),
+// 所以必须用 if_accept 门控; 取不到时给 IF_ID 灌气泡, 让流水线照常前进。
+// 绝不能去停 ID_EX: EX_MEM 的 stall 是"插气泡"语义而非"保持", 停 ID_EX
+// 会让同一条指令被 EX_MEM 重复锁存, 在 debug_wb_* 上重复出现, 被 difftest
+// 当成多次提交 (EX_MEM.v 里的注释写的就是这个坑)。
+wire        ifu_inst0_vld;
+wire [127:0] ifu_inst0_data;
+wire [ 24:0] ifu_inst0_chk;
+wire        ifu_idu_flush;
+wire        ifu_init_done;
+
+// BHT 检查/训练 (IFU 集成): EX 级解析条件分支时回送预测当时的快照.
+// 快照由 IFU 随指令一起送来 (chk 走独立旁路, 方向预测在包内 bit122),
+// 因此与指令天然同序 —— 不能改用 create* 广播总线, 那条在 IBUF 输入侧
+// 对齐, 后端一停顿就会与交付的指令错位.
+wire        iu_bht_check_vld;
+wire [31:0] iu_cur_pc;
+wire        iu_bht_condbr_taken;
+wire        iu_bht_pred;
+wire [ 24:0] iu_chk_idx;
+
+// BIU 总线 (rv32_ifu_top <-> ifu_biu_mem)
+wire        ifu_biu_rd_req;
+wire [31:0] ifu_biu_rd_addr;
+wire        ifu_biu_rd_id;
+wire [ 1:0] ifu_biu_rd_len;
+wire        ifu_biu_rd_grnt;
+wire        ifu_biu_rd_data_vld;
+wire [127:0] ifu_biu_rd_data;
+wire        ifu_biu_rd_rid;
+wire        ifu_biu_rd_last;
+wire [ 1:0] ifu_biu_rd_resp;
+wire        ifu_biu_r_ready;
+
+// 前端重定向 (组合, 由 EX/WB 段驱动, 声明在后)
+wire        iu_ifu_chgflw_vld;
+wire [31:0] iu_ifu_chgflw_pc;
+wire        rtu_ifu_flush;
+wire        rtu_ifu_chgflw_vld;
+wire [31:0] rtu_ifu_chgflw_pc;
+
+ifu_subsys u_ifu_subsys (
+    .clk           (cpu_clk),
+    .rst           (cpu_rst),
+    .idu_inst0_vld (ifu_inst0_vld),
+    .idu_inst0_data(ifu_inst0_data),
+    .idu_inst0_chk (ifu_inst0_chk),
+    .idu_inst1_vld (),
+    .idu_inst1_data(),
+    .idu_inst1_chk (),
+    .idu_inst2_vld (),
+    .idu_inst2_data(),
+    .idu_inst2_chk (),
+    .idu_flush     (ifu_idu_flush),
+    .idu_accept_num(if_accept ? 2'd1 : 2'd0),
+    .iu_chgflw_vld (iu_ifu_chgflw_vld),
+    .iu_chgflw_pc  (iu_ifu_chgflw_pc),
+    .iu_bht_check_vld     (iu_bht_check_vld),
+    .iu_cur_pc            (iu_cur_pc),
+    .iu_bht_condbr_taken  (iu_bht_condbr_taken),
+    .iu_bht_pred          (iu_bht_pred),
+    .iu_chk_idx           (iu_chk_idx),
+    .rtu_flush     (rtu_ifu_flush),
+    .rtu_chgflw_vld(rtu_ifu_chgflw_vld),
+    .rtu_chgflw_pc (rtu_ifu_chgflw_pc),
+    .init_done     (ifu_init_done),
+    .biu_rd_req    (ifu_biu_rd_req),
+    .biu_rd_addr   (ifu_biu_rd_addr),
+    .biu_rd_id     (ifu_biu_rd_id),
+    .biu_rd_len    (ifu_biu_rd_len),
+    .biu_rd_grnt   (ifu_biu_rd_grnt),
+    .biu_rd_data_vld(ifu_biu_rd_data_vld),
+    .biu_rd_data   (ifu_biu_rd_data),
+    .biu_rd_rid    (ifu_biu_rd_rid),
+    .biu_rd_last   (ifu_biu_rd_last),
+    .biu_rd_resp   (ifu_biu_rd_resp),
+    .biu_r_ready   (ifu_biu_r_ready)
+);
+
+ifu_biu_mem u_ifu_biu_mem (
+    .clk               (cpu_clk),
+    .rst               (cpu_rst),
+    .ifu_biu_rd_req    (ifu_biu_rd_req),
+    .ifu_biu_rd_addr   (ifu_biu_rd_addr),
+    .ifu_biu_rd_id     (ifu_biu_rd_id),
+    .ifu_biu_rd_len    (ifu_biu_rd_len),
+    .biu_ifu_rd_grnt   (ifu_biu_rd_grnt),
+    .biu_ifu_rd_data_vld(ifu_biu_rd_data_vld),
+    .biu_ifu_rd_data   (ifu_biu_rd_data),
+    .biu_ifu_rd_id     (ifu_biu_rd_rid),
+    .biu_ifu_rd_last   (ifu_biu_rd_last),
+    .biu_ifu_rd_resp   (ifu_biu_rd_resp),
+    .ifu_biu_r_ready   (ifu_biu_r_ready)
+);
+
+// 本拍能不能真正捕获一条指令。IFU 的 vld/data 不依赖 accept_num (无组合环),
+// 且 accept_num 恒 <= 有效槽数, 满足 IBUF 前缀消费约束。
+wire if_accept;
+wire if_bubble;
+assign if_accept = ifu_inst0_vld & ~stall & ~flush_if_id & ~ifu_idu_flush;
+assign if_bubble = ~stall & ~if_accept;
+
+wire [31:0] if_inst;
+wire [31:0] if_pred_npc;
+wire        if_fault;
+wire [ 3:0] if_cause;
+wire [24:0] if_bht_chk;
+wire        if_bht_pred;
+assign if_bht_chk  = ifu_inst0_chk;
+assign if_pc       = ifu_inst0_data[63:32];
+assign if_inst     = ifu_inst0_data[31:0];
+assign if_pc4      = ifu_inst0_data[63:32] + 32'd4;
+assign if_pred_npc = ifu_inst0_data[95:64];
+assign if_fault    = ifu_inst0_data[96];
+assign if_cause    = ifu_inst0_data[100:97];
+// bit122 是 IFU 当时给出的方向预测 (pcfifo_if 原样透传), 与指令同序.
+assign if_bht_pred = ifu_inst0_data[122];
+`else
 // TODO: ?????????CPU??
 NPC U_NPC(
     .rst(cpu_rst),
@@ -207,19 +339,40 @@ PC U_PC(
 );
 
 wire [31:0] if_inst = inst;
+// 旧通路没有这些信号, 接常量即可 (IF_ID 行为不变)
+wire        if_bubble   = 1'b0;
+wire [31:0] if_pred_npc = 32'b0;
+wire        if_fault    = 1'b0;
+wire [ 3:0] if_cause    = 4'd0;
+wire [24:0] if_bht_chk  = 25'd0;
+wire        if_bht_pred = 1'b0;
+`endif
 wire [31:0] id_inst;
+wire [24:0] id_bht_chk;
+wire        id_bht_pred;
 
 IF_ID U_IF_ID(
     .clk      (cpu_clk),
     .rst      (cpu_rst),
     .stall    (stall),
     .flush    (flush_if_id),
+    .if_bubble(if_bubble),
     .if_pc    (if_pc),
     .if_pc4   (if_pc4),
     .if_inst  (if_inst),
+    .if_pred_npc (if_pred_npc),
+    .if_fault (if_fault),
+    .if_cause (if_cause),
+    .if_bht_chk  (if_bht_chk),
+    .if_bht_pred (if_bht_pred),
     .id_pc    (id_pc),
     .id_pc4   (id_pc4),
     .id_inst  (id_inst),
+    .id_pred_npc (id_pred_npc),
+    .id_fault (id_fault),
+    .id_cause (id_cause),
+    .id_bht_chk  (id_bht_chk),
+    .id_bht_pred (id_bht_pred),
     .id_have_inst (have_inst_ID)
 );
     
@@ -266,15 +419,21 @@ Control U_Control(
 // 指令字 —— 那是垃圾, 不能再按它译码, 只能报异常.
 wire id_inst_oob = have_inst_ID & ~`INST_ADDR_OK(id_pc);
 
-assign id_exc_valid = have_inst_ID & (id_inst_oob | id_is_illegal | id_is_ecall | id_is_ebreak);
-assign id_exc_cause = id_inst_oob    ? `EXC_INST_ACCESS
+// IFU 的取指故障包: 故障包被消费后 IFU 会停取指, 直到重定向才恢复,
+// 所以这里必须立刻生成异常。id_inst_oob 保留作兜底 (pc>=64KB 时两条
+// 判据完全一致; 故障包是"非对齐取指"cause 0 的唯一来源)。
+wire id_ifu_fault = have_inst_ID & id_fault;
+
+assign id_exc_valid = have_inst_ID & (id_ifu_fault | id_inst_oob | id_is_illegal | id_is_ecall | id_is_ebreak);
+assign id_exc_cause = id_ifu_fault  ? (id_cause == 4'd0 ? `EXC_INST_MISALIGNED : `EXC_INST_ACCESS)
+                    : id_inst_oob   ? `EXC_INST_ACCESS
                     : id_is_illegal ? `EXC_ILLEGAL_INST
                     : id_is_ecall   ? `EXC_ECALL_M
                     : id_is_ebreak  ? `EXC_BREAKPOINT
                     : 4'd0;
 // 非法指令的 mtval 记指令本身, ecall/ebreak 记 0,
-// 取指越界记那个取不到的地址 (规范)
-assign id_exc_tval  = id_inst_oob    ? id_pc
+// 取指故障/越界记那个取不到的地址 (规范)
+assign id_exc_tval  = (id_ifu_fault | id_inst_oob) ? id_pc
                     : id_is_illegal ? id_inst : 32'b0;
 
 RegFile U_RegFile(
@@ -316,6 +475,7 @@ ID_EX U_ID_EX(
     .id_dram_sel   (id_dram_sel  ),
     .id_rD2        (id_rD2       ),
     .id_pc4        (id_pc4       ),
+    .id_pred_npc   (id_pred_npc  ),
     .id_npc_op     (id_npc_op    ),
     .id_sext       (id_sext      ),
     .id_A          (id_A         ),
@@ -331,6 +491,8 @@ ID_EX U_ID_EX(
     .id_exc_valid  (id_exc_valid ),
     .id_exc_cause  (id_exc_cause ),
     .id_exc_tval   (id_exc_tval  ),
+    .id_bht_chk    (id_bht_chk   ),
+    .id_bht_pred   (id_bht_pred  ),
     .Forward_A_en  (Forward_A_en ),
     .Forward_B_en  (Forward_B_en ),
     .A_forward     (A_forward    ),
@@ -343,6 +505,7 @@ ID_EX U_ID_EX(
     .ex_rD2        (ex_rD2       ),
     .ex_sext       (ex_sext      ),
     .ex_pc4        (ex_pc4       ),
+    .ex_pred_npc   (ex_pred_npc  ),
     .ex_A          (ex_A         ),
     .ex_B          (ex_B         ),
     .ex_rD1        (ex_rD1       ),
@@ -357,6 +520,8 @@ ID_EX U_ID_EX(
     .ex_exc_valid  (ex_exc_valid ),
     .ex_exc_cause  (ex_exc_cause ),
     .ex_exc_tval   (ex_exc_tval  ),
+    .ex_bht_chk    (ex_bht_chk   ),
+    .ex_bht_pred   (ex_bht_pred  ),
 
 //    ,//trace
     .pc_i        (id_pc         ),
@@ -444,6 +609,47 @@ wire ex_is_jalr  = (ex_npc_op == `NPC_SEL_ALU);
 wire [31:0] ex_target = ex_is_jalr ? ex_alu_c : (pc_EX + ex_sext);
 wire ex_inst_misaligned = have_inst_EX & (ex_br_taken | ex_is_jump | ex_is_jalr)
                         & (ex_target[1:0] != 2'b00);
+
+`ifdef USE_IFU
+// ===================== 误预测检测与前端重定向 =====================
+// 真实后继 PC。与旧 NPC.v 不同, 这里直接用 pc_EX 作基准, 不再依赖
+// "if_pc == pc_EX + 8" 那个关系 (旧 NPC 里 PC + offset - 8 的 -8 就是
+// 为这个关系打的补丁)。
+wire [31:0] actual_npc = ex_is_jalr ? ex_alu_c
+                       : (ex_br_taken | ex_is_jump) ? (pc_EX + ex_sext)
+                       : (pc_EX + 32'd4);
+// 非对齐目标不重定向: IFU 对非对齐目标只会预测 pc+4, 必然判"误预测",
+// 但把非对齐 PC 发给 IFU 只会让它报取指故障并停住 (fault_stop_q 要等
+// 重定向才清) —— 交给 ex_inst_misaligned 异常在 WB 处理。
+wire mispredict = have_inst_EX & ~ex_inst_misaligned & (actual_npc != ex_pred_npc);
+
+// Hazard_Detection 的 branched 冲刷源换成 mispredict: 预测正确时零气泡,
+// 预测错了才像旧设计那样冲 IF/ID。
+assign branched = mispredict;
+
+// EX 级重定向 (IFU 内部 RTU 优先于 IU; 与陷阱同拍时由 ~redirect 掐掉)
+assign iu_ifu_chgflw_vld = mispredict & ~redirect;
+assign iu_ifu_chgflw_pc  = actual_npc;
+
+// ===================== BHT 训练反馈 =====================
+// 一条条件分支在 EX 解析出结果就回送一次, 不论预测对错 —— 方向表靠这个训练,
+// 只报误预测的话预测正确的分支永远学不到. 用 ex_npc_op==BRANCH 而不是
+// ex_br_taken: 不跳的分支同样要训练.
+// 预测错了的那一拍还会同时拉 iu_ifu_chgflw_vld, 两者指向同一条指令, IFU
+// 借此用预测前的 GHR 修复 VGHR (rv32_ifu_bht.v 的 ghr_updt_vld 分支).
+// ~stall 是必需的: ID_EX 在停顿时是"保持"而不是插气泡, 不加这个门控同一条
+// 分支会在 EX 停多拍、把同一次解析重复上报.
+assign iu_bht_check_vld    = have_inst_EX & (ex_npc_op == `NPC_SEL_BRANCH) &
+                             ~stall & ~redirect;
+assign iu_cur_pc           = pc_EX;
+assign iu_bht_condbr_taken = ex_alu_f;
+assign iu_bht_pred         = ex_bht_pred;
+assign iu_chk_idx          = ex_bht_chk;
+// WB 提交点陷阱/中断/mret 重定向
+assign rtu_ifu_flush     = redirect;
+assign rtu_ifu_chgflw_vld = redirect;
+assign rtu_ifu_chgflw_pc  = redirect_pc;
+`endif
 
 // 优先级: 指令目标非对齐 > 访问异常 > 访存非对齐.
 // 地址根本不存在时再谈"对齐与否"没有意义, 所以访问异常压过非对齐

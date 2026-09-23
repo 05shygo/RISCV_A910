@@ -68,8 +68,10 @@ module miniRV_SoC (
       output logic [31:0]  debug_wb_value      //
   );
       logic        cpu_clk = fpga_clk;
+`ifndef USE_IFU
       logic [31:0] inst_addr;       // ????
       logic [31:0] inst;           // ????
+`endif
       logic [31:0] Bus_addr;       // ????
       logic [31:0] Bus_rdata;      // ????
       logic        Bus_wen;
@@ -85,8 +87,10 @@ module miniRV_SoC (
       myCPU Core_cpu (
           .cpu_rst            (fpga_rst),
           .cpu_clk            (cpu_clk),
+`ifndef USE_IFU
           .inst_addr          (inst_addr),        // ???????????
           .inst               (inst),
+`endif
           .Bus_addr           (Bus_addr),
           .Bus_rdata          (Bus_rdata),
           .Bus_wen            (Bus_wen),
@@ -102,11 +106,13 @@ module miniRV_SoC (
           .debug_wb_value     (debug_wb_value)
       );
 
+`ifndef USE_IFU
      //just instantiate model and connect signals,don't creat IP core
       IROM Mem_IROM (
           .a          (inst_addr),
           .spo        (inst)
       );
+`endif
 
       // 数据总线经外设桥: MMIO 地址(MONITOR/DIG/TIMER)不再被截断进 DRAM
       logic        dram_we;

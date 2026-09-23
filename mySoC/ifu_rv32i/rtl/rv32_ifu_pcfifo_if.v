@@ -15,6 +15,7 @@ module rv32_ifu_pcfifo_if (
   input  wire [ 12:0] iu_ifu_pcfifo_alloc1_token,
   output wire [  2:0] allowed_count,
   output wire [511:0] instruction_packet,
+  output wire [ 99:0] instruction_chk,
   output wire [  1:0] create_en,
   output wire [ 63:0] create_pc,
   output wire [ 63:0] create_target,
@@ -48,6 +49,10 @@ module rv32_ifu_pcfifo_if (
       assign token = packet[105] ? tokens[({29'b0, pc_count[lane]}*32'd13)+:13] : 13'b0;
       assign instruction_packet[lane*128+:128] = allowed[lane] ?
         {5'b0, packet[122], token, packet[108:0]} : 128'b0;
+      // The BHT check snapshot rides beside the instruction rather than inside it:
+      // IDU128 has no room left, and the backend cannot recover chk_idx from the
+      // token, so it must be delivered FIFO-aligned with the instruction.
+      assign instruction_chk[lane*25+:25] = allowed[lane] ? packet[184:160] : 25'b0;
     end
     for (record = 0; record < 2; record = record + 1) begin : g_record
       localparam [2:0] RECORD = record;

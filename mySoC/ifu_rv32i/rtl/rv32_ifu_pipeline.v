@@ -104,6 +104,7 @@ module rv32_ifu_pipeline (
   input  wire [  1:0] idu_ifu_accept_num,
   output wire [  1:0] out_count,
   output wire [383:0] out_packet,
+  output wire [ 74:0] out_chk,
   output wire [  5:0] occupancy,
   output wire         ibuf_empty
 );
@@ -132,6 +133,7 @@ module rv32_ifu_pipeline (
   wire         ibuf_ready;
   wire [  2:0] candidate_count;
   wire [511:0] instruction_packet;
+  wire [ 99:0] instruction_chk;
   wire         credit_stall;
   rv32_ifu_ipdp u_ipdp (
     .ifdp_ipdp_vpc       (ifdp_ipdp_vpc),
@@ -285,6 +287,7 @@ module rv32_ifu_pipeline (
     .iu_ifu_pcfifo_alloc1_token(iu_ifu_pcfifo_alloc1_token),
     .allowed_count             (allowed_count),
     .instruction_packet        (instruction_packet),
+    .instruction_chk           (instruction_chk),
     .create_en                 (create_en),
     .create_pc                 (create_pc),
     .create_target             (create_target),
@@ -302,10 +305,12 @@ module rv32_ifu_pipeline (
     .flush             (flush),
     .in_count          (allowed_count),
     .in_packet         (instruction_packet),
+    .in_chk            (instruction_chk),
     .in_ready          (ibuf_ready),
     .idu_ifu_accept_num(idu_ifu_accept_num),
     .out_count         (out_count),
     .out_packet        (out_packet),
+    .out_chk           (out_chk),
     .occupancy         (occupancy),
     .empty             (ibuf_empty)
   );

@@ -8,6 +8,7 @@ rtl/rv32_ifu_ras.v
 rtl/rv32_ifu_ind_btb.v
 rtl/rv32_ifu_btb.v
 rtl/rv32_ifu_l0_btb.v
+rtl/rv32_ifu_l0_btb_entry.v
 rtl/rv32_ifu_bp_decode.v
 rtl/rv32_ifu_bp_target.v
 rtl/rv32_ifu_bp_top.v

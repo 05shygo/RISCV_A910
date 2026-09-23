@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-// RV32 slot adaptation of ct_ifu_l0_btb/entry: 16-entry CAM, circular replacement,
+// RV32 slot adaptation of ct_ifu_l0_btb: 16-entry CAM, per-field entry writes,
+// rotating allocation FIFO, ADDRGEN/IBDP write arbitration with ADDRGEN priority,
 // counter/return/way information, earliest eligible word and directed invalidation.
 // Full tags and targets replace C910's partial tag/high-PC target reconstruction.
 
@@ -33,6 +34,9 @@ module rv32_ifu_l0_btb (
   output wire [ 2:0] hit_type,
   output wire [31:0] target,
   output wire [ 1:0] way_hint,
+
+  // Training interface: ADDRGEN kill is mapped onto directed_inv_vld/mask,
+  // IBDP fill onto the update_* group (see the arbitration section below).
   input  wire        update_vld,
   input  wire [31:0] update_pc,
   input  wire [31:0] update_target,
@@ -50,6 +54,8 @@ module rv32_ifu_l0_btb (
   localparam ENTRY_COUNT = 16;
   localparam SLOT_COUNT  = 4;
   localparam INDEX_WIDTH = 4;
+  localparam FIFO_WIDTH  = 16;
+  localparam DATA_WIDTH  = 69;  // {kind[2:0], src[31:0], way_pred[1:0], dst[31:0]}
   localparam HIT_WIDTH   = 43;  // {index[3:0], slot[1:0], type[2:0], target[31:0], way[1:0]}
 
   //------------------------------------------------------------------------------
@@ -58,71 +64,102 @@ module rv32_ifu_l0_btb (
   genvar entry;
   genvar slot;
   genvar bit_index;
-  reg  [ENTRY_COUNT-1:0] valid_q;
-  reg  [ENTRY_COUNT-1:0] taken_q;
-  reg  [ENTRY_COUNT-1:0] use_ras_q;
-  reg  [           31:0] src_q             [0:ENTRY_COUNT-1];
-  reg  [           31:0] dst_q             [0:ENTRY_COUNT-1];
-  reg  [            2:0] kind_q            [0:ENTRY_COUNT-1];
-  reg  [            1:0] ways_q            [0:ENTRY_COUNT-1];
-  reg  [INDEX_WIDTH-1:0] replace_ptr_q;
-  wire [INDEX_WIDTH-1:0] replace_ptr_nxt;
-  wire                   replace_ptr_en;
+  reg  [FIFO_WIDTH-1:0]  entry_fifo_q;
+  wire [FIFO_WIDTH-1:0]  entry_fifo_nxt;
+  wire                   entry_fifo_en;
   wire                   lookup_en;
   wire                   update_en;
   wire                   update_match;
-  wire [INDEX_WIDTH-1:0] update_index;
-  wire [INDEX_WIDTH-1:0] wr_index;
+  wire                   alloc_vld;
+  wire                   update_kill;
+  wire                   update_hold;
+  wire                   update_fire;
+  wire                   update_cnt_armed;
   wire [ENTRY_COUNT-1:0] update_match_vec;
   wire [ENTRY_COUNT-1:0] update_select;
-  wire [ENTRY_COUNT-1:0] update_index_terms[0:INDEX_WIDTH-1];
-  wire [ENTRY_COUNT-1:0] entry_write;
+  wire [ENTRY_COUNT-1:0] ibdp_update_entry;
+  wire [ENTRY_COUNT-1:0] l0_btb_update_entry;
   wire [ENTRY_COUNT-1:0] entry_invalidate;
-  wire [ENTRY_COUNT-1:0] payload_en;
-  wire [           31:0] src_nxt;
-  wire [           31:0] dst_nxt;
-  wire [            2:0] kind_nxt;
-  wire [            1:0] ways_nxt;
-  wire [ENTRY_COUNT-1:0] valid_en;
-  wire [ENTRY_COUNT-1:0] valid_nxt;
-  wire [ENTRY_COUNT-1:0] flags_en;
-  wire                   taken_nxt;
-  wire                   use_ras_nxt;
+  wire [          3:0]   l0_btb_wen;
+  wire                   l0_btb_update_vld_bit;
+  wire                   l0_btb_update_cnt_bit;
+  wire                   l0_btb_update_ras_bit;
+  wire [DATA_WIDTH-1:0]  l0_btb_update_data;
+
+  // Per-entry contents, driven by the rv32_ifu_l0_btb_entry instances.
+  wire [ENTRY_COUNT-1:0] entry_vld;
+  wire [ENTRY_COUNT-1:0] entry_cnt;
+  wire [ENTRY_COUNT-1:0] entry_ras;
+  wire [          2:0]   entry_kind     [0:ENTRY_COUNT-1];
+  wire [          1:0]   entry_way_pred [0:ENTRY_COUNT-1];
+  wire [         31:0]   entry_src      [0:ENTRY_COUNT-1];
+  wire [         31:0]   entry_dst      [0:ENTRY_COUNT-1];
+
+  wire [ENTRY_COUNT-1:0] entry_rd_hit;
   wire [ENTRY_COUNT-1:0] eligible;
   wire [ENTRY_COUNT-1:0] slot_match        [ 0:SLOT_COUNT-1];
   wire [ SLOT_COUNT-1:0] slot_valid;
   wire [ SLOT_COUNT-1:0] slot_select;
   wire [ENTRY_COUNT-1:0] hit_candidates;
   wire [ENTRY_COUNT-1:0] hit_select;
-  wire [           31:0] entry_target      [0:ENTRY_COUNT-1];
+  wire [         31:0]   entry_target      [0:ENTRY_COUNT-1];
   wire [  HIT_WIDTH-1:0] entry_hit_payload [0:ENTRY_COUNT-1];
   wire [ENTRY_COUNT-1:0] hit_terms         [  0:HIT_WIDTH-1];
   wire [  HIT_WIDTH-1:0] hit_payload;
 
   //------------------------------------------------------------------------------
-  // Common controls and register next values
+  // Common controls
   //------------------------------------------------------------------------------
   assign lookup_en = lookup_vld && enable && !cancel && !invalidate && (lookup_pc[1:0] == 2'b00);
   assign update_en = update_vld && enable && !cancel && !invalidate && (update_pc[1:0] == 2'b00) &&
     (update_target[1:0] == 2'b00) && (update_type >= 3'd1) && (update_type <= 3'd3);
   assign update_match = |update_match_vec;
-  assign wr_index = update_match ? update_index : replace_ptr_q;
-  assign src_nxt = update_pc;
-  assign dst_nxt = update_target;
-  assign kind_nxt = update_type;
-  assign ways_nxt = update_way;
-  assign taken_nxt = !invalidate && update_taken;
-  assign use_ras_nxt = !invalidate && update_ras;
-  assign replace_ptr_en = invalidate || (update_en && !update_match);
-  assign replace_ptr_nxt = invalidate ? 4'b0000 : replace_ptr_q + 4'd1;
+  assign alloc_vld = update_en && !update_match;
 
-  always @(posedge forever_cpuclk or negedge cpurst_b) begin : p_replace_ptr
+  //------------------------------------------------------------------------------
+  // Update intent, following C910's per-entry write semantics
+  //------------------------------------------------------------------------------
+  // C910 never lowers the counter of an entry that is still present: a hit whose
+  // branch is no longer predicted taken either deletes the entry (l0_btb_not_saturate,
+  // ct_ifu_ipdp.v:5850-5855: "bht predict as weak taken,it may cause next branch not
+  // taken") or leaves it untouched. Only a reallocation or an invalidation clears it.
+  // Note update_taken here is the front-end's direction prediction, not the executed
+  // result (rv32_ifu_ipdp.v:79 prediction_taken), so the kill is gated on the entry
+  // having been armed == counter set; otherwise every not-taken prediction would
+  // churn the whole table.
+  assign update_cnt_armed = |(update_select & entry_cnt);
+  assign update_kill      = update_en && update_match && !update_taken && update_cnt_armed;
+  assign update_hold      = update_en && update_match && !update_taken && !update_cnt_armed;
+  assign update_fire      = update_en && !update_hold;
+
+  // The allocation FIFO advances only on a real allocation, never on a hit update
+  // and never on a kill. A global invalidate restarts it at entry 0.
+  assign entry_fifo_en  = invalidate || alloc_vld;
+  assign entry_fifo_nxt = invalidate ? 16'h0001 : {entry_fifo_q[FIFO_WIDTH-2:0], entry_fifo_q[FIFO_WIDTH-1]};
+
+  always @(posedge forever_cpuclk or negedge cpurst_b) begin : p_entry_fifo
     if (!cpurst_b) begin
-      replace_ptr_q <= 4'b0000;
-    end else if (replace_ptr_en) begin
-      replace_ptr_q <= replace_ptr_nxt;
+      entry_fifo_q <= 16'h0001;
+    end else if (entry_fifo_en) begin
+      entry_fifo_q <= entry_fifo_nxt;
     end
   end
+
+  //------------------------------------------------------------------------------
+  // Write arbitration: the directed invalidation (C910's ADDRGEN operand) wins over
+  // the training fill (C910's IBDP operand, ct_ifu_l0_btb.v casez 2'b1?). A kill only
+  // enables wen[3] with a zero written into the valid bit, so the entry is deleted
+  // with its tag/counter/return/way fields left alone; a fill touches all four fields.
+  //------------------------------------------------------------------------------
+  // Whether any write happens at all is decided solely by the per-entry select
+  // below; wen/vld_bit/data only describe the intent of a write that does fire.
+  assign
+    l0_btb_wen[3:0] = (directed_inv_vld || update_kill) ? 4'b1000
+                                                        : 4'b1111;
+  assign l0_btb_update_vld_bit = !(directed_inv_vld || update_kill);
+  assign l0_btb_update_cnt_bit = update_taken;
+  assign l0_btb_update_ras_bit = update_ras;
+  assign l0_btb_update_data    = {update_type, update_pc, update_way, update_target};
 
   //------------------------------------------------------------------------------
   // Identical CAM entries: compare, write decode and enabled storage
@@ -135,65 +172,57 @@ module rv32_ifu_l0_btb (
 
       // The original ascending update loop chose the highest matching index.
       // Match against old valid state, even if directed invalidation also fires.
-      assign update_match_vec[entry] = valid_q[entry] && (src_q[entry] == update_pc);
+      assign update_match_vec[entry] = entry_vld[entry] && (entry_src[entry] == update_pc);
       assign
         update_select[entry] = update_match_vec[entry] && !(|(update_match_vec & HIGHER_ENTRIES));
-      assign entry_write[entry] = update_en && (wr_index == ENTRY_INDEX);
+      // A hit update lands on the entry that matched; a miss allocates at the
+      // FIFO head. C910 carries this select down the pipe instead of re-comparing.
+      assign ibdp_update_entry[entry] = update_match ? update_select[entry] : entry_fifo_q[entry];
       assign entry_invalidate[entry] = directed_inv_vld && directed_inv_mask[entry];
-      assign valid_en[entry] = invalidate || entry_write[entry] || entry_invalidate[entry];
-      // Directed invalidation wins over an update to the same entry.
-      assign valid_nxt[entry] = !invalidate && !entry_invalidate[entry];
-      assign flags_en[entry] = invalidate || entry_write[entry];
-      // Payload registers intentionally retain the original no-reset behavior.
-      // Valid masks them until written; reset must suppress a simultaneous write.
-      assign payload_en[entry] = cpurst_b && entry_write[entry];
+      assign l0_btb_update_entry[entry] = entry_invalidate[entry] ||
+        (update_fire && ibdp_update_entry[entry]);
 
-      always @(posedge forever_cpuclk or negedge cpurst_b) begin : p_valid
-        if (!cpurst_b) begin
-          valid_q[entry] <= 1'b0;
-        end else if (valid_en[entry]) begin
-          valid_q[entry] <= valid_nxt[entry];
-        end
-      end
-
-      always @(posedge forever_cpuclk or negedge cpurst_b) begin : p_flags
-        if (!cpurst_b) begin
-          taken_q[entry]   <= 1'b0;
-          use_ras_q[entry] <= 1'b0;
-        end else if (flags_en[entry]) begin
-          taken_q[entry]   <= taken_nxt;
-          use_ras_q[entry] <= use_ras_nxt;
-        end
-      end
-
-      always @(posedge forever_cpuclk) begin : p_payload
-        if (payload_en[entry]) begin
-          src_q[entry]  <= src_nxt;
-          dst_q[entry]  <= dst_nxt;
-          kind_q[entry] <= kind_nxt;
-          ways_q[entry] <= ways_nxt;
-        end
-      end
-
-      assign entry_target[entry] = use_ras_q[entry] ? ras_target : dst_q[entry];
-      assign eligible[entry] = lookup_en && valid_q[entry] && !entry_invalidate[entry] &&
-        (src_q[entry][31:4] == lookup_pc[31:4]) && (src_q[entry][3:2] >= lookup_pc[3:2]) &&
-        taken_q[entry] && (!use_ras_q[entry] || ras_valid) && !(|entry_target[entry][1:0]);
-      assign hit_candidates[entry] = eligible[entry] && slot_select[src_q[entry][3:2]];
+      assign entry_rd_hit[entry] = entry_vld[entry] && (entry_src[entry][31:4] == lookup_pc[31:4]);
+      assign eligible[entry] = lookup_en && entry_rd_hit[entry] && !entry_invalidate[entry] &&
+        (entry_src[entry][3:2] >= lookup_pc[3:2]) && entry_cnt[entry] &&
+        (!entry_ras[entry] || ras_valid) && !(|entry_target[entry][1:0]);
+      assign hit_candidates[entry] = eligible[entry] && slot_select[entry_src[entry][3:2]];
       // At the earliest word, the lowest entry number wins equal-slot ties.
       assign hit_select[entry] = hit_candidates[entry] && !(|(hit_candidates & LOWER_ENTRIES));
+      assign entry_target[entry] = entry_ras[entry] ? ras_target : entry_dst[entry];
       assign entry_hit_payload[entry] = {
-        ENTRY_INDEX, src_q[entry][3:2], kind_q[entry], entry_target[entry], ways_q[entry]
+        ENTRY_INDEX, entry_src[entry][3:2], entry_kind[entry], entry_target[entry],
+        entry_way_pred[entry]
       };
 
-      for (bit_index = 0; bit_index < INDEX_WIDTH; bit_index = bit_index + 1) begin : g_update_bit
-        assign
-          update_index_terms[bit_index][entry] = update_select[entry] && ENTRY_INDEX[bit_index];
-      end
       for (bit_index = 0; bit_index < HIT_WIDTH; bit_index = bit_index + 1) begin : g_hit_bit
         assign
           hit_terms[bit_index][entry] = hit_select[entry] & entry_hit_payload[entry][bit_index];
       end
+
+      rv32_ifu_l0_btb_entry x_entry (
+        .forever_cpuclk     (forever_cpuclk    ),
+        .cpurst_b           (cpurst_b          ),
+        .cp0_ifu_btb_en     (enable            ),
+        .cp0_ifu_icg_en     (1'b0              ),
+        .cp0_ifu_l0btb_en   (enable            ),
+        .cp0_yy_clk_en      (1'b1              ),
+        .pad_yy_icg_scan_en (1'b0              ),
+        .entry_update       (l0_btb_update_entry[entry]),
+        .entry_inv          (invalidate        ),
+        .entry_wen          (l0_btb_wen        ),
+        .entry_update_vld   (l0_btb_update_vld_bit),
+        .entry_update_cnt   (l0_btb_update_cnt_bit),
+        .entry_update_ras   (l0_btb_update_ras_bit),
+        .entry_update_data  (l0_btb_update_data),
+        .entry_vld          (entry_vld[entry]  ),
+        .entry_cnt          (entry_cnt[entry]  ),
+        .entry_ras          (entry_ras[entry]  ),
+        .entry_kind         (entry_kind[entry] ),
+        .entry_way_pred     (entry_way_pred[entry]),
+        .entry_src          (entry_src[entry]  ),
+        .entry_dst          (entry_dst[entry]  )
+      );
     end
 
     // Four replicated word-slot comparators and earliest-slot priority masks.
@@ -201,15 +230,12 @@ module rv32_ifu_l0_btb (
       localparam [1:0] SLOT_INDEX = slot;
       localparam [SLOT_COUNT-1:0] LOWER_SLOTS = (4'b0001 << slot) - 4'b0001;
       for (entry = 0; entry < ENTRY_COUNT; entry = entry + 1) begin : g_entry_match
-        assign slot_match[slot][entry] = eligible[entry] && (src_q[entry][3:2] == SLOT_INDEX);
+        assign slot_match[slot][entry] = eligible[entry] && (entry_src[entry][3:2] == SLOT_INDEX);
       end
       assign slot_valid[slot]  = |slot_match[slot];
       assign slot_select[slot] = slot_valid[slot] && !(|(slot_valid & LOWER_SLOTS));
     end
 
-    for (bit_index = 0; bit_index < INDEX_WIDTH; bit_index = bit_index + 1) begin : g_update_reduce
-      assign update_index[bit_index] = |update_index_terms[bit_index];
-    end
     for (bit_index = 0; bit_index < HIT_WIDTH; bit_index = bit_index + 1) begin : g_hit_reduce
       assign hit_payload[bit_index] = |hit_terms[bit_index];
     end
