@@ -39,7 +39,7 @@
 
 5. 改造分 4 期，每期可独立验证/回退：
    **P0 一致性修复**（小改、先拆雷）→ **P1 更新源回归 IP 级 + 随包带命中 one-hot** →
-   **P2 交付/取消接口换回 C910 原生（PCFIFO + create 总线 + token）** →
+   **P2 交付/恢复接口换成 C910 原生（PCFIFO full + create 总线）** →
    **P3 retire 反馈：训练与恢复移到退休点** → **P4 乱序专用项**（mispred_stall / LBUF / checkpoint / i-cache 失效）。
 
 ---
@@ -184,8 +184,8 @@ C910 同时使用三个 retire 槽（`rtu_ifu_retire0/1/2_condbr_taken/chk_idx/j
 + committed GHR（`committed_recover_ghr`）做**精确**恢复与训练。顺序单发射下 EX 级反馈还能凑合，
 但乱序下 EX 级是推测点，用它训练/恢复会引入系统性偏差；正确的训练点在**退休**。
 
-另外 `iu_ifu_check_token` 被接 0 —— C910 用 token 限定这次 check 属于哪个取指包，
-以便与后端取消/重放对齐。
+另外 `iu_ifu_check_token` 被接 0 —— 该端口**在本机任何 C910 里都不存在**（见 6.2），
+是移植版自创的；按 C1 补充原则应删除，训练资格改由 create/retire 通路保证。
 
 ### P-7（架构）交付与取消接口被裁剪
 
@@ -193,8 +193,8 @@ C910 同时使用三个 retire 槽（`rtu_ifu_retire0/1/2_condbr_taken/chk_idx/j
 |---|---|---|
 | 指令交付 | IBUF 3 lane + `idu_ifu_accept_num` | 只消费 lane0（accept_num=1）|
 | 分支元数据 | PCFIFO create0/1 总线：`cur_pc[39:0] / tar_pc / bht_pred / chk_idx[24:0] / jal / jalr / dst_vld / jmp_mispred`（`ct_ifu_top.v:111-130`）| create 总线**全部悬空**（`ifu_subsys.v:150-171`）|
-| 流控 | `iu_ifu_pcfifo_full`（本机 C910 版本）或 credit/token（rv32 移植版暴露的接口）| credit 恒 2'b10、token 恒 0 |
-| 精确取消 | `cancel_vld` + `first_token` 按取指包取消 | 悬空；只能靠 EX/WB 的整条重定向 |
+| 流控 | `iu_ifu_pcfifo_full`（1 位，C910 原生）| 自创的 `credit` 恒 2'b10、`alloc0/1_token` 恒 0 |
+| 恢复/取消 | `iu_ifu_mispred_stall` + L0→IP 的 `mispred_pc`/`ip_mistaken` 握手 | `mispred_stall` 接 0；自创的 `cancel_vld`/`first_token` 悬空 |
 | chk_idx 交付 | **PCFIFO create 总线原生字段** | 后加在 IBUF 上的旁路（`rv32_ifu_ibuf.v` 的 `chk_q`/`out_chk`）|
 
 也就是说：**我们为了补上被打桩的 PCFIFO，自己加了一条 IBUF 旁路 —— 而这条路 C910 本来是有的。**
@@ -240,24 +240,25 @@ C910 同时使用三个 retire 槽（`rtu_ifu_retire0/1/2_condbr_taken/chk_idx/j
 - **命中 one-hot 随包下传**，更新目标不再重扫 CAM：
   192 位槽包的空闲位 `[127:125]`(3) + `[121:109]`(13) 正好 16 位，照 C910 的
   `addrgen_l0_btb_update_entry = addrgen_l0_btb_hit_entry` 把 one-hot 寄存后送回 L0。
-  **注意一个坑**：`rv32_ifu_pcfifo_if.v:50-55` 在外送 IDU 包时会用 `[121:109]` 装 token，
+  **注意一个坑**：`rv32_ifu_pcfifo_if.v:50-55` 目前在外送 IDU 包时用 `[121:109]` 装自创的 token，
   所以 one-hot 必须在 **IP 级（ipctrl，pcfifo_if 之前）就被消费掉**——
-  这也正好与"把更新搬回 IP 级"一致，不是额外约束。
+  这也正好与"把更新搬回 IP 级"一致，不是额外约束。P2 删掉 token 后这段位宽会空出来。
 - 删除 `rv32_ifu_ibctrl.v` 的 `train_*` 输出与 `has_train/selected_train`（或保留接口但只作为
   "IP 级事件的搬运工"）。
 
 这一步做完，P-4 的不对称从"潜伏"变成"不存在"，P-1/P-5 也从根上解决。
 
-### P2 交付与取消接口换回 C910 原生（PCFIFO + create 总线 + token/credit）
+### P2 交付与恢复接口换成 C910 原生（PCFIFO full + create 总线）
 
 - 接通 `ifu_iu_pcfifo_create0/1_*`：`{cur_pc, tar_pc/npc, cf_type, dst_vld, pred, chk_idx[24:0], jmp_mispred}`
   交给后端（未来的 ROB/重命名级），**用它取代 IBUF 上的 chk 旁路**。
-- 流控二选一（需与后端一起定）：
-  - **本机 C910 版**：`iu_ifu_pcfifo_full` + 2 条 create 总线，简单，够单发射/小窗口用；
-  - **rv32 移植版暴露的接口**：`credit[1:0]` + `alloc0/1_token[12:0]` + `cancel_vld/first_token`，
-    按 token 精确取消，**更适合乱序**（每个分支带 token，回滚时按 token 撤销而不是整条重定向）。
-- 采用 token 版时，`iu_ifu_check_token` 也要真正接上：BHT/L0 的 check 必须带 token，
-  这样后端取消时能连带撤销这次训练。
+- **流控与恢复：照 C910 原生机制做**（设计者 2026-09-23 决定，见 6.2）：
+  `iu_ifu_pcfifo_full` + 2 条 create 总线 + `iu_ifu_mispred_stall` 恢复背压，
+  **不采用**移植版自创的 `credit`/`token`/`cancel` 方案——它在本机 5 份 C910 里都找不到出处，
+  协议语义无处对齐，属于"自创机制"。
+- 端口表按 C910 重写（删 credit/token/cancel/check_token，加 `pcfifo_full`，create 总线字段对齐）；
+  `rv32_ifu_pcfifo_if.v` 按 `ct_ifu_pcfifo_if.v` 重建为 2 项记录缓冲；
+  `allowed_count` 的交付门控改走 `pcfifo_wait` → IP stall → IBUF 排空这条 C910 链路。
 - IBUF 输出 3 lane 放开：`idu_ifu_accept_num` 支持到 3，前端每拍可交付 3 条。
 
 ### P3 retire 反馈：训练与恢复移到退休点
@@ -277,7 +278,8 @@ C910 同时使用三个 retire 槽（`rtu_ifu_retire0/1/2_condbr_taken/chk_idx/j
 - `iu_ifu_mispred_stall`：误预测恢复窗口内由后端压住前端（需要真正的恢复协议，
   不能像现在这样"接 0 因为接 1 会死锁"）。
 - 分支 checkpoint：`chk_idx`（22 位 VGHR + 2 位 sel + 1 位 counter 低位）已经是**每条分支的
-  预测时快照**，天然可作重命名级的恢复点；配合 P2 的 token 就是完整的按分支回滚。
+  预测时快照**，天然可作重命名级的恢复点；配合 P2 的 create 总线 + P3 的 retire 反馈，
+就是完整的按分支恢复（C910 的做法，不需要自创 token）。
 - LBUF（`cp0_ifu_lbuf_en`）打开：小循环零取指开销。
 - LSU i-cache 失效通路（`lsu_ifu_icache_inv_*`）：有 store / DMA 之后必须。
 - 每拍多包/多块取指吞吐：PCGen 与 IBUF 的带宽检查（顺序核下不是瓶颈，多发射下会变成瓶颈）。
@@ -321,7 +323,7 @@ GM_MONITOR=1 $PWD/obj_nofsdb/simv +vcs+lic+wait +MAX_CYCLES=15000000 -exitstatus
   必要时照 `BHT_TRAIN_EN` 的做法加参数开关（`ifu_subsys` 里的 `parameter`）便于 A/B 与回退。
 - P1/P2 会动包格式与模块接口，difftest 是主要防线（它是提交驱动的，对取指气泡免疫，
   但对重复提交/漏提交极其敏感）。
-- P2 的 token 流控需要后端配合设计，不能在 IFU 单侧改完就宣称可用。
+- P2 的 create 总线/流控需要后端配合设计，不能在 IFU 单侧改完就宣称可用。
 
 **已知坑（都是踩过的，务必先看）**
 1. `pcgen_l0_btb_chgflw_vld` **不是 L0 专用信号**（含 ipctrl/ibctrl 各路改向）。
@@ -351,25 +353,48 @@ GM_MONITOR=1 $PWD/obj_nofsdb/simv +vcs+lic+wait +MAX_CYCLES=15000000 -exitstatus
 | A2 | P0 验收门槛 | **软门槛**：周期数允许 ±1%，以"准确率 + 白取次数"改善为准 |
 | A3 | P0-2 的严格度 | **严格对齐 C910**：去掉 `update_cnt_armed` 门控，命中项直接按弱 taken 删 |
 | A4 | 开关留存 | **验证完就删**，只留最终行为（不长期保留 parameter 开关矩阵）|
-| B1 | 分支恢复机制 | **按 token 精确取消**（`cancel_vld` + `first_token`），不用整条重定向 |
-| B2 | 参考来源 | 移植自 `open_riscv_2035`。**注意**：该仓库及其余 4 份本机 C910 树（XuanTie-NEW-CIU / mars1 / openc910_sv02 / chang-openc910）的 IFU RTL **都不含** `iu_ifu_pcfifo_credit` / `alloc0_token` —— 这套 credit/token 接口是**移植版自己新增的**（见 `doc/completion_delta.patch`）。⇒ P2 的 token 取消协议**没有上游可照抄，需要我们自己定义并写进文档**（见 6.2）|
+| B1 | 分支恢复机制 | ~~按 token 精确取消~~ → **改为照 C910 原生机制**（见 6.2 与 B2 修正）：`iu_ifu_pcfifo_full` 流控 + 2 条 create 总线 + `iu_ifu_mispred_stall` 恢复背压，不用自创的 token/credit |
+| B2 | 参考来源 | 移植自 `open_riscv_2035`。**已核实**：本机 5 份 C910 树（open_riscv_2035 / XuanTie-NEW-CIU / mars1 / openc910_sv02 / chang-openc910）的 IFU RTL 里**既没有 `pcfifo_credit`/`alloc0_token`，也没有 `check_token`，连 "token" 这个词都搜不到**（对照：`iu_ifu_bht_check_vld` 能搜到，说明搜索有效）。⇒ `iu_ifu_pcfifo_credit` / `alloc0_token` / `cancel_vld` / `cancel_first_token` / `iu_ifu_check_token` 全是**移植版自创**。**处理原则（设计者 2026-09-23 明确）：没有 C910 参考的自创机制一律舍弃，改为照 C910 实现**（见 6.2）|
 | B3 | 后端消费带宽 | 未来每拍 **3 条**（`idu_accept_num` 上限放开到 3，IBUF 3 lane 用满）|
 | B4 | retire 反馈 | **宽度按 3 槽预留**，先只驱动 retire0 |
 | B5 | 多线程/特权上下文 | **不预留**（单区域、恒 M 模式、i-cache tag 不加上下文语义）|
-| C1 | "对齐 C910"的标准 | **结构对齐、细节允许工程优化**（不要求逐条行为等价）|
+| C1 | "对齐 C910"的标准 | **结构对齐、细节允许工程优化**（不要求逐条行为等价）；**补充原则**：凡"没有 C910 参考的自创机制"一律舍弃并改为 C910 做法——C1 的"细节可优化"只适用于**有 C910 依据的适配**，不适用于自创 |
 | C2 | 基线/指标/验收 | 由本文档 6.4 定义（见下）|
 | C3 | 提交方式 | 先整理提交当前工作区，再按 P0/P1 分次提交 |
 
-### 6.2 P2 需要我们自己定义的 token 取消协议（待补）
+### 6.2 自创机制清点与处置（按 B2/C1 补充原则）
 
-接口形状已由 `rv32_ifu_top` 固定：输入 `iu_ifu_pcfifo_credit[1:0]`、`alloc0/1_token[12:0]`，
-输出 `ifu_iu_pcfifo_create0/1_*`、`cancel_vld`、`cancel_first_token`。
-**待定义**（P2 开工前必须落成文档 + 时序图）：
-1. token 的所有权与生命周期：后端何时给出 `alloc0/1_token`（每个 PC 记录一个？还是每包一个？）；
-2. `first_token` 的语义是"从该 token 起全部作废"还是"该 token 本身也作废"；
-3. 取消与 `credit` 归还的原子性（取消当拍 credit 是否立即恢复）；
-4. 取消与 BHT/L0 训练的联动：`iu_ifu_check_token` 接上后，训练请求要能被取消连带撤销；
-5. 与 `rtu_ifu_flush`（全局冲刷）的优先级关系。
+"自创"指在 C910 里**找不到对应物**的机制（已逐条核对 `open_riscv_2035` 等 5 份 C910）。
+注意与**必要适配**区分：把 C910 的机制按 RV32 位宽/word 槽改造（如 L0 用全宽 tag 取代
+C910 的半字局部 tag + 跨模块 PC 高位重建）属于适配，有 `changes_zh.md` 记录，保留。
+
+| 自创机制 | 位置 | C910 对应物 | 处置 |
+|---|---|---|---|
+| PCFIFO `credit` / `alloc0,1_token` / `cancel_vld` / `cancel_first_token` | `rv32_ifu_top` 端口、`rv32_ifu_pcfifo_if.v` | `iu_ifu_pcfifo_full`（1 位）流控 + `ifu_iu_pcfifo_create0/1_*` 记录总线 | **P2 替换**：改用 full + create 总线，端口表按 C910 重写 |
+| `iu_ifu_check_token[12:0]` | `rv32_ifu_top` 端口（现接 0） | 无（C910 的 check 只有 `chk_idx[24:0]`，不带 token）| **删除**（P2），训练资格改由 create/retire 通路保证 |
+| IBUF 的 chk 旁路（`in_chk`/`out_chk`/`chk_q`、`instruction_chk`）| `rv32_ifu_ibuf.v`、`rv32_ifu_pcfifo_if.v` | create 总线的 `chk_idx[24:0]` 字段（`ct_ifu_top.v:112/389`）| **P2 删除**：`chk_idx` 回到 create 总线原生交付 |
+| ibctrl 的 `train_*`/`has_train`/`selected_train`（L0 训练上报）| `rv32_ifu_ibctrl.v:81-87,137-149` | 无；C910 的 L0 维护在 `ct_ifu_ipdp.v:5846-5878`、分配在 `ct_ifu_ibdp.v:2225-2240` | **P1 删除**：改为 ipdp/ibdp 驱动（这也是 P-1/P-5 的根治）|
+| L0 内部 CAM 重扫（`update_match_vec`/`update_select` + 最高编号优先）| `rv32_ifu_l0_btb.v:175-191` | 命中 one-hot 随包带回（`ct_ifu_addrgen.v:189/228/302`）| **P1 删除** |
+| ipctrl 本地复算 `l0_correct` + `l0_in_fragment` 补丁 | `rv32_ifu_ipctrl.v:125-143` | L0→IP 的显式握手：`ipdp_ipctrl_l0_btb_mispred_pc` → `ipctrl_ipdp_ip_mistaken` → `l0_btb_mistaken`，以及 `ipctrl_l0_btb_wait_next` / `l0_btb_ipctrl_st_wait` | **待审计**（见下）|
+| L0 的 `kind[2:0]` 类型字段 + ipctrl 的类型比对 | `rv32_ifu_l0_btb.v`、`rv32_ifu_ipctrl.v` | C910 用"预测错的那条 PC"（`mispred_pc`）做身份判定，不比类型 | **待审计** |
+
+**"待审计"两项的说明**：`l0_in_fragment` 是为修一个真实故障（coremark 里 slot1 的 bltu 之后
+0x858/0x85c 被跳过）加的补丁，它**必须留到 C910 的握手通路补上之后再拆**，不能先删后补。
+审计内容：把 `ct_ifu_ipctrl.v` 的 `ipctrl_l0_btb_chgflw_vld / ip_vld / wait_next` 与
+`ct_ifu_ipdp.v` 的 `ipdp_ipctrl_l0_btb_mispred_pc / hit_way / vld` 全套对照本版，
+判断"本地复算 + 补丁"能否被原生握手整体取代。这一项建议放在 P2 之后（create 总线接通后
+`chk_idx`/类型信息本来就会重新分配，届时再动风险最小）。
+
+**P2 修订后的做法**（替代原"自定义 token 协议"）：
+1. `rv32_ifu_top` 的 PCFIFO 端口改成 C910 形状：删 `iu_ifu_pcfifo_credit` / `alloc0,1_token` /
+   `cancel_vld` / `cancel_first_token` / `iu_ifu_check_token`，加 `iu_ifu_pcfifo_full`；
+   create0/1 总线字段对齐 C910（`cur_pc[39:0]→[31:0]`、`tar_pc`、`jal`/`jalr` 取代 `cf_type`、
+   保留 `bht_pred` / `chk_idx[24:0]` / `dst_vld` / `jmp_mispred`）。
+2. `rv32_ifu_pcfifo_if.v` 按 `ct_ifu_pcfifo_if.v` 重建为 2 项记录缓冲；
+   现在靠 `credit` 算出来的 `allowed_count`（指令交付门控）要改成 C910 的 `pcfifo_wait` →
+   IP 级 stall → IBUF 排空这条链（顺带处理现在 `credit_stall` 悬空的问题）。
+3. IBUF 的 chk 旁路、指令包里的 token 位（`[121:109]`）随之删除。
+4. `iu_ifu_mispred_stall` 按 C910 语义接上（P4 的恢复协议）。
 
 ### 6.3 未完成内容（A1 要求记录）
 
@@ -379,13 +404,18 @@ GM_MONITOR=1 $PWD/obj_nofsdb/simv +vcs+lic+wait +MAX_CYCLES=15000000 -exitstatus
 | 命中 one-hot 未随包带，L0 内部 CAM 重扫仍在（P0-4 只做了一致化，没拆根）| 未做 | P1 |
 | L0 分配仍是"每条控制转移"触发，未改成 IP 级 miss/mispred 驱动 | 未做（P0-3 只是加了 taken 资格）| P1 |
 | BHT 无 retire 层：`rtu_ifu_retire0/1/2_*` 仍全 0，无 committed GHR 恢复 | 未做 | P3 |
-| PCFIFO/create 总线/token 全部未接（IBUF 上的 chk 旁路仍在承担交付）| 未做 | P2 |
+| PCFIFO/create 总线未接；IBUF 上的 chk 旁路仍在承担交付；自创的 credit/token/cancel 端口待删 | 未做 | P2 |
 | `iu_ifu_mispred_stall` 仍接 0（缺后端恢复协议）| 未做 | P4 |
 | LBUF（`cp0_ifu_lbuf_en`）未启用 | 未做 | P4 |
 | `lsu_ifu_icache_inv_*` 未接（有 store/DMA 后必须）| 未做 | P4 |
 | `idu_accept_num` 仍恒为 1，IBUF 3 lane 未用满 | 未做 | P2 |
 | 气泡中"核在等、IFU 没货"的"其它 671,616 拍"未细分 | 未做 | P4（需 IFU 内部重定向/重填计数）|
 | `hpcp_ifu_cnt_en` 接 0，C910 自带性能计数器全部闲置 | 未做 | 可选 |
+| 自创的 PCFIFO credit/token/cancel 与 `iu_ifu_check_token` 仍在端口表里 | 未做（6.2）| P2 |
+| IBUF 的 chk 旁路仍在承担 `chk_idx` 交付 | 未做（6.2）| P2 |
+| ibctrl 的 `train_*` 是自创上报口（P1 要删）| 未做 | P1 |
+| ipctrl 本地复算 `l0_correct` + `l0_in_fragment` 补丁 vs C910 的 `mispred_pc`/`ip_mistaken`/`wait_next` 握手 | **待审计**（6.2）| P2 之后 |
+| L0 `kind[2:0]` + ipctrl 类型比对是否可被 C910 的 `mispred_pc` 身份判定取代 | **待审计** | P2 之后 |
 
 ### 6.4 验收基准与指标（C2 决定）
 
@@ -422,7 +452,8 @@ GM_MONITOR=1 $PWD/obj_nofsdb/simv +vcs+lic+wait +MAX_CYCLES=15000000 -exitstatus
 1. 整理提交当前工作区（C3）；
 2. 建 `asm/branch_bench.S` + `bp_change_log_zh.md`（P0 的验证前提）；
 3. P0-1 ~ P0-4（逐条 A/B，开关验证完即删）；
-4. P1（更新源回归 IP 级 + one-hot 随包）；5. P2（token 协议定义 + create 总线）；6. P3；7. P4。
+4. P1（更新源回归 IP 级 + one-hot 随包，同时删掉 ibctrl 的自创 train_*）；
+5. P2（照 C910 重做 PCFIFO full + create 总线，删自创 token 与 IBUF chk 旁路）；6. P3；7. P4。
 
 ---
 
@@ -430,11 +461,11 @@ GM_MONITOR=1 $PWD/obj_nofsdb/simv +vcs+lic+wait +MAX_CYCLES=15000000 -exitstatus
 
 | 分类 | 端口 | 现值 | 乱序下应 |
 |---|---|---|---|
-| PCFIFO 流控 | `iu_ifu_pcfifo_credit` / `alloc0/1_token` | `2'b10` / `13'h0` | 由后端驱动（P2）|
+| PCFIFO 流控 | `iu_ifu_pcfifo_credit` / `alloc0/1_token`（**自创**）| `2'b10` / `13'h0` | **删除**，改用 C910 的 `iu_ifu_pcfifo_full`（P2）|
 | PCFIFO 交付 | `ifu_iu_pcfifo_create0/1_*` | 悬空 | 接后端（P2）|
-| PCFIFO 取消 | `ifu_iu_pcfifo_cancel_vld` / `first_token` | 悬空 | 按 token 取消（P2）|
+| PCFIFO 取消 | `ifu_iu_pcfifo_cancel_vld` / `first_token`（**自创**）| 悬空 | **删除**，恢复走 `iu_ifu_mispred_stall` + L0/retire 握手（P4/P2）|
 | 误预测反馈 | `iu_ifu_mispred_stall` | `1'b0`（接 1 会死锁）| 真正的恢复协议（P4）|
-| BHT check 限定 | `iu_ifu_check_token` | `13'h0` | 带 token（P2）|
+| BHT check 限定 | `iu_ifu_check_token`（**自创**）| `13'h0` | **删除**（P2）；训练资格由 create/retire 通路保证 |
 | 退休反馈 | `rtu_ifu_retire0/1/2_*`（共 40+ 根）| 全 0 | 接 ROB（P3）|
 | 维护 | `cp0_ifu_maint_*` | 0 | 软失效/清表时可接 |
 | 调试/断点 | `had_ifu_*` / `cp0_ifu_bkpt*` | 0 | 调试器接入时 |
@@ -455,9 +486,9 @@ GM_MONITOR=1 $PWD/obj_nofsdb/simv +vcs+lic+wait +MAX_CYCLES=15000000 -exitstatus
 
 > 注意：**本机所有 C910 版本的 PCFIFO 都是 `iu_ifu_pcfifo_full` + 2 条 create 总线**
 > （`chk_idx[24:0]` 是其原生字段）；而 `rv32_ifu_top` 暴露的
-> `credit + alloc0/1_token + cancel_vld/first_token` **在本机 5 份 C910 树里都不存在**，
-> 是移植版自己新增的接口（见 `doc/completion_delta.patch` 的新增行）。
-> 决策（B1/B2）：P2 走 token 版，因此**取消协议需要我们自己定义**——见 6.2。
+> `credit + alloc0/1_token + cancel_vld/first_token`（以及 `iu_ifu_check_token`）
+> **在本机 5 份 C910 树里都不存在**——连 "token" 一词都搜不到，是移植版自创的接口。
+> 决策（B1/B2 + C1 补充原则）：**P2 照 C910 原生机制实现**，自创的 token 方案舍弃；见 6.2。
 
 ## 附录 C：TB 计数器清单
 
