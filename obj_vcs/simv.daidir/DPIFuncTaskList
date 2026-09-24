@@ -1,8 +1,0 @@
-import_DPI gm_init tb_miniRV_dpi
-import_DPI gm_check_step tb_miniRV_dpi
-import_DPI gm_halted tb_miniRV_dpi
-import_DPI gm_exit_code tb_miniRV_dpi
-import_DPI gm_set_cycle tb_miniRV_dpi
-import_DPI gm_set_timer tb_miniRV_dpi
-import_DPI gm_set_irq tb_miniRV_dpi
-import_DPI gm_check_csr tb_miniRV_dpi

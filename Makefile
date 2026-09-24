@@ -19,6 +19,9 @@ TESTFILE := $(PWD)/meminit.bin
 RAM ?= ram.v
 # IFU=1: 用 ifu_rv32i (C910 派生前端) 替换取指级; IFU=0: 旧 PC/NPC/IROM 通路.
 IFU ?= 1
+# LBUF=1: 打开循环缓冲 (cp0_ifu_lbuf_en=1); LBUF=0: LBUF 状态机常驻 IDLE.
+# 只在 IFU=1 下有意义 (LBUF 属于 ifu_rv32i).
+LBUF ?= 0
 VSRC := $(wildcard $(PWD)/mySoC/*.v) $(wildcard $(PWD)/mySoC/ifu_rv32i/rtl/*.v) $(PWD)/vsrc/$(RAM)
 SVSRC := $(wildcard $(PWD)/tb/*.sv)
 DPIC := $(wildcard $(PWD)/dpi/*.c)
@@ -27,6 +30,9 @@ INC  := +incdir+$(PWD)/mySoC +incdir+$(PWD)/vsrc
 DEFINES := +define+PATH=$(TESTFILE)
 ifeq ($(IFU),1)
 DEFINES += +define+USE_IFU
+endif
+ifeq ($(LBUF),1)
+DEFINES += +define+USE_LBUF
 endif
 
 # FSDB (Verdi) detection
@@ -84,17 +90,67 @@ build: $(SIMV)
 # IFU 开关只影响 DEFINES, 不是 $(SIMV) 的依赖 —— 不额外记一个 stamp 的话
 # `make build IFU=0` 会因为"源文件没变"而跳过重编译, 静默沿用上一个 IFU=1
 # 的 simv (实测踩过: 两次 coremark 周期数一模一样才发现)。
-IFU_CFG := $(BUILD_DIR)/.ifu_cfg
+# LBUF 开关同理, 所以每个只改 DEFINES 的开关都要有自己的 stamp。
+IFU_CFG  := $(BUILD_DIR)/.ifu_cfg
+LBUF_CFG := $(BUILD_DIR)/.lbuf_cfg
 
 $(IFU_CFG): FORCE
 	@mkdir -p $(BUILD_DIR)
 	@echo "$(IFU)" | cmp -s - $@ || echo "$(IFU)" > $@
 
+$(LBUF_CFG): FORCE
+	@mkdir -p $(BUILD_DIR)
+	@echo "$(LBUF)" | cmp -s - $@ || echo "$(LBUF)" > $@
+
+# ---------------------------------------------------------------------------
+# BP_* : 分支预测器表尺寸 (面积-准确率实验用)
+#
+# 只改 DEFINES, 所以同样需要自己的 stamp。默认全空 = RTL 里的原尺寸,
+# 基线不受影响。举例 —— 缩到与 cpu 工程预测器(约 4.99 Kbit)相当的 ~5.08 Kbit:
+#
+#   make run TEST=branch_bench SIM_ARGS=+BENCH \
+#        BP_PRE_AW=5 BP_SEL_AW=4 BP_BTB_ROW_W=3 BP_L0_ENTRIES=4 BP_IND_AW=3
+#
+#   BP_PRE_AW     BHT 预测阵列行数 log2  (默认 10 → 1024 行 × 64bit)
+#   BP_SEL_AW     BHT 选择阵列行数 log2  (默认  7 →  128 行 × 16bit)
+#   BP_BTB_ROW_W  L1 BTB 行数 log2       (默认  9 →  512 行 × 2bank × 4slot)
+#   BP_L0_ENTRIES L0 BTB 项数            (默认 16)
+#   BP_IND_AW     间接 BTB 行数 log2     (默认  8 →  256 行 × 35bit)
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# 默认值 = "对标 cpu 核面积"的选定配置 (5,372 bit, CoreMark 2.382 / +3.77% vs 189K 基线)
+#   BHT 预测 32 行(XOR 折叠) 2,048 + 选择 16 行 256 + L1 BTB 4 行 976
+#   + L0 16 项 1,792 + 间接 4 行 140 + RAS 160
+# 想要回原样基线(189,088 bit, 2.471): make BP_PRE_FOLD= BP_PRE_AW= BP_SEL_AW= \
+#   BP_BTB_ROW_W= BP_IND_AW= ...
+# 面积/跑分全表见 doc/bp_three_way_zh.md §5 与 memory bp-area-frontier-2026-09-24。
+# ---------------------------------------------------------------------------
+BP_PRE_FOLD  ?= 1
+BP_PRE_AW    ?= 5
+BP_SEL_AW    ?= 4
+BP_BTB_ROW_W ?= 2
+BP_IND_AW    ?= 2
+BP_L0_ENTRIES ?= 16
+
+BP_DEFS := $(if $(BP_PRE_FOLD),+define+BP_PRE_FOLD) \
+           $(if $(BP_PRE_AW),+define+BP_PRE_AW=$(BP_PRE_AW)) \
+           $(if $(BP_SEL_AW),+define+BP_SEL_AW=$(BP_SEL_AW)) \
+           $(if $(BP_BTB_ROW_W),+define+BP_BTB_ROW_W=$(BP_BTB_ROW_W)) \
+           $(if $(BP_L0_ENTRIES),+define+BP_L0_ENTRIES=$(BP_L0_ENTRIES)) \
+           $(if $(BP_IND_AW),+define+BP_IND_AW=$(BP_IND_AW))
+
+BP_CFG := $(BUILD_DIR)/.bp_cfg
+BP_SIG := $(BP_PRE_FOLD)-$(BP_PRE_AW)-$(BP_SEL_AW)-$(BP_BTB_ROW_W)-$(BP_L0_ENTRIES)-$(BP_IND_AW)
+
+$(BP_CFG): FORCE
+	@mkdir -p $(BUILD_DIR)
+	@echo "$(BP_SIG)" | cmp -s - $@ || echo "$(BP_SIG)" > $@
+
 FORCE:
 
-$(SIMV): $(VSRC) $(SVSRC) $(DPIC) $(CSRC_GM) $(IFU_CFG)
+$(SIMV): $(VSRC) $(SVSRC) $(DPIC) $(CSRC_GM) $(IFU_CFG) $(LBUF_CFG) $(BP_CFG)
 	@mkdir -p $(BUILD_DIR)
-	$(VCS) $(VCS_FLAGS) $(VCS_FLAGS_EXTRA) $(INC) $(DEFINES) $(FSDB_VCS) -CFLAGS -DVCS \
+	$(VCS) $(VCS_FLAGS) $(VCS_FLAGS_EXTRA) $(INC) $(DEFINES) $(BP_DEFS) $(FSDB_VCS) -CFLAGS -DVCS \
 	  -CFLAGS -I$(PWD)/golden_model/include \
 	  -LDFLAGS "-Wl,-rpath,$(FSDB_HOME)/share/PLI/VCS/LINUX64" \
 	  -LDFLAGS "-Wl,-rpath,$(PWD)" \

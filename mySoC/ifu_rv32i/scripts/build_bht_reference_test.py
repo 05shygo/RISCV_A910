@@ -1,4 +1,11 @@
-"""C910 effective algorithm equivalence outside intentionally changed contracts."""
+"""C910 effective algorithm equivalence outside intentionally changed contracts.
+
+⚠ 2026-09-24: 本测试断言"BHT 与 C910 原始 ct_ifu_bht.v **逐位等价**", 包括
+   1024x64 / 128x16 两张阵列的全阵内容。开启 `BP_PRE_FOLD`(XOR 折叠行索引,
+   见 rtl/rv32_ifu_bht_pre_array.v)后地址映射**有意**改变, 全阵比对必然失败 ——
+   这是设计意图, 不是回归。折叠配置下应跳过本测试; 功能正确性改由 VCS 全跑
+   (branch_bench difftest + CoreMark CRC) 保证。详见 doc/bp_three_way_zh.md §5.9。
+"""
 from pathlib import Path
 import re
 from rtl_style import public_ports

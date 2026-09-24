@@ -3,3 +3,16 @@ waveform
 mycpu/*
 meminit.bin
 obj_nofsdb/
+
+# VCS/Verdi 构建产物（2026-09-25: 此前误提交进仓库, 600 个文件已从索引移除;
+# 下面的 obj_*/novas* 用通配符覆盖, 上面的单项是历史条目）
+obj_*/
+novas.fsdb
+novas.fsdb.*
+novas_dump.log
+ucli.key
+verdiLog/
+simv
+simv.daidir/
+*.vpd
+csrc/

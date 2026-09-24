@@ -21,6 +21,10 @@ module tb_miniRV_dpi;
   integer cycles = 0;
   integer max_cycles;
   string wave_name;
+  // +BENCH 时才对定向基准 (asm/branch_bench.S) 做分场景计数与报告;
+  // 整场基准 (CoreMark) 不加这个 plusarg ⇒ 计数逻辑完全不参与。
+  logic bench_en = 0;
+  initial if ($test$plusargs("BENCH")) bench_en = 1;
 
   always #5 clk = ~clk; // 100MHz
 
@@ -158,6 +162,9 @@ module tb_miniRV_dpi;
           report_branch_stats();
           report_l0_stats();
           report_bubble_stats();
+          if (bench_en) report_bench_stats();
+    if (bench_en) report_coremark_selfdist();
+          if (bench_en) report_coremark_selfdist();
 `endif
           $finish;
         end else begin
@@ -168,6 +175,9 @@ module tb_miniRV_dpi;
           report_branch_stats();
           report_l0_stats();
           report_bubble_stats();
+          if (bench_en) report_bench_stats();
+    if (bench_en) report_coremark_selfdist();
+          if (bench_en) report_coremark_selfdist();
 `endif
           $fatal(1, "Test Point Failed");
         end
@@ -188,6 +198,8 @@ module tb_miniRV_dpi;
     report_branch_stats();
     report_l0_stats();
     report_bubble_stats();
+    if (bench_en) report_bench_stats();
+    if (bench_en) report_coremark_selfdist();
 `endif
     $fatal(1, "Timed out - simulation exceeded MAX_CYCLES");
   end
@@ -367,6 +379,1020 @@ module tb_miniRV_dpi;
   wire [ 2:0] top_train_type;
   wire [15:0] top_l0_invmask;
 
+  // ---------------------------------------------------------------------------
+  // [IC1] 定向实验: miniRV 的 GHR (vghr) 到底有没有在动?
+  //
+  // 起因: 与 C910 跑同一份 branch_bench, 类 3(交替) 只有 50.00%, 而 C910 是 86.72%。
+  // 两边的 BHT 是同一结构 (rv32_ifu_bht.v:374-394 与 ct_ifu_bht.v 同源),
+  // 预测索引都写着 `pc[6:3] ^ vghr[3:0]`。所以怀疑点很具体: vghr 是不是一直是 0。
+  // 若 vghr 恒为 0, 索引退化成纯 PC -> BHT 等价于每-PC 计数器 -> 交替序列上上限就是 50%。
+  // ---------------------------------------------------------------------------
+  wire [21:0] dbg_vghr;
+  wire [21:0] dbg_vghr_ip;
+  wire [ 3:0] dbg_vghr_ofs;
+  assign dbg_vghr      = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.u_bht.vghr_q;
+  assign dbg_vghr_ip   = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.u_bht.bht_ipdp_vghr_q;
+  assign dbg_vghr_ofs  = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.u_bht.pre_vghr_offset_0;
+
+  wire [31:0] dbg_taken_v, dbg_ntake_v, dbg_sel_v;
+  wire [ 1:0] dbg_selr;
+  wire [ 1:0] dbg_cnt;
+  assign dbg_taken_v = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.bht_ipdp_pre_array_data_taken;
+  assign dbg_ntake_v = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.bht_ipdp_pre_array_data_ntake;
+  assign dbg_sel_v   = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.bht_selected;
+  assign dbg_selr    = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.bht_ipdp_sel_array_result;
+  assign dbg_cnt     = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.bht_counter;
+
+  // 每个 2 位计数器只看 MSB (奇数位): 有没有任何一个计数器 >= 2
+  wire dbg_sel_has2 = |(dbg_sel_v & 32'hAAAA_AAAA);
+
+  wire dbg_ghr_iu, dbg_ghr_lbuf, dbg_ghr_ip, dbg_lbuf_act, dbg_ip_conbr, dbg_bju_chk;
+  assign dbg_ghr_iu    = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.u_bht.ghr_updt_vld;
+  assign dbg_ghr_lbuf  = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.u_bht.vghr_lbuf_updt_vld;
+  assign dbg_ghr_ip    = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.u_bht.vghr_ip_updt_vld;
+  assign dbg_lbuf_act  = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.u_bht.lbuf_bht_active_state;
+  assign dbg_ip_conbr  = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.u_bht.ipctrl_bht_con_br_vld;
+  assign dbg_bju_chk   = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.u_bht.iu_ifu_bht_check_vld;
+
+  wire dbg_ev, dbg_chk;
+  assign dbg_ev  = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.ipctrl_bht_con_br_vld;
+  assign dbg_chk = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.iu_ifu_bht_check_vld;
+
+  integer dbg_n_iu = 0, dbg_n_lbuf = 0, dbg_n_ip = 0, dbg_n_lact = 0, dbg_n_icb = 0, dbg_n_bchk = 0;
+  // GHR 多移的嫌疑: 同一根分支连着两拍都发 bht_event
+  integer dbg_ev2 = 0, dbg_ev_nochk = 0, dbg_chk_noev = 0;
+  // vghr_q[3:0] 的 16 桶直方图 (自锁假设: 若被预测位填满, 会极端集中在 0 或 15)
+  integer dbg_gh0 = 0, dbg_gh15 = 0, dbg_gh_mid = 0, dbg_offs_uniq_seen = 0;
+  // 解锁通路: ghr_updt_vld && iu_ifu_bht_check_vld 时用真实结果 {bju_ghr[20:0], condbr_taken} 覆盖
+  wire dbg_unlock = dbg_ghr_iu && dbg_chk;
+  wire dbg_unl_t  = dbg_unlock && dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.u_bht.iu_ifu_bht_condbr_taken;
+  integer dbg_n_unlock = 0, dbg_n_unl_t = 0;
+  reg [15:0] dbg_offs_acc = 16'h0;   // 必须显式初始化: 本机 VCS 不清零 reg
+  reg [3:0]  dbg_gh_q;
+  reg dbg_ev_q, dbg_chk_q;
+  integer dbg_tkn_nz = 0, dbg_ntk_nz = 0, dbg_selr1 = 0, dbg_has2 = 0, dbg_cnt1 = 0;
+  integer dbg_nz = 0, dbg_chg = 0, dbg_ipdiff = 0, dbg_ofsnz = 0;
+  reg [21:0] dbg_prev = 0;
+  reg        dbg_seen = 0;
+
+  // ---------------------------------------------------------------------------
+  // [IC1] 大 BTB (L1, rv32_ifu_btb) 的贡献
+  //
+  // 起因: 之前把"L0 命中率只有 30%"当成要提的指标, 但 C910 的 L0 只是快滤
+  // (可用命中仅 4,301, 条件分支目标全靠大 BTB)。自研核也有大 BTB 且是活的,
+  // 所以先量清楚"目标预测"到底由谁承担, 再谈该不该动 L0 的容量。
+  // ---------------------------------------------------------------------------
+  wire        bt_lookup_vld, bt_result_vld, bt_if_vld;
+  wire [ 3:0] bt_hit, bt_if_hit;
+  wire [31:0] bt_if_pc;
+  assign bt_lookup_vld = dut.Core_cpu.u_ifu_subsys.u_ifu_top.ifctrl_btb_lookup_vld;
+  assign bt_result_vld = dut.Core_cpu.u_ifu_subsys.u_ifu_top.btb_result_vld;
+  assign bt_hit        = dut.Core_cpu.u_ifu_subsys.u_ifu_top.btb_hit;
+  assign bt_if_vld     = dut.Core_cpu.u_ifu_subsys.u_ifu_top.btb_if_vld;
+  assign bt_if_hit     = dut.Core_cpu.u_ifu_subsys.u_ifu_top.btb_if_hit;
+  assign bt_if_pc      = dut.Core_cpu.u_ifu_subsys.u_ifu_top.btb_if_pc;
+
+  integer bt_n_lookup = 0, bt_n_result = 0, bt_n_hit = 0, bt_n_ifvld = 0, bt_n_ifhit = 0;
+  integer bt_cls_lk [0:5], bt_cls_ht [0:5];
+  integer bti;
+  initial begin
+    bt_n_lookup = 0; bt_n_result = 0; bt_n_hit = 0; bt_n_ifvld = 0; bt_n_ifhit = 0;
+    for (bti = 0; bti <= 5; bti = bti + 1) begin bt_cls_lk[bti] = 0; bt_cls_ht[bti] = 0; end
+  end
+  always @(posedge clk) if (!rst && bench_en) begin
+    if (bt_lookup_vld) bt_n_lookup = bt_n_lookup + 1;
+    if (bt_result_vld) bt_n_result = bt_n_result + 1;
+    if (bt_result_vld && (|bt_hit)) bt_n_hit = bt_n_hit + 1;
+    if (bt_if_vld) bt_n_ifvld = bt_n_ifvld + 1;
+    if (bt_if_vld && (|bt_if_hit)) bt_n_ifhit = bt_n_ifhit + 1;
+    if (bt_if_vld) begin
+      bt_cls_lk[bench_class(bt_if_pc)] = bt_cls_lk[bench_class(bt_if_pc)] + 1;
+      if (|bt_if_hit) bt_cls_ht[bench_class(bt_if_pc)] = bt_cls_ht[bench_class(bt_if_pc)] + 1;
+    end
+  end
+
+  // ===========================================================================
+  // [IC1] Q1: L1 大 BTB 逐 PC 普查 (窗口 [0x100,0x320), 4 字节粒度 -> 136 桶)
+  //
+  // 起因: 类 5 的 L1 查询命中率只有 48.97% (C910 99.32%), 而类 5 的 8 条分支
+  //   各自独占一行 (PC[3:0]=0 -> 行地址 0x2a..0x31 互不别名), 目标恒为 +8,
+  //   查表又只在 16 字节块的起点。所以"查不到"只可能是两种情况之一:
+  //     (a) 大量查询的 PC 上根本没有分支 (取指包密度问题, 与表无关);
+  //     (b) 分支 PC 上确实没写进条目 / 写了别名。
+  //   逐 PC 普查把这两种一次分开 —— 只看类的合计命中率永远看不出来。
+  //
+  // 观测点: bt_if_vld / bt_if_pc (= u_btb.rd_pc_q, 与 if_hit 同拍同地址)。
+  //   rv32_ifu_btb.v:185  slot_eligible[s] = enable && s >= rd_pc_q[3:2] && rd_pc_q[1:0]==0
+  //   所以对"查询起点自己的槽位" s = pc[3:2] 而言, 可用性只取决于 pc[1:0]==0;
+  //   但任意 >= 该位置的槽位命中都算命中, 因此这里按【可用槽位集合】再算一次:
+  //     ev = 可用槽位里有有效项   (结构上还有戏)
+  //     em = 可用槽位里有 tag 匹配 (理论上就该命中)
+  //   ev/em 与 lk/ht 对不上时, 问题在 eligible 判定而不是表内容。
+  // ===========================================================================
+  localparam integer BTW_BASE = 32'h0000_0100;
+  localparam integer BTW_N    = 136;   // (0x320-0x100)/4
+
+  wire [79:0] btw_tag_all;
+  wire        btw_upd_vld, btw_upd_rdy, btw_upd_fire, btw_rdy;
+  wire [31:0] btw_upd_pc;
+  assign btw_tag_all  = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.u_btb.tag_q;
+  assign btw_upd_vld  = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.u_btb.update_vld;
+  assign btw_upd_rdy  = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.u_btb.update_ready;
+  assign btw_upd_fire = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.u_btb.upd;
+  assign btw_upd_pc   = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.u_btb.update_pc;
+  assign btw_rdy      = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.u_btb.lookup_ready;
+
+  integer btw_lk  [0:135];   // 查询次数
+  integer btw_ht  [0:135];   // 命中次数
+  integer btw_ev  [0:135];   // 可用槽位里有有效项
+  integer btw_em  [0:135];   // 可用槽位里有 tag 匹配
+  integer btw_occ [0:135];   // 该 16 字节行 4 个槽位的有效位数之和 (按查询累加)
+  integer btw_uf  [0:135];   // 更新真正写进 SRAM
+  integer btw_idx, btw_s, btw_bin;
+  reg [3:0] btw_v, btw_m, btw_emask;
+  initial for (btw_idx = 0; btw_idx < BTW_N; btw_idx = btw_idx + 1) begin
+    btw_lk[btw_idx]=0; btw_ht[btw_idx]=0; btw_ev[btw_idx]=0;
+    btw_em[btw_idx]=0; btw_occ[btw_idx]=0; btw_uf[btw_idx]=0;
+  end
+
+  always @(posedge clk) if (!rst && bench_en) begin
+    if (bt_if_vld) begin
+      btw_bin = (bt_if_pc - BTW_BASE) >> 2;
+      if (btw_bin >= 0 && btw_bin < BTW_N) begin
+        btw_lk[btw_bin] = btw_lk[btw_bin] + 1;
+        if (|bt_if_hit) btw_ht[btw_bin] = btw_ht[btw_bin] + 1;
+        btw_v = 4'b0; btw_m = 4'b0;
+        for (btw_s = 0; btw_s < 4; btw_s = btw_s + 1) begin
+          if (btw_tag_all[btw_s*20+19]) begin
+            btw_v[btw_s] = 1'b1;
+            if (btw_tag_all[btw_s*20 +: 19] == bt_if_pc[31:13]) btw_m[btw_s] = 1'b1;
+          end
+        end
+        btw_occ[btw_bin] = btw_occ[btw_bin] + $countones(btw_v);
+        if (bt_if_pc[1:0] == 2'b00) begin
+          btw_emask = 4'b1111 << bt_if_pc[3:2];
+          if (|(btw_v & btw_emask)) btw_ev[btw_bin] = btw_ev[btw_bin] + 1;
+          if (|(btw_m & btw_emask)) btw_em[btw_bin] = btw_em[btw_bin] + 1;
+        end
+      end
+    end
+    if (btw_upd_fire) begin
+      btw_bin = (btw_upd_pc - BTW_BASE) >> 2;
+      if (btw_bin >= 0 && btw_bin < BTW_N) btw_uf[btw_bin] = btw_uf[btw_bin] + 1;
+    end
+  end
+
+  // ===========================================================================
+  // [IC1] Q1 附带: L1 BTB 的【阻塞】与【更新落空】
+  //
+  // 目的: 分清"查得慢"和"查不准"。lookup_vld 拉高但 lookup_ready=0 的拍数就是
+  //   IF 想查表却查不成 (写缓冲占着单口 / 初始化 / cancel), 这类拍会直接变成
+  //   取指气泡, 是 Q4 要量化的东西。更新侧统计 train_valid 里有多少既没写进
+  //   SRAM 也没留下缓冲 (pc/target 非 4 字节对齐被 upd 直接丢掉)。
+  // ===========================================================================
+  integer btw_blk = 0, btw_upd_acc = 0, btw_upd_drp = 0;
+  always @(posedge clk) if (!rst && bench_en) begin
+    if (bt_lookup_vld && !btw_rdy) btw_blk = btw_blk + 1;
+    if (btw_upd_vld && btw_upd_rdy) begin
+      btw_upd_acc = btw_upd_acc + 1;
+      if (!btw_upd_fire) btw_upd_drp = btw_upd_drp + 1;
+    end
+  end
+
+
+
+  // ---------------------------------------------------------------------------
+  // [IC1] 定向实验 Step 1: BHT 预测时刻的"四元组"
+  //
+  // 问题: 类 3(交替) 只有 50.00%、且 4096 次里一次 taken 都没预测出来;
+  //       类 5(T,T,T,N) 是 89.31%, 工作正常。两者都带跨分支相关性, 差在哪一步?
+  //
+  // 做法: 在 IP 级条件分支有效那一拍, 采
+  //         ip_pc                        (IP 级 PC, 字节地址)
+  //         bht_ipdp_pre_offset_onehot   (片内 16 选 1, = PC[7:4] ^ GHR[3:0])
+  //         bht_ipdp_sel_array_result    (bit1 选 taken/ntake 平面)
+  //         bht_counter                  (选中的 2 位计数器; 预测 = bit1)
+  //       按【类内第几条分支】分桶, 累积"出现过的取值集合"(按位或) 与计数。
+  //
+  // 判定规则(计划里已先定好, 避免第二次猜错):
+  //   mask_oh  只有 1 位               -> 片内偏移卡死 => GHR[3:0] 在预测时刻不变
+  //   mask_oh  多位、mask_cnt bit1 恒 0 -> 计数器没分开 => 训练写错地方/没写
+  //   mask_oh  变、mask_sel 恒一值      -> 平面选错
+  // 类 5 是"工作正常"的对照; 两者的差异就是答案。
+  // ---------------------------------------------------------------------------
+  wire        st_ipvld;
+  wire [31:0] st_pc;
+  wire [15:0] st_oh;
+  wire [ 1:0] st_sel;
+  wire [ 1:0] st_cnt;
+  assign st_ipvld = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.ipctrl_bht_con_br_vld;
+  assign st_pc    = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.ip_pc;
+  assign st_oh    = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.bht_ipdp_pre_offset_onehot;
+  assign st_sel   = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.bht_ipdp_sel_array_result;
+  assign st_cnt   = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.bht_counter;
+  // pre-array 的【行地址】。它由 {vghr_q[11:8], vghr_q[7:2]^vghr_q[19:14]} 造出,
+  // 用到 19 位历史 —— 是"深位历史有没有在动"的唯一观察窗。行一变就是完全不同的
+  // 计数器组, 所以即使低 4 位还是预测位, 也有可能从行这一路把自锁解开。
+  wire [9:0]  st_row;
+  assign st_row   = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.u_bht.bht_pred_array_rd_index;
+
+  // 类 3 基准 0x1c0 (分支在 0x1d0+16k) / 类 5 基准 0x290 (分支在 0x2a0+16k)
+  integer st_idx3, st_idx5;
+  integer st_n3   [0:15], st_n5   [0:15];
+  integer st_oh3  [0:15], st_oh5  [0:15];
+  integer st_sel3 [0:15], st_sel5 [0:15];
+  integer st_cnt3 [0:15], st_cnt5 [0:15];
+  integer st_tk3  [0:15], st_tk5  [0:15];
+  integer st_pc3  [0:15], st_pc5  [0:15];
+  // cnt 的 4 桶直方图: 区分"被训得来回摆"(00/01 各半) 与"几乎没写过"(全 00)
+  integer st_c3_00[0:15], st_c3_01[0:15], st_c3_10[0:15], st_c3_11[0:15];
+  integer st_row3 [0:15], st_row5 [0:15];   // 行地址的按位或 => 取值集合
+
+  integer si;
+  initial for (si = 0; si < 16; si = si + 1) begin
+    st_n3[si]=0; st_n5[si]=0; st_oh3[si]=0; st_oh5[si]=0;
+    st_sel3[si]=0; st_sel5[si]=0; st_cnt3[si]=0; st_cnt5[si]=0;
+    st_tk3[si]=0; st_tk5[si]=0; st_pc3[si]=0; st_pc5[si]=0;
+    st_c3_00[si]=0; st_c3_01[si]=0; st_c3_10[si]=0; st_c3_11[si]=0;
+    st_row3[si]=0; st_row5[si]=0;
+  end
+
+  always @(posedge clk) if (!rst && bench_en && st_ipvld) begin
+    if (bench_class(st_pc) == 3) begin
+      st_idx3 = ((st_pc - 32'h1c0) >> 4) & 15;
+      st_n3  [st_idx3] = st_n3  [st_idx3] + 1;
+      st_oh3 [st_idx3] = st_oh3 [st_idx3] | st_oh;
+      st_sel3[st_idx3] = st_sel3[st_idx3] | st_sel;
+      st_cnt3[st_idx3] = st_cnt3[st_idx3] | st_cnt;
+      if (st_cnt[1]) st_tk3[st_idx3] = st_tk3[st_idx3] + 1;
+      case (st_cnt)
+        2'b00: st_c3_00[st_idx3] = st_c3_00[st_idx3] + 1;
+        2'b01: st_c3_01[st_idx3] = st_c3_01[st_idx3] + 1;
+        2'b10: st_c3_10[st_idx3] = st_c3_10[st_idx3] + 1;
+        2'b11: st_c3_11[st_idx3] = st_c3_11[st_idx3] + 1;
+      endcase
+      st_row3[st_idx3] = st_row3[st_idx3] | st_row;
+      st_pc3 [st_idx3] = st_pc;
+    end
+    if (bench_class(st_pc) == 5) begin
+      st_idx5 = ((st_pc - 32'h290) >> 4) & 15;
+      st_n5  [st_idx5] = st_n5  [st_idx5] + 1;
+      st_oh5 [st_idx5] = st_oh5 [st_idx5] | st_oh;
+      st_sel5[st_idx5] = st_sel5[st_idx5] | st_sel;
+      st_cnt5[st_idx5] = st_cnt5[st_idx5] | st_cnt;
+      if (st_cnt[1]) st_tk5[st_idx5] = st_tk5[st_idx5] + 1;
+      st_row5[st_idx5] = st_row5[st_idx5] | st_row;
+      st_pc5 [st_idx5] = st_pc;
+    end
+  end
+
+  // ===========================================================================
+  // [IC1] Q2: 类 3 / 类 5 的【逐条分支】方向准确率
+  //
+  // 口径与 §1.2 的"最终预测 vs 实际跳转"完全一致 (ex_bht_pred / ex_alu_f),
+  //   只是把桶从"整类"细化到"类内第几条静态分支", 好和 C910 侧那张
+  //   cls5 posN 表逐行对照 (pos = ((pc-基准)>>4), 类3 基准 0x1c0 / 类5 基准 0x290,
+  //   实测分支落在 pos1..pos8, 与 C910 编号一致)。
+  // ===========================================================================
+  integer b3_cond [0:15], b3_mis [0:15], b3_tp [0:15], b3_tk [0:15], b3_pc [0:15];
+  integer b5_cond [0:15], b5_mis [0:15], b5_tp [0:15], b5_tk [0:15], b5_pc [0:15];
+  integer bpos, bclsx;
+  initial for (bpos = 0; bpos < 16; bpos = bpos + 1) begin
+    b3_cond[bpos]=0; b3_mis[bpos]=0; b3_tp[bpos]=0; b3_tk[bpos]=0; b3_pc[bpos]=0;
+    b5_cond[bpos]=0; b5_mis[bpos]=0; b5_tp[bpos]=0; b5_tk[bpos]=0; b5_pc[bpos]=0;
+  end
+
+  always @(posedge clk) if (!rst && bench_en) begin
+    if (st_cond || st_mis) begin
+      bclsx = bench_class(dut.Core_cpu.pc_EX);
+      if (bclsx == 3) begin
+        bpos = ((dut.Core_cpu.pc_EX - 32'h0000_01c0) >> 4) & 15;
+        if (st_cond) begin
+          b3_cond[bpos] = b3_cond[bpos] + 1;
+          b3_pc  [bpos] = dut.Core_cpu.pc_EX;
+          b3_tp  [bpos] = b3_tp  [bpos] + dut.Core_cpu.ex_bht_pred;
+          b3_tk  [bpos] = b3_tk  [bpos] + dut.Core_cpu.ex_alu_f;
+        end
+        if (st_mis && st_cond) b3_mis[bpos] = b3_mis[bpos] + 1;
+      end else if (bclsx == 5) begin
+        bpos = ((dut.Core_cpu.pc_EX - 32'h0000_0290) >> 4) & 15;
+        if (st_cond) begin
+          b5_cond[bpos] = b5_cond[bpos] + 1;
+          b5_pc  [bpos] = dut.Core_cpu.pc_EX;
+          b5_tp  [bpos] = b5_tp  [bpos] + dut.Core_cpu.ex_bht_pred;
+          b5_tk  [bpos] = b5_tk  [bpos] + dut.Core_cpu.ex_alu_f;
+        end
+        if (st_mis && st_cond) b5_mis[bpos] = b5_mis[bpos] + 1;
+      end
+    end
+  end
+
+  // ===========================================================================
+  // [IC1] Q3: 类 3 的 (行地址, 计数器, 相位) 联合分布
+  //
+  // 之前只有"行地址取值集合"和"计数器取值集合"两个【边缘分布】, 缺的是联合:
+  //   行地址与相位到底相不相关? 这一步就是回答它。
+  //
+  // 相位怎么来: 类 3 的 8 条分支全是 `beq x9, x0`, 而 x9 每个外层轮次翻一次
+  //   (0x1c0 的 xori), 所以同一轮内 8 条分支结局相同、轮次之间交替。
+  //   第 k 轮 x9 = k&1, 分支 taken <=> x9==0 <=> k 为偶数。
+  //
+  //   关键是不能用"某条分支被预测了几次"来数轮次: 实测类 3 的位置 2..8 每轮
+  //   会被【预测多次】(0x1f0 有 1024 次预测但只有 512 次到 EX), 多出来的是
+  //   冲刷前被杀掉的投机预测 —— 用它们数轮次相位就全乱了 (第一版就栽在这)。
+  //   改成数【进入类 3 区间的次数】: IP 级采样序列里 bench_class 由非 3 变成 3
+  //   的那一拍就是新的一轮, 与重复预测无关, 也不受冲刷影响。
+  //
+  // 表按【类内位置 x 该位置出现过的行地址】组织 (每个位置最多 16 个不同行),
+  //   每格再按相位与 2 位计数器分桶 —— 于是可以直接读出:
+  //   同一个行地址下面, cnt 会不会因为相位不同而不同; 若每格都是 00/01 混在一起,
+  //   说明这个索引根本没把相位分开, 问题在索引构造而不在计数器训练。
+  // 类 5 同表但按 mod 4 相位 (x30&3, 分支 taken <=> 相位!=3), 作为"工作正常"的对照。
+  // ===========================================================================
+  integer j3_key [0:255], j3_n [0:255], j3_s0 [0:255], j3_s1 [0:255];
+  integer j3_c0 [0:255], j3_c1 [0:255], j3_c2 [0:255], j3_c3 [0:255];
+  integer j3_slotv[0:15];
+  integer j5_key [0:255], j5_n [0:255];
+  integer j5_p0 [0:255], j5_p1 [0:255], j5_p2 [0:255], j5_p3 [0:255];
+  integer j5_c0 [0:255], j5_c1 [0:255], j5_c2 [0:255], j5_c3 [0:255];
+  integer j5_slotv[0:15];
+  integer jk, jpos, jslot, jidx;
+  integer jround3 = 0, jround5 = 0;   // 进入类 3 / 类 5 区间的次数 = 外层轮次 k
+  reg     jinc3 = 0, jinc5 = 0;       // 上一拍采样是否落在类 3 / 类 5 里
+  integer j_phase_odd;
+
+  // [Q3-3] 预测时刻的 GHR 与片内偏移, 按相位分开记 (or/and 夹逼取值集合)
+  //   若 相位0 与 相位1 的集合完全相同, 说明相位信息根本没进到索引里;
+  //   若不同, 那问题就在"计数器怎么用这个索引"而不是"索引没有相位信息"。
+  reg [21:0] j3_gp0_or [0:15], j3_gp0_ad [0:15];
+  reg [21:0] j3_gp1_or [0:15], j3_gp1_ad [0:15];
+  reg [15:0] j3_oh0_or [0:15], j3_oh1_or [0:15];
+  reg [9:0]  j3_rw0_or [0:15], j3_rw1_or [0:15];
+  integer j3_ng0 [0:15], j3_ng1 [0:15];
+  // 类 5 的对照: 按"是不是第 4 拍(N 相位)"分两堆
+  reg [21:0] j5_gn_or [0:15], j5_gn_ad [0:15];   // N 相位 (ph3)
+  reg [21:0] j5_gt_or [0:15], j5_gt_ad [0:15];   // T 相位 (ph0..2)
+  integer j5_ngn [0:15], j5_ngt [0:15];
+  wire [21:0] j3_h_now;
+  assign j3_h_now = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.u_bht.vghr_q;
+  initial begin
+    for (jk = 0; jk < 256; jk = jk + 1) begin
+      j3_key[jk]=-1; j3_n[jk]=0; j3_s0[jk]=0; j3_s1[jk]=0;
+      j3_c0[jk]=0; j3_c1[jk]=0; j3_c2[jk]=0; j3_c3[jk]=0;
+      j5_key[jk]=-1; j5_n[jk]=0;
+      j5_p0[jk]=0; j5_p1[jk]=0; j5_p2[jk]=0; j5_p3[jk]=0;
+      j5_c0[jk]=0; j5_c1[jk]=0; j5_c2[jk]=0; j5_c3[jk]=0;
+    end
+    for (jk = 0; jk < 16; jk = jk + 1) begin
+      j3_slotv[jk]=0; j5_slotv[jk]=0;
+      j3_gp0_or[jk]=22'b0;  j3_gp0_ad[jk]=22'h3F_FFFF;
+      j3_gp1_or[jk]=22'b0;  j3_gp1_ad[jk]=22'h3F_FFFF;
+      j3_oh0_or[jk]=16'b0;  j3_oh1_or[jk]=16'b0;
+      j3_rw0_or[jk]=10'b0;  j3_rw1_or[jk]=10'b0;
+      j3_ng0[jk]=0;         j3_ng1[jk]=0;
+      j5_gn_or[jk]=22'b0;   j5_gn_ad[jk]=22'h3F_FFFF;
+      j5_gt_or[jk]=22'b0;   j5_gt_ad[jk]=22'h3F_FFFF;
+      j5_ngn[jk]=0;         j5_ngt[jk]=0;
+    end
+  end
+
+  always @(posedge clk) if (!rst && bench_en && st_ipvld) begin
+    if (bench_class(st_pc) == 3 && !jinc3) jround3 = jround3 + 1;
+    if (bench_class(st_pc) == 5 && !jinc5) jround5 = jround5 + 1;
+    jinc3 = (bench_class(st_pc) == 3);
+    jinc5 = (bench_class(st_pc) == 5);
+
+    if (bench_class(st_pc) == 3) begin
+      jpos = ((st_pc - 32'h0000_01c0) >> 4) & 15;
+      // 第 k 轮 taken <=> k 为偶数; 相位1 记 "这一轮该跳"
+      j_phase_odd = ((jround3 & 1) == 0);
+      jslot = -1;
+      for (jk = 0; jk < j3_slotv[jpos]; jk = jk + 1)
+        if (j3_key[jpos*16+jk] == st_row) jslot = jk;
+      if (jslot < 0 && j3_slotv[jpos] < 16) begin
+        jslot = j3_slotv[jpos];
+        j3_slotv[jpos] = j3_slotv[jpos] + 1;
+        j3_key[jpos*16+jslot] = st_row;
+      end
+      if (j_phase_odd) begin
+        j3_gp1_or[jpos] = j3_gp1_or[jpos] | j3_h_now;
+        j3_gp1_ad[jpos] = j3_gp1_ad[jpos] & j3_h_now;
+        j3_oh1_or[jpos] = j3_oh1_or[jpos] | st_oh;
+        j3_rw1_or[jpos] = j3_rw1_or[jpos] | st_row;
+        j3_ng1[jpos] = j3_ng1[jpos] + 1;
+      end else begin
+        j3_gp0_or[jpos] = j3_gp0_or[jpos] | j3_h_now;
+        j3_gp0_ad[jpos] = j3_gp0_ad[jpos] & j3_h_now;
+        j3_oh0_or[jpos] = j3_oh0_or[jpos] | st_oh;
+        j3_rw0_or[jpos] = j3_rw0_or[jpos] | st_row;
+        j3_ng0[jpos] = j3_ng0[jpos] + 1;
+      end
+      if (jslot >= 0) begin
+        jidx = jpos*16 + jslot;
+        j3_n[jidx] = j3_n[jidx] + 1;
+        if (j_phase_odd) j3_s1[jidx] = j3_s1[jidx] + 1;
+        else             j3_s0[jidx] = j3_s0[jidx] + 1;
+        case (st_cnt)
+          2'b00: j3_c0[jidx] = j3_c0[jidx] + 1;
+          2'b01: j3_c1[jidx] = j3_c1[jidx] + 1;
+          2'b10: j3_c2[jidx] = j3_c2[jidx] + 1;
+          2'b11: j3_c3[jidx] = j3_c3[jidx] + 1;
+        endcase
+      end
+    end
+    if (bench_class(st_pc) == 5) begin
+      jpos = ((st_pc - 32'h0000_0290) >> 4) & 15;
+      if ((jround5 & 3) == 3) begin
+        j5_gn_or[jpos] = j5_gn_or[jpos] | j3_h_now;
+        j5_gn_ad[jpos] = j5_gn_ad[jpos] & j3_h_now;
+        j5_ngn[jpos] = j5_ngn[jpos] + 1;
+      end else begin
+        j5_gt_or[jpos] = j5_gt_or[jpos] | j3_h_now;
+        j5_gt_ad[jpos] = j5_gt_ad[jpos] & j3_h_now;
+        j5_ngt[jpos] = j5_ngt[jpos] + 1;
+      end
+      jslot = -1;
+      for (jk = 0; jk < j5_slotv[jpos]; jk = jk + 1)
+        if (j5_key[jpos*16+jk] == st_row) jslot = jk;
+      if (jslot < 0 && j5_slotv[jpos] < 16) begin
+        jslot = j5_slotv[jpos];
+        j5_slotv[jpos] = j5_slotv[jpos] + 1;
+        j5_key[jpos*16+jslot] = st_row;
+      end
+      if (jslot >= 0) begin
+        jidx = jpos*16 + jslot;
+        j5_n[jidx] = j5_n[jidx] + 1;
+        // 第 k 轮 x29 = k&3, 分支 taken <=> (k&3)!=3
+        case (jround5 & 3)
+          2'd0: j5_p0[jidx] = j5_p0[jidx] + 1;
+          2'd1: j5_p1[jidx] = j5_p1[jidx] + 1;
+          2'd2: j5_p2[jidx] = j5_p2[jidx] + 1;
+          default: j5_p3[jidx] = j5_p3[jidx] + 1;
+        endcase
+        case (st_cnt)
+          2'b00: j5_c0[jidx] = j5_c0[jidx] + 1;
+          2'b01: j5_c1[jidx] = j5_c1[jidx] + 1;
+          2'b10: j5_c2[jidx] = j5_c2[jidx] + 1;
+          2'b11: j5_c3[jidx] = j5_c3[jidx] + 1;
+        endcase
+      end
+    end
+  end
+
+  // ===========================================================================
+  // [IC1] Q3-2: 读索引 vs 写索引 —— 被读的那一行到底有没有被写过
+  //
+  // Q3 的联合分布只能看出"读到的计数器卡在 00/01"; 还差一步: 是【没训练】还是
+  //   【训练写到别处去了】。两者在同一张表里长得一样, 必须直接比对索引。
+  //
+  // rv32_ifu_bht.v 的两条索引表达式 (与 C910 ct_ifu_bht.v:477 / :1259 逐字符相同):
+  //   读 (正常预测路径, :394)  = {vghr_q[11:8], vghr_q[7:2] ^ vghr_q[19:14]}
+  //   写 (预测阵列写缓冲, :1055)= {cur_ghr[13:10], cur_ghr[9:4] ^ cur_ghr[21:16]}
+  // 两个表达式的**位窗不同**(读用 11:8/19:14, 写用 13:10/21:16, 整体差 2 位)。
+  //   在 C910 原设计里这个错位是靠"读在 IP 级用 vghr_q、写在提交级用随包带下来
+  //   的 GHR"来抵消的 —— 一旦两边带的历史不对齐, 读的行就永远等不到写。
+  //   这里不做任何推断, 只按位置分别累计读到的行集合与写入的行集合, 看重叠。
+  //
+  //   读集合为空 / 写集合为空 / 交集为空  —— 三种情况指向完全不同的修法。
+  // ===========================================================================
+  // 写侧不再用 cur_cur_pc 归属 (实测该分层引用读出来是常数 0x03f, 不可信),
+  //   改成直接看预测阵列 SRAM 的**实际写地址** bht_pred_array_index +
+  //   写使能 bht_pred_array_wen_b, 再用一个衰减窗口把写归到最近的类区间。
+  //   窗口宽度 96 拍: 类 3 的 8 条分支预测跨度约 80~130 拍, 写滞后预测十几拍,
+  //   所以窗口能覆盖住本类的写; 也必然会捎带一点下一类的写 —— 但这里要回答的是
+  //   "类 3 读的那些行到底有没有被写过", 捎带只会让结论更保守。
+  wire [9:0]  q3w_idx;
+  wire        q3w_inv;
+  wire [31:0] q3w_wen;
+  wire        q3w_cen_b;
+  // 直接取【写索引】而不是 mux 后的 SRAM 地址: bht_pred_array_index 在读/写同拍时
+  // 优先给读索引(见 rv32_ifu_bht.v:364-372 的优先级), 用它会张冠李戴。
+  assign q3w_idx = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.u_bht.bht_wr_buf_pred_updt_index;
+  assign q3w_inv = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.u_bht.bht_inv_on_q;
+  assign q3w_wen = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.u_bht.bht_pred_array_wen_b;
+  // cen_b=0 才是 SRAM 真的使能; 只看 wen_b 会把被 cen_b 压掉的拍也算成写,
+  // 而那些拍地址 mux 走的是【读】索引 —— 这正是之前"写地址全不对"的来源。
+  assign q3w_cen_b = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.u_bht.bht_pred_array_cen_b;
+
+  reg [1023:0] q3_rd3 [0:15];
+  reg [1023:0] q3_wr3 [0:15];
+  reg [1023:0] q3_rd5 [0:15];
+  reg [1023:0] q3_wr5 [0:15];
+  integer q3_k, q3_p, q3_nrd3 = 0, q3_nwr3 = 0, q3_nrd5 = 0, q3_nwr5 = 0;
+  integer q3_wpc, q3_wposx;
+  initial for (q3_k = 0; q3_k < 16; q3_k = q3_k + 1) begin
+    q3_rd3[q3_k] = 1024'b0; q3_wr3[q3_k] = 1024'b0;
+    q3_rd5[q3_k] = 1024'b0; q3_wr5[q3_k] = 1024'b0;
+  end
+
+  always @(posedge clk) if (!rst && bench_en && st_ipvld) begin
+    if (bench_class(st_pc) == 3) begin
+      q3_p = ((st_pc - 32'h0000_01c0) >> 4) & 15;
+      q3_rd3[q3_p] = q3_rd3[q3_p] | (1024'b1 << st_row);
+    end
+    if (bench_class(st_pc) == 5) begin
+      q3_p = ((st_pc - 32'h0000_0290) >> 4) & 15;
+      q3_rd5[q3_p] = q3_rd5[q3_p] | (1024'b1 << st_row);
+    end
+  end
+
+  reg [1023:0] q3_wr3all = 1024'b0, q3_wr5all = 1024'b0, q3_wrall = 1024'b0;
+  integer q3_nall = 0, q3_c3all = 0, q3_c5all = 0;
+  integer q3_c3win = 0, q3_c5win = 0;
+  // 本地复算: 同一个 GHR 值 h 分别代进"读窗口"与"写窗口"两条表达式, 看会不会撞
+  wire [21:0] q3_h;
+  wire [9:0]  q3_rd_of_h, q3_wr_of_h;
+  assign q3_h       = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.u_bht.vghr_q;
+  assign q3_rd_of_h = {q3_h[11:8], q3_h[7:2] ^ q3_h[19:14]};
+  assign q3_wr_of_h = {q3_h[13:10], q3_h[9:4] ^ q3_h[21:16]};
+  // 随包带下去的那个 GHR (bht_ipdp_vghr_q) —— 写索引用的就是它 (经 iu_chk_idx 原样回来)
+  wire [21:0] q3_hc;
+  wire [9:0]  q3_wr_of_hc, q3_wr_of_hc2;
+  assign q3_hc       = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.u_bht.bht_ipdp_vghr_q;
+  assign q3_wr_of_hc = {q3_hc[13:10], q3_hc[9:4] ^ q3_hc[21:16]};
+  assign q3_wr_of_hc2 = {q3_hc[11:8], q3_hc[7:2] ^ q3_hc[19:14]};
+  integer q3_same3 = 0, q3_same5 = 0, q3_tot3 = 0, q3_tot5 = 0;
+  integer q3_csame3 = 0, q3_csame5 = 0, q3_hdiff = 0, q3_shift3 = 0, q3_shift5 = 0;
+  integer q3_tot3x = 0, q3_tot5x = 0;
+
+  always @(posedge clk) if (!rst && bench_en) begin
+    if (st_ipvld) begin
+      if (q3_hc !== q3_h) q3_hdiff = q3_hdiff + 1;
+      if (bench_class(st_pc) == 3) begin
+        q3_tot3 = q3_tot3 + 1;
+        if (q3_wr_of_h == q3_rd_of_h) q3_same3 = q3_same3 + 1;
+        // 真正会用的那一次: 写索引(用随包的 GHR) 是不是等于 读索引
+        if (q3_wr_of_hc == q3_rd_of_h) q3_csame3 = q3_csame3 + 1;
+        // 若随包 GHR 恰好比 vghr_q 少/多 2 位, 用同一窗口代进去会不会对上
+        if (q3_wr_of_hc2 == q3_rd_of_h) q3_shift3 = q3_shift3 + 1;
+        q3_tot3x = q3_tot3x + 1;
+        q3_c3win = 96;
+      end
+      if (bench_class(st_pc) == 5) begin
+        q3_tot5 = q3_tot5 + 1;
+        if (q3_wr_of_h == q3_rd_of_h) q3_same5 = q3_same5 + 1;
+        if (q3_wr_of_hc == q3_rd_of_h) q3_csame5 = q3_csame5 + 1;
+        if (q3_wr_of_hc2 == q3_rd_of_h) q3_shift5 = q3_shift5 + 1;
+        q3_tot5x = q3_tot5x + 1;
+        q3_c5win = 96;
+      end
+    end
+    if (q3_c3win > 0) q3_c3win = q3_c3win - 1;
+    if (q3_c5win > 0) q3_c5win = q3_c5win - 1;
+    if (!q3w_inv && (|(~q3w_wen)) && !q3w_cen_b) begin
+      q3_nall = q3_nall + 1;
+      q3_wrall = q3_wrall | (1024'b1 << q3w_idx);
+      if (q3_c3win > 0) begin
+        q3_wr3all = q3_wr3all | (1024'b1 << q3w_idx);
+        q3_c3all = q3_c3all + 1;
+      end
+      if (q3_c5win > 0) begin
+        q3_wr5all = q3_wr5all | (1024'b1 << q3w_idx);
+        q3_c5all = q3_c5all + 1;
+      end
+    end
+  end
+
+  // [Q3-6] 写进去的【值】: 每个类3读地址上, 写 00/01/10/11 各多少次
+  wire [63:0] j6_din;
+  integer j6_aw [0:2047];      // 索引 = 地址项*4 + 写入的 2 位值
+  integer j6_wv [0:3];         // 全局: 所有写(非 inv)的值分布
+  integer j6_wall = 0;
+  integer j6_wi, j6_wval, j6_wf, j6_init_i;
+  assign j6_din = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.u_bht.bht_pred_array_din;
+  initial begin
+    for (j6_init_i = 0; j6_init_i < 2048; j6_init_i = j6_init_i + 1) j6_aw[j6_init_i]=0;
+    for (j6_init_i = 0; j6_init_i < 4; j6_init_i = j6_init_i + 1) j6_wv[j6_init_i]=0;
+  end
+
+  integer j6_a [0:511], j6_at [0:511], j6_an [0:511], j6_acl [0:511];
+  integer j6_ac = 0, j6_aovf = 0;
+  integer j6_g [0:4095], j6_gt [0:4095], j6_gn [0:4095];
+  integer j6_i2, j6_f, j6_pos2, j6_cls2, j6_a2, j6_ph2, j6_lo;
+  integer j6_raddr, j6_roff, j6_rplane;
+  reg     j6_same_addr;
+  initial begin
+    for (j6_i2 = 0; j6_i2 < 512; j6_i2 = j6_i2 + 1) begin
+      j6_a[j6_i2]=0; j6_at[j6_i2]=0; j6_an[j6_i2]=0; j6_acl[j6_i2]=0;
+    end
+    for (j6_i2 = 0; j6_i2 < 4096; j6_i2 = j6_i2 + 1) begin
+      j6_g[j6_i2]=0; j6_gt[j6_i2]=0; j6_gn[j6_i2]=0;
+    end
+  end
+
+  // [Q3-7] 全局写地址表: 类3 的写究竟落到哪个 (word,plane,offset)
+  integer j7_a [0:511], j7_n [0:511], j7_c = 0, j7_ovf = 0;
+  integer j7_i, j7_f, j7_a2, j7_init;
+  initial begin
+    for (j7_init = 0; j7_init < 512; j7_init = j7_init + 1) begin j7_a[j7_init]=0; j7_n[j7_init]=0; end
+  end
+
+  // [Q3-10] 预测时刻读索引走的是 6 级 mux 里的哪一档
+  wire q310_flush, q310_misp, q310_chk, q310_rec, q310_amq, q310_afq;
+  assign q310_flush = dut.Core_cpu.u_ifu_subsys.u_ifu_top.rtu_ifu_flush;
+  assign q310_misp  = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.u_bht.bju_mispred;
+  assign q310_chk   = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.u_bht.iu_ifu_bht_check_vld;
+  assign q310_rec   = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.u_bht.local_recover_vld;
+  assign q310_amq   = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.u_bht.after_bju_mispred_q;
+  assign q310_afq   = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.u_bht.after_rtu_ifu_flush_q;
+  // 读出的 st_row 到底等不等于"用 vghr_q 按第 6 档公式算出来的"
+  // (bht_pred_array_rd_index 是 always@(*) 里的 reg, 分层引用可能不可靠 —— 之前 cur_cur_pc 就栽在这)
+  wire [9:0] q310_exprd;
+  assign q310_exprd = {j3_h_now[11:8], j3_h_now[7:2] ^ j3_h_now[19:14]};
+  integer q310_rowok = 0, q310_rowne = 0;
+  integer q310_n [0:6];
+  integer q310_j;
+  initial for (q310_j = 0; q310_j < 7; q310_j = q310_j + 1) q310_n[q310_j] = 0;
+
+  // ===========================================================================
+  // [IC1] Q3-8: 同一条分支 —— 预测级读的地址 vs 提交级写的地址, 配对比较
+  //
+  // §5.12 已经证明: 类 3 读的 21 个地址收到 0 次写, 且写落在了**同一个 word**
+  //   而 plane/offset 不对。要判定这是"打包锁存时机"还是"PC 位约定"的问题,
+  //   必须把同一个分支的两个时刻配起来看。
+  //
+  // 做法: 预测时刻把 (pc[12:0], 读地址) 推进一个 64 项环形表;
+  //   写时刻用顶层 `iu_ifu_cur_pc`(它才是可靠的端口, 内部 cur_cur_pc 分层引用读出来是常数)
+  //   去表里从最旧开始找同 PC 的项, 比读地址与写地址。
+  //   - 命中率接近 0        -> iu_ifu_cur_pc 本身不可信, 本次测量作废
+  //   - 命中但 word 不同    -> 索引(GHR)问题
+  //   - 命中但 plane/offset 不同 -> 打包锁存时机 / PC 位约定问题
+  // ===========================================================================
+  localparam Q38_N = 64;
+  reg [12:0] q38_pc  [0:Q38_N-1];
+  reg [14:0] q38_rd  [0:Q38_N-1];
+  reg        q38_vld [0:Q38_N-1];
+  reg [21:0] q38_ghr [0:Q38_N-1];
+  integer    q38_t   [0:Q38_N-1];
+  integer    q38_clk = 0;
+  integer    q38_age_hist [0:7];      // 配对年龄直方图
+  integer    q38_age_max = 0, q38_skip = 0;
+  integer    q38_geq = 0, q38_gne = 0, q38_gsh[0:4];
+  integer    q38_gk;
+  integer    q38_gx0 = 0, q38_gx1 = 0, q38_gx2 = 0;
+  wire [21:0] q38_curghr;
+  assign q38_curghr = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.u_bht.cur_ghr;
+  integer    q38_wp = 0;
+  integer    q38_i, q38_f, q38_age, q38_best;
+  integer    q38_ins = 0, q38_hit = 0, q38_miss = 0;
+  integer    q38_eq = 0, q38_wne = 0, q38_pne = 0, q38_one = 0, q38_none = 0;
+  integer    q38_i0;
+  // 写地址的 PC: 顶层端口, 取 [12:0] 与环里的 pc 同宽比较
+  wire [31:0] q38_curpc;
+  // 写时刻"到底在写哪条分支"的 PC: 写缓冲非空时写的是【缓冲里那条】(cur_cur_pc=buf_cur_pc),
+  // 否则写的是当前 BJU 那条。之前只用 iu_ifu_cur_pc, 于是拿 A 分支的读去比 B 分支的写 —— 这是
+  // 配对率恒为 0 的真正原因。buf_cur_pc/not_empty 都是 wire, 分层引用可靠。
+  wire [9:0]  q38_bufpc;
+  wire        q38_bufne;
+  assign q38_bufpc = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.u_bht.buf_cur_pc;
+  assign q38_bufne = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.u_bht.bht_wr_buf_not_empty;
+  wire [12:0] q38_wpc;
+  assign q38_wpc = q38_bufne ? {q38_bufpc, 3'b000} : q38_curpc[12:0];
+  assign q38_curpc = dut.Core_cpu.u_ifu_subsys.u_ifu_top.iu_ifu_cur_pc;
+  integer q38_pcuniq = 0;
+  reg [12:0] q38_pcseen = 13'b0;
+  integer q38_i1;
+  initial begin
+    for (q38_i0 = 0; q38_i0 < Q38_N; q38_i0 = q38_i0 + 1) begin
+      q38_pc[q38_i0]=0; q38_rd[q38_i0]=0; q38_vld[q38_i0]=0; q38_t[q38_i0]=0; q38_ghr[q38_i0]=0;
+    end
+    for (q38_i1 = 0; q38_i1 < 8; q38_i1 = q38_i1 + 1) q38_age_hist[q38_i1]=0;
+  for (q38_i1 = 0; q38_i1 < 5; q38_i1 = q38_i1 + 1) q38_gsh[q38_i1]=0;
+  end
+
+  always @(posedge clk) if (!rst) q38_clk = q38_clk + 1;
+
+  // 预测侧: 把读地址记下来 (类 3 / 类 5 都记; 写侧按 PC 找)
+  always @(posedge clk) if (!rst && bench_en && st_ipvld) begin
+    if (bench_class(st_pc) == 3 || bench_class(st_pc) == 5) begin
+      q38_i = 0;
+      // 找一个空槽 (从写指针起找最旧的)
+      q38_f = -1;
+      for (q38_age = 0; q38_age < Q38_N; q38_age = q38_age + 1) begin
+        q38_i = (q38_wp + q38_age) % Q38_N;
+        if (!q38_vld[q38_i]) begin q38_f = q38_i; q38_age = Q38_N; end
+      end
+      if (q38_f < 0) begin q38_f = q38_wp; q38_wp = (q38_wp + 1) % Q38_N; end
+      q38_pc [q38_f] = st_pc[12:0];
+      q38_rd [q38_f] = st_row*32 + (~st_sel[1])*16 + ((st_oh == 16'h0001) ? 0 :
+                       (st_oh == 16'h0002) ? 1 : (st_oh == 16'h0004) ? 2 :
+                       (st_oh == 16'h0008) ? 3 : (st_oh == 16'h0010) ? 4 :
+                       (st_oh == 16'h0020) ? 5 : (st_oh == 16'h0040) ? 6 :
+                       (st_oh == 16'h0080) ? 7 : (st_oh == 16'h0100) ? 8 :
+                       (st_oh == 16'h0200) ? 9 : (st_oh == 16'h0400) ? 10 :
+                       (st_oh == 16'h0800) ? 11 : (st_oh == 16'h1000) ? 12 :
+                       (st_oh == 16'h2000) ? 13 : (st_oh == 16'h4000) ? 14 : 15);
+      // [Q3-10] 同时统计读索引 mux 走了哪一档 (与上面对齐, 同一拍)
+      if (st_row === q310_exprd) q310_rowok = q310_rowok + 1; else q310_rowne = q310_rowne + 1;
+      if      (q310_flush) q310_n[0] = q310_n[0] + 1;
+      else if (q310_misp && !q310_chk) q310_n[1] = q310_n[1] + 1;
+      else if (q310_misp &&  q310_chk) q310_n[2] = q310_n[2] + 1;
+      else if (q310_rec)   q310_n[3] = q310_n[3] + 1;
+      else if (q310_amq || q310_afq)  q310_n[4] = q310_n[4] + 1;
+      else                            q310_n[5] = q310_n[5] + 1;
+      q38_vld[q38_f] = 1'b1;
+      q38_t  [q38_f] = q38_clk;
+      q38_ghr[q38_f] = j3_h_now;
+      q38_ins = q38_ins + 1;
+    end
+  end
+
+  // ===========================================================================
+  // [IC1] Q3-4: 完整计数器地址 (word, plane, offset) 的读/写对账
+  //
+  // 前面几步已经把范围缩到"读到的计数器卡在 00/01"; 剩下只有两种可能:
+  //   (a) 那个地址压根没被写过;
+  //   (b) 被写过, 但写进去的值一直是 00/01。
+  //   这两者只能靠【完整地址】对账来分开, 只看 word 是分不开的。
+  //
+  // 地址构成 (rv32_ifu_bht.v, 预阵列是 1024 word x 64bit = 每 word 16 个计数器):
+  //   读: word   = bht_pred_array_rd_index[9:0]
+  //       offset = 1 在 bht_ipdp_pre_offset_onehot[15:0] 里的位置
+  //       plane  = bht_ipdp_sel_array_result[1]
+  //   写: word   = bht_pred_array_index[9:0]      (写优先, 非读拍)
+  //       field  = bht_wr_buf_pred_updt_sel_b 里那个 0 的位置 (0..31)
+  //       offset = field>>1, plane = field&1     (:660-695 的平面交织)
+  // 读到的地址进表; 每次写查一次表, 命中就 +1。
+  // ===========================================================================
+  integer j4_addr [0:255];        // 类3: {word[9:0], plane, offset[3:0]} = 15 bit
+  integer j4_nrd  [0:255];        // 该地址被读次数
+  integer j4_nwr  [0:255];        // 该地址被写次数
+  integer j4_naddr = 0;
+  integer j5a_addr [0:255];       // 类5 同表 (对照: 它是能学的那个)
+  integer j5a_nrd  [0:255];
+  integer j5a_nwr  [0:255];
+  integer j5a_naddr = 0;
+  integer j4_i, j4_found, j4_a;
+  integer j4_ovf = 0, j5a_ovf = 0;
+  integer j4_rd_off, j4_rd_addr;
+  reg [1:0] j4_rd_plane;
+  integer j4_selb, j4_cls;
+
+  initial for (j4_i = 0; j4_i < 256; j4_i = j4_i + 1) begin
+    j4_addr[j4_i]=0; j4_nrd[j4_i]=0; j4_nwr[j4_i]=0;
+    j5a_addr[j4_i]=0; j5a_nrd[j4_i]=0; j5a_nwr[j4_i]=0;
+  end
+
+  // 读地址: 类 3 与类 5 各记一张表
+  always @(posedge clk) if (!rst && bench_en && st_ipvld) begin
+    j4_cls = bench_class(st_pc);
+    if (j4_cls == 3 || j4_cls == 5) begin
+      // plane 的口径必须与写侧一致: 64 位 word 里第 f 个 2 位域, f 偶数 = taken 平面,
+      // f 奇数 = ntaken 平面 (rv32_ifu_bht.v:659-695)。读侧
+      //   bht_selected = sel_result[1] ? taken : ntaken
+      // ⇒ f 的奇偶 = !sel_result[1]。
+      j4_rd_plane = ~st_sel[1];
+      j4_rd_off = 0;
+      for (j4_i = 0; j4_i < 16; j4_i = j4_i + 1)
+        if (st_oh[j4_i]) j4_rd_off = j4_i;
+      j4_rd_addr = (st_row << 5) | (j4_rd_plane << 4) | j4_rd_off;
+      if (j4_cls == 3) begin
+        j4_found = -1;
+        for (j4_i = 0; j4_i < j4_naddr; j4_i = j4_i + 1)
+          if (j4_addr[j4_i] == j4_rd_addr) j4_found = j4_i;
+        if (j4_found < 0) begin
+          if (j4_naddr < 256) begin
+            j4_found = j4_naddr; j4_naddr = j4_naddr + 1;
+            j4_addr[j4_found] = j4_rd_addr;
+          end else j4_ovf = j4_ovf + 1;
+        end
+        if (j4_found >= 0) j4_nrd[j4_found] = j4_nrd[j4_found] + 1;
+      end else begin
+        j4_found = -1;
+        for (j4_i = 0; j4_i < j5a_naddr; j4_i = j4_i + 1)
+          if (j5a_addr[j4_i] == j4_rd_addr) j4_found = j4_i;
+        if (j4_found < 0) begin
+          if (j5a_naddr < 256) begin
+            j4_found = j5a_naddr; j5a_naddr = j5a_naddr + 1;
+            j5a_addr[j4_found] = j4_rd_addr;
+          end else j5a_ovf = j5a_ovf + 1;
+        end
+        if (j4_found >= 0) j5a_nrd[j4_found] = j5a_nrd[j4_found] + 1;
+      end
+    end
+  end
+
+  // 写地址: 预测阵列的真实写 (非 inv), 同时对两张表查
+  always @(posedge clk) if (!rst && bench_en && !q3w_inv) begin
+    // cen_b=0 才是 SRAM 真使能; 否则地址 mux 走的是读索引, 会把读地址当成写地址
+    if ((|(~q3w_wen)) && !q3w_cen_b) begin
+      j4_selb = -1;
+      for (j4_i = 0; j4_i < 32; j4_i = j4_i + 1)
+        if (!q3w_wen[j4_i]) j4_selb = j4_i;
+      if (j4_selb >= 0) begin
+        j4_a = q3w_idx*32 + (j4_selb & 1)*16 + (j4_selb >> 1);
+        for (j4_i = 0; j4_i < j4_naddr; j4_i = j4_i + 1)
+          if (j4_addr[j4_i] == j4_a) j4_nwr[j4_i] = j4_nwr[j4_i] + 1;
+        for (j4_i = 0; j4_i < j5a_naddr; j4_i = j4_i + 1)
+          if (j5a_addr[j4_i] == j4_a) j5a_nwr[j4_i] = j5a_nwr[j4_i] + 1;
+        // [Q3-6] 这次写进去的值 (第 j4_selb 个 2 位域)
+        // [Q3-8] 与预测级配对
+        q38_best = -1;
+        for (q38_i = 0; q38_i < Q38_N; q38_i = q38_i + 1)
+          if (q38_vld[q38_i] && q38_pc[q38_i] == q38_wpc) begin
+            if (q38_best >= 0) q38_skip = q38_skip + 1;
+            if (q38_best < 0 || q38_t[q38_i] > q38_t[q38_best]) q38_best = q38_i;
+          end
+        if (q38_best < 0) q38_miss = q38_miss + 1;
+        else begin
+          q38_hit = q38_hit + 1;
+          q38_age = q38_clk - q38_t[q38_best];
+          if (q38_age > q38_age_max) q38_age_max = q38_age;
+          if (q38_age < 8) q38_age_hist[q38_age] = q38_age_hist[q38_age] + 1;
+          q38_vld[q38_best] = 1'b0;
+          q38_pcseen = q38_pcseen | q38_pc[q38_best];
+          if (q38_rd[q38_best] == j4_a) q38_eq = q38_eq + 1;
+          else begin
+            if ((q38_rd[q38_best]/32)   != (j4_a/32))   q38_wne = q38_wne + 1;
+            if (((q38_rd[q38_best]/16)%2) != ((j4_a/16)%2)) q38_pne = q38_pne + 1;
+            if ((q38_rd[q38_best]%16)   != (j4_a%16))   q38_one = q38_one + 1;
+          end
+          // [Q3-9] 随包 GHR 与预测时刻 GHR 比: 相等? 还是差若干次移位?
+          if (q38_curghr === q38_ghr[q38_best]) q38_geq = q38_geq + 1;
+          else begin
+            q38_gne = q38_gne + 1;
+            for (q38_gk = 1; q38_gk <= 4; q38_gk = q38_gk + 1)
+              if ((q38_curghr >> q38_gk) == (q38_ghr[q38_best] >> q38_gk))
+                q38_gsh[q38_gk] = q38_gsh[q38_gk] + 1;
+            if (q38_ghr[q38_best][7:0] == q38_curghr[7:0]) q38_gx0 = q38_gx0 + 1;
+            if (q38_ghr[q38_best][7:0] == q38_curghr[8:1]) q38_gx1 = q38_gx1 + 1;
+            if (q38_ghr[q38_best][7:0] == q38_curghr[9:2]) q38_gx2 = q38_gx2 + 1;
+          end
+        end
+        j7_a2 = j4_a;
+        j7_f = -1;
+        for (j7_i = 0; j7_i < j7_c; j7_i = j7_i + 1)
+          if (j7_a[j7_i] == j7_a2) j7_f = j7_i;
+        if (j7_f < 0) begin
+          if (j7_c < 512) begin j7_f = j7_c; j7_c = j7_c + 1; j7_a[j7_f] = j7_a2; end
+          else j7_ovf = j7_ovf + 1;
+        end
+        if (j7_f >= 0) j7_n[j7_f] = j7_n[j7_f] + 1;
+        j6_wf   = j4_selb;
+        j6_wval = (j6_din >> (2*j6_wf)) & 64'h3;
+        j6_wall = j6_wall + 1;
+        if (j6_wval < 4) j6_wv[j6_wval] = j6_wv[j6_wval] + 1;
+        for (j6_wi = 0; j6_wi < j6_ac; j6_wi = j6_wi + 1)
+          if (j6_acl[j6_wi] == 3 && j6_a[j6_wi] == j4_a)
+            if (j6_wval < 4) j6_aw[j6_wi*4+j6_wval] = j6_aw[j6_wi*4+j6_wval] + 1;
+      end
+    end
+  end
+
+  // ===========================================================================
+  // [IC1] Q3-5: 相位可分性 —— 把"按相位分堆"从【比凸包】升级成【比分布】
+  //
+  // §5.8/§5.9 用的是 or/and 夹逼, 那只比较取值范围(凸包), 不比较分布 ——
+  //   两个相位的取值范围一样但分布完全不同时, 那个测法给不出结论
+  //   (类 5 就是这样被判成"无相位信息"的, 结论不可信)。
+  // 这里改成直方图, 并直接回答真正要问的那个问题:
+  //   【预测器看到的那个"计数器地址"在相位之间分不分得开?】
+  //     - 地址在相位间分得开 -> 两个相位用不同的计数器, 交替序列可学;
+  //     - 地址混在一起     -> 同一个计数器看到 50/50, 上限就是 50%。
+  // 地址编码: {cls(1), word(10), plane(1), offset(4)} 共 16 位, 两类共用一张表,
+  //   用最高位分开, 这样"类 3 的地址"和"类 5 的地址"不会互相污染。
+  // 同时按 GHR 低 8 位也建一张直方图, 作为"地址分不开是不是因为 GHR 就分不开"的对照。
+  // ===========================================================================
+
+  always @(posedge clk) if (!rst && bench_en && st_ipvld) begin
+    j6_cls2 = bench_class(st_pc);
+    if (j6_cls2 == 3 || j6_cls2 == 5) begin
+      j6_pos2 = ((st_pc - ((j6_cls2 == 3) ? 32'h0000_01c0 : 32'h0000_0290)) >> 4) & 15;
+      // 相位: 类3 = 进入类3区间的轮次奇偶; 类5 = 轮次 mod 4 是否为 3
+      if (j6_cls2 == 3) j6_ph2 = ((jround3 & 1) == 0);
+      else               j6_ph2 = ((jround5 & 3) != 3);
+      // 地址 (与 Q3-4 同口径: plane = !sel_result[1])
+      j6_roff = 0;
+      for (j6_i2 = 0; j6_i2 < 16; j6_i2 = j6_i2 + 1)
+        if (st_oh[j6_i2]) j6_roff = j6_i2;
+      j6_rplane = ~st_sel[1];
+      // 全用 integer 算术, 避免 16 bit 字面量/位宽截断导致的符号扩展
+      j6_raddr = ((j6_cls2 == 5) ? 32768 : 0) + st_row*32 + j6_rplane*16 + j6_roff;
+      j6_f = -1;
+      for (j6_i2 = 0; j6_i2 < j6_ac; j6_i2 = j6_i2 + 1)
+        if (j6_a[j6_i2] == j6_raddr) j6_f = j6_i2;
+      if (j6_f < 0) begin
+        if (j6_ac < 512) begin
+          j6_f = j6_ac; j6_ac = j6_ac + 1; j6_a[j6_f] = j6_raddr;
+          j6_acl[j6_f] = j6_cls2;
+        end else j6_aovf = j6_aovf + 1;
+      end
+      if (j6_f >= 0) begin
+        if (j6_ph2) j6_at[j6_f] = j6_at[j6_f] + 1;
+        else        j6_an[j6_f] = j6_an[j6_f] + 1;
+      end
+      // GHR 低 8 位的直方图
+      j6_lo = {18'b0, j3_h_now[7:0]};
+      j6_i2 = ((j6_cls2 == 5) ? 2048 : 0) + (j6_pos2 - 1)*256 + j6_lo;
+      j6_g[j6_i2] = j6_g[j6_i2] + 1;
+      if (j6_ph2) j6_gt[j6_i2] = j6_gt[j6_i2] + 1;
+      else        j6_gn[j6_i2] = j6_gn[j6_i2] + 1;
+    end
+  end
+
+  // ===========================================================================
+  // [IC1] Q5: L0 BTB 的【训练质量】—— entry_rd_hit 与 eligible 分开数
+  //
+  // bp_change_log §4.1 那个实验 (当时没做): 这两个 popcount 分开之后,
+  //   "PC 压根不在表里" (rd_hit=0) 与 "在表里但没武装" (rd_hit>0 且 eligible 全 0)
+  //   才能分开看。rv32_ifu_l0_btb.v:223-227:
+  //     entry_rd_hit = entry_vld & (entry_src[31:4] == lookup_pc[31:4])
+  //     eligible     = lookup_en & entry_rd_hit & !inv & (src[3:2]>=pc[3:2]) & entry_cnt & ...
+  //   所以 eligible ⊆ rd_hit, 差额就是"槽位/武装"淘汰掉的部分。
+  //   不要再用 entry_cnt 的 popcount 当依据 (删项时不清零, 见 §4.3)。
+  // ===========================================================================
+  wire [15:0] q5_rdhit, q5_elig;
+  assign q5_rdhit = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.u_l0.entry_rd_hit;
+  assign q5_elig  = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.u_l0.eligible;
+  integer q5_lookn = 0, q5_rd_sum = 0, q5_el_sum = 0;
+  integer q5_rd0 = 0, q5_el0 = 0, q5_noarm = 0, q5_slotmiss = 0;
+  always @(posedge clk) if (!rst && bench_en) begin
+    if (l0_lookup_en) begin
+      q5_lookn = q5_lookn + 1;
+      q5_rd_sum = q5_rd_sum + $countones(q5_rdhit);
+      q5_el_sum = q5_el_sum + $countones(q5_elig);
+      if ($countones(q5_rdhit) == 0) q5_rd0 = q5_rd0 + 1;
+      if ($countones(q5_elig)  == 0) q5_el0 = q5_el0 + 1;
+      if ($countones(q5_rdhit) > 0 && $countones(q5_elig) == 0) q5_noarm  = q5_noarm  + 1;
+    end
+  end
+  always @(posedge clk) if (!rst && bench_en) begin
+    if (l0_lookup_en && $countones(q5_rdhit) > 0 && $countones(q5_elig) == 0)
+      if (!(|(q5_rdhit & q5_elig))) q5_slotmiss = q5_slotmiss + 1;
+  end
+
+  // ===========================================================================
+  // [IC1] Q4: L1 BTB miss 与取指气泡的关联
+  //
+  // 直接量"没有 LBUF 的代价"的第二步: 把 L1 BTB 关掉 (force cp0_ifu_btb_en=0),
+  //   同样的 branch_bench 再跑一遍, 周期数差值就是大 BTB 的整体贡献;
+  //   配合 +BENCH 的分类准确率, 还能看出它影响的是"方向"还是"目标"。
+  //   force 的是 u_ifu_top 的输入端口 (ifu_subsys.v:103 处接常量 1'b1), 只观测。
+  // ===========================================================================
+  // 【2026-09-24 更正】下面这条"entry_update_en 把 L1 开关串进 L0 武装"的旧解释是错的:
+  // rv32_ifu_l0_btb_entry.v:76 里那个叫 cp0_ifu_btb_en 的**端口**, 在唯一例化处
+  // (rv32_ifu_l0_btb.v:249) 接的是 L0 自己的 enable(= cp0_ifu_l0btb_en),
+  // L1 的开关到不了写使能。实测: +NOBTB 下 L0 分配 11,299 -> 22,189 (翻倍, 不是归零)。
+  // 真机制是 rv32_ifu_top.v:597  training_ready = !cp0_ifu_btb_en || btb_update_ready
+  //   —— **L1 的 ready 兼作训练总线的节流阀**: 抽掉它, 训练事件翻倍, BHT 被污染
+  //   (class5 89.31% -> 74.32%, 约等于恒 taken 的 75% 偏置基线)。
+  // ⇒ 这一行仍然是脏的, 不能用来判 L1 的价值; 但换 L1 尺寸请用 BP_BTB_ROW_W
+  //   (纯表尺寸, 实测 16 行 +0.008%), 不要用 +NOBTB。
+  // ⇒ 另外: **整删 L1 或抽掉它的 ready 会掉进这个区间**, 所以 L1 不能整删。
+  //   (旧注释误以为"要单独看 L1 的效果就得加一个只关 L0 的开关" —— 不需要, 用 BP_BTB_ROW_W。)
+  logic nobtb = 0;
+  initial if ($test$plusargs("NOBTB")) nobtb = 1;
+  initial if ($test$plusargs("NOBTB"))
+    force dut.Core_cpu.u_ifu_subsys.u_ifu_top.cp0_ifu_btb_en = 1'b0;
+  logic nol0 = 0;
+  initial if ($test$plusargs("NOL0")) nol0 = 1;
+  initial if ($test$plusargs("NOL0"))
+    force dut.Core_cpu.u_ifu_subsys.u_ifu_top.cp0_ifu_l0btb_en = 1'b0;
+
+  // 前端的 L1 BTB 相关阻塞拍: "核在等, IFU 没货" 且 L1 BTB 这一拍拒绝查询
+  integer q4_nofetch = 0, q4_nf_btblk = 0;
+  wire c_flush_x = dut.Core_cpu.flush_if_id | dut.Core_cpu.ifu_idu_flush;
+  wire c_stall_x = dut.Core_cpu.stall;
+  always @(posedge clk) if (!rst) begin
+    if (!dut.Core_cpu.if_accept && dut.Core_cpu.ifu_init_done
+        && !c_flush_x && !c_stall_x) begin
+      q4_nofetch = q4_nofetch + 1;
+      if (bt_lookup_vld && !btw_rdy) q4_nf_btblk = q4_nf_btblk + 1;
+    end
+  end
+
+  always @(posedge clk) if (!rst && bench_en) begin
+    if (dbg_vghr !== 22'b0)  dbg_nz    <= dbg_nz + 1;
+    if (dbg_vghr !== dbg_prev) dbg_chg <= dbg_chg + 1;
+    if (dbg_vghr_ip !== dbg_vghr) dbg_ipdiff <= dbg_ipdiff + 1;
+    if (dbg_vghr_ofs !== 4'b0) dbg_ofsnz <= dbg_ofsnz + 1;
+    if (dbg_taken_v !== 32'b0)  dbg_tkn_nz <= dbg_tkn_nz + 1;
+    if (dbg_ntake_v !== 32'b0)  dbg_ntk_nz <= dbg_ntk_nz + 1;
+    if (dbg_selr[1])            dbg_selr1  <= dbg_selr1  + 1;
+    if (dbg_sel_has2)           dbg_has2   <= dbg_has2   + 1;
+    if (dbg_cnt[1])             dbg_cnt1   <= dbg_cnt1   + 1;
+    if (dbg_ghr_iu)   dbg_n_iu   <= dbg_n_iu   + 1;
+    if (dbg_ghr_lbuf) dbg_n_lbuf <= dbg_n_lbuf + 1;
+    if (dbg_ghr_ip)   dbg_n_ip   <= dbg_n_ip   + 1;
+    if (dbg_lbuf_act) dbg_n_lact <= dbg_n_lact + 1;
+    if (dbg_ip_conbr) dbg_n_icb  <= dbg_n_icb  + 1;
+    if (dbg_bju_chk)  dbg_n_bchk <= dbg_n_bchk + 1;
+    if (dbg_unlock) dbg_n_unlock <= dbg_n_unlock + 1;
+    if (dbg_unl_t)  dbg_n_unl_t  <= dbg_n_unl_t  + 1;
+    if (dbg_ev && dbg_ev_q)   dbg_ev2      <= dbg_ev2 + 1;
+    if (dbg_ev && !dbg_ev_q)  dbg_ev_nochk <= dbg_ev_nochk + 1;
+    if (dbg_chk && !dbg_ev)   dbg_chk_noev <= dbg_chk_noev + 1;
+    dbg_ev_q  <= dbg_ev;
+    dbg_chk_q <= dbg_chk;
+    dbg_gh_q  <= dbg_vghr[3:0];
+    if (dbg_vghr[3:0] == 4'h0)      dbg_gh0  <= dbg_gh0  + 1;
+    else if (dbg_vghr[3:0] == 4'hF) dbg_gh15 <= dbg_gh15 + 1;
+    else                            dbg_gh_mid <= dbg_gh_mid + 1;
+    if (bench_class(dut.Core_cpu.pc_EX) == 3 && dbg_offs_acc != 16'hFFFF)
+      dbg_offs_acc <= dbg_offs_acc | (16'h0001 << dbg_vghr[3:0]);
+    dbg_prev <= dbg_vghr;
+  end
+
   assign l0_lookup_en   = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.u_l0.lookup_en;
   assign l0_hit_w       = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.u_l0.hit;
   assign l0_hit_type    = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top.u_l0.hit_type;
@@ -481,8 +1507,23 @@ module tb_miniRV_dpi;
           b_raw_novld = 0, b_raw_muldiv = 0, b_raw_loaduse = 0;
   integer b_nf_reissue = 0, b_nf_bpread = 0, b_nf_frontend = 0, b_nf_other = 0;
 
+
   wire c_flush = dut.Core_cpu.flush_if_id | dut.Core_cpu.ifu_idu_flush;
   wire c_stall = dut.Core_cpu.stall;
+
+  // ---- 「其它」桶归因: 改向/失效/冲刷事件后, 等 IFU 重新吐出指令(out_count>0)的拍数 ----
+  // 判据: rf_in_bucket 若 ≈ b_nf_other, 说明这 8.5% 主要来自"改向后重填",
+  //       而不是前端稳态吞吐不够 (量级: L0 全程接受改向 ~1.0M 次 ⇒ 每 ~10 拍一次).
+  integer rf_redir = 0, rf_inval = 0, rf_flush = 0, rf_ev = 0, rf_wait = 0, rf_in_bucket = 0;
+  integer rf_ev_redir_c = 0, rf_ev_inval_c = 0, rf_ev_flush_c = 0;
+  reg         rf_armed = 1'b0;
+  reg  [1:0]  rf_src   = 2'd0;
+  wire rf_ev_redir = dut.Core_cpu.u_ifu_subsys.u_ifu_top.ifctrl_l0_btb_accept;
+  wire rf_ev_inval = dut.Core_cpu.u_ifu_subsys.u_ifu_top.l0_invalidate;
+  wire rf_ev_flush = c_flush;
+  wire rf_ev_any   = rf_ev_redir | rf_ev_inval | rf_ev_flush;
+  wire rf_has_inst = dut.Core_cpu.u_ifu_subsys.u_ifu_top.out_count != 2'b0;
+  wire rf_in_nf    = !dut.Core_cpu.if_accept && dut.Core_cpu.ifu_init_done && !c_flush && !c_stall;
 
   always @(posedge clk) if (!rst) begin
     // ---- 气泡, 按优先级划分 (互斥, 合计 = !if_accept 拍数) ----
@@ -506,6 +1547,24 @@ module tb_miniRV_dpi;
       else if (dut.Core_cpu.u_ifu_subsys.u_ifu_top.bp_read_stall)     b_nf_bpread   <= b_nf_bpread   + 1;
       else if (dut.Core_cpu.u_ifu_subsys.u_ifu_top.if_frontend_stall) b_nf_frontend <= b_nf_frontend + 1;
       else                                                            b_nf_other    <= b_nf_other    + 1;
+    end
+    // ---- 改向后重填等待: 与上面的桶不互斥, 只做归因 ----
+    if (rf_ev_any) begin
+      rf_ev    <= rf_ev + 1;
+      if (rf_ev_redir) rf_ev_redir_c <= rf_ev_redir_c + 1;
+      if (rf_ev_inval) rf_ev_inval_c <= rf_ev_inval_c + 1;
+      if (rf_ev_flush) rf_ev_flush_c <= rf_ev_flush_c + 1;
+      rf_armed <= 1'b1;
+      rf_src   <= rf_ev_redir ? 2'd1 : (rf_ev_inval ? 2'd2 : 2'd3);
+    end else if (rf_armed && rf_has_inst) begin
+      rf_armed <= 1'b0;
+    end
+    if (rf_armed && !rf_has_inst && !rf_ev_any) begin
+      rf_wait <= rf_wait + 1;
+      if      (rf_src == 2'd1) rf_redir <= rf_redir + 1;
+      else if (rf_src == 2'd2) rf_inval <= rf_inval + 1;
+      else                     rf_flush <= rf_flush + 1;
+      if (rf_in_nf)            rf_in_bucket <= rf_in_bucket + 1;
     end
     // ---- L0 BTB ----
     if (l0_lookup_en) l0_lk <= l0_lk + 1;
@@ -624,6 +1683,687 @@ module tb_miniRV_dpi;
     end
   endtask
 
+  // ===========================================================================
+  // [IC1] Q6b: CoreMark —— 条件分支的"自距离"分布
+  //
+  // 想回答的问题: 类 3 那种"同一条静态分支的下一次实例要等很多条其它条件分支"
+  //   在 CoreMark 里占多少? 它们贡献了多少误预测?
+  //
+  // 定义: 自距 = 两次相邻实例之间【执行过的条件分支条数】(全局序号差)。
+  //   GHR 只有 22 位 => 自距 > 22 时, 这条分支【自己上一次的结局】已经不在 GHR 里了,
+  //   它只能靠"最近 22 条其它分支的结局"来猜。
+  //   分档: 0=首次, 1=<=4, 2=<=8, 3=<=16, 4=<=22, 5=<=32, 6=<=64, 7=<=128, 8=<=512, 9=>512
+  //
+  // 直映射表索引 pc[13:2] (4096 项); CoreMark 镜像 13.9KB < 16KB, 基本无冲突。
+  // ===========================================================================
+  localparam CBN = 4096;
+  integer cbq_seq = 1;
+  integer cbq_last [0:CBN-1];
+  integer cbq_dn [0:9], cbq_dm [0:9], cbq_dt [0:9];
+  integer cbq_idx, cbq_d, cbq_b, cbq_j;
+  // 逐 PC 汇总 (用于看"误预测大户"是谁)
+  integer cbp_n [0:CBN-1], cbp_m [0:CBN-1], cbp_t [0:CBN-1], cbp_d [0:CBN-1];
+  integer cbp_pc[0:CBN-1];
+  integer cbp_k, cbp_best, cbp_bi;
+
+  function automatic integer cbq_bin(input integer d);
+    begin
+      if      (d <= 0)    cbq_bin = 0;
+      else if (d <= 4)    cbq_bin = 1;
+      else if (d <= 8)    cbq_bin = 2;
+      else if (d <= 16)   cbq_bin = 3;
+      else if (d <= 22)   cbq_bin = 4;
+      else if (d <= 32)   cbq_bin = 5;
+      else if (d <= 64)   cbq_bin = 6;
+      else if (d <= 128)  cbq_bin = 7;
+      else if (d <= 512)  cbq_bin = 8;
+      else                cbq_bin = 9;
+    end
+  endfunction
+
+  initial begin
+    for (cbq_j = 0; cbq_j < CBN; cbq_j = cbq_j + 1) begin
+      cbq_last[cbq_j] = 0;
+      cbp_n[cbq_j] = 0; cbp_m[cbq_j] = 0; cbp_t[cbq_j] = 0; cbp_d[cbq_j] = 0;
+      cbp_pc[cbq_j] = 0;
+    end
+    for (cbq_j = 0; cbq_j < 10; cbq_j = cbq_j + 1) begin
+      cbq_dn[cbq_j] = 0; cbq_dm[cbq_j] = 0; cbq_dt[cbq_j] = 0;
+    end
+  end
+
+  always @(posedge clk) if (!rst && bench_en && st_cond) begin
+    cbq_idx = dut.Core_cpu.pc_EX[13:2];
+    if (cbq_last[cbq_idx] == 0) cbq_d = 0;
+    else                        cbq_d = cbq_seq - cbq_last[cbq_idx];
+    cbq_b = cbq_bin(cbq_d);
+    cbq_dn[cbq_b] = cbq_dn[cbq_b] + 1;
+    if (st_mis) cbq_dm[cbq_b] = cbq_dm[cbq_b] + 1;
+    if (dut.Core_cpu.ex_alu_f) cbq_dt[cbq_b] = cbq_dt[cbq_b] + 1;
+    cbq_last[cbq_idx] = cbq_seq;
+    cbq_seq = cbq_seq + 1;
+
+    cbp_n[cbq_idx] = cbp_n[cbq_idx] + 1;
+    if (st_mis) cbp_m[cbq_idx] = cbp_m[cbq_idx] + 1;
+    if (dut.Core_cpu.ex_alu_f) cbp_t[cbq_idx] = cbp_t[cbq_idx] + 1;
+    cbp_d[cbq_idx] = cbq_d;
+    cbp_pc[cbq_idx] = dut.Core_cpu.pc_EX;
+  end
+
+  // ---------------------------------------------------------------------------
+  // 定向基准 asm/branch_bench.S 的分场景统计 (+BENCH)
+  //
+  // CoreMark 只能看总量, 分不出"哪一类分支在变好/变差"; 小用例的统计量又被
+  // IFU 初始化的 1027 拍淹没。branch_bench 把四类可判定场景放进四个互不重叠
+  // 的 PC 区间, 这里按 PC 分桶, 用来定向验证 P0 的语义改动。
+  //
+  // 只在 +BENCH 时计数 ⇒ CoreMark 等整场基准不加这个 plusarg, 完全不受影响。
+  //
+  // 分桶用的 PC 必须与 branch_bench.S 头部的布局注释一致:
+  //   1 [0x100,0x140) ① 稳定 taken 的循环回边
+  //   2 [0x140,0x1c0) ② 几乎不跳的前向分支 (恒不跳)
+  //   3 [0x1c0,0x250) ③ 交替 taken/not-taken
+  //   4 [0x250,0x290) ④ 函数调用/返回
+  //   0 其余 (外层循环/初始化/退出, 仅作对账)
+  //
+  // 各桶的采样点与所测 PC:
+  //   分支准确率   pc_EX            (控制转移在 EX 结算的那一拍)
+  //   L0 查找/命中 l0_lookpc        (IF 级查询 PC = ifdp_l0_btb_pc)
+  //   L0 更新      l0_updpc         (训练 PC = train_pc, 即分支自己的 PC)
+  //   L0 判错      ipc_lastpkt[63:32] (IP 级 packet 的 PC 字段)
+  // ---------------------------------------------------------------------------
+  function automatic integer bench_class(input [31:0] pc);
+    if      (pc >= 32'h0000_0100 && pc < 32'h0000_0140) return 1;
+    else if (pc >= 32'h0000_0140 && pc < 32'h0000_01c0) return 2;
+    else if (pc >= 32'h0000_01c0 && pc < 32'h0000_0250) return 3;
+    else if (pc >= 32'h0000_0250 && pc < 32'h0000_0290) return 4;
+    else if (pc >= 32'h0000_0290 && pc < 32'h0000_0320) return 5;
+    else                                                return 0;
+  endfunction
+
+  integer bcls;
+  integer bc_cond    [0:5];   // 条件分支数
+  integer bc_mis     [0:5];   // 条件分支误预测
+  integer bc_tpred   [0:5];   // BHT 预测 taken
+  integer bc_taken   [0:5];   // 实际 taken
+  integer bc_strong  [0:5];   // 预测 taken 且 chk_idx[24]=1 (强 taken)
+  integer bc_weak    [0:5];   // 预测 taken 且 chk_idx[24]=0 (弱 taken)
+  integer bc_jmp     [0:5];   // jal / jalr
+  integer bc_misj    [0:5];   // jal / jalr 误预测
+  integer bc_lk      [0:5];   // L0 查询
+  integer bc_hit     [0:5];   // L0 查询命中
+  integer bc_inv     [0:5];   // L0 被判错 (白取)
+  integer bc_redir   [0:5];   // L0 命中且该段确实是 IF 级改向源
+  integer bc_trv     [0:5];   // 训练上报
+  integer bc_trt     [0:5];   // 训练: update_taken=1
+  integer bc_trn     [0:5];   // 训练: update_taken=0
+  integer bc_upd     [0:5];   // 过资格判定
+  integer bc_mtch    [0:5];   // 命中已有条目
+  integer bc_alloc   [0:5];   // 分配新条目
+  integer bc_alloct  [0:5];   // 分配且 update_taken=1
+  integer bc_allcn   [0:5];   // 分配且 update_taken=0 (P0-3 的靶子)
+  integer bc_kill    [0:5];
+  integer bc_hold    [0:5];
+  integer bc_arm     [0:5];   // 命中项里已武装的条数之和 (看武装状态)
+
+  // ipctrl 的 packet PC 字段; 与 report_l0_stats 里的三桶判决同一来源
+  // (不要写成 wire x = expr: 本机 VCS 上对实例驱动网的 net declaration
+  //  assignment 会读到 Z, 见 ifu 集成时的踩坑记录)
+  wire [31:0] ipc_pktpc;
+  assign ipc_pktpc = ipc_lastpkt[63:32];
+
+  // 本机 VCS 不会把未初始化的 integer 数组清成 0 (读出来是 x, 而 x+1 恒为 x),
+  // 所以必须显式清零 —— 直接照抄上面的 `integer n_cond = 0;` 写法做不到数组,
+  // 只能这样成批赋。
+  integer bk;
+  initial for (bk = 0; bk <= 5; bk = bk + 1) begin
+    bc_cond[bk] = 0; bc_mis[bk]   = 0; bc_tpred[bk] = 0; bc_taken[bk]  = 0;
+    bc_strong[bk] = 0; bc_weak[bk] = 0; bc_jmp[bk]  = 0; bc_misj[bk]   = 0;
+    bc_lk[bk]   = 0; bc_hit[bk]   = 0; bc_inv[bk]   = 0; bc_redir[bk]  = 0;
+    bc_trv[bk]  = 0; bc_trt[bk]   = 0; bc_trn[bk]   = 0; bc_upd[bk]    = 0;
+    bc_mtch[bk] = 0; bc_alloc[bk] = 0; bc_alloct[bk] = 0; bc_allcn[bk] = 0;
+    bc_kill[bk] = 0; bc_hold[bk]  = 0; bc_arm[bk]   = 0;
+  end
+
+  always @(posedge clk) if (!rst && bench_en) begin
+    // ---- 分支准确率: 按 pc_EX 分桶 (与 st_cond/st_jmp/st_mis 同门控) ----
+    if (st_cond) begin
+      bcls = bench_class(dut.Core_cpu.pc_EX);
+      bc_cond[bcls]  = bc_cond[bcls]  + 1;
+      bc_tpred[bcls] = bc_tpred[bcls] + dut.Core_cpu.ex_bht_pred;
+      bc_taken[bcls] = bc_taken[bcls] + dut.Core_cpu.ex_alu_f;
+      if ( dut.Core_cpu.ex_bht_pred &  dut.Core_cpu.ex_bht_chk[24]) bc_strong[bcls] = bc_strong[bcls] + 1;
+      if ( dut.Core_cpu.ex_bht_pred & ~dut.Core_cpu.ex_bht_chk[24]) bc_weak  [bcls] = bc_weak  [bcls] + 1;
+    end
+    if (st_jmp) begin
+      bcls = bench_class(dut.Core_cpu.pc_EX);
+      bc_jmp[bcls] = bc_jmp[bcls] + 1;
+    end
+    if (st_mis) begin
+      bcls = bench_class(dut.Core_cpu.pc_EX);
+      if (st_cond)     bc_mis [bcls] = bc_mis [bcls] + 1;
+      else if (st_jmp) bc_misj[bcls] = bc_misj[bcls] + 1;
+    end
+    // ---- L0 查找/命中: 按 IF 级查询 PC 分桶 ----
+    if (l0_lookup_en) begin
+      bcls = bench_class(l0_lookpc);
+      bc_lk[bcls] = bc_lk[bcls] + 1;
+      if (l0_hit_w) bc_hit[bcls] = bc_hit[bcls] + 1;
+    end
+    // ---- L0 更新: 按训练 PC (分支自己的 PC) 分桶 ----
+    if (top_train_v) begin
+      bcls = bench_class(l0_updpc);
+      bc_trv[bcls] = bc_trv[bcls] + 1;
+      if (top_train_t) bc_trt[bcls] = bc_trt[bcls] + 1;
+      else             bc_trn[bcls] = bc_trn[bcls] + 1;
+    end
+    if (l0_upd_en) begin
+      bcls = bench_class(l0_updpc);
+      bc_upd[bcls] = bc_upd[bcls] + 1;
+      if (l0_upd_match) bc_mtch[bcls] = bc_mtch[bcls] + 1;
+      if (l0_kill) bc_kill[bcls] = bc_kill[bcls] + 1;
+      if (l0_hold) bc_hold[bcls] = bc_hold[bcls] + 1;
+      if (l0_upd_match) bc_arm [bcls] = bc_arm[bcls] + $countones(l0_updsel & l0_cnt_v);
+    end
+    if (l0_alloc) begin
+      bcls = bench_class(l0_updpc);
+      bc_alloc[bcls] = bc_alloc[bcls] + 1;
+      if (top_train_t) bc_alloct[bcls] = bc_alloct[bcls] + 1;
+      else             bc_allcn [bcls] = bc_allcn [bcls] + 1;
+    end
+    // ---- L0 判错 (白取): 按 IP 级 packet PC 分桶 ----
+    if (top_l0_inv) begin
+      bcls = bench_class(ipc_pktpc);
+      bc_inv[bcls] = bc_inv[bcls] + 1;
+    end
+    // ---- IF 级改向: accept 是 IF 级的脉冲, 用同一级的查询 PC 分桶
+    //      (accept 的源头就是这一拍的查询命中, 这里不复算, 只作分桶标签) ----
+    if (top_l0_redir) begin
+      bcls = bench_class(l0_lookpc);
+      bc_redir[bcls] = bc_redir[bcls] + 1;
+    end
+  end
+
+  // [Q6b] CoreMark 自距离分布报告
+  task automatic report_coremark_selfdist();
+    integer k, tot, mis, dt, cum_n, cum_m;
+    begin
+      tot = 0; mis = 0; dt = 0;
+      for (k = 0; k <= 9; k = k + 1) begin tot = tot + cbq_dn[k]; mis = mis + cbq_dm[k]; dt = dt + cbq_dt[k]; end
+      if (tot == 0) begin
+        $display("========== [Q6b] CoreMark 条件分支自距离分布 ==========");
+        $display("  (本用例没有条件分支计数, 或未加 +BENCH)");
+        $display("=====================================================");
+      end else begin
+        $display("========== [Q6b] CoreMark 条件分支自距离分布 ==========");
+        $display("  自距 = 同类静态分支两次实例之间执行过的条件分支条数; GHR 只有 22 位");
+        $display("  条件分支总数 %0d  (实际 taken %0.1f%%)", tot, 100.0*dt/tot);
+        $display("  %-22s %10s %8s %10s %10s", "自距区间", "条数", "占比", "误预测", "该档准确率");
+        for (k = 0; k <= 9; k = k + 1) begin
+          if (cbq_dn[k] > 0)
+            $display("  %-22s %10d %7.2f%% %10d %9.2f%%",
+                     (k==0) ? "首次" :
+                     (k==1) ? "1-4" :
+                     (k==2) ? "5-8" :
+                     (k==3) ? "9-16" :
+                     (k==4) ? "17-22" :
+                     (k==5) ? "23-32" :
+                     (k==6) ? "33-64" :
+                     (k==7) ? "65-128" :
+                     (k==8) ? "129-512" : ">512",
+                     cbq_dn[k], 100.0*cbq_dn[k]/tot, cbq_dm[k],
+                     100.0*(cbq_dn[k]-cbq_dm[k])/cbq_dn[k]);
+        end
+        cum_n = 0; cum_m = 0;
+        for (k = 5; k <= 9; k = k + 1) begin cum_n = cum_n + cbq_dn[k]; cum_m = cum_m + cbq_dm[k]; end
+        $display("  ---- 自距 > 22 (GHR 罩不住) 合计: %0d 条 = %0.2f%% 的条数, 占误预测 %0.2f%%, 该组准确率 %0.2f%%",
+                 cum_n, 100.0*cum_n/tot, (mis>0)?100.0*cum_m/mis:0.0,
+                 (cum_n>0)?100.0*(cum_n-cum_m)/cum_n:0.0);
+        begin : cbp_top
+          integer bi, t2, done;
+          $display("  ---- 误预测最多的 20 条静态分支 ----");
+          $display("  %-12s %9s %9s %9s %9s", "PC", "执行", "误预测", "准确率", "自距");
+          for (bi = 0; bi < 20; bi = bi + 1) begin
+            cbp_best = -1;
+            for (cbp_k = 0; cbp_k < CBN; cbp_k = cbp_k + 1)
+              if (cbp_m[cbp_k] > 0 && (cbp_best < 0 || cbp_m[cbp_k] > cbp_m[cbp_best]))
+                cbp_best = cbp_k;
+            if (cbp_best >= 0) begin
+              $display("  %-12h %9d %9d %8.2f%% %9d",
+                       cbp_pc[cbp_best], cbp_n[cbp_best], cbp_m[cbp_best],
+                       100.0*(cbp_n[cbp_best]-cbp_m[cbp_best])/cbp_n[cbp_best], cbp_d[cbp_best]);
+              cbp_m[cbp_best] = 0;   // 打过的清掉, 下一轮选下一个
+            end else bi = 20;
+          end
+        end
+        $display("=====================================================");
+      end
+    end
+  endtask
+
+  task automatic report_bench_stats();
+    integer k;
+    begin
+      $display("");
+      $display("========== 定向基准分场景统计 (branch_bench) ==========");
+      $display("PC 区间: 1[0x100,0x140) 2[0x140,0x1c0) 3[0x1c0,0x250) 4[0x250,0x290) 5[0x290,0x320) 0=其余");
+      $display("1=稳定taken回边 2=恒不跳前向 3=交替 4=调用/返回 5=T,T,T,N(造弱taken)");
+      $display("%-30s %8s %8s %8s %8s %8s %8s",
+               "类别", "1回边", "2不跳", "3交替", "4调用", "5弱tk", "0其余");
+      $display("%-30s %8d %8d %8d %8d %8d %8d", "条件分支数 (EX)",
+               bc_cond[1], bc_cond[2], bc_cond[3], bc_cond[4], bc_cond[5], bc_cond[0]);
+      $display("%-30s %8d %8d %8d %8d %8d %8d", "  误预测",
+               bc_mis[1], bc_mis[2], bc_mis[3], bc_mis[4], bc_mis[5], bc_mis[0]);
+      for (k = 1; k <= 5; k = k + 1) begin
+        if (bc_cond[k] > 0)
+          $display("  类%0d 条件分支准确率             : %0.2f%%  (%0d/%0d)",
+                   k, 100.0*(bc_cond[k]-bc_mis[k])/bc_cond[k], bc_cond[k]-bc_mis[k], bc_cond[k]);
+      end
+      $display("%-30s %8d %8d %8d %8d %8d %8d", "  预测 taken (BHT)",
+               bc_tpred[1], bc_tpred[2], bc_tpred[3], bc_tpred[4], bc_tpred[5], bc_tpred[0]);
+      $display("%-30s %8d %8d %8d %8d %8d %8d", "  实际 taken",
+               bc_taken[1], bc_taken[2], bc_taken[3], bc_taken[4], bc_taken[5], bc_taken[0]);
+      $display("%-30s %8d %8d %8d %8d %8d %8d", "  其中强 taken(11)",
+               bc_strong[1], bc_strong[2], bc_strong[3], bc_strong[4], bc_strong[5], bc_strong[0]);
+      $display("%-30s %8d %8d %8d %8d %8d %8d", "  其中弱 taken(10)  <-- P0-1/P0-2",
+               bc_weak[1], bc_weak[2], bc_weak[3], bc_weak[4], bc_weak[5], bc_weak[0]);
+      $display("%-30s %8d %8d %8d %8d %8d %8d", "jal/jalr 数",
+               bc_jmp[1], bc_jmp[2], bc_jmp[3], bc_jmp[4], bc_jmp[5], bc_jmp[0]);
+      $display("%-30s %8d %8d %8d %8d %8d %8d", "  jal/jalr 误预测",
+               bc_misj[1], bc_misj[2], bc_misj[3], bc_misj[4], bc_misj[5], bc_misj[0]);
+      $display("--- L0 BTB ---");
+      $display("%-30s %8d %8d %8d %8d %8d %8d", "L0 查询 (按 IF PC)",
+               bc_lk[1], bc_lk[2], bc_lk[3], bc_lk[4], bc_lk[5], bc_lk[0]);
+      $display("%-30s %8d %8d %8d %8d %8d %8d", "  L0 命中",
+               bc_hit[1], bc_hit[2], bc_hit[3], bc_hit[4], bc_hit[5], bc_hit[0]);
+      $display("%-30s %8d %8d %8d %8d %8d %8d", "L0 训练上报 (按分支 PC)",
+               bc_trv[1], bc_trv[2], bc_trv[3], bc_trv[4], bc_trv[5], bc_trv[0]);
+      $display("%-30s %8d %8d %8d %8d %8d %8d", "  训练 taken",
+               bc_trt[1], bc_trt[2], bc_trt[3], bc_trt[4], bc_trt[5], bc_trt[0]);
+      $display("%-30s %8d %8d %8d %8d %8d %8d", "  训练 not-taken",
+               bc_trn[1], bc_trn[2], bc_trn[3], bc_trn[4], bc_trn[5], bc_trn[0]);
+      $display("%-30s %8d %8d %8d %8d %8d %8d", "  命中已有条目",
+               bc_mtch[1], bc_mtch[2], bc_mtch[3], bc_mtch[4], bc_mtch[5], bc_mtch[0]);
+      $display("%-30s %8d %8d %8d %8d %8d %8d", "  分配新条目",
+               bc_alloc[1], bc_alloc[2], bc_alloc[3], bc_alloc[4], bc_alloc[5], bc_alloc[0]);
+      $display("%-30s %8d %8d %8d %8d %8d %8d", "    其中 taken 时  <-- 有效",
+               bc_alloct[1], bc_alloct[2], bc_alloct[3], bc_alloct[4], bc_alloct[5], bc_alloct[0]);
+      $display("%-30s %8d %8d %8d %8d %8d %8d", "    其中 ntk 时    <-- 废项 P0-3",
+               bc_allcn[1], bc_allcn[2], bc_allcn[3], bc_allcn[4], bc_allcn[5], bc_allcn[0]);
+      $display("%-30s %8d %8d %8d %8d %8d %8d", "  命中项的已武装条数",
+               bc_arm[1], bc_arm[2], bc_arm[3], bc_arm[4], bc_arm[5], bc_arm[0]);
+      $display("%-30s %8d %8d %8d %8d %8d %8d", "  kill (降级删项) P0-2",
+               bc_kill[1], bc_kill[2], bc_kill[3], bc_kill[4], bc_kill[5], bc_kill[0]);
+      $display("%-30s %8d %8d %8d %8d %8d %8d", "  hold",
+               bc_hold[1], bc_hold[2], bc_hold[3], bc_hold[4], bc_hold[5], bc_hold[0]);
+      $display("%-30s %8d %8d %8d %8d %8d %8d", "L0 判错/白取 (按 IP PC)",
+               bc_inv[1], bc_inv[2], bc_inv[3], bc_inv[4], bc_inv[5], bc_inv[0]);
+      $display("%-30s %8d %8d %8d %8d %8d %8d", "  同期 IF 级改向",
+               bc_redir[1], bc_redir[2], bc_redir[3], bc_redir[4], bc_redir[5], bc_redir[0]);
+      $display("对账: 各桶条件分支合计 %0d (全局 %0d)",
+               bc_cond[0]+bc_cond[1]+bc_cond[2]+bc_cond[3]+bc_cond[4]+bc_cond[5], n_cond);
+      $display("--- 定向实验: GHR (vghr) 活性 ---");
+      $display("  vghr_q 非零拍数      : %0d", dbg_nz);
+      $display("  vghr_q 发生变化的拍数: %0d", dbg_chg);
+      $display("  bht_ipdp_vghr_q 与 vghr_q 不等的拍数: %0d", dbg_ipdiff);
+      $display("  pre_vghr_offset_0 非零拍数: %0d", dbg_ofsnz);
+
+      $display("--- 大 BTB (L1) 的贡献 ---");
+      $display("  查找选通 %0d 拍 | 结果有效 %0d 拍 | 其中命中 %0d 拍 (命中率 %.2f%%)",
+               bt_n_lookup, bt_n_result, bt_n_hit,
+               (bt_n_result > 0) ? 100.0 * bt_n_hit / bt_n_result : 0.0);
+      $display("  IF 级有效 %0d 拍 | 其中命中 %0d 拍 (%.2f%%)",
+               bt_n_ifvld, bt_n_ifhit,
+               (bt_n_ifvld > 0) ? 100.0 * bt_n_ifhit / bt_n_ifvld : 0.0);
+      for (bti = 1; bti <= 5; bti = bti + 1) begin
+        if (bt_cls_lk[bti] > 0)
+          $display("  L1 cls%0d 查询 %6d  命中 %6d  (%.2f%%)", bti, bt_cls_lk[bti], bt_cls_ht[bti],
+                   100.0 * bt_cls_ht[bti] / bt_cls_lk[bti]);
+      end
+      $display("--- 定向实验 Step 1: BHT 预测时刻四元组 ---");
+      for (si = 0; si < 16; si = si + 1) begin
+        if (st_n3[si] > 0)
+          $display("  cls3 pos%0d pc=%h n=%5d row=%h oh=%h sel=%h cnt=%h taken=%5d | 00=%0d 01=%0d 10=%0d 11=%0d",
+                   si, st_pc3[si], st_n3[si], st_row3[si], st_oh3[si], st_sel3[si], st_cnt3[si], st_tk3[si],
+                   st_c3_00[si], st_c3_01[si], st_c3_10[si], st_c3_11[si]);
+      end
+      for (si = 0; si < 16; si = si + 1) begin
+        if (st_n5[si] > 0)
+          $display("  cls5 pos%0d pc=%h n=%5d row=%h oh=%h sel=%h cnt=%h taken=%5d",
+                   si, st_pc5[si], st_n5[si], st_row5[si], st_oh5[si], st_sel5[si], st_cnt5[si], st_tk5[si]);
+      end
+      $display("--- pre-array / 选择阵列 状态 ---");
+      $display("  pre_array_data_taken 非零拍数 : %0d", dbg_tkn_nz);
+      $display("  pre_array_data_ntake 非零拍数 : %0d", dbg_ntk_nz);
+      $display("  sel_array_result[1]=1 拍数    : %0d", dbg_selr1);
+      $display("  bht_selected 里有计数器>=2 的拍数: %0d", dbg_has2);
+      $display("  bht_counter[1]=1 (预测 taken) 拍数: %0d", dbg_cnt1);
+      $display("--- vghr 移位来源 (三个门控各 fired 多少拍) ---");
+      $display("  ghr_updt_vld (iu_ifu_chgflw_vld)  : %0d", dbg_n_iu);
+      $display("  vghr_lbuf_updt_vld                : %0d", dbg_n_lbuf);
+      $display("  vghr_ip_updt_vld (ipctrl 条件分支): %0d", dbg_n_ip);
+      $display("  lbuf_bht_active_state             : %0d", dbg_n_lact);
+      $display("  ipctrl_bht_con_br_vld             : %0d", dbg_n_icb);
+      $display("  iu_ifu_bht_check_vld              : %0d", dbg_n_bchk);
+      $display("  bht_event 连续两拍都拉高          : %0d", dbg_ev2);
+      $display("  bht_event 上升沿 (独立事件数)     : %0d", dbg_ev_nochk);
+      $display("  check_vld 拉高但 bht_event 没拉高 : %0d", dbg_chk_noev);
+      $display("--- vghr_q[3:0] 分布 (自锁假设) ---");
+      $display("  == 0  : %0d 拍", dbg_gh0);
+      $display("  == 15 : %0d 拍", dbg_gh15);
+      $display("  其它  : %0d 拍", dbg_gh_mid);
+      $display("  类3 指令在 EX 时出现过的 vghr[3:0] 取值个数: 见下方 bits=%h", dbg_offs_acc);
+      $display("--- mispredict 解锁通路 (注入真实结果) ---");
+      $display("  ghr_updt_vld && check_vld 拍数 (真值注入) : %0d", dbg_n_unlock);
+      $display("    其中 condbr_taken=1 (注入 1)            : %0d", dbg_n_unl_t);
+      $display("    其中 condbr_taken=0 (注入 0)            : %0d", dbg_n_unlock - dbg_n_unl_t);
+
+      // -----------------------------------------------------------------
+      // [Q2] 类 3 / 类 5 逐条分支方向准确率 (与 §1.2 同口径, 细化到类内位置)
+      // -----------------------------------------------------------------
+      $display("--- [Q2] 逐条分支方向准确率 (pos = (pc-基准)>>4, 与 C910 编号一致) ---");
+      for (si = 0; si < 16; si = si + 1) begin
+        if (b3_cond[si] > 0)
+          $display("  cls3 pos%0d pc=%h n=%5d 准=%6.2f%%  误=%5d  预测tk=%5d 实际tk=%5d",
+                   si, b3_pc[si], b3_cond[si],
+                   100.0*(b3_cond[si]-b3_mis[si])/b3_cond[si], b3_mis[si], b3_tp[si], b3_tk[si]);
+      end
+      for (si = 0; si < 16; si = si + 1) begin
+        if (b5_cond[si] > 0)
+          $display("  cls5 pos%0d pc=%h n=%5d 准=%6.2f%%  误=%5d  预测tk=%5d 实际tk=%5d",
+                   si, b5_pc[si], b5_cond[si],
+                   100.0*(b5_cond[si]-b5_mis[si])/b5_cond[si], b5_mis[si], b5_tp[si], b5_tk[si]);
+      end
+
+      // -----------------------------------------------------------------
+      // [Q1] L1 大 BTB 逐 PC 普查: [0x100,0x320) 每 4 字节一行
+      //      lk=查询 ht=命中 ev=可用槽位有有效项 em=可用槽位有 tag 匹配
+      //      occ=该 16 字节行有效槽位数之和 (均值 = 行占用), uf=真正写进 SRAM 的更新
+      // -----------------------------------------------------------------
+      $display("--- [Q1] L1 大 BTB 逐 PC 普查 (窗口 [0x100,0x320), 4B 粒度) ---");
+      $display("  L1 查询被阻塞 (lookup_vld & !ready) : %0d 拍", btw_blk);
+      $display("  更新被接受 / 被丢 (非对齐等)        : %0d / %0d", btw_upd_acc, btw_upd_drp);
+      $display("  %-10s %7s %7s %7s %7s %8s %7s", "PC", "lk", "ht", "ev", "em", "occ均", "uf");
+      for (btw_idx = 0; btw_idx < BTW_N; btw_idx = btw_idx + 1) begin
+        if (btw_lk[btw_idx] > 0 || btw_uf[btw_idx] > 0)
+          $display("  0x%h  %7d %7d %7d %7d %8.2f %7d",
+                   BTW_BASE + btw_idx*4, btw_lk[btw_idx], btw_ht[btw_idx],
+                   btw_ev[btw_idx], btw_em[btw_idx],
+                   (btw_lk[btw_idx] > 0) ? 1.0*btw_occ[btw_idx]/btw_lk[btw_idx] : 0.0,
+                   btw_uf[btw_idx]);
+      end
+      for (bti = 1; bti <= 5; bti = bti + 1) begin
+        if (bt_cls_lk[bti] > 0)
+          $display("  [类合计复核] cls%0d 查询 %6d 命中 %6d (%.2f%%)",
+                   bti, bt_cls_lk[bti], bt_cls_ht[bti], 100.0*bt_cls_ht[bti]/bt_cls_lk[bti]);
+      end
+
+      // -----------------------------------------------------------------
+      // [Q3] 类 3 的 (行地址 x 相位 x 计数器) 联合分布
+      //      每行: slot=第几个不同行地址 n=样本 s0/s1=两种相位的样本数
+      //            c00/c01/c10/c11 = 读到的 2 位计数器分布
+      //      判据: 若同一行地址下 s0/s1 还是 50/50 混, 说明行地址与相位无关;
+      //            若 s0/s1 分得很开而 c00..c11 仍全是 00/01, 说明写进该行的
+      //            计数器没被训练到 taken 侧。
+      // -----------------------------------------------------------------
+      $display("--- [Q3] cls3 (行地址 x 相位 x 计数器) 联合分布 ---");
+      for (si = 0; si < 16; si = si + 1) begin
+        if (j3_slotv[si] > 0) begin
+          $display("  cls3 pos%0d pc=%h 不同行地址数=%0d", si, st_pc3[si], j3_slotv[si]);
+          for (jk = 0; jk < j3_slotv[si]; jk = jk + 1) begin
+            jidx = si*16 + jk;
+            $display("    row=%h n=%5d  相位0=%5d 相位1=%5d   cnt: 00=%5d 01=%5d 10=%5d 11=%5d",
+                     j3_key[jidx], j3_n[jidx], j3_s0[jidx], j3_s1[jidx],
+                     j3_c0[jidx], j3_c1[jidx], j3_c2[jidx], j3_c3[jidx]);
+          end
+        end
+      end
+      $display("  [相位自检] 进入类3区间的次数 = %0d (应为 512, 即外层轮次)", jround3);
+      // -----------------------------------------------------------------
+      // [Q3-5] 相位可分性: 比分布而不是比凸包
+      //   "混入比例" = 该相位的样本里, 落在【另一个相位也读过】的地址(或 GHR 值)上的比例。
+      //   接近 0  -> 两个相位用的计数器分得很开, 交替序列可学;
+      //   接近 100 -> 同一个计数器两种相位都在读, 上限就是 50%。
+      // -----------------------------------------------------------------
+      $display("--- [Q3-5] 相位可分性 (比分布) ---");
+      begin : q35_block
+        integer c, tt, tn, ts, ns, tdist, ndist, shdist, tsh, nsh;
+        integer idx2;
+        for (c = 3; c <= 5; c = c + 2) begin
+          tdist = 0; ndist = 0; shdist = 0; tsh = 0; nsh = 0; tt = 0; tn = 0;
+          for (idx2 = 0; idx2 < 512; idx2 = idx2 + 1) begin
+            if (j6_acl[idx2] == c && (j6_at[idx2] > 0 || j6_an[idx2] > 0)) begin
+              if (j6_at[idx2] > 0) tdist = tdist + 1;
+              if (j6_an[idx2] > 0) ndist = ndist + 1;
+              tt = tt + j6_at[idx2];
+              tn = tn + j6_an[idx2];
+              if (j6_at[idx2] > 0 && j6_an[idx2] > 0) begin
+                shdist = shdist + 1;
+                tsh = tsh + j6_at[idx2];
+                nsh = nsh + j6_an[idx2];
+              end
+            end
+          end
+          $display("  类%0d 计数器地址: T相位 %0d 个(样%d) / N相位 %0d 个(样%d) / 两相位共有 %0d 个",
+                   c, tdist, tt, ndist, tn, shdist);
+          $display("       -> 「共有地址」覆盖 T 侧 %0.1f%%, N 侧 %0.1f%%",
+                   (tt>0)?100.0*tsh/tt:0.0, (tn>0)?100.0*nsh/tn:0.0);
+          begin : sep1
+            integer i3, best, bt, bn;
+            best = 0;
+            for (i3 = 0; i3 < 512; i3 = i3 + 1)
+              if (j6_acl[i3] == c) best = best + ((j6_at[i3] > j6_an[i3]) ? j6_at[i3] : j6_an[i3]);
+            // 平衡版: 按 t/T vs n/N 判, 再看两类的召回率平均 —— 剔掉类间样本数不平衡(70/30)的干扰
+            bt = 0; bn = 0;
+            for (i3 = 0; i3 < 512; i3 = i3 + 1) begin
+              if (j6_acl[i3] == c && (j6_at[i3] > 0 || j6_an[i3] > 0)) begin
+                if (j6_at[i3]*tn >= j6_an[i3]*tt) bt = bt + j6_at[i3];
+                else                               bn = bn + j6_an[i3];
+              end
+            end
+            $display("       -> ★ 只看地址猜相位: 朴素 %0.1f%% (受样本数不平衡干扰) / 平衡 %0.1f%%  [50%%=分不开 100%%=完全分开]",
+                     (tt+tn>0)?100.0*best/(tt+tn):0.0,
+                     ((tt>0&&tn>0))?50.0*(1.0*bt/tt + 1.0*bn/tn):0.0);
+          end
+          tdist = 0; ndist = 0; shdist = 0; tsh = 0; nsh = 0; tt = 0; tn = 0;
+          for (idx2 = ((c == 5) ? 2048 : 0); idx2 < ((c == 5) ? 4096 : 2048); idx2 = idx2 + 1) begin
+            if (j6_g[idx2] > 0) begin
+              if (j6_gt[idx2] > 0) tdist = tdist + 1;
+              if (j6_gn[idx2] > 0) ndist = ndist + 1;
+              tt = tt + j6_gt[idx2];
+              tn = tn + j6_gn[idx2];
+              if (j6_gt[idx2] > 0 && j6_gn[idx2] > 0) begin
+                shdist = shdist + 1;
+                tsh = tsh + j6_gt[idx2];
+                nsh = nsh + j6_gn[idx2];
+              end
+            end
+          end
+          $display("  类%0d GHR低8位 : T相位 %0d 个取值(样%d) / N相位 %0d 个 / 共有 %0d 个",
+                   c, tdist, tt, ndist, shdist);
+          $display("       -> 「共有 GHR 值」覆盖 T 侧 %0.1f%%, N 侧 %0.1f%%",
+                   (tt>0)?100.0*tsh/tt:0.0, (tn>0)?100.0*nsh/tn:0.0);
+          begin : sep2
+            integer i3, best, bt, bn;
+            best = 0; bt = 0; bn = 0;
+            for (i3 = ((c == 5) ? 2048 : 0); i3 < ((c == 5) ? 4096 : 2048); i3 = i3 + 1) begin
+              best = best + ((j6_gt[i3] > j6_gn[i3]) ? j6_gt[i3] : j6_gn[i3]);
+              if (j6_gt[i3]*tn >= j6_gn[i3]*tt) bt = bt + j6_gt[i3];
+              else                              bn = bn + j6_gn[i3];
+            end
+            $display("       -> ★ 只看 GHR低8位猜相位: 朴素 %0.1f%% / 平衡 %0.1f%%",
+                     (tt+tn>0)?100.0*best/(tt+tn):0.0,
+                     ((tt>0&&tn>0))?50.0*(1.0*bt/tt + 1.0*bn/tn):0.0);
+          end
+        end
+        $display("  (地址表 %0d 项, 溢出 %0d)", j6_ac, j6_aovf);
+      end
+
+      // -----------------------------------------------------------------
+      // [Q3-6] 写进去的是什么值 —— 决定病因在"写哪儿"还是"写什么"
+      // -----------------------------------------------------------------
+      $display("--- [Q3-10] 预测时刻读索引 mux 走哪一档 (类3/5 的预测) ---");
+      $display("  1 rtu_flush=%0d  2 bju_mispred&!chk=%0d  3 bju_mispred&chk=%0d  4 local_recover=%0d  5 after_misp/flush_q=%0d  6 正常=%0d  合计=%0d",
+               q310_n[0],q310_n[1],q310_n[2],q310_n[3],q310_n[4],q310_n[5],
+               q310_n[0]+q310_n[1]+q310_n[2]+q310_n[3]+q310_n[4]+q310_n[5]);
+
+      $display("  [自检] st_row 与用 vghr_q 按第6档算出的值: 相等 %0d / 不等 %0d", q310_rowok, q310_rowne);
+      $display("--- [Q3-8] 预测级读地址 vs 提交级写地址, 同一 PC 配对 ---");
+      $display("  预测入表 %0d 次, 写侧配对命中 %0d / 未命中 %0d", q38_ins, q38_hit, q38_miss);
+      $display("  命中里: 地址完全相同 %0d; 不同 %0d (word 不同 %0d / plane 不同 %0d / offset 不同 %0d)",
+               q38_eq, q38_hit-q38_eq, q38_wne, q38_pne, q38_one);
+      $display("  同 PC 有多项(取最新)次数 = %0d; 配对年龄最大 %0d 拍", q38_skip, q38_age_max);
+      $display("  年龄直方图 0..7 拍: %0d %0d %0d %0d %0d %0d %0d %0d",
+               q38_age_hist[0],q38_age_hist[1],q38_age_hist[2],q38_age_hist[3],
+               q38_age_hist[4],q38_age_hist[5],q38_age_hist[6],q38_age_hist[7]);
+      $display("  [Q3-9] 随包 GHR 与预测时刻 GHR: 完全相等 %0d / 不等 %0d", q38_geq, q38_gne);
+      $display("         不等的那些里, 右移 k 位后高位一致(k=1..4): %0d %0d %0d %0d",
+               q38_gsh[1],q38_gsh[2],q38_gsh[3],q38_gsh[4]);
+      $display("         低 8 位对齐关系: 同相 %0d / 随包比预测新1位 %0d / 新2位 %0d",
+               q38_gx0, q38_gx1, q38_gx2);
+      $display("  (q38_pcseen=%h: 只作参考)", q38_pcseen);
+
+      $display("--- [Q3-6] 写入的值分布 ---");
+      $display("  全局: 写 %0d 次, 值 00=%0d 01=%0d 10=%0d 11=%0d",
+               j6_wall, j6_wv[0], j6_wv[1], j6_wv[2], j6_wv[3]);
+      $display("  类3 读到的地址上(这些地址的读次数一并列出):");
+      for (si = 0; si < 512; si = si + 1) begin
+        if (j6_acl[si] == 3 && (j6_at[si]+j6_an[si]) > 0)
+          $display("    %h word=%h plane=%0d off=%0d  读%5d  写:%0d次(00=%0d 01=%0d 10=%0d 11=%0d)",
+                   j6_a[si], j6_a[si][14:5], j6_a[si][4], j6_a[si][3:0], j6_at[si]+j6_an[si],
+                   j6_aw[si*4]+j6_aw[si*4+1]+j6_aw[si*4+2]+j6_aw[si*4+3],
+                   j6_aw[si*4], j6_aw[si*4+1], j6_aw[si*4+2], j6_aw[si*4+3]);
+      end
+      $display("--- [Q3-7] 全局写地址 (word,plane,offset), 共 %0d 个 / 写 %0d 次 (溢出 %0d) ---",
+               j7_c, j6_wall, j7_ovf);
+      $display("  %-8s %6s   %s", "addr", "写次数", "word plane offset");
+      for (si = 0; si < 512; si = si + 1) begin
+        if (j7_n[si] > 0)
+          $display("  %h %6d   w=%h pl=%0d off=%0d",
+                   j7_a[si], j7_n[si], j7_a[si]/32, (j7_a[si]/16)%2, j7_a[si]%16);
+      end
+
+      $display("--- [Q3-4] 类3 读到的完整计数器地址 (word,plane,offset) 的读/写次数 ---");
+      $display("  不同地址数 = %0d (溢出 %0d)", j4_naddr, j4_ovf);
+      $display("  %-8s %8s %8s   %s", "地址", "读次数", "写次数", "(word,plane,offset)");
+      for (si = 0; si < 256; si = si + 1) begin
+        if (j4_nrd[si] > 0)
+          $display("  0x%h %8d %8d   word=%h plane=%0d offset=%0d",
+                   j4_addr[si], j4_nrd[si], j4_nwr[si],
+                   j4_addr[si][14:5], j4_addr[si][4], j4_addr[si][3:0]);
+      end
+      $display("--- [Q3-4 对照] 类5 读到的完整计数器地址的读/写次数 ---");
+      $display("  不同地址数 = %0d (溢出 %0d)", j5a_naddr, j5a_ovf);
+      for (si = 0; si < 256; si = si + 1) begin
+        if (j5a_nrd[si] > 0)
+          $display("  0x%h %8d %8d   word=%h plane=%0d offset=%0d",
+                   j5a_addr[si], j5a_nrd[si], j5a_nwr[si],
+                   j5a_addr[si][14:5], j5a_addr[si][4], j5a_addr[si][3:0]);
+      end
+      $display("--- [Q3-3] 预测时刻的 GHR / 偏移 / 行地址, 按相位分开 (or==and 表示该相位内恒定) ---");
+      for (si = 0; si < 16; si = si + 1) begin
+        if (j3_slotv[si] > 0) begin
+          $display("  cls3 pos%0d pc=%h", si, st_pc3[si]);
+          $display("     相位0(不跳) n=%4d  GHR or=%h and=%h  偏移or=%h  行or=%h",
+                   j3_ng0[si], j3_gp0_or[si], j3_gp0_ad[si], j3_oh0_or[si], j3_rw0_or[si]);
+          $display("     相位1(要跳) n=%4d  GHR or=%h and=%h  偏移or=%h  行or=%h",
+                   j3_ng1[si], j3_gp1_or[si], j3_gp1_ad[si], j3_oh1_or[si], j3_rw1_or[si]);
+          $display("     两相位 GHR 集合相同? %s   偏移集合相同? %s   行集合相同? %s",
+                   (j3_gp0_or[si]==j3_gp1_or[si] && j3_gp0_ad[si]==j3_gp1_ad[si]) ? "是 <== 索引里没有相位信息" : "否",
+                   (j3_oh0_or[si]==j3_oh1_or[si]) ? "是" : "否",
+                   (j3_rw0_or[si]==j3_rw1_or[si]) ? "是" : "否");
+        end
+      end
+      $display("--- [Q3-对照] cls5 (行地址 x mod4 相位 x 计数器) ---");
+      for (si = 0; si < 16; si = si + 1) begin
+        if (j5_slotv[si] > 0) begin
+          $display("  cls5 pos%0d pc=%h 不同行地址数=%0d", si, st_pc5[si], j5_slotv[si]);
+          for (jk = 0; jk < j5_slotv[si]; jk = jk + 1) begin
+            jidx = si*16 + jk;
+            $display("    row=%h n=%5d  ph0=%5d ph1=%5d ph2=%5d ph3=%5d   cnt: 00=%5d 01=%5d 10=%5d 11=%5d",
+                     j5_key[jidx], j5_n[jidx], j5_p0[jidx], j5_p1[jidx],
+                     j5_p2[jidx], j5_p3[jidx],
+                     j5_c0[jidx], j5_c1[jidx], j5_c2[jidx], j5_c3[jidx]);
+          end
+        end
+      end
+      $display("  [相位自检] 进入类5区间的次数 = %0d (应为 512)", jround5);
+      $display("--- [Q3-3 对照] 类5 预测时刻的 GHR, 按 T/N 相位分开 ---");
+      for (si = 0; si < 16; si = si + 1) begin
+        if (j5_slotv[si] > 0) begin
+          $display("  cls5 pos%0d pc=%h  N相位 n=%4d GHR or=%h and=%h | T相位 n=%4d GHR or=%h and=%h | 相同? %s",
+                   si, st_pc5[si], j5_ngn[si], j5_gn_or[si], j5_gn_ad[si],
+                   j5_ngt[si], j5_gt_or[si], j5_gt_ad[si],
+                   (j5_gn_or[si]==j5_gt_or[si] && j5_gn_ad[si]==j5_gt_ad[si]) ? "是 <== 也无相位信息" : "否");
+        end
+      end
+
+      // -----------------------------------------------------------------
+      // [Q3-2] 读到的行 vs 写到的行 —— 同一位置分开累计, 看有没有交集
+      //   "写过" = 读到的行出现在该位置的写集合里 (写索引命中)
+      // -----------------------------------------------------------------
+      $display("--- [Q3-2] 读索引集合 vs 写索引集合 (按类内位置) ---");
+      $display("  [自检] 预测阵列真实写次数 (非 inv) = %0d  (落在类3窗口 %0d / 类5窗口 %0d)",
+               q3_nall, q3_c3all, q3_c5all);
+      $display("  [自检] 全局写过的行数 = %0d, 类3窗口内 = %0d, 类5窗口内 = %0d",
+               $countones(q3_wrall), $countones(q3_wr3all), $countones(q3_wr5all));
+      $display("  [关键A] 同一个 GHR 值(vghr_q)代进两条表达式是否相等:");
+      $display("     类3: %0d/%0d 次相等", q3_same3, q3_tot3);
+      $display("     类5: %0d/%0d 次相等", q3_same5, q3_tot5);
+      $display("  [关键B] 写索引用【随包带下去的 GHR】算, 是否等于本次的读索引:");
+      $display("     类3: %0d/%0d 次相等   <-- 相等才会训练到刚读的那个计数器",
+               q3_csame3, q3_tot3x);
+      $display("     类5: %0d/%0d 次相等", q3_csame5, q3_tot5x);
+      $display("  [关键C] 把随包 GHR 按【读窗口】而不是写窗口代进去, 与读索引相等:");
+      $display("     类3: %0d/%0d   类5: %0d/%0d", q3_shift3, q3_tot3x, q3_shift5, q3_tot5x);
+      $display("  [自检] bht_ipdp_vghr_q 与 vghr_q 不等的拍数 = %0d / %0d",
+               q3_hdiff, q3_tot3x + q3_tot5x);
+      for (si = 0; si < 16; si = si + 1) begin
+        if (j3_slotv[si] > 0) begin
+          $display("  cls3 pos%0d pc=%h  读集合=%0d 行  类3窗口写集合=%0d 行  全局写集合=%0d 行",
+                   si, st_pc3[si], $countones(q3_rd3[si]),
+                   $countones(q3_wr3all), $countones(q3_wrall));
+          for (jk = 0; jk < j3_slotv[si]; jk = jk + 1) begin
+            jidx = si*16 + jk;
+            $display("      读到的 row=%h n=%5d  -> 类3窗口写过? %s   全局写过? %s",
+                     j3_key[jidx], j3_n[jidx],
+                     q3_wr3all[j3_key[jidx]] ? "是" : "**否**",
+                     q3_wrall [j3_key[jidx]] ? "是" : "**否**");
+          end
+        end
+      end
+      for (si = 0; si < 16; si = si + 1) begin
+        if (j5_slotv[si] > 0)
+          $display("  cls5 pos%0d pc=%h  读集合=%0d 行  类5窗口写集合=%0d 行",
+                   si, st_pc5[si], $countones(q3_rd5[si]), $countones(q3_wr5all));
+      end
+
+      // -----------------------------------------------------------------
+      // [Q5] L0 BTB 训练质量: entry_rd_hit 与 eligible 分开
+      // -----------------------------------------------------------------
+      $display("--- [Q5] L0 BTB 训练质量 (rd_hit vs eligible) ---");
+      $display("  查询次数                          : %0d", q5_lookn);
+      $display("  平均 entry_rd_hit (PC 在表里)     : %0.3f 条/次", (q5_lookn>0)?1.0*q5_rd_sum/q5_lookn:0.0);
+      $display("  平均 eligible (在表里且可命中)    : %0.3f 条/次", (q5_lookn>0)?1.0*q5_el_sum/q5_lookn:0.0);
+      $display("  PC 完全不在表里的查询             : %0d (%0.2f%%)",
+               q5_rd0, (q5_lookn>0)?100.0*q5_rd0/q5_lookn:0.0);
+      $display("  在表里但 eligible=0 (没武装/槽位) : %0d (%0.2f%%)",
+               q5_noarm, (q5_lookn>0)?100.0*q5_noarm/q5_lookn:0.0);
+      $display("    其中确实一条都没武装的          : %0d", q5_slotmiss);
+      $display("  eligible=0 的查询合计             : %0d (%0.2f%%)",
+               q5_el0, (q5_lookn>0)?100.0*q5_el0/q5_lookn:0.0);
+
+      // -----------------------------------------------------------------
+      // [Q4] 前端阻塞归因 (与取指气泡拆解同一门控)
+      // -----------------------------------------------------------------
+      $display("--- [Q4] 前端阻塞归因 ---");
+      $display("  '核在等, IFU 没货' 拍数                       : %0d", q4_nofetch);
+      $display("    其中 L1 BTB 这一拍拒绝查询 (lookup&!ready) : %0d (%0.2f%%)",
+               q4_nf_btblk, (q4_nofetch>0)?100.0*q4_nf_btblk/q4_nofetch:0.0);
+      $display("======================================================");
+    end
+  endtask
+
   task automatic report_bubble_stats();
     integer not_accept, chk;
     begin
@@ -645,6 +2385,13 @@ module tb_miniRV_dpi;
       $display("     其中 bp_read_stall       : %0d", b_nf_bpread);
       $display("     其中 if_frontend_stall   : %0d", b_nf_frontend);
       $display("     其它                     : %0d", b_nf_other);
+      $display("  --- 「其它」归因: 事件后等前端重新出指令 ---");
+      $display("     事件数 (改向/失效/冲刷)  : %0d / %0d / %0d (合计 %0d)",
+               rf_ev_redir_c, rf_ev_inval_c, rf_ev_flush_c, rf_ev);
+      $display("     重填等待拍数 按来源      : %0d / %0d / %0d (合计 %0d)",
+               rf_redir, rf_inval, rf_flush, rf_wait);
+      $display("     其中落在「其它」桶内      : %0d  (占该桶 %0.2f%%)",
+               rf_in_bucket, (b_nf_other>0)?100.0*rf_in_bucket/b_nf_other:0.0);
       $display("  原始计数(不互斥): init=%0d stall=%0d(load-use %0d / muldiv %0d) flush_if_id=%0d ifu_idu_flush=%0d !inst0_vld=%0d",
                b_raw_init, b_raw_stall, b_raw_loaduse, b_raw_muldiv,
                b_raw_flush, b_raw_iflush, b_raw_novld);
