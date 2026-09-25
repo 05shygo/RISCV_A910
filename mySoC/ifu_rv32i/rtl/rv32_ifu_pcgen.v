@@ -19,6 +19,18 @@ limitations under the License.
 //------------------------------------------------------------------------------
 // Module Declaration
 //------------------------------------------------------------------------------
+// [ICACHE 参数化] 只用行大小(判断"顺序取指何时换 set"); 默认 = 原 64 B 行。
+`ifdef ICACHE_BYTES
+  `define IC_BYTES_VAL `ICACHE_BYTES
+`else
+  `define IC_BYTES_VAL 65536
+`endif
+`ifdef ICACHE_LINE_BYTES
+  `define IC_LINE_VAL `ICACHE_LINE_BYTES
+`else
+  `define IC_LINE_VAL 64
+`endif
+
 module rv32_ifu_pcgen (
   input wire forever_cpuclk,
   input wire cpurst_b,
@@ -128,6 +140,10 @@ module rv32_ifu_pcgen (
   //----------------------------------------------------------------------------
   // Local parameters and net declarations
   //----------------------------------------------------------------------------
+  localparam IC_BYTES  = `IC_BYTES_VAL;
+  localparam IC_LINE   = `IC_LINE_VAL;
+  localparam IC_SETS   = IC_BYTES/(2*IC_LINE);
+  localparam LINE_BITS = $clog2(IC_LINE);
   localparam SOURCE_COUNT = 10;
   localparam MUX_COUNT = 2;
   localparam PAYLOAD_WIDTH = 34;
@@ -321,7 +337,17 @@ module rv32_ifu_pcgen (
   assign pcgen_icache_if_chgflw_short = fetch_enable && chgflw_short;
   assign pcgen_icache_if_seq_data_req = seq_advance;
   assign pcgen_icache_if_seq_data_req_short = fetch_enable && !ifctrl_pcgen_stall_short;
-  assign pcgen_icache_if_seq_tag_req = seq_advance && (pc_bus[5:4] == 2'b00);
+  // [ICACHE 参数化] 只在"顺序取指跨进新行 ⇒ set 变了"时才重读 tag。
+  // 64 B 行: 行内 4 个 16 B 拍共用 1 个 set, 所以只有 pc[5:4]==0 需要重读 ✓
+  // 16 B 行: 每个 16 B 拍就是一整行 ⇒ set 每拍都变, 必须每拍重读。
+  // (原式恒按 64 B 行判, 16 B 行下 3/4 的顺序取指会拿上一行的 tag 去比。)
+  generate
+    if (LINE_BITS > 4) begin : g_seq_tag_on_line_boundary
+      assign pcgen_icache_if_seq_tag_req = seq_advance && (pc_bus[LINE_BITS-1:4] == 2'b00);
+    end else begin : g_seq_tag_every_fetch
+      assign pcgen_icache_if_seq_tag_req = seq_advance;
+    end
+  endgenerate
   assign pcgen_icache_if_gateclk_en = fetch_enable && (chgflw_short || !ifctrl_pcgen_stall_short);
   // Only trim for the selected IP taken redirect. Reissue/higher redirects
   // must never inherit the bank mask of a losing branch source.

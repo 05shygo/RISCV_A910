@@ -11,7 +11,7 @@ for f in (ROOT/'rtl/ifu_files.f').read_text().splitlines():
 ds=c.getAllDiagnostics();report=DiagnosticEngine.reportAll(c.sourceManager,ds)
 (WORK/'lint.log').write_text(report,encoding='utf-8');assert not any(d.isError() for d in ds),report
 ps=public_ports((ROOT/'rtl/rv32_ifu_top.v').read_text())
-book=openpyxl.load_workbook(ROOT.parent/'ifu/doc/RV32I_C910_IFU_interface_v1.1_noMMU.xlsx',read_only=True,data_only=True)
+book=openpyxl.load_workbook(ROOT/'doc/RV32I_C910_IFU_interface_v1.1_noMMU.xlsx',read_only=True,data_only=True)
 expected={}
 for name,d,_ in book['IFU_Interface'].values:
  m=re.fullmatch(r'(\w+)(\[\d+:\d+\])?',str(name))

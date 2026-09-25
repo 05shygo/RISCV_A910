@@ -66,6 +66,9 @@ module tb_l0_btb;
     .update_target    (update_target   ),
     .update_type      (update_type     ),
     .update_taken     (update_taken    ),
+    // P0-1: update_cnt_lo = 预测当时 BHT 计数器低位。本自检台只造"强 taken"
+    // 场景 (update_taken=1 即视为 2'b11), 所以恒接 update_taken。
+    .update_cnt_lo    (update_taken    ),
     .update_ras      (update_ras      ),
     .update_way       (update_way      ),
     .directed_inv_vld (directed_inv_vld),

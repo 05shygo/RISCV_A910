@@ -16,7 +16,29 @@ limitations under the License.
 //------------------------------------------------------------------------------
 // Module Declaration
 //------------------------------------------------------------------------------
-module rv32_ifu_ifdp (
+// [ICACHE 参数化] 与 rv32_ifu_icache_if.v 同套 define/公式; 默认 = 原 64 KiB/64 B。
+`ifdef ICACHE_BYTES
+  `define IC_BYTES_VAL `ICACHE_BYTES
+`else
+  `define IC_BYTES_VAL 65536
+`endif
+`ifdef ICACHE_LINE_BYTES
+  `define IC_LINE_VAL `ICACHE_LINE_BYTES
+`else
+  `define IC_LINE_VAL 64
+`endif
+
+module rv32_ifu_ifdp #(
+  parameter IC_BYTES  = `IC_BYTES_VAL,
+  parameter IC_LINE   = `IC_LINE_VAL,
+  parameter IC_SETS   = IC_BYTES/(2*IC_LINE),
+  parameter SET_BITS  = $clog2(IC_SETS),
+  parameter LINE_BITS = $clog2(IC_LINE),
+  parameter TAG_BITS  = 32 - SET_BITS - LINE_BITS,
+  parameter TAG_WIDTH = 1 + TAG_BITS,
+  parameter TAG_BASE  = 32 - TAG_BITS,
+  parameter BEATS     = IC_LINE/16
+) (
   input  wire         forever_cpuclk,
   input  wire         cpurst_b,
   input  wire         cp0_ifu_icache_en,
@@ -29,14 +51,12 @@ module rv32_ifu_ifdp (
   input  wire [ 31:0] ifctrl_ifdp_issue_pc,
   input  wire [  1:0] ifctrl_ifdp_issue_way,
   input  wire [  1:0] ifctrl_ifdp_issue_kind,
-  input  wire         lbuf_ifdp_source,
-  input  wire [  3:0] lbuf_ifdp_word_mask,
   input  wire [127:0] icache_if_ifdp_inst_data0,
   input  wire [127:0] icache_if_ifdp_inst_data1,
   input  wire [ 31:0] icache_if_ifdp_precode0,
   input  wire [ 31:0] icache_if_ifdp_precode1,
-  input  wire [ 17:0] icache_if_ifdp_tag_data0,
-  input  wire [ 17:0] icache_if_ifdp_tag_data1,
+  input  wire [TAG_WIDTH-1:0] icache_if_ifdp_tag_data0,
+  input  wire [TAG_WIDTH-1:0] icache_if_ifdp_tag_data1,
   input  wire         icache_if_ifdp_fifo,
   input  wire         l1_refill_ifdp_acc_err,
   input  wire [127:0] l1_refill_ifdp_inst_data,
@@ -68,7 +88,6 @@ module rv32_ifu_ifdp (
   output wire [ 31:0] ifdp_l0_btb_pc,
   output wire [ 31:0] ifdp_bht_pc,
   output wire [  1:0] ifdp_ifctrl_l0_way,
-  output wire         ifdp_ipdp_lbuf_on,
   output wire [ 31:0] ifdp_ipdp_vpc,
   output wire [  4:0] ifdp_ipdp_attr,
   output wire [  1:0] ifdp_ipdp_priv_mode,
@@ -103,8 +122,7 @@ module rv32_ifu_ifdp (
   output wire [ 15:0] ifdp_ipdp_l0_entry_mask,
   output wire [  3:0] ifdp_ipdp_l0_btb_target_match
 );
-  localparam PACKET_WIDTH = 577;
-  localparam P_LBUF_ON = 576;
+  localparam PACKET_WIDTH = 576;
   localparam P_VPC = 544;
   localparam P_ATTR = 539;
   localparam P_PRIV_MODE = 537;
@@ -136,7 +154,7 @@ module rv32_ifu_ifdp (
   localparam P_NO_SPEC = 0;
 
   localparam [1:0] CACHE = 2'd0, FAULT = 2'd1, BYPASS = 2'd2, REFILL = 2'd3;
-  localparam META_WIDTH = 218;
+  localparam META_WIDTH = 213;
   genvar capture;
   genvar way;
   genvar part;
@@ -152,8 +170,6 @@ module rv32_ifu_ifdp (
   wire [PACKET_WIDTH-1:0] response_packet;
   wire [PACKET_WIDTH-1:0] selected_packet;
   wire [            31:0] if_pc;
-  wire                    is_lbuf;
-  wire [             3:0] lbuf_mask;
   wire [             4:0] if_attr;
   wire [             1:0] if_priv;
   wire [             1:0] if_way;
@@ -179,7 +195,7 @@ module rv32_ifu_ifdp (
   wire [             3:0] sfp_mask;
   wire [           127:0] array_data          [0:1];
   wire [            31:0] array_precode       [0:1];
-  wire [            17:0] array_tag           [0:1];
+  wire [  TAG_WIDTH-1:0] array_tag           [0:1];
   wire [           127:0] way_data            [0:1];
   wire [            31:0] way_precode         [0:1];
   wire [             2:0] tag_match           [0:1];
@@ -189,8 +205,6 @@ module rv32_ifu_ifdp (
   //----------------------------------------------------------------------------
   assign meta_en = ifctrl_ifdp_issue;
   assign meta_nxt = {
-    lbuf_ifdp_source,
-    lbuf_ifdp_word_mask,
     ifctrl_ifdp_issue_pc,
     region_ifdp_attr,
     cp0_yy_priv_mode,
@@ -203,8 +217,8 @@ module rv32_ifu_ifdp (
     breakpoint_issue_hit[1],
     breakpoint_issue_hit[0]
   };
-  assign {is_lbuf, lbuf_mask, if_pc, if_attr, if_priv, if_way, if_kind, if_cache_en, forward_data,
-          forward_precode, forward_error, breakpoint_hit[1], breakpoint_hit[0]} = meta_q;
+  assign {if_pc, if_attr, if_priv, if_way, if_kind, if_cache_en, forward_data, forward_precode,
+          forward_error, breakpoint_hit[1], breakpoint_hit[0]} = meta_q;
   always @(posedge forever_cpuclk or negedge cpurst_b) begin : p_meta
     if (!cpurst_b) begin
       meta_q <= {META_WIDTH{1'b0}};
@@ -254,9 +268,9 @@ module rv32_ifu_ifdp (
       for (part = 0; part < 3; part = part + 1) begin : g_tag_part
         wire equal_part;
         if (part == 2) begin : g_valid_and_high
-          assign equal_part = array_tag[way][17:16] == {1'b1, if_pc[31]};
+          assign equal_part = array_tag[way][TAG_WIDTH-1:16] == {1'b1, if_pc[31 -: TAG_WIDTH-17]};
         end else begin : g_low
-          assign equal_part = array_tag[way][part*8+:8] == if_pc[15+part*8+:8];
+          assign equal_part = array_tag[way][part*8+:8] == if_pc[TAG_BASE+part*8+:8];
         end
         assign tag_match[way][part] = !if_fault &&
           ((is_refill && (way == 0)) || (is_cache && if_cache_en && equal_part));
@@ -265,7 +279,7 @@ module rv32_ifu_ifdp (
     for (slot = 0; slot < 4; slot = slot + 1) begin : g_word
       localparam [1:0] SLOT = slot;
       assign word_mask[slot] = if_fault ?
-        (SLOT == if_pc[3:2]) : (SLOT >= if_pc[3:2]) && (!is_lbuf || lbuf_mask[slot]);
+        (SLOT == if_pc[3:2]) : (SLOT >= if_pc[3:2]);
       assign ifdp_ipdp_word_pc[slot*32+:32] = {ifdp_ipdp_vpc[31:4], SLOT, 2'b00};
       assign ifdp_ipdp_l0_btb_target_match[slot] = ifdp_ipdp_btb_vld && ifdp_ipdp_btb_hit[slot] &&
         ifdp_ipdp_l0_hit && (ifdp_ipdp_btb_target[slot*32+:32] == ifdp_ipdp_l0_target);
@@ -281,7 +295,6 @@ module rv32_ifu_ifdp (
     (l0_btb_ifdp_slot >= if_pc[3:2]) && !(|l0_btb_ifdp_target[1:0]);
   assign sfp_mask = (sfp_ifdp_vld && (sfp_ifdp_pc == if_pc) && !if_fault) ? sfp_ifdp_no_spec : 4'b0;
   assign response_packet = {
-    is_lbuf,
     if_pc,
     if_attr,
     if_priv,
@@ -339,7 +352,6 @@ module rv32_ifu_ifdp (
   assign ifdp_ifctrl_l0_way = selected_packet[P_L0_WAY+:2];
   assign ifdp_l0_btb_pc = if_pc;
   assign ifdp_bht_pc = if_pc;
-  assign ifdp_ipdp_lbuf_on = packet_q[1][P_LBUF_ON+:1];
   assign ifdp_ipdp_vpc = packet_q[1][P_VPC+:32];
   assign ifdp_ipdp_attr = packet_q[1][P_ATTR+:5];
   assign ifdp_ipdp_priv_mode = packet_q[1][P_PRIV_MODE+:2];

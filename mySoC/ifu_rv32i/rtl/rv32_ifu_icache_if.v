@@ -13,9 +13,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// RV32I/no-MMU derivative: 64 KiB, two ways, 64 B lines, 512 sets.
-// All address inputs use byte addressing: set PA[14:6], block PA[5:4].
-// Tag row = {FIFO, valid1, tag1[16:0], valid0, tag0[16:0]}.
+// RV32I/no-MMU derivative: 默认 64 KiB / two ways / 64 B lines / 512 sets,
+// 由模块参数 IC_BYTES/IC_LINE 决定; 索引 = {set, beat, word} 左对齐,
+// set = INDEX_WIDTH-1 : LINE_BITS, word 恒 4 bit。
+// Tag row = {FIFO, valid1, tag1[TAG_BITS-1:0], valid0, tag0[TAG_BITS-1:0]}.
 // Core request strobes MUST be mutually exclusive; use rv32_ifu_icache_top.
 
 //------------------------------------------------------------------------------
@@ -26,7 +27,30 @@ limitations under the License.
 //------------------------------------------------------------------------------
 // Module Declaration
 //------------------------------------------------------------------------------
-module rv32_ifu_icache_if (
+// [ICACHE 参数化] 容量/行大小可配; 两个 define 都不给时 = 原 64 KiB/64 B 几何,
+// 与参数默认值一致 ⇒ 不传参的基线逐位不变。
+`ifdef ICACHE_BYTES
+  `define IC_BYTES_VAL `ICACHE_BYTES
+`else
+  `define IC_BYTES_VAL 65536
+`endif
+`ifdef ICACHE_LINE_BYTES
+  `define IC_LINE_VAL `ICACHE_LINE_BYTES
+`else
+  `define IC_LINE_VAL 64
+`endif
+
+module rv32_ifu_icache_if #(
+  parameter IC_BYTES  = `IC_BYTES_VAL,        // 总容量(字节), 2 路
+  parameter IC_LINE   = `IC_LINE_VAL,         // 行大小(字节)
+  parameter IC_SETS   = IC_BYTES/(2*IC_LINE),
+  parameter SET_BITS  = $clog2(IC_SETS),
+  parameter LINE_BITS = $clog2(IC_LINE),
+  parameter TAG_BITS  = 32 - SET_BITS - LINE_BITS,
+  parameter TAG_WIDTH = 1 + TAG_BITS,
+  parameter INDEX_WIDTH = SET_BITS + LINE_BITS,
+  parameter BEATS     = IC_LINE/16
+) (
 
   // Cache array and pipeline interface
   input wire l1_refill_icache_if_install,
@@ -60,7 +84,7 @@ module rv32_ifu_icache_if (
   input wire [127:0] l1_refill_icache_if_inst_data,
   input wire         l1_refill_icache_if_last,
   input wire [ 31:0] l1_refill_icache_if_pre_code,
-  input wire [ 16:0] l1_refill_icache_if_ptag,
+  input wire [TAG_BITS-1:0] l1_refill_icache_if_ptag,
   input wire         l1_refill_icache_if_wr,
 
   // Clock, reset and configuration
@@ -81,17 +105,19 @@ module rv32_ifu_icache_if (
   input  wire [  1:0] pcgen_icache_if_way_pred,
   output wire [127:0] icache_if_ifctrl_inst_data0,
   output wire [127:0] icache_if_ifctrl_inst_data1,
-  output wire [ 17:0] icache_if_ifctrl_tag_data0,
-  output wire [ 17:0] icache_if_ifctrl_tag_data1,
+  // [ICACHE 参数化] tag 宽度必须随几何走; 写死 17 位会让 TAG_BITS!=17 的几何
+  // 在父层被截断, 三片比较里的 part2 退化成恒假 ⇒ 永不命中。
+  output wire [TAG_WIDTH-1:0] icache_if_ifctrl_tag_data0,
+  output wire [TAG_WIDTH-1:0] icache_if_ifctrl_tag_data1,
   output wire         icache_if_ifdp_fifo,
   output wire [127:0] icache_if_ifdp_inst_data0,
   output wire [127:0] icache_if_ifdp_inst_data1,
   output wire [ 31:0] icache_if_ifdp_precode0,
   output wire [ 31:0] icache_if_ifdp_precode1,
-  output wire [ 17:0] icache_if_ifdp_tag_data0,
-  output wire [ 17:0] icache_if_ifdp_tag_data1,
-  output wire [ 17:0] icache_if_ipb_tag_data0,
-  output wire [ 17:0] icache_if_ipb_tag_data1,
+  output wire [TAG_WIDTH-1:0] icache_if_ifdp_tag_data0,
+  output wire [TAG_WIDTH-1:0] icache_if_ifdp_tag_data1,
+  output wire [TAG_WIDTH-1:0] icache_if_ipb_tag_data0,
+  output wire [TAG_WIDTH-1:0] icache_if_ipb_tag_data1,
   output wire         ifu_hpcp_icache_access,
   output wire         ifu_hpcp_icache_miss
 );
@@ -102,8 +128,6 @@ module rv32_ifu_icache_if (
   localparam WAY_COUNT   = 2;
   localparam BANK_COUNT  = 4;
   localparam OWNER_COUNT = 4;
-  localparam INDEX_WIDTH = 15;
-  localparam TAG_WIDTH   = 18;
   localparam EVENT_COUNT = 2;
 
   genvar way;
@@ -135,8 +159,8 @@ module rv32_ifu_icache_if (
   wire [                       31:0] precode_din;
   wire [          WAY_COUNT*128-1:0] data_dout;
   wire [           WAY_COUNT*32-1:0] precode_dout;
-  wire [                       36:0] icache_ifu_tag_dout;
-  wire [                       36:0] ifu_icache_tag_din;
+  wire [              2*TAG_WIDTH:0] icache_ifu_tag_dout;
+  wire [              2*TAG_WIDTH:0] ifu_icache_tag_din;
   wire [                        2:0] ifu_icache_tag_wen;
   wire                               ifu_icache_tag_cen_b;
   wire                               ifu_icache_tag_clk_en;
@@ -144,7 +168,7 @@ module rv32_ifu_icache_if (
   wire                               refill_publish;
   wire                               tag_fifo_din;
   wire                               tag_valid_din;
-  wire [                       16:0] tag_pc_din;
+  wire [                TAG_BITS-1:0] tag_pc_din;
   wire                               hpcp_clk;
   wire                               hpcp_clk_en;
   wire [            EVENT_COUNT-1:0] event_source;
@@ -166,12 +190,16 @@ module rv32_ifu_icache_if (
     ipb_icache_if_req,
     icache_read_req
   };
+// [临时诊断] 打印实际生效的几何参数; 定位完即删
+  initial $display("[ICACHE] BYTES=%0d LINE=%0d SETS=%0d SET_BITS=%0d LINE_BITS=%0d TAG_BITS=%0d TAG_WIDTH=%0d BEATS=%0d",
+                   IC_BYTES, IC_LINE, IC_SETS, SET_BITS, LINE_BITS, TAG_BITS, TAG_WIDTH, BEATS);
+
   assign icache_req_higher = |icache_index_sel;
   assign owner_indices = {
-    ifctrl_icache_if_index[14:0],
-    l1_refill_icache_if_index[14:0],
-    ipb_icache_if_index[14:0],
-    ifctrl_icache_if_read_req_index[14:0]
+    ifctrl_icache_if_index[INDEX_WIDTH-1:0],
+    l1_refill_icache_if_index[INDEX_WIDTH-1:0],
+    ipb_icache_if_index[INDEX_WIDTH-1:0],
+    ifctrl_icache_if_read_req_index[INDEX_WIDTH-1:0]
   };
 
   generate
@@ -188,7 +216,7 @@ module rv32_ifu_icache_if (
       assign icache_index_higher[bit_index] = |index_terms[bit_index];
     end
   endgenerate
-  assign ifu_icache_index = icache_req_higher ? icache_index_higher : pcgen_icache_if_index[14:0];
+  assign ifu_icache_index = icache_req_higher ? icache_index_higher : pcgen_icache_if_index[INDEX_WIDTH-1:0];
 
   //------------------------------------------------------------------------------
   // Shared Tag port: first beat clears valid; qualified last beat publishes
@@ -210,11 +238,16 @@ module rv32_ifu_icache_if (
   assign tag_fifo_din = ifctrl_icache_if_inv_on ? ifctrl_icache_if_inv_fifo : !fifo_bit;
   assign tag_valid_din = !ifctrl_icache_if_inv_on && l1_refill_icache_if_last &&
     l1_refill_icache_if_install;
-  assign tag_pc_din = (ifctrl_icache_if_inv_on || l1_refill_icache_if_first) ? 17'b0 :
+  // [16 B 行] first 与 last 是同一拍, 不能按"首拍清 tag"处理, 否则 tag 恒为 0 ⇒ 永不命中
+  assign tag_pc_din = (ifctrl_icache_if_inv_on ||
+                       (l1_refill_icache_if_first && (BEATS > 1))) ? {TAG_BITS{1'b0}} :
     l1_refill_icache_if_ptag;
-  assign ifu_icache_tag_din[36] = tag_fifo_din;
+  assign ifu_icache_tag_din[2*TAG_WIDTH] = tag_fifo_din;
 
-  rv32_ifu_icache_tag_array u_icache_tag_array (
+  rv32_ifu_icache_tag_array #(
+    .INDEX_MSB (INDEX_WIDTH-1), .SET_LSB(LINE_BITS),
+    .ADDR_WIDTH(SET_BITS), .DATA_WIDTH(2*TAG_WIDTH+1)
+  ) u_icache_tag_array (
     .forever_cpuclk       (forever_cpuclk),
     .cp0_ifu_icg_en       (cp0_ifu_icg_en),
     .pad_yy_icg_scan_en   (pad_yy_icg_scan_en),
@@ -266,7 +299,10 @@ module rv32_ifu_icache_if (
       // The original array0/array1 modules are identical after port renaming.
       // Instantiate array0 twice: each generated instance has independent SRAM.
       // Legacy array1 files remain available for existing direct instantiations.
-      rv32_ifu_icache_data_array0 u_data_array (
+      rv32_ifu_icache_data_array0 #(
+        .INDEX_MSB(INDEX_WIDTH-1), .WORD_LSB(4),
+        .ADDR_WIDTH(SET_BITS+(LINE_BITS-4)), .DATA_WIDTH(32)
+      ) u_data_array (
         .forever_cpuclk                     (forever_cpuclk),
         .cp0_ifu_icg_en                     (cp0_ifu_icg_en),
         .cp0_yy_clk_en                      (cp0_yy_clk_en),
@@ -284,7 +320,10 @@ module rv32_ifu_icache_if (
         .ifu_icache_data_array0_din         (data_din),
         .icache_ifu_data_array0_dout        (data_dout[way*128+:128])
       );
-      rv32_ifu_icache_predecd_array0 u_precode_array (
+      rv32_ifu_icache_predecd_array0 #(
+        .INDEX_MSB(INDEX_WIDTH-1), .WORD_LSB(4),
+        .ADDR_WIDTH(SET_BITS+(LINE_BITS-4)), .DATA_WIDTH(32)
+      ) u_precode_array (
         .forever_cpuclk                  (forever_cpuclk),
         .cp0_ifu_icg_en                  (cp0_ifu_icg_en),
         .cp0_yy_clk_en                   (cp0_yy_clk_en),
@@ -335,10 +374,10 @@ module rv32_ifu_icache_if (
   // Public output connections; the original interface is preserved
   //------------------------------------------------------------------------------
   assign {ifu_hpcp_icache_miss, ifu_hpcp_icache_access}             = event_out;
-  assign icache_if_ifdp_fifo                                        = icache_ifu_tag_dout[36];
-  assign {icache_if_ifdp_tag_data1, icache_if_ifdp_tag_data0}       = icache_ifu_tag_dout[35:0];
-  assign {icache_if_ifctrl_tag_data1, icache_if_ifctrl_tag_data0}   = icache_ifu_tag_dout[35:0];
-  assign {icache_if_ipb_tag_data1, icache_if_ipb_tag_data0}         = icache_ifu_tag_dout[35:0];
+  assign icache_if_ifdp_fifo                                        = icache_ifu_tag_dout[2*TAG_WIDTH];
+  assign {icache_if_ifdp_tag_data1, icache_if_ifdp_tag_data0}       = icache_ifu_tag_dout[2*TAG_WIDTH-1:0];
+  assign {icache_if_ifctrl_tag_data1, icache_if_ifctrl_tag_data0}   = icache_ifu_tag_dout[2*TAG_WIDTH-1:0];
+  assign {icache_if_ipb_tag_data1, icache_if_ipb_tag_data0}         = icache_ifu_tag_dout[2*TAG_WIDTH-1:0];
   assign {icache_if_ifdp_inst_data1, icache_if_ifdp_inst_data0}     = data_dout;
   assign {icache_if_ifctrl_inst_data1, icache_if_ifctrl_inst_data0} = data_dout;
   assign {icache_if_ifdp_precode1, icache_if_ifdp_precode0}         = precode_dout;

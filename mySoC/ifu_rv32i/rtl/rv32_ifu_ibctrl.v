@@ -44,6 +44,7 @@ module rv32_ifu_ibctrl (
   output wire [ 31:0] jump_target,
   output wire         train_valid,
   output wire         train_taken,
+  output wire         train_cnt_lo,
   output wire         train_ras,
   output wire         btb_used,
   output wire [ 31:0] train_pc,
@@ -145,6 +146,12 @@ module rv32_ifu_ibctrl (
   assign train_way = !train_packet[191] && train_packet[159:134] == train_packet[63:38] ?
     train_packet[124:123] : 2'b11;
   assign train_taken = train_packet[122];
+  // train_packet[184] 是该分支预测当时 BHT 计数器的低位 (chk_idx[24], 见
+  // rv32_ifu_bp_top.v 的 bht_chk_idx = {bht_counter[0], sel, vghr} 与
+  // rv32_ifu_ipdp.v 的 slot_packet 拼装)。train_taken=1 时:
+  //   低位=1 -> 强 taken (2'b11), 低位=0 -> 弱 taken (2'b10)。
+  // L0 的武装只看强 taken (C910 l0_btb_counter_zero), 所以这一位必须带给它。
+  assign train_cnt_lo = train_packet[184];
   assign train_ras = train_packet[189];
   assign btb_used = train_valid && train_packet[190];
   assign query_index = {is_jalr[2] || is_jalr[3], is_jalr[1] || is_jalr[3]};

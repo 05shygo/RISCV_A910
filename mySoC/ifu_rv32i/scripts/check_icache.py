@@ -26,7 +26,7 @@ if unexpected:
 modules = ['rv32_ifu_icache_top', 'rv32_ifu_icache_biu']
 ports = {m: {n: (d, re.sub(r'\s+', '', w)) for d, w, n in
               public_ports((ROOT/'rtl'/f'{m}.v').read_text())} for m in modules}
-book = openpyxl.load_workbook(ROOT.parent/'ifu/doc/RV32I_C910_IFU_interface_v1.1_noMMU.xlsx',
+book = openpyxl.load_workbook(ROOT/'doc/RV32I_C910_IFU_interface_v1.1_noMMU.xlsx',
                              read_only=True, data_only=True)
 excel_ports = {}
 for name, direction, desc in book['IFU_Interface'].values:

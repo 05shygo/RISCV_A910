@@ -13,7 +13,6 @@ module rv32_ifu_pipeline (
   input  wire [  2:0] ifdp_ipdp_tag_match1,
   input  wire [  1:0] ifdp_ipdp_way_pred,
   input  wire         ifdp_ipdp_fault,
-  input  wire         ifdp_ipdp_lbuf_on,
   input  wire [  3:0] ifdp_ipdp_cause,
   input  wire [  3:0] ifdp_ipdp_bkpta,
   input  wire [  3:0] ifdp_ipdp_bkptb,
@@ -79,6 +78,7 @@ module rv32_ifu_pipeline (
   output wire [ 31:0] jump_target,
   output wire         train_valid,
   output wire         train_taken,
+  output wire         train_cnt_lo,
   output wire         train_ras,
   output wire         btb_used,
   output wire [ 31:0] train_pc,
@@ -135,6 +135,120 @@ module rv32_ifu_pipeline (
   wire [511:0] instruction_packet;
   wire [ 99:0] instruction_chk;
   wire         credit_stall;
+  wire         lbuf_bht_active_state;
+  wire         lbuf_bht_con_br_taken;
+  wire         lbuf_bht_con_br_vld;
+  wire         lbuf_ibctrl_active_idle_flush;
+  wire [ 31:0] lbuf_ibctrl_chgflw_pc;
+  wire [  1:0] lbuf_ibctrl_chgflw_pred;
+  wire         lbuf_ibctrl_chgflw_vld;
+  wire         lbuf_ibctrl_lbuf_active;
+  wire         lbuf_ibctrl_stall;
+  wire         lbuf_ibdp_inst0_valid;
+  wire [ 31:0] lbuf_ibdp_inst0_data;
+  wire [ 31:0] lbuf_ibdp_inst0_pc;
+  wire [ 31:0] lbuf_ibdp_inst0_npc;
+  wire         lbuf_ibdp_inst0_front_br;
+  wire         lbuf_ibdp_inst0_back_br;
+  wire         lbuf_ibdp_inst0_fence;
+  wire         lbuf_ibdp_inst0_bkpta;
+  wire         lbuf_ibdp_inst0_bkptb;
+  wire         lbuf_ibdp_inst1_valid;
+  wire [ 31:0] lbuf_ibdp_inst1_data;
+  wire [ 31:0] lbuf_ibdp_inst1_pc;
+  wire [ 31:0] lbuf_ibdp_inst1_npc;
+  wire         lbuf_ibdp_inst1_front_br;
+  wire         lbuf_ibdp_inst1_back_br;
+  wire         lbuf_ibdp_inst1_fence;
+  wire         lbuf_ibdp_inst1_bkpta;
+  wire         lbuf_ibdp_inst1_bkptb;
+  wire         lbuf_ibdp_inst2_valid;
+  wire [ 31:0] lbuf_ibdp_inst2_data;
+  wire [ 31:0] lbuf_ibdp_inst2_pc;
+  wire [ 31:0] lbuf_ibdp_inst2_npc;
+  wire         lbuf_ibdp_inst2_front_br;
+  wire         lbuf_ibdp_inst2_back_br;
+  wire         lbuf_ibdp_inst2_fence;
+  wire         lbuf_ibdp_inst2_bkpta;
+  wire         lbuf_ibdp_inst2_bkptb;
+  wire         lbuf_pcgen_active;
+  wire         lbuf_pcgen_vld_mask;
+  wire         lbuf_addrgen_active_state;
+  wire         lbuf_addrgen_cache_state;
+  wire         lbuf_addrgen_chgflw_mask;
+  wire         lbuf_pcfifo_if_create_select;
+  wire [  1:0] lbuf_pcfifo_if_inst_bht_pre_result;
+  wire [  1:0] lbuf_pcfifo_if_inst_bht_sel_result;
+  wire [ 31:0] lbuf_pcfifo_if_inst_cur_pc;
+  wire         lbuf_pcfifo_if_inst_pc_oper;
+  wire [ 31:0] lbuf_pcfifo_if_inst_target_pc;
+  wire [ 21:0] lbuf_pcfifo_if_inst_vghr;
+  wire         lbuf_ipdp_lbuf_active;
+  wire [  5:0] lbuf_debug_st;
+  wire [767:0] corrected_packet;
+  wire [  3:0] ibdp_lbuf_inst_vld_num;
+  wire [  1:0] ibdp_lbuf_bht_sel_array_result;
+  wire [ 31:0] ibdp_lbuf_con_br_cur_pc;
+  wire [ 31:0] ibdp_lbuf_con_br_offset;
+  wire         ibdp_lbuf_con_br_taken;
+  wire         ibdp_lbuf_inst0_vld;
+  wire [ 31:0] ibdp_lbuf_inst0_data;
+  wire         ibdp_lbuf_inst0_con_br;
+  wire         ibdp_lbuf_inst0_chgflw;
+  wire         ibdp_lbuf_inst0_auipc;
+  wire         ibdp_lbuf_inst0_fence;
+  wire         ibdp_lbuf_inst0_bkpta;
+  wire         ibdp_lbuf_inst0_bkptb;
+  wire         ibdp_lbuf_inst1_vld;
+  wire [ 31:0] ibdp_lbuf_inst1_data;
+  wire         ibdp_lbuf_inst1_con_br;
+  wire         ibdp_lbuf_inst1_chgflw;
+  wire         ibdp_lbuf_inst1_auipc;
+  wire         ibdp_lbuf_inst1_fence;
+  wire         ibdp_lbuf_inst1_bkpta;
+  wire         ibdp_lbuf_inst1_bkptb;
+  wire         ibdp_lbuf_inst2_vld;
+  wire [ 31:0] ibdp_lbuf_inst2_data;
+  wire         ibdp_lbuf_inst2_con_br;
+  wire         ibdp_lbuf_inst2_chgflw;
+  wire         ibdp_lbuf_inst2_auipc;
+  wire         ibdp_lbuf_inst2_fence;
+  wire         ibdp_lbuf_inst2_bkpta;
+  wire         ibdp_lbuf_inst2_bkptb;
+  wire         ibdp_lbuf_inst3_vld;
+  wire [ 31:0] ibdp_lbuf_inst3_data;
+  wire         ibdp_lbuf_inst3_con_br;
+  wire         ibdp_lbuf_inst3_chgflw;
+  wire         ibdp_lbuf_inst3_auipc;
+  wire         ibdp_lbuf_inst3_fence;
+  wire         ibdp_lbuf_inst3_bkpta;
+  wire         ibdp_lbuf_inst3_bkptb;
+  wire         cp0_ifu_lbuf_en;
+  wire         bht_lbuf_pre_ntaken_result;
+  wire         bht_lbuf_pre_taken_result;
+  wire         bht_lbuf_vghr;
+  wire         ibctrl_lbuf_bju_mispred;
+  wire         ibctrl_lbuf_create_vld;
+  wire         ibctrl_lbuf_flush;
+  wire         ibctrl_lbuf_retire_vld;
+  wire         ifctrl_lbuf_ins_inv_on;
+  wire         ifctrl_lbuf_inv_req;
+  wire         iu_ifu_bht_check_vld;
+  wire         iu_ifu_bht_condbr_taken;
+  wire         iu_ifu_cur_pc;
+  assign cp0_ifu_lbuf_en = 1'b0;
+  assign bht_lbuf_pre_ntaken_result = 32'b0;
+  assign bht_lbuf_pre_taken_result = 32'b0;
+  assign bht_lbuf_vghr = 22'b0;
+  assign ibctrl_lbuf_bju_mispred = 1'b0;
+  assign ibctrl_lbuf_create_vld = 1'b0;
+  assign ibctrl_lbuf_flush = 1'b0;
+  assign ibctrl_lbuf_retire_vld = 1'b0;
+  assign ifctrl_lbuf_ins_inv_on = 1'b0;
+  assign ifctrl_lbuf_inv_req = 1'b0;
+  assign iu_ifu_bht_check_vld = 1'b0;
+  assign iu_ifu_bht_condbr_taken = 1'b0;
+  assign iu_ifu_cur_pc = 32'b0;
   rv32_ifu_ipdp u_ipdp (
     .ifdp_ipdp_vpc       (ifdp_ipdp_vpc),
     .ifdp_ipdp_inst_data0(ifdp_ipdp_inst_data0),
@@ -143,7 +257,6 @@ module rv32_ifu_pipeline (
     .ifdp_ipdp_tag_match1(ifdp_ipdp_tag_match1),
     .ifdp_ipdp_way_pred  (ifdp_ipdp_way_pred),
     .ifdp_ipdp_fault     (ifdp_ipdp_fault),
-    .ifdp_ipdp_lbuf_on   (ifdp_ipdp_lbuf_on),
     .ifdp_ipdp_cause     (ifdp_ipdp_cause),
     .ifdp_ipdp_bkpta     (ifdp_ipdp_bkpta),
     .ifdp_ipdp_bkptb     (ifdp_ipdp_bkptb),
@@ -219,6 +332,10 @@ module rv32_ifu_pipeline (
     .fragment_packet (fragment_packet),
     .ras_valid       (ras_valid),
     .ind_valid       (saved_ind_valid),
+    .lbuf_addrgen_active_state(lbuf_addrgen_active_state),
+    .lbuf_addrgen_cache_state(lbuf_addrgen_cache_state),
+    .lbuf_addrgen_chgflw_mask(lbuf_addrgen_chgflw_mask),
+    .fragment_count  (fragment_count),
     .ras_target      (ras_target),
     .ind_target      (saved_ind_target),
     .raw_packet      (raw_packet),
@@ -266,6 +383,7 @@ module rv32_ifu_pipeline (
     .jump_target      (jump_target),
     .train_valid      (train_valid),
     .train_taken      (train_taken),
+    .train_cnt_lo     (train_cnt_lo),
     .train_ras        (train_ras),
     .btb_used         (btb_used),
     .train_pc         (train_pc),
@@ -313,5 +431,110 @@ module rv32_ifu_pipeline (
     .out_chk           (out_chk),
     .occupancy         (occupancy),
     .empty             (ibuf_empty)
+  );
+  rv32_ifu_lbuf u_lbuf (
+    .forever_cpuclk                     (forever_cpuclk),
+    .cpurst_b                           (cpurst_b),
+    .cp0_ifu_lbuf_en                    (1'b0),
+    .bht_lbuf_pre_ntaken_result         (32'b0),
+    .bht_lbuf_pre_taken_result          (32'b0),
+    .bht_lbuf_vghr                      (22'b0),
+    .lbuf_bht_active_state              (lbuf_bht_active_state),
+    .lbuf_bht_con_br_taken              (lbuf_bht_con_br_taken),
+    .lbuf_bht_con_br_vld                (lbuf_bht_con_br_vld),
+    .ibctrl_lbuf_bju_mispred            (1'b0),
+    .ibctrl_lbuf_create_vld             (1'b0),
+    .ibctrl_lbuf_flush                  (1'b0),
+    .ibctrl_lbuf_retire_vld             (1'b0),
+    .lbuf_ibctrl_active_idle_flush      (lbuf_ibctrl_active_idle_flush),
+    .lbuf_ibctrl_chgflw_pc              (lbuf_ibctrl_chgflw_pc),
+    .lbuf_ibctrl_chgflw_pred            (lbuf_ibctrl_chgflw_pred),
+    .lbuf_ibctrl_chgflw_vld             (lbuf_ibctrl_chgflw_vld),
+    .lbuf_ibctrl_lbuf_active            (lbuf_ibctrl_lbuf_active),
+    .lbuf_ibctrl_stall                  (lbuf_ibctrl_stall),
+    .ibdp_lbuf_inst_vld_num             (ibdp_lbuf_inst_vld_num),
+    .ibdp_lbuf_bht_sel_array_result     (ibdp_lbuf_bht_sel_array_result),
+    .ibdp_lbuf_con_br_cur_pc            (ibdp_lbuf_con_br_cur_pc),
+    .ibdp_lbuf_con_br_offset            (ibdp_lbuf_con_br_offset),
+    .ibdp_lbuf_con_br_taken             (ibdp_lbuf_con_br_taken),
+    .ibdp_lbuf_inst0_vld                (ibdp_lbuf_inst0_vld),
+    .ibdp_lbuf_inst0_data               (ibdp_lbuf_inst0_data),
+    .ibdp_lbuf_inst0_con_br             (ibdp_lbuf_inst0_con_br),
+    .ibdp_lbuf_inst0_chgflw             (ibdp_lbuf_inst0_chgflw),
+    .ibdp_lbuf_inst0_auipc              (ibdp_lbuf_inst0_auipc),
+    .ibdp_lbuf_inst0_fence              (ibdp_lbuf_inst0_fence),
+    .ibdp_lbuf_inst0_bkpta              (ibdp_lbuf_inst0_bkpta),
+    .ibdp_lbuf_inst0_bkptb              (ibdp_lbuf_inst0_bkptb),
+    .ibdp_lbuf_inst1_vld                (ibdp_lbuf_inst1_vld),
+    .ibdp_lbuf_inst1_data               (ibdp_lbuf_inst1_data),
+    .ibdp_lbuf_inst1_con_br             (ibdp_lbuf_inst1_con_br),
+    .ibdp_lbuf_inst1_chgflw             (ibdp_lbuf_inst1_chgflw),
+    .ibdp_lbuf_inst1_auipc              (ibdp_lbuf_inst1_auipc),
+    .ibdp_lbuf_inst1_fence              (ibdp_lbuf_inst1_fence),
+    .ibdp_lbuf_inst1_bkpta              (ibdp_lbuf_inst1_bkpta),
+    .ibdp_lbuf_inst1_bkptb              (ibdp_lbuf_inst1_bkptb),
+    .ibdp_lbuf_inst2_vld                (ibdp_lbuf_inst2_vld),
+    .ibdp_lbuf_inst2_data               (ibdp_lbuf_inst2_data),
+    .ibdp_lbuf_inst2_con_br             (ibdp_lbuf_inst2_con_br),
+    .ibdp_lbuf_inst2_chgflw             (ibdp_lbuf_inst2_chgflw),
+    .ibdp_lbuf_inst2_auipc              (ibdp_lbuf_inst2_auipc),
+    .ibdp_lbuf_inst2_fence              (ibdp_lbuf_inst2_fence),
+    .ibdp_lbuf_inst2_bkpta              (ibdp_lbuf_inst2_bkpta),
+    .ibdp_lbuf_inst2_bkptb              (ibdp_lbuf_inst2_bkptb),
+    .ibdp_lbuf_inst3_vld                (ibdp_lbuf_inst3_vld),
+    .ibdp_lbuf_inst3_data               (ibdp_lbuf_inst3_data),
+    .ibdp_lbuf_inst3_con_br             (ibdp_lbuf_inst3_con_br),
+    .ibdp_lbuf_inst3_chgflw             (ibdp_lbuf_inst3_chgflw),
+    .ibdp_lbuf_inst3_auipc              (ibdp_lbuf_inst3_auipc),
+    .ibdp_lbuf_inst3_fence              (ibdp_lbuf_inst3_fence),
+    .ibdp_lbuf_inst3_bkpta              (ibdp_lbuf_inst3_bkpta),
+    .ibdp_lbuf_inst3_bkptb              (ibdp_lbuf_inst3_bkptb),
+    .lbuf_ibdp_inst0_valid              (lbuf_ibdp_inst0_valid),
+    .lbuf_ibdp_inst0_data               (lbuf_ibdp_inst0_data),
+    .lbuf_ibdp_inst0_pc                 (lbuf_ibdp_inst0_pc),
+    .lbuf_ibdp_inst0_npc                (lbuf_ibdp_inst0_npc),
+    .lbuf_ibdp_inst0_front_br           (lbuf_ibdp_inst0_front_br),
+    .lbuf_ibdp_inst0_back_br            (lbuf_ibdp_inst0_back_br),
+    .lbuf_ibdp_inst0_fence              (lbuf_ibdp_inst0_fence),
+    .lbuf_ibdp_inst0_bkpta              (lbuf_ibdp_inst0_bkpta),
+    .lbuf_ibdp_inst0_bkptb              (lbuf_ibdp_inst0_bkptb),
+    .lbuf_ibdp_inst1_valid              (lbuf_ibdp_inst1_valid),
+    .lbuf_ibdp_inst1_data               (lbuf_ibdp_inst1_data),
+    .lbuf_ibdp_inst1_pc                 (lbuf_ibdp_inst1_pc),
+    .lbuf_ibdp_inst1_npc                (lbuf_ibdp_inst1_npc),
+    .lbuf_ibdp_inst1_front_br           (lbuf_ibdp_inst1_front_br),
+    .lbuf_ibdp_inst1_back_br            (lbuf_ibdp_inst1_back_br),
+    .lbuf_ibdp_inst1_fence              (lbuf_ibdp_inst1_fence),
+    .lbuf_ibdp_inst1_bkpta              (lbuf_ibdp_inst1_bkpta),
+    .lbuf_ibdp_inst1_bkptb              (lbuf_ibdp_inst1_bkptb),
+    .lbuf_ibdp_inst2_valid              (lbuf_ibdp_inst2_valid),
+    .lbuf_ibdp_inst2_data               (lbuf_ibdp_inst2_data),
+    .lbuf_ibdp_inst2_pc                 (lbuf_ibdp_inst2_pc),
+    .lbuf_ibdp_inst2_npc                (lbuf_ibdp_inst2_npc),
+    .lbuf_ibdp_inst2_front_br           (lbuf_ibdp_inst2_front_br),
+    .lbuf_ibdp_inst2_back_br            (lbuf_ibdp_inst2_back_br),
+    .lbuf_ibdp_inst2_fence              (lbuf_ibdp_inst2_fence),
+    .lbuf_ibdp_inst2_bkpta              (lbuf_ibdp_inst2_bkpta),
+    .lbuf_ibdp_inst2_bkptb              (lbuf_ibdp_inst2_bkptb),
+    .ibuf_lbuf_empty                    (ibuf_empty),
+    .ifctrl_lbuf_ins_inv_on             (1'b0),
+    .ifctrl_lbuf_inv_req                (1'b0),
+    .iu_ifu_bht_check_vld               (1'b0),
+    .iu_ifu_bht_condbr_taken            (1'b0),
+    .iu_ifu_cur_pc                      (32'b0),
+    .lbuf_pcgen_active                  (lbuf_pcgen_active),
+    .lbuf_pcgen_vld_mask                (lbuf_pcgen_vld_mask),
+    .lbuf_addrgen_active_state          (lbuf_addrgen_active_state),
+    .lbuf_addrgen_cache_state           (lbuf_addrgen_cache_state),
+    .lbuf_addrgen_chgflw_mask           (lbuf_addrgen_chgflw_mask),
+    .lbuf_pcfifo_if_create_select       (lbuf_pcfifo_if_create_select),
+    .lbuf_pcfifo_if_inst_bht_pre_result (lbuf_pcfifo_if_inst_bht_pre_result),
+    .lbuf_pcfifo_if_inst_bht_sel_result (lbuf_pcfifo_if_inst_bht_sel_result),
+    .lbuf_pcfifo_if_inst_cur_pc         (lbuf_pcfifo_if_inst_cur_pc),
+    .lbuf_pcfifo_if_inst_pc_oper        (lbuf_pcfifo_if_inst_pc_oper),
+    .lbuf_pcfifo_if_inst_target_pc      (lbuf_pcfifo_if_inst_target_pc),
+    .lbuf_pcfifo_if_inst_vghr           (lbuf_pcfifo_if_inst_vghr),
+    .lbuf_ipdp_lbuf_active              (lbuf_ipdp_lbuf_active),
+    .lbuf_debug_st                      (lbuf_debug_st)
   );
 endmodule

@@ -5,7 +5,27 @@
 //------------------------------------------------------------------------------
 // Module Declaration
 //------------------------------------------------------------------------------
-module rv32_ifu_memory (
+// [ICACHE 参数化] 与 rv32_ifu_icache_if.v 同套 define/公式; 默认 = 原 64 KiB/64 B。
+`ifdef ICACHE_BYTES
+  `define IC_BYTES_VAL `ICACHE_BYTES
+`else
+  `define IC_BYTES_VAL 65536
+`endif
+`ifdef ICACHE_LINE_BYTES
+  `define IC_LINE_VAL `ICACHE_LINE_BYTES
+`else
+  `define IC_LINE_VAL 64
+`endif
+
+module rv32_ifu_memory #(
+  parameter IC_BYTES  = `IC_BYTES_VAL,
+  parameter IC_LINE   = `IC_LINE_VAL,
+  parameter IC_SETS   = IC_BYTES/(2*IC_LINE),
+  parameter SET_BITS  = $clog2(IC_SETS),
+  parameter LINE_BITS = $clog2(IC_LINE),
+  parameter TAG_BITS  = 32 - SET_BITS - LINE_BITS,
+  parameter TAG_WIDTH = 1 + TAG_BITS
+) (
   input  wire         forever_cpuclk,
   input  wire         cpurst_b,
   input  wire         cancel,
@@ -27,7 +47,7 @@ module rv32_ifu_memory (
   output wire [ 31:0] l1_refill_icache_if_index,
   output wire [127:0] l1_refill_icache_if_inst_data,
   output wire [ 31:0] l1_refill_icache_if_pre_code,
-  output wire [ 16:0] l1_refill_icache_if_ptag,
+  output wire [TAG_BITS-1:0] l1_refill_icache_if_ptag,
   output wire         l1_refill_ifctrl_active,
   output wire         l1_refill_ifctrl_live,
   output wire         l1_refill_ifctrl_vld,
@@ -44,8 +64,8 @@ module rv32_ifu_memory (
   input  wire [  4:0] region_attr,
   output wire         ipb_array_req,
   input  wire         ifctrl_ipb_grant,
-  input  wire [ 17:0] icache_if_ipb_tag_data0,
-  input  wire [ 17:0] icache_if_ipb_tag_data1,
+  input  wire [TAG_WIDTH-1:0] icache_if_ipb_tag_data0,
+  input  wire [TAG_WIDTH-1:0] icache_if_ipb_tag_data1,
   output wire [ 31:0] ipb_icache_if_index,
   output wire         ipb_icache_if_req,
   output wire         ipb_icache_if_req_for_gateclk,
@@ -122,7 +142,10 @@ module rv32_ifu_memory (
   assign prefetch_memory_data  = response_data;
   assign prefetch_memory_last  = response_last;
   assign prefetch_memory_error = response_error;
-  rv32_ifu_l1_refill u_l1_refill (
+  rv32_ifu_l1_refill #(
+    .IC_BYTES (IC_BYTES),
+    .IC_LINE  (IC_LINE)
+  ) u_l1_refill (
     .forever_cpuclk               (forever_cpuclk),
     .cpurst_b                     (cpurst_b),
     .cancel                       (cancel),
@@ -168,7 +191,10 @@ module rv32_ifu_memory (
     .protocol_error               (protocol_error),
     .request_accepted             (refill_request_accepted)
   );
-  rv32_ifu_ipb u_ipb (
+  rv32_ifu_ipb #(
+    .IC_BYTES (IC_BYTES),
+    .IC_LINE  (IC_LINE)
+  ) u_ipb (
     .forever_cpuclk               (forever_cpuclk),
     .cpurst_b                     (cpurst_b),
     .enable                       (enable),

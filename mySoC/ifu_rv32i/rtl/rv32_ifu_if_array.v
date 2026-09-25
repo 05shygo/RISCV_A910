@@ -5,7 +5,29 @@
 //------------------------------------------------------------------------------
 // Module Declaration
 //------------------------------------------------------------------------------
-module rv32_ifu_if_array (
+// [ICACHE 参数化] 与 rv32_ifu_icache_if.v 同套 define/公式; 默认 = 原 64 KiB/64 B。
+// 本模块只做端口穿线, 但端口宽度必须跟几何一致 —— 写死 17/18 位会在几何改动后
+// 静默截断 tag, 表现为"永不命中"(不会报错, 只会变慢)。
+`ifdef ICACHE_BYTES
+  `define IC_BYTES_VAL `ICACHE_BYTES
+`else
+  `define IC_BYTES_VAL 65536
+`endif
+`ifdef ICACHE_LINE_BYTES
+  `define IC_LINE_VAL `ICACHE_LINE_BYTES
+`else
+  `define IC_LINE_VAL 64
+`endif
+
+module rv32_ifu_if_array #(
+  parameter IC_BYTES  = `IC_BYTES_VAL,
+  parameter IC_LINE   = `IC_LINE_VAL,
+  parameter IC_SETS   = IC_BYTES/(2*IC_LINE),
+  parameter SET_BITS  = $clog2(IC_SETS),
+  parameter LINE_BITS = $clog2(IC_LINE),
+  parameter TAG_BITS  = 32 - SET_BITS - LINE_BITS,
+  parameter TAG_WIDTH = 1 + TAG_BITS
+) (
   input  wire [  3:0] ifctrl_array_grant,
   input  wire [ 31:0] ifctrl_array_pc,
   input  wire [  1:0] ifctrl_array_way,
@@ -36,22 +58,22 @@ module rv32_ifu_if_array (
   input  wire [127:0] l1_refill_icache_if_inst_data,
   input  wire         l1_refill_icache_if_last,
   input  wire [ 31:0] l1_refill_icache_if_pre_code,
-  input  wire [ 16:0] l1_refill_icache_if_ptag,
+  input  wire [TAG_BITS-1:0] l1_refill_icache_if_ptag,
   input  wire         l1_refill_icache_if_wr,
   input  wire         pad_yy_icg_scan_en,
   output wire [127:0] icache_if_ifctrl_inst_data0,
   output wire [127:0] icache_if_ifctrl_inst_data1,
-  output wire [ 17:0] icache_if_ifctrl_tag_data0,
-  output wire [ 17:0] icache_if_ifctrl_tag_data1,
+  output wire [TAG_WIDTH-1:0] icache_if_ifctrl_tag_data0,
+  output wire [TAG_WIDTH-1:0] icache_if_ifctrl_tag_data1,
   output wire         icache_if_ifdp_fifo,
   output wire [127:0] icache_if_ifdp_inst_data0,
   output wire [127:0] icache_if_ifdp_inst_data1,
   output wire [ 31:0] icache_if_ifdp_precode0,
   output wire [ 31:0] icache_if_ifdp_precode1,
-  output wire [ 17:0] icache_if_ifdp_tag_data0,
-  output wire [ 17:0] icache_if_ifdp_tag_data1,
-  output wire [ 17:0] icache_if_ipb_tag_data0,
-  output wire [ 17:0] icache_if_ipb_tag_data1,
+  output wire [TAG_WIDTH-1:0] icache_if_ifdp_tag_data0,
+  output wire [TAG_WIDTH-1:0] icache_if_ifdp_tag_data1,
+  output wire [TAG_WIDTH-1:0] icache_if_ipb_tag_data0,
+  output wire [TAG_WIDTH-1:0] icache_if_ipb_tag_data1,
   output wire         ifu_hpcp_icache_access,
   output wire         ifu_hpcp_icache_miss
 );
@@ -106,7 +128,11 @@ module rv32_ifu_if_array (
       assign grants[control] = requests[control] && ifctrl_array_grant[OWNER[control*2+:2]];
     end
   endgenerate
-  rv32_ifu_icache_if u_icache_if (
+  // 显式传参: 别依赖子模块自己的 ifdef 默认值 —— 两处公式一旦分家就是"永不命中"
+  rv32_ifu_icache_if #(
+    .IC_BYTES (IC_BYTES),
+    .IC_LINE  (IC_LINE)
+  ) u_icache_if (
     .l1_refill_icache_if_install       (grants[0]),
     .cp0_ifu_icache_en                 (cp0_ifu_icache_en),
     .cp0_ifu_icg_en                    (cp0_ifu_icg_en),

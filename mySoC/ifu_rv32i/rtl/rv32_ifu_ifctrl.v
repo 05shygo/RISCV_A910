@@ -31,7 +31,6 @@ module rv32_ifu_ifctrl (
   input  wire        rtu_ifu_dbgon,
   input  wire        frontend_init_done,
   input  wire        maintenance_busy,
-  input  wire        lbuf_ifctrl_active,
   // Accepted redirect ABOVE IF L0/reissue; never connect pcgen_ifctrl_cancel here.
   input  wire        frontend_redirect,
   input  wire        pcgen_ifctrl_pipe_cancel,
@@ -132,7 +131,7 @@ module rv32_ifu_ifctrl (
   //----------------------------------------------------------------------------
   assign delivery_enable = cpurst_b && cp0_yy_clk_en && frontend_init_done && !maintenance_busy &&
     !rtu_ifu_dbgon;
-  assign fetch_enable = delivery_enable && !cp0_ifu_no_op_req && !lbuf_ifctrl_active;
+  assign fetch_enable = delivery_enable && !cp0_ifu_no_op_req;
   assign kill_if = frontend_redirect || pcgen_ifctrl_pipe_cancel || control_ifctrl_reissue;
   assign ip_ready = !ipctrl_ifctrl_stall && !ipctrl_ifctrl_bht_stall;
   assign ifctrl_ifdp_pipedown = flag_q[0] && delivery_enable && ip_ready && !kill_if;
@@ -226,7 +225,7 @@ module rv32_ifu_ifctrl (
   assign flag_nxt[3] = !issue_fire && (replay_set || flag_q[3]);
   assign flag_nxt[4] = !pcgen_ifctrl_pipe_cancel && l0_accept;
   assign flag_nxt[5] = hpcp_ifu_cnt_en && delivery_enable && !cp0_ifu_no_op_req &&
-    !lbuf_ifctrl_active && !ifctrl_ifdp_pipedown;
+    !ifctrl_ifdp_pipedown;
   generate
     for (flag_index = 0; flag_index < FLAG_COUNT; flag_index = flag_index + 1) begin : g_flag
       always @(posedge forever_cpuclk or negedge cpurst_b) begin : p_flag

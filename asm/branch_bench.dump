@@ -1,0 +1,252 @@
+
+/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/asm/branch_bench.elf:     file format elf32-littleriscv
+
+
+Disassembly of section .text:
+
+00000000 <_start>:
+   0:	0080006f          	j	8 <reset_vector>
+   4:	0000                	unimp
+	...
+
+00000008 <reset_vector>:
+   8:	20000f93          	li	t6,512
+   c:	00100313          	li	t1,1
+  10:	00100413          	li	s0,1
+  14:	00000493          	li	s1,0
+  18:	00000513          	li	a0,0
+  1c:	00000a13          	li	s4,0
+  20:	00000a93          	li	s5,0
+  24:	00300d93          	li	s11,3
+  28:	00000e93          	li	t4,0
+  2c:	00000f13          	li	t5,0
+  30:	0d00006f          	j	100 <class1>
+	...
+
+00000100 <class1>:
+ 100:	03000293          	li	t0,48
+
+00000104 <c1a>:
+ 104:	fff28293          	addi	t0,t0,-1
+ 108:	fe029ee3          	bnez	t0,104 <c1a>
+ 10c:	00000013          	nop
+ 110:	01000e13          	li	t3,16
+
+00000114 <c1c>:
+ 114:	fffe0e13          	addi	t3,t3,-1
+ 118:	fe0e1ee3          	bnez	t3,114 <c1c>
+ 11c:	00000013          	nop
+ 120:	01800393          	li	t2,24
+
+00000124 <c1b>:
+ 124:	fff38393          	addi	t2,t2,-1
+ 128:	fe039ee3          	bnez	t2,124 <c1b>
+ 12c:	00000013          	nop
+ 130:	00000013          	nop
+ 134:	00000013          	nop
+ 138:	00000013          	nop
+ 13c:	00000013          	nop
+
+00000140 <class2>:
+ 140:	06034e63          	bltz	t1,1bc <c2_land>
+ 144:	00000013          	nop
+ 148:	00000013          	nop
+ 14c:	00000013          	nop
+ 150:	06605663          	blez	t1,1bc <c2_land>
+ 154:	00000013          	nop
+ 158:	00000013          	nop
+ 15c:	00000013          	nop
+ 160:	04607e63          	bgeu	zero,t1,1bc <c2_land>
+ 164:	00000013          	nop
+ 168:	00000013          	nop
+ 16c:	00000013          	nop
+ 170:	04036663          	bltu	t1,zero,1bc <c2_land>
+ 174:	00000013          	nop
+ 178:	00000013          	nop
+ 17c:	00000013          	nop
+ 180:	02040e63          	beqz	s0,1bc <c2_land>
+ 184:	00000013          	nop
+ 188:	00000013          	nop
+ 18c:	00000013          	nop
+ 190:	02044663          	bltz	s0,1bc <c2_land>
+ 194:	00000013          	nop
+ 198:	00000013          	nop
+ 19c:	00000013          	nop
+ 1a0:	00046e63          	bltu	s0,zero,1bc <c2_land>
+ 1a4:	00000013          	nop
+ 1a8:	00000013          	nop
+ 1ac:	00000013          	nop
+ 1b0:	00631663          	bne	t1,t1,1bc <c2_land>
+ 1b4:	00000013          	nop
+ 1b8:	00000013          	nop
+
+000001bc <c2_land>:
+ 1bc:	00000013          	nop
+
+000001c0 <class3>:
+ 1c0:	0014c493          	xori	s1,s1,1
+ 1c4:	00000013          	nop
+ 1c8:	00000013          	nop
+ 1cc:	00000013          	nop
+ 1d0:	00048463          	beqz	s1,1d8 <c3a0>
+ 1d4:	00150513          	addi	a0,a0,1
+
+000001d8 <c3a0>:
+ 1d8:	00000013          	nop
+ 1dc:	00000013          	nop
+ 1e0:	00048463          	beqz	s1,1e8 <c3a1>
+ 1e4:	00150513          	addi	a0,a0,1
+
+000001e8 <c3a1>:
+ 1e8:	00000013          	nop
+ 1ec:	00000013          	nop
+ 1f0:	00048463          	beqz	s1,1f8 <c3a2>
+ 1f4:	00150513          	addi	a0,a0,1
+
+000001f8 <c3a2>:
+ 1f8:	00000013          	nop
+ 1fc:	00000013          	nop
+ 200:	00048463          	beqz	s1,208 <c3a3>
+ 204:	00150513          	addi	a0,a0,1
+
+00000208 <c3a3>:
+ 208:	00000013          	nop
+ 20c:	00000013          	nop
+ 210:	00048463          	beqz	s1,218 <c3a4>
+ 214:	00150513          	addi	a0,a0,1
+
+00000218 <c3a4>:
+ 218:	00000013          	nop
+ 21c:	00000013          	nop
+ 220:	00048463          	beqz	s1,228 <c3a5>
+ 224:	00150513          	addi	a0,a0,1
+
+00000228 <c3a5>:
+ 228:	00000013          	nop
+ 22c:	00000013          	nop
+ 230:	00048463          	beqz	s1,238 <c3a6>
+ 234:	00150513          	addi	a0,a0,1
+
+00000238 <c3a6>:
+ 238:	00000013          	nop
+ 23c:	00000013          	nop
+ 240:	00048463          	beqz	s1,248 <c3a7>
+ 244:	00150513          	addi	a0,a0,1
+
+00000248 <c3a7>:
+ 248:	00000013          	nop
+ 24c:	00000013          	nop
+
+00000250 <class4>:
+ 250:	020000ef          	jal	ra,270 <f4a>
+ 254:	02c000ef          	jal	ra,280 <f4b>
+ 258:	018000ef          	jal	ra,270 <f4a>
+ 25c:	024000ef          	jal	ra,280 <f4b>
+ 260:	02c0006f          	j	28c <c4_done>
+ 264:	00000013          	nop
+ 268:	00000013          	nop
+ 26c:	00000013          	nop
+
+00000270 <f4a>:
+ 270:	001a0a13          	addi	s4,s4,1
+ 274:	00008067          	ret
+ 278:	00000013          	nop
+ 27c:	00000013          	nop
+
+00000280 <f4b>:
+ 280:	001a8a93          	addi	s5,s5,1
+ 284:	00008067          	ret
+ 288:	00000013          	nop
+
+0000028c <c4_done>:
+ 28c:	00000013          	nop
+
+00000290 <class5>:
+ 290:	001f0f13          	addi	t5,t5,1
+ 294:	003f7e93          	andi	t4,t5,3
+ 298:	00000013          	nop
+ 29c:	00000013          	nop
+ 2a0:	01be9463          	bne	t4,s11,2a8 <c5a0>
+ 2a4:	00150513          	addi	a0,a0,1
+
+000002a8 <c5a0>:
+ 2a8:	00000013          	nop
+ 2ac:	00000013          	nop
+ 2b0:	01be9463          	bne	t4,s11,2b8 <c5a1>
+ 2b4:	00150513          	addi	a0,a0,1
+
+000002b8 <c5a1>:
+ 2b8:	00000013          	nop
+ 2bc:	00000013          	nop
+ 2c0:	01be9463          	bne	t4,s11,2c8 <c5a2>
+ 2c4:	00150513          	addi	a0,a0,1
+
+000002c8 <c5a2>:
+ 2c8:	00000013          	nop
+ 2cc:	00000013          	nop
+ 2d0:	01be9463          	bne	t4,s11,2d8 <c5a3>
+ 2d4:	00150513          	addi	a0,a0,1
+
+000002d8 <c5a3>:
+ 2d8:	00000013          	nop
+ 2dc:	00000013          	nop
+ 2e0:	01be9463          	bne	t4,s11,2e8 <c5a4>
+ 2e4:	00150513          	addi	a0,a0,1
+
+000002e8 <c5a4>:
+ 2e8:	00000013          	nop
+ 2ec:	00000013          	nop
+ 2f0:	01be9463          	bne	t4,s11,2f8 <c5a5>
+ 2f4:	00150513          	addi	a0,a0,1
+
+000002f8 <c5a5>:
+ 2f8:	00000013          	nop
+ 2fc:	00000013          	nop
+ 300:	01be9463          	bne	t4,s11,308 <c5a6>
+ 304:	00150513          	addi	a0,a0,1
+
+00000308 <c5a6>:
+ 308:	00000013          	nop
+ 30c:	00000013          	nop
+ 310:	01be9463          	bne	t4,s11,318 <c5a7>
+ 314:	00150513          	addi	a0,a0,1
+
+00000318 <c5a7>:
+ 318:	00000013          	nop
+ 31c:	00000013          	nop
+
+00000320 <loop_ctrl>:
+ 320:	ffff8f93          	addi	t6,t6,-1
+ 324:	dc0f9ee3          	bnez	t6,100 <class1>
+ 328:	40000b13          	li	s6,1024
+ 32c:	016a1863          	bne	s4,s6,33c <bench_fail>
+ 330:	016a9663          	bne	s5,s6,33c <bench_fail>
+ 334:	00000513          	li	a0,0
+ 338:	0080006f          	j	340 <bench_end>
+
+0000033c <bench_fail>:
+ 33c:	00100513          	li	a0,1
+
+00000340 <bench_end>:
+ 340:	05d00893          	li	a7,93
+ 344:	00000073          	ecall
+ 348:	c0001073          	unimp
+
+Disassembly of section .riscv.attributes:
+
+00000000 <.riscv.attributes>:
+   0:	1e41                	addi	t3,t3,-16
+   2:	0000                	unimp
+   4:	7200                	flw	fs0,32(a2)
+   6:	7369                	lui	t1,0xffffa
+   8:	01007663          	bgeu	zero,a6,14 <reset_vector+0xc>
+   c:	0014                	0x14
+   e:	0000                	unimp
+  10:	7205                	lui	tp,0xfffe1
+  12:	3376                	fld	ft6,376(sp)
+  14:	6932                	flw	fs2,12(sp)
+  16:	7032                	flw	ft0,44(sp)
+  18:	5f30                	lw	a2,120(a4)
+  1a:	326d                	jal	fffff9c4 <__global_pointer$+0xffffde78>
+  1c:	3070                	fld	fa2,224(s0)
+	...

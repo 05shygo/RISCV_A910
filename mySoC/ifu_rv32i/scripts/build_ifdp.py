@@ -21,8 +21,6 @@ port('input', 'region_ifdp_attr', 5)
 port('input', 'ifctrl_ifdp_issue ifctrl_ifdp_hold ifctrl_ifdp_held ifctrl_ifdp_pipedown')
 port('input', 'ifctrl_ifdp_issue_pc', 32)
 port('input', 'ifctrl_ifdp_issue_way ifctrl_ifdp_issue_kind', 2)
-port('input', 'lbuf_ifdp_source')
-port('input', 'lbuf_ifdp_word_mask', 4)
 port('input', 'icache_if_ifdp_inst_data0 icache_if_ifdp_inst_data1', 128)
 port('input', 'icache_if_ifdp_precode0 icache_if_ifdp_precode1', 32)
 port('input', 'icache_if_ifdp_tag_data0 icache_if_ifdp_tag_data1', 18)
@@ -50,7 +48,6 @@ port('output', 'ifdp_ifctrl_l0_way', 2)
 
 # Every item is registered atomically into IP and, on a stall, into a hold copy.
 fields = [
-    ('lbuf_on',1,'is_lbuf'),
     ('vpc',32,'if_pc'), ('attr',5,'if_attr'), ('priv_mode',2,'if_priv'),
     ('way_pred',2,'if_way'), ('refill_on',1,'is_refill'),
     ('cache_bypass',1,'is_bypass'), ('fifo',1,'raw_fifo'),
@@ -106,7 +103,7 @@ for n,w,_ in fields:
     s += f'  localparam P_{n.upper()} = {field_offsets[n]};\n'
 s += '''
   localparam [1:0] CACHE = 2'd0, FAULT = 2'd1, BYPASS = 2'd2, REFILL = 2'd3;
-  localparam META_WIDTH = 218;
+  localparam META_WIDTH = 213;
   genvar capture;
   genvar way;
   genvar part;
@@ -122,8 +119,6 @@ s += '''
   wire [PACKET_WIDTH-1:0] response_packet;
   wire [PACKET_WIDTH-1:0] selected_packet;
   wire [31:0] if_pc;
-  wire is_lbuf;
-  wire [3:0] lbuf_mask;
   wire [4:0] if_attr;
   wire [1:0] if_priv;
   wire [1:0] if_way;
@@ -158,11 +153,11 @@ s += '''
   // Metadata belongs to the granted request, never to a later live PC bus.
   //----------------------------------------------------------------------------
   assign meta_en = ifctrl_ifdp_issue;
-  assign meta_nxt = {lbuf_ifdp_source,lbuf_ifdp_word_mask,ifctrl_ifdp_issue_pc, region_ifdp_attr, cp0_yy_priv_mode,
+  assign meta_nxt = {ifctrl_ifdp_issue_pc, region_ifdp_attr, cp0_yy_priv_mode,
                      ifctrl_ifdp_issue_way, ifctrl_ifdp_issue_kind, cp0_ifu_icache_en,
                      l1_refill_ifdp_inst_data, l1_refill_ifdp_precode, l1_refill_ifdp_acc_err,
                      breakpoint_issue_hit[1], breakpoint_issue_hit[0]};
-  assign {is_lbuf,lbuf_mask,if_pc, if_attr, if_priv, if_way, if_kind, if_cache_en,
+  assign {if_pc, if_attr, if_priv, if_way, if_kind, if_cache_en,
           forward_data, forward_precode, forward_error,
           breakpoint_hit[1], breakpoint_hit[0]} = meta_q;
   always @(posedge forever_cpuclk or negedge cpurst_b) begin : p_meta
@@ -226,8 +221,7 @@ s += '''
     end
     for (slot = 0; slot < 4; slot = slot + 1) begin : g_word
       localparam [1:0] SLOT = slot;
-      assign word_mask[slot] = if_fault ? (SLOT == if_pc[3:2]) :
-        (SLOT >= if_pc[3:2]) && (!is_lbuf || lbuf_mask[slot]);
+      assign word_mask[slot] = if_fault ? (SLOT == if_pc[3:2]) : (SLOT >= if_pc[3:2]);
       assign ifdp_ipdp_word_pc[slot*32+:32] = {ifdp_ipdp_vpc[31:4], SLOT, 2'b00};
       assign ifdp_ipdp_l0_btb_target_match[slot] = ifdp_ipdp_btb_vld && ifdp_ipdp_btb_hit[slot] &&
         ifdp_ipdp_l0_hit && (ifdp_ipdp_btb_target[slot*32+:32] == ifdp_ipdp_l0_target);

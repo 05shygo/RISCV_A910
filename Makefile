@@ -125,6 +125,8 @@ $(LBUF_CFG): FORCE
 #   BP_BTB_ROW_W= BP_IND_AW= ...
 # 面积/跑分全表见 doc/bp_three_way_zh.md §5 与 memory bp-area-frontier-2026-09-24。
 # ---------------------------------------------------------------------------
+ICACHE_BYTES      ?=
+ICACHE_LINE_BYTES ?=
 BP_PRE_FOLD  ?= 1
 BP_PRE_AW    ?= 5
 BP_SEL_AW    ?= 4
@@ -132,7 +134,10 @@ BP_BTB_ROW_W ?= 2
 BP_IND_AW    ?= 2
 BP_L0_ENTRIES ?= 16
 
-BP_DEFS := $(if $(BP_PRE_FOLD),+define+BP_PRE_FOLD) \
+BP_DEFS := $(if $(filter 16,$(ICACHE_LINE_BYTES)),+define+ICACHE_LINE_16B) \
+           $(if $(ICACHE_BYTES),+define+ICACHE_BYTES=$(ICACHE_BYTES)) \
+           $(if $(ICACHE_LINE_BYTES),+define+ICACHE_LINE_BYTES=$(ICACHE_LINE_BYTES)) \
+           $(if $(BP_PRE_FOLD),+define+BP_PRE_FOLD) \
            $(if $(BP_PRE_AW),+define+BP_PRE_AW=$(BP_PRE_AW)) \
            $(if $(BP_SEL_AW),+define+BP_SEL_AW=$(BP_SEL_AW)) \
            $(if $(BP_BTB_ROW_W),+define+BP_BTB_ROW_W=$(BP_BTB_ROW_W)) \
@@ -140,7 +145,7 @@ BP_DEFS := $(if $(BP_PRE_FOLD),+define+BP_PRE_FOLD) \
            $(if $(BP_IND_AW),+define+BP_IND_AW=$(BP_IND_AW))
 
 BP_CFG := $(BUILD_DIR)/.bp_cfg
-BP_SIG := $(BP_PRE_FOLD)-$(BP_PRE_AW)-$(BP_SEL_AW)-$(BP_BTB_ROW_W)-$(BP_L0_ENTRIES)-$(BP_IND_AW)
+BP_SIG := $(BP_PRE_FOLD)-$(BP_PRE_AW)-$(BP_SEL_AW)-$(BP_BTB_ROW_W)-$(BP_L0_ENTRIES)-$(BP_IND_AW)-$(ICACHE_BYTES)-$(ICACHE_LINE_BYTES)
 
 $(BP_CFG): FORCE
 	@mkdir -p $(BUILD_DIR)

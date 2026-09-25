@@ -18,7 +18,7 @@ errors = [d for d in diags if d.isError()]
 # Preserve original mixed &&/|| expressions; all other diagnostics are failures.
 unexpected = [d for d in diags if str(d.code) != 'DiagCode(LogicalOpParentheses)']
 ports = json.loads((root/'doc/ports.json').read_text())
-xlsx = root.parent/'ifu/doc/RV32I_C910_IFU_interface_v1.1_noMMU.xlsx'
+xlsx = root/'doc/RV32I_C910_IFU_interface_v1.1_noMMU.xlsx'
 book = openpyxl.load_workbook(xlsx,read_only=True,data_only=True)
 checked=[]
 for row in book['IFU_Interface'].values:

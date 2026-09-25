@@ -26,7 +26,13 @@ limitations under the License.
 //------------------------------------------------------------------------------
 // Module Declaration
 //------------------------------------------------------------------------------
-module rv32_ifu_icache_data_array0 (
+// [ICACHE 参数化] 默认值 = 原几何。
+module rv32_ifu_icache_data_array0 #(
+  parameter INDEX_MSB  = 14,
+  parameter WORD_LSB   = 4,    // 索引里 beat/word 段的最低位
+  parameter ADDR_WIDTH = 11,   // = SET_BITS + (LINE_BITS-4)
+  parameter DATA_WIDTH = 32
+) (
 
   // Clock, reset and configuration
   input wire cp0_yy_clk_en,
@@ -44,7 +50,7 @@ module rv32_ifu_icache_data_array0 (
   input wire         ifu_icache_data_array0_bank3_clk_en,
   input wire [127:0] ifu_icache_data_array0_din,
   input wire         ifu_icache_data_array0_wen_b,
-  input wire [ 14:0] ifu_icache_index,
+  input wire [INDEX_MSB:0] ifu_icache_index,
 
   // Clock, reset and configuration
   input wire pad_yy_icg_scan_en,
@@ -157,10 +163,10 @@ module rv32_ifu_icache_data_array0 (
 
   //Icache Size define
   rv32_ifu_spram #(
-    .ADDR_WIDTH(11),
-    .DATA_WIDTH(32)
+    .ADDR_WIDTH(ADDR_WIDTH),
+    .DATA_WIDTH(DATA_WIDTH)
   ) u_ct_spsram_2048x32_bank0 (
-    .A   (ifu_icache_index[14:4]),
+    .A   (ifu_icache_index[INDEX_MSB:WORD_LSB]),
     .CEN (ifu_icache_data_array0_bank0_cen_b),
     .CLK (data_clk_bank0),
     .D   (ifu_icache_data_array0_bank0_din),
@@ -170,10 +176,10 @@ module rv32_ifu_icache_data_array0 (
   );
 
   rv32_ifu_spram #(
-    .ADDR_WIDTH(11),
-    .DATA_WIDTH(32)
+    .ADDR_WIDTH(ADDR_WIDTH),
+    .DATA_WIDTH(DATA_WIDTH)
   ) u_ct_spsram_2048x32_bank1 (
-    .A   (ifu_icache_index[14:4]),
+    .A   (ifu_icache_index[INDEX_MSB:WORD_LSB]),
     .CEN (ifu_icache_data_array0_bank1_cen_b),
     .CLK (data_clk_bank1),
     .D   (ifu_icache_data_array0_bank1_din),
@@ -183,10 +189,10 @@ module rv32_ifu_icache_data_array0 (
   );
 
   rv32_ifu_spram #(
-    .ADDR_WIDTH(11),
-    .DATA_WIDTH(32)
+    .ADDR_WIDTH(ADDR_WIDTH),
+    .DATA_WIDTH(DATA_WIDTH)
   ) u_ct_spsram_2048x32_bank2 (
-    .A   (ifu_icache_index[14:4]),
+    .A   (ifu_icache_index[INDEX_MSB:WORD_LSB]),
     .CEN (ifu_icache_data_array0_bank2_cen_b),
     .CLK (data_clk_bank2),
     .D   (ifu_icache_data_array0_bank2_din),
@@ -196,10 +202,10 @@ module rv32_ifu_icache_data_array0 (
   );
 
   rv32_ifu_spram #(
-    .ADDR_WIDTH(11),
-    .DATA_WIDTH(32)
+    .ADDR_WIDTH(ADDR_WIDTH),
+    .DATA_WIDTH(DATA_WIDTH)
   ) u_ct_spsram_2048x32_bank3 (
-    .A   (ifu_icache_index[14:4]),
+    .A   (ifu_icache_index[INDEX_MSB:WORD_LSB]),
     .CEN (ifu_icache_data_array0_bank3_cen_b),
     .CLK (data_clk_bank3),
     .D   (ifu_icache_data_array0_bank3_din),

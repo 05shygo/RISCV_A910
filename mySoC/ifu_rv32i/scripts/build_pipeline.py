@@ -4,6 +4,7 @@ Only layout/port boilerplate is generated in Python. Repeated hardware is
 expressed using Verilog generate; all next-state logic uses assign.
 """
 from pathlib import Path
+import re
 from rtl_style import layout, public_ports
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -182,7 +183,7 @@ input 32 ifdp_ipdp_vpc
 input 128 ifdp_ipdp_inst_data0 ifdp_ipdp_inst_data1
 input 3 ifdp_ipdp_tag_match0 ifdp_ipdp_tag_match1
 input 2 ifdp_ipdp_way_pred
-input 1 ifdp_ipdp_fault ifdp_ipdp_lbuf_on
+input 1 ifdp_ipdp_fault
 input 4 ifdp_ipdp_cause ifdp_ipdp_bkpta ifdp_ipdp_bkptb ifdp_ipdp_no_spec
 input 4 remaining_mask
 input 1 bht_pred
@@ -225,7 +226,7 @@ output 128 slot_npc
       assign packet={3'b0,(data_hit[0] ? 2'b01 : 2'b10),prediction_taken,13'b0,cf_type,pc_oper && !ifdp_ipdp_fault,
         ifdp_ipdp_bkptb[lane],ifdp_ipdp_bkpta[lane],fence,ifdp_ipdp_no_spec[lane],
         (ifdp_ipdp_fault ? ifdp_ipdp_cause : 4'b0),ifdp_ipdp_fault,npc,pc,inst};
-      assign slot_packet[lane*192+:192]={ifdp_ipdp_lbuf_on,btb_hit,usable,pop,push,
+      assign slot_packet[lane*192+:192]={1'b0,btb_hit,usable,pop,push,
         (jalr && !btb_hit),dst,bht_chk_idx,target,packet};
       assign slot_npc[lane*32+:32]=npc;
       assign cond_mask[lane]=remaining_mask[lane] && condbr && !ifdp_ipdp_fault;
@@ -348,6 +349,7 @@ output 1 fault_accept way_event miss_event
 emit('addrgen', ports('''
 input 192 source_packet
 input 1 ras_valid ind_valid
+input 1 lbuf_addrgen_active_state lbuf_addrgen_cache_state lbuf_addrgen_chgflw_mask
 input 32 ras_target ind_target
 output 192 result_packet
 output 1 correction
@@ -376,7 +378,10 @@ output 22 retained_ghr
   assign recorded=jalr ? (unknown ? link : chosen) : source_packet[159:128];
   assign instruction={source_packet[127:123],taken,source_packet[121:96],npc,source_packet[63:0]};
   assign result_packet={source_packet[191:187],unknown,source_packet[185:160],recorded,instruction};
-  assign correction=!source_packet[96] && npc!=source_packet[95:64];
+  // In LBUF cache/ACTIVE state the only miss/mispred branch is the loop end,
+  // and the loop-buffer adder supplies its target, so no chgflw is raised here.
+  assign correction=!source_packet[96] && npc!=source_packet[95:64] &&
+    !lbuf_addrgen_active_state && !lbuf_addrgen_cache_state && !lbuf_addrgen_chgflw_mask;
   assign corrected_pc=npc;
   assign retained_ghr=kind==1 ? {source_packet[180:160],source_packet[122]} : source_packet[181:160];
 ''')
@@ -386,11 +391,25 @@ input 1 forever_cpuclk cpurst_b load consume
 input 3 consume_count
 input 768 fragment_packet
 input 1 ras_valid ind_valid
+input 1 lbuf_addrgen_active_state lbuf_addrgen_cache_state lbuf_addrgen_chgflw_mask
+input 3 fragment_count
 input 32 ras_target ind_target
 output 768 raw_packet corrected_packet
 output 4 correction
 output 128 corrected_pc
 output 88 retained_ghr
+output 4 ibdp_lbuf_inst_vld_num
+output 2 ibdp_lbuf_bht_sel_array_result
+output 32 ibdp_lbuf_con_br_cur_pc ibdp_lbuf_con_br_offset
+output 1 ibdp_lbuf_con_br_taken
+output 1 ibdp_lbuf_inst0_vld ibdp_lbuf_inst1_vld ibdp_lbuf_inst2_vld ibdp_lbuf_inst3_vld
+output 32 ibdp_lbuf_inst0_data ibdp_lbuf_inst1_data ibdp_lbuf_inst2_data ibdp_lbuf_inst3_data
+output 1 ibdp_lbuf_inst0_con_br ibdp_lbuf_inst1_con_br ibdp_lbuf_inst2_con_br ibdp_lbuf_inst3_con_br
+output 1 ibdp_lbuf_inst0_chgflw ibdp_lbuf_inst1_chgflw ibdp_lbuf_inst2_chgflw ibdp_lbuf_inst3_chgflw
+output 1 ibdp_lbuf_inst0_auipc ibdp_lbuf_inst1_auipc ibdp_lbuf_inst2_auipc ibdp_lbuf_inst3_auipc
+output 1 ibdp_lbuf_inst0_fence ibdp_lbuf_inst1_fence ibdp_lbuf_inst2_fence ibdp_lbuf_inst3_fence
+output 1 ibdp_lbuf_inst0_bkpta ibdp_lbuf_inst1_bkpta ibdp_lbuf_inst2_bkpta ibdp_lbuf_inst3_bkpta
+output 1 ibdp_lbuf_inst0_bkptb ibdp_lbuf_inst1_bkptb ibdp_lbuf_inst2_bkptb ibdp_lbuf_inst3_bkptb
 '''), '''
   reg [191:0] lane_q [0:3];
   wire [191:0] lane_nxt [0:3];
@@ -410,10 +429,56 @@ output 88 retained_ghr
       assign raw_packet[lane*192+:192]=lane_q[lane];
       rv32_ifu_addrgen u_addrgen(.source_packet(lane_q[lane]),.ras_valid(ras_valid),
         .ras_target(ras_target),.ind_valid(ind_valid),.ind_target(ind_target),
+        .lbuf_addrgen_active_state(lbuf_addrgen_active_state),
+        .lbuf_addrgen_cache_state(lbuf_addrgen_cache_state),
+        .lbuf_addrgen_chgflw_mask(lbuf_addrgen_chgflw_mask),
         .result_packet(corrected_packet[lane*192+:192]),.correction(correction[lane]),
         .corrected_pc(corrected_pc[lane*32+:32]),.retained_ghr(retained_ghr[lane*22+:22]));
     end
   endgenerate
+  // Loop-buffer observation: whole pre-correction instructions, not half words.
+  assign ibdp_lbuf_inst_vld_num={1'b0,fragment_count};
+  assign ibdp_lbuf_inst0_vld=fragment_count>3'd0;
+  assign ibdp_lbuf_inst0_data=lane_q[0][31:0];
+  assign ibdp_lbuf_inst0_con_br=lane_q[0][108:106]==3'd1;
+  assign ibdp_lbuf_inst0_chgflw=lane_q[0][108:106]>=3'd2;
+  assign ibdp_lbuf_inst0_auipc=lane_q[0][108:106]==3'd4;
+  assign ibdp_lbuf_inst0_fence=lane_q[0][102];
+  assign ibdp_lbuf_inst0_bkpta=lane_q[0][103];
+  assign ibdp_lbuf_inst0_bkptb=lane_q[0][104];
+  assign ibdp_lbuf_inst1_vld=fragment_count>3'd1;
+  assign ibdp_lbuf_inst1_data=lane_q[1][31:0];
+  assign ibdp_lbuf_inst1_con_br=lane_q[1][108:106]==3'd1;
+  assign ibdp_lbuf_inst1_chgflw=lane_q[1][108:106]>=3'd2;
+  assign ibdp_lbuf_inst1_auipc=lane_q[1][108:106]==3'd4;
+  assign ibdp_lbuf_inst1_fence=lane_q[1][102];
+  assign ibdp_lbuf_inst1_bkpta=lane_q[1][103];
+  assign ibdp_lbuf_inst1_bkptb=lane_q[1][104];
+  assign ibdp_lbuf_inst2_vld=fragment_count>3'd2;
+  assign ibdp_lbuf_inst2_data=lane_q[2][31:0];
+  assign ibdp_lbuf_inst2_con_br=lane_q[2][108:106]==3'd1;
+  assign ibdp_lbuf_inst2_chgflw=lane_q[2][108:106]>=3'd2;
+  assign ibdp_lbuf_inst2_auipc=lane_q[2][108:106]==3'd4;
+  assign ibdp_lbuf_inst2_fence=lane_q[2][102];
+  assign ibdp_lbuf_inst2_bkpta=lane_q[2][103];
+  assign ibdp_lbuf_inst2_bkptb=lane_q[2][104];
+  assign ibdp_lbuf_inst3_vld=fragment_count>3'd3;
+  assign ibdp_lbuf_inst3_data=lane_q[3][31:0];
+  assign ibdp_lbuf_inst3_con_br=lane_q[3][108:106]==3'd1;
+  assign ibdp_lbuf_inst3_chgflw=lane_q[3][108:106]>=3'd2;
+  assign ibdp_lbuf_inst3_auipc=lane_q[3][108:106]==3'd4;
+  assign ibdp_lbuf_inst3_fence=lane_q[3][102];
+  assign ibdp_lbuf_inst3_bkpta=lane_q[3][103];
+  assign ibdp_lbuf_inst3_bkptb=lane_q[3][104];
+  // The IB fragment truncates at the first control transfer, so at most one lane can
+  // be a conditional branch; pick it with a plain priority mux.
+  wire [1:0] con_br_index;
+  assign con_br_index=ibdp_lbuf_inst0_con_br ? 2'd0 : ibdp_lbuf_inst1_con_br ? 2'd1 :
+    ibdp_lbuf_inst2_con_br ? 2'd2 : 2'd3;
+  assign ibdp_lbuf_con_br_cur_pc=lane_q[con_br_index][63:32];
+  assign ibdp_lbuf_con_br_offset=lane_q[con_br_index][159:128]-lane_q[con_br_index][63:32];
+  assign ibdp_lbuf_con_br_taken=lane_q[con_br_index][122];
+  assign ibdp_lbuf_bht_sel_array_result=lane_q[con_br_index][183:182];
 ''')
 
 emit('ibctrl', ports('''
@@ -536,13 +601,22 @@ output 1 empty pcfifo_wait recovery_wait
 ''')
 
 def pipeline_wrapper():
-    names=['ipdp','ipctrl','ibdp','ibctrl','pcfifo_if','ibuf']
+    names=['ipdp','ipctrl','ibdp','ibctrl','pcfifo_if','ibuf','lbuf']
     mapping={
         'ipctrl':{'cancel':'cancel_ip'},
         'ibctrl':{'cancel':'flush','ind_target':'ind_target','consume':'ib_accept'},
         'ibdp':{'consume':'ib_accept','ind_valid':'saved_ind_valid','ind_target':'saved_ind_target'},
         'pcfifo_if':{'accept':'ib_accept','candidate_packet':'corrected_packet'},
         'ibuf':{'in_count':'allowed_count','in_packet':'instruction_packet','in_ready':'ibuf_ready'},
+        # Phase 3 keeps the LBUF inert: its control-side inputs are grounded until
+        # ibctrl/pcgen/bht drive them for real in Phase 4.
+        'lbuf':{'ibuf_lbuf_empty':'ibuf_empty','cp0_ifu_lbuf_en':"1'b0",
+                'ifctrl_lbuf_ins_inv_on':"1'b0",'ifctrl_lbuf_inv_req':"1'b0",
+                'iu_ifu_bht_check_vld':"1'b0",'iu_ifu_bht_condbr_taken':"1'b0",
+                'iu_ifu_cur_pc':"32'b0",'bht_lbuf_pre_ntaken_result':"32'b0",
+                'bht_lbuf_pre_taken_result':"32'b0",'bht_lbuf_vghr':"22'b0",
+                'ibctrl_lbuf_bju_mispred':"1'b0",'ibctrl_lbuf_create_vld':"1'b0",
+                'ibctrl_lbuf_flush':"1'b0",'ibctrl_lbuf_retire_vld':"1'b0"},
     }
     exposed='''ipctrl_ifctrl_stall demand_valid demand_pc demand_way reissue reissue_way
 redirect redirect_pc bht_event bht_taken bht_more l0_invalidate l0_invalidate_mask fault_accept
@@ -566,7 +640,7 @@ ib_accept consume_count corrected_packet
         for d,w,n in public_ports((ROOT/'rtl'/f'rv32_ifu_{name}.v').read_text()):
             m=mapping.get(name,{}).get(n,n)
             width=int(w.strip('[] ').split(':')[0])+1 if w else 1
-            if m not in signals or d=='output':signals[m]=(d,width)
+            if re.fullmatch(r'\w+',m) and (m not in signals or d=='output'):signals[m]=(d,width)
             con.append(f'.{n}({m})')
         inst.append('  rv32_ifu_'+name+' u_'+name+'('+',\n'.join(con)+');')
     ps=[(d,w,n) for n,(d,w) in signals.items() if d=='input' or n in exposed]

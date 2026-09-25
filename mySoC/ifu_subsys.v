@@ -34,7 +34,11 @@
 // 修复见 rv32_ifu_ipctrl.v 的 l0_in_fragment (加在 redirect_pc 的 select 上)。
 module ifu_subsys #(
     parameter ICACHE_EN = 1,       // I-Cache 开关 (关掉走 1 拍 bypass 读)
-    parameter LBUF_EN   = 0,       // 循环缓冲开关
+`ifdef USE_LBUF
+    parameter LBUF_EN   = 1,       // 循环缓冲开关 (make LBUF=1)
+`else
+    parameter LBUF_EN   = 0,       // 循环缓冲开关 (make LBUF=1 打开)
+`endif
     parameter BHT_TRAIN_EN = 1     // BHT 检查/训练 (关掉可回到无历史的旧行为)
 )(
     input  wire         clk,

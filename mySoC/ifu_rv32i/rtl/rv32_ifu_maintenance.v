@@ -5,7 +5,29 @@
 //------------------------------------------------------------------------------
 // Module Declaration
 //------------------------------------------------------------------------------
-module rv32_ifu_maintenance (
+// [ICACHE 参数化] 与 rv32_ifu_icache_if.v 同套 define/公式; 默认 = 原 64 KiB/64 B。
+`ifdef ICACHE_BYTES
+  `define IC_BYTES_VAL `ICACHE_BYTES
+`else
+  `define IC_BYTES_VAL 65536
+`endif
+`ifdef ICACHE_LINE_BYTES
+  `define IC_LINE_VAL `ICACHE_LINE_BYTES
+`else
+  `define IC_LINE_VAL 64
+`endif
+
+module rv32_ifu_maintenance #(
+  parameter IC_BYTES  = `IC_BYTES_VAL,
+  parameter IC_LINE   = `IC_LINE_VAL,
+  parameter IC_SETS   = IC_BYTES/(2*IC_LINE),
+  parameter SET_BITS  = $clog2(IC_SETS),
+  parameter LINE_BITS = $clog2(IC_LINE),
+  parameter TAG_BITS  = 32 - SET_BITS - LINE_BITS,
+  parameter TAG_WIDTH = 1 + TAG_BITS,
+  parameter TAG_BASE  = 32 - TAG_BITS,
+  parameter INDEX_WIDTH = SET_BITS + LINE_BITS
+) (
   input wire forever_cpuclk,
   input wire cpurst_b,
   input wire recovery,
@@ -51,8 +73,8 @@ module rv32_ifu_maintenance (
   output wire [31:0] ifctrl_icache_if_read_req_index,
   input wire [127:0] icache_if_ifctrl_inst_data0,
   input wire [127:0] icache_if_ifctrl_inst_data1,
-  input wire [17:0] icache_if_ifctrl_tag_data0,
-  input wire [17:0] icache_if_ifctrl_tag_data1,
+  input wire [TAG_WIDTH-1:0] icache_if_ifctrl_tag_data0,
+  input wire [TAG_WIDTH-1:0] icache_if_ifctrl_tag_data1,
   input wire [31:0] icache_if_ifdp_precode0,
   input wire [31:0] icache_if_ifdp_precode1,
   input wire icache_if_ifdp_fifo,
@@ -68,7 +90,7 @@ module rv32_ifu_maintenance (
 );
   wire cp0_fire,lsu_fire,command,sw_fire,grant,tag_operation,all_operation;
   wire [1:0] line_match;
-  wire [17:0] sw_tag;
+  wire [TAG_WIDTH-1:0] sw_tag;
   wire [127:0] sw_data,sw_payload;
   wire [31:0] sw_precode;
   wire [3:0] after_bp;
@@ -78,8 +100,10 @@ module rv32_ifu_maintenance (
   reg init_q;
   wire init_nxt;
   wire init_en;
-  reg [8:0] index_q;
-  wire [8:0] index_nxt;
+  // [ICACHE 参数化] 扫描计数器必须覆盖全部 set。原来是 9 位 + 终判 511, 等于把
+  // "512 个 set" 写死 —— 只有 64 B 行(512 set)成立。宽度与终值一起跟 IC_SETS 走。
+  reg [SET_BITS-1:0] index_q;
+  wire [SET_BITS-1:0] index_nxt;
   wire index_en;
   reg source_q;
   wire source_nxt;
@@ -127,13 +151,18 @@ module rv32_ifu_maintenance (
   assign tag_operation=all_operation || state_q==LINE_READ || state_q==LINE_WRITE;
   assign maintenance_array_req=tag_operation || (state_q==SW_READ && !refill_array_req);
   assign grant=maintenance_array_req && ifctrl_maintenance_grant;
-  assign ifctrl_icache_if_index=all_operation ? {17'b0,index_q,6'b0} : pa_q;
+  // 扫描索引 = {set=index_q, LINE_BITS 个 0}, 高位补 0 到 32 位。
+  // 原写法 {17'b0,index_q,6'b0} 把 beat 段硬占 6 位: 16 B 行时 set=index[14:4],
+  // 强制 index[5:4]=0 ⇒ 只清掉 1/4 的 set, 剩下的 tag SRAM 停在 X ⇒ 取指读到 X
+  // 传到 IPB 的 tag_hit ⇒ state_q 变 X ⇒ 前端死锁。
+  assign ifctrl_icache_if_index=all_operation ?
+    {{(32-INDEX_WIDTH){1'b0}},index_q,{LINE_BITS{1'b0}}} : pa_q;
   assign ifctrl_icache_if_inv_fifo=1'b0;
   assign ifctrl_icache_if_reset_req=1'b0;
   assign ifctrl_icache_if_inv_on=all_operation || state_q==LINE_WRITE;
   assign ifctrl_icache_if_tag_req=tag_operation;
-  assign line_match={icache_if_ifctrl_tag_data1=={1'b1,pa_q[31:15]},
-                     icache_if_ifctrl_tag_data0=={1'b1,pa_q[31:15]}};
+  assign line_match={icache_if_ifctrl_tag_data1=={1'b1,pa_q[31:TAG_BASE]},
+                     icache_if_ifctrl_tag_data0=={1'b1,pa_q[31:TAG_BASE]}};
   assign ifctrl_icache_if_tag_wen=state_q==LINE_READ ? 3'b111 :
     state_q==LINE_WRITE ? {1'b1,~line_match} : 3'b000;
   assign ifu_cp0_icache_read_ready=state_q==IDLE && !recovery &&
@@ -147,17 +176,17 @@ module rv32_ifu_maintenance (
   assign sw_tag=sw_desc_q[2] ? icache_if_ifctrl_tag_data1 : icache_if_ifctrl_tag_data0;
   assign sw_precode=sw_desc_q[2] ? icache_if_ifdp_precode1 : icache_if_ifdp_precode0;
   assign sw_payload=sw_desc_q[1:0]==0 ? sw_data : sw_desc_q[1:0]==1 ?
-    {109'b0,icache_if_ifdp_fifo,sw_tag} : sw_desc_q[1:0]==2 ? {96'b0,sw_precode} : 128'b0;
+    {{(127-TAG_WIDTH){1'b0}},icache_if_ifdp_fifo,sw_tag} : sw_desc_q[1:0]==2 ? {96'b0,sw_precode} : 128'b0;
   assign ifu_cp0_icache_read_data_vld=state_q==SW_RESPONSE;
   assign ifu_cp0_icache_read_data=sw_response_q;
   assign software_idle=state_q<SW_READ;
   assign state_en=1'b1;
-  assign state_nxt=state_q==INIT ? ((grant && index_q==511) ? BOOT : INIT) :
+  assign state_nxt=state_q==INIT ? ((grant && index_q==IC_SETS-1) ? BOOT : INIT) :
   state_q==BOOT ? (bp_init_done ? IDLE : BOOT) : command ? DRAIN :
   state_q==DRAIN ? (memory_idle ? BP_REQ : DRAIN) :
   state_q==BP_REQ ? (bp_maint_ready ? BP_WAIT : BP_REQ) :
   state_q==BP_WAIT ? (bp_maint_done ? after_bp : BP_WAIT) :
-  state_q==ALL ? ((grant && index_q==511) ? DONE : ALL) :
+  state_q==ALL ? ((grant && index_q==IC_SETS-1) ? DONE : ALL) :
   state_q==LINE_READ ? (grant ? LINE_WRITE : LINE_READ) :
   state_q==LINE_WRITE ? (grant ? DONE : LINE_WRITE) : state_q==DONE ? IDLE :
   sw_fire ? SW_READ : state_q==SW_READ ? (grant ? SW_CAPTURE : SW_READ) :
@@ -174,9 +203,9 @@ module rv32_ifu_maintenance (
     else if(init_en) init_q<=init_nxt;
   end
   assign index_en=command || (all_operation && grant);
-  assign index_nxt=command ? 9'b0 : index_q+9'd1;
+  assign index_nxt=command ? {SET_BITS{1'b0}} : index_q+1'b1;
   always @(posedge forever_cpuclk or negedge cpurst_b) begin : p_index
-    if(!cpurst_b) index_q<=9'b0;
+    if(!cpurst_b) index_q<={SET_BITS{1'b0}};
     else if(index_en) index_q<=index_nxt;
   end
   assign source_en=command;

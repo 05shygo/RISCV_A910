@@ -26,7 +26,13 @@ limitations under the License.
 //------------------------------------------------------------------------------
 // Module Declaration
 //------------------------------------------------------------------------------
-module rv32_ifu_icache_predecd_array0 (
+// [ICACHE 参数化] 默认值 = 原几何。
+module rv32_ifu_icache_predecd_array0 #(
+  parameter INDEX_MSB  = 14,
+  parameter WORD_LSB   = 4,
+  parameter ADDR_WIDTH = 11,
+  parameter DATA_WIDTH = 32
+) (
 
   // Clock, reset and configuration
   input wire cp0_ifu_icg_en,
@@ -34,7 +40,7 @@ module rv32_ifu_icache_predecd_array0 (
   input wire forever_cpuclk,
 
   // Cache array and pipeline interface
-  input wire [14:0] ifu_icache_index,
+  input wire [INDEX_MSB:0] ifu_icache_index,
   input wire        ifu_icache_predecd_array0_cen_b,
   input wire        ifu_icache_predecd_array0_clk_en,
   input wire [31:0] ifu_icache_predecd_array0_din,
@@ -74,10 +80,10 @@ module rv32_ifu_icache_predecd_array0 (
   assign ifu_icache_predecd_array0_bwen[31:0] = {32{ifu_icache_predecd_array0_wen_b}};
 
   rv32_ifu_spram #(
-    .ADDR_WIDTH(11),
-    .DATA_WIDTH(32)
+    .ADDR_WIDTH(ADDR_WIDTH),
+    .DATA_WIDTH(DATA_WIDTH)
   ) u_ct_spsram_2048x32_split (
-    .A   (ifu_icache_index[14:4]),
+    .A   (ifu_icache_index[INDEX_MSB:WORD_LSB]),
     .CEN (ifu_icache_predecd_array0_cen_b),
     .CLK (predecd_clk),
     .D   (ifu_icache_predecd_array0_din),

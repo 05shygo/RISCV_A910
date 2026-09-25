@@ -156,8 +156,14 @@ module tb_miniRV_dpi;
       // Test program finished: report pass/fail from a0 and end cleanly.
       else if (gm_halted()) begin
         $display("[difftest] Test finished at cycle %0d", cycles);
-        if (gm_exit_code() == 0) begin
-          $display("Test Point Pass!");
+        // +NOVALID: 调试模式。CoreMark 退出码非 0 通常是"跑分不合法"(≥10 秒规则,
+        //   ITERATIONS 少时必然触发), 而逐拍 difftest 已全程通过 ⇒ 功能无误。
+        //   该开关只跳过有效性判定, 统计量照常打印; 真正的功能错误会在上面的
+        //   difftest 分支就被 $fatal 拦住, 不会走到这里。
+        if (gm_exit_code() == 0 || $test$plusargs("NOVALID")) begin
+          if (gm_exit_code() == 0) $display("Test Point Pass!");
+          else $display("Test Point Pass (NOVALID: 退出码 %0d — 跳过 CoreMark 有效性判定, 仅调试用)",
+                        gm_exit_code());
 `ifdef USE_IFU
           report_branch_stats();
           report_l0_stats();

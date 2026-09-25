@@ -14,13 +14,54 @@ module rv32_ifu_ibdp (
   input  wire [767:0] fragment_packet,
   input  wire         ras_valid,
   input  wire         ind_valid,
+  input  wire         lbuf_addrgen_active_state,
+  input  wire         lbuf_addrgen_cache_state,
+  input  wire         lbuf_addrgen_chgflw_mask,
+  input  wire [  2:0] fragment_count,
   input  wire [ 31:0] ras_target,
   input  wire [ 31:0] ind_target,
   output wire [767:0] raw_packet,
   output wire [767:0] corrected_packet,
   output wire [  3:0] correction,
   output wire [127:0] corrected_pc,
-  output wire [ 87:0] retained_ghr
+  output wire [ 87:0] retained_ghr,
+  output wire [  3:0] ibdp_lbuf_inst_vld_num,
+  output wire [  1:0] ibdp_lbuf_bht_sel_array_result,
+  output wire [ 31:0] ibdp_lbuf_con_br_cur_pc,
+  output wire [ 31:0] ibdp_lbuf_con_br_offset,
+  output wire         ibdp_lbuf_con_br_taken,
+  output wire         ibdp_lbuf_inst0_vld,
+  output wire [ 31:0] ibdp_lbuf_inst0_data,
+  output wire         ibdp_lbuf_inst0_con_br,
+  output wire         ibdp_lbuf_inst0_chgflw,
+  output wire         ibdp_lbuf_inst0_auipc,
+  output wire         ibdp_lbuf_inst0_fence,
+  output wire         ibdp_lbuf_inst0_bkpta,
+  output wire         ibdp_lbuf_inst0_bkptb,
+  output wire         ibdp_lbuf_inst1_vld,
+  output wire [ 31:0] ibdp_lbuf_inst1_data,
+  output wire         ibdp_lbuf_inst1_con_br,
+  output wire         ibdp_lbuf_inst1_chgflw,
+  output wire         ibdp_lbuf_inst1_auipc,
+  output wire         ibdp_lbuf_inst1_fence,
+  output wire         ibdp_lbuf_inst1_bkpta,
+  output wire         ibdp_lbuf_inst1_bkptb,
+  output wire         ibdp_lbuf_inst2_vld,
+  output wire [ 31:0] ibdp_lbuf_inst2_data,
+  output wire         ibdp_lbuf_inst2_con_br,
+  output wire         ibdp_lbuf_inst2_chgflw,
+  output wire         ibdp_lbuf_inst2_auipc,
+  output wire         ibdp_lbuf_inst2_fence,
+  output wire         ibdp_lbuf_inst2_bkpta,
+  output wire         ibdp_lbuf_inst2_bkptb,
+  output wire         ibdp_lbuf_inst3_vld,
+  output wire [ 31:0] ibdp_lbuf_inst3_data,
+  output wire         ibdp_lbuf_inst3_con_br,
+  output wire         ibdp_lbuf_inst3_chgflw,
+  output wire         ibdp_lbuf_inst3_auipc,
+  output wire         ibdp_lbuf_inst3_fence,
+  output wire         ibdp_lbuf_inst3_bkpta,
+  output wire         ibdp_lbuf_inst3_bkptb
 );
 
   reg  [191:0] lane_q  [0:3];
@@ -42,6 +83,9 @@ module rv32_ifu_ibdp (
       rv32_ifu_addrgen u_addrgen (
         .source_packet(lane_q[lane]),
         .ras_valid    (ras_valid),
+        .lbuf_addrgen_active_state(lbuf_addrgen_active_state),
+        .lbuf_addrgen_cache_state(lbuf_addrgen_cache_state),
+        .lbuf_addrgen_chgflw_mask(lbuf_addrgen_chgflw_mask),
         .ras_target   (ras_target),
         .ind_valid    (ind_valid),
         .ind_target   (ind_target),
@@ -53,4 +97,48 @@ module rv32_ifu_ibdp (
     end
   endgenerate
 
+  // Loop-buffer observation: whole pre-correction instructions, not half words.
+  // Emitted per lane because a generate loop cannot index distinct port names.
+  assign ibdp_lbuf_inst_vld_num = {1'b0, fragment_count};
+  assign ibdp_lbuf_inst0_vld = fragment_count > 3'd0;
+  assign ibdp_lbuf_inst0_data = lane_q[0][31:0];
+  assign ibdp_lbuf_inst0_con_br = lane_q[0][108:106] == 3'd1;
+  assign ibdp_lbuf_inst0_chgflw = lane_q[0][108:106] >= 3'd2;
+  assign ibdp_lbuf_inst0_auipc = lane_q[0][108:106] == 3'd4;
+  assign ibdp_lbuf_inst0_fence = lane_q[0][102];
+  assign ibdp_lbuf_inst0_bkpta = lane_q[0][103];
+  assign ibdp_lbuf_inst0_bkptb = lane_q[0][104];
+  assign ibdp_lbuf_inst1_vld = fragment_count > 3'd1;
+  assign ibdp_lbuf_inst1_data = lane_q[1][31:0];
+  assign ibdp_lbuf_inst1_con_br = lane_q[1][108:106] == 3'd1;
+  assign ibdp_lbuf_inst1_chgflw = lane_q[1][108:106] >= 3'd2;
+  assign ibdp_lbuf_inst1_auipc = lane_q[1][108:106] == 3'd4;
+  assign ibdp_lbuf_inst1_fence = lane_q[1][102];
+  assign ibdp_lbuf_inst1_bkpta = lane_q[1][103];
+  assign ibdp_lbuf_inst1_bkptb = lane_q[1][104];
+  assign ibdp_lbuf_inst2_vld = fragment_count > 3'd2;
+  assign ibdp_lbuf_inst2_data = lane_q[2][31:0];
+  assign ibdp_lbuf_inst2_con_br = lane_q[2][108:106] == 3'd1;
+  assign ibdp_lbuf_inst2_chgflw = lane_q[2][108:106] >= 3'd2;
+  assign ibdp_lbuf_inst2_auipc = lane_q[2][108:106] == 3'd4;
+  assign ibdp_lbuf_inst2_fence = lane_q[2][102];
+  assign ibdp_lbuf_inst2_bkpta = lane_q[2][103];
+  assign ibdp_lbuf_inst2_bkptb = lane_q[2][104];
+  assign ibdp_lbuf_inst3_vld = fragment_count > 3'd3;
+  assign ibdp_lbuf_inst3_data = lane_q[3][31:0];
+  assign ibdp_lbuf_inst3_con_br = lane_q[3][108:106] == 3'd1;
+  assign ibdp_lbuf_inst3_chgflw = lane_q[3][108:106] >= 3'd2;
+  assign ibdp_lbuf_inst3_auipc = lane_q[3][108:106] == 3'd4;
+  assign ibdp_lbuf_inst3_fence = lane_q[3][102];
+  assign ibdp_lbuf_inst3_bkpta = lane_q[3][103];
+  assign ibdp_lbuf_inst3_bkptb = lane_q[3][104];
+  // The IB fragment truncates at the first control transfer, so at most one lane can
+  // be a conditional branch; pick it with a plain priority mux.
+  wire [1:0] con_br_index;
+  assign con_br_index = ibdp_lbuf_inst0_con_br ? 2'd0 : ibdp_lbuf_inst1_con_br ? 2'd1 :
+    ibdp_lbuf_inst2_con_br ? 2'd2 : 2'd3;
+  assign ibdp_lbuf_con_br_cur_pc = lane_q[con_br_index][63:32];
+  assign ibdp_lbuf_con_br_offset = lane_q[con_br_index][159:128] - lane_q[con_br_index][63:32];
+  assign ibdp_lbuf_con_br_taken = lane_q[con_br_index][122];
+  assign ibdp_lbuf_bht_sel_array_result = lane_q[con_br_index][183:182];
 endmodule

@@ -5,7 +5,29 @@
 //------------------------------------------------------------------------------
 // Module Declaration
 //------------------------------------------------------------------------------
-module rv32_ifu_l1_refill (
+// [ICACHE 参数化] 与 rv32_ifu_icache_if.v 同套 define/公式; 默认 = 原 64 KiB/64 B。
+`ifdef ICACHE_BYTES
+  `define IC_BYTES_VAL `ICACHE_BYTES
+`else
+  `define IC_BYTES_VAL 65536
+`endif
+`ifdef ICACHE_LINE_BYTES
+  `define IC_LINE_VAL `ICACHE_LINE_BYTES
+`else
+  `define IC_LINE_VAL 64
+`endif
+
+module rv32_ifu_l1_refill #(
+  parameter IC_BYTES  = `IC_BYTES_VAL,
+  parameter IC_LINE   = `IC_LINE_VAL,
+  parameter IC_SETS   = IC_BYTES/(2*IC_LINE),
+  parameter SET_BITS  = $clog2(IC_SETS),
+  parameter LINE_BITS = $clog2(IC_LINE),
+  parameter TAG_BITS  = 32 - SET_BITS - LINE_BITS,
+  parameter TAG_WIDTH = 1 + TAG_BITS,
+  parameter TAG_BASE  = 32 - TAG_BITS,
+  parameter BEATS     = IC_LINE/16
+) (
   input  wire         forever_cpuclk,
   input  wire         cpurst_b,
   input  wire         cancel,
@@ -38,7 +60,7 @@ module rv32_ifu_l1_refill (
   output wire [ 31:0] l1_refill_icache_if_index,
   output wire [127:0] l1_refill_icache_if_inst_data,
   output wire [ 31:0] l1_refill_icache_if_pre_code,
-  output wire [ 16:0] l1_refill_icache_if_ptag,
+  output wire [TAG_BITS-1:0] l1_refill_icache_if_ptag,
   output wire         l1_refill_ifctrl_active,
   output wire         l1_refill_ifctrl_live,
   output wire         l1_refill_ifctrl_vld,
@@ -102,7 +124,7 @@ module rv32_ifu_l1_refill (
   assign receive = memory_valid && memory_ready;
   assign first = count_q == 0;
   assign last = memory_last;
-  assign error = memory_error || (memory_last != (memory_allocate ? count_q == 3 : count_q == 0));
+  assign error = memory_error || (memory_last != (memory_allocate ? count_q == BEATS-1 : count_q == 0));
   assign block = memory_pc[5:4] + count_q;
   assign refill_array_req = pending_q && memory_allocate && !killed_q && !invalidate;
   assign
@@ -112,9 +134,16 @@ module rv32_ifu_l1_refill (
   assign l1_refill_icache_if_first = beat_q[162];
   assign l1_refill_icache_if_last = beat_q[163];
   assign l1_refill_icache_if_install = refill_array_req && beat_q[163] && !error_q && !beat_q[164];
-  assign l1_refill_icache_if_index = {memory_pc[31:6], beat_q[161:160], 4'b0};
+  // 索引 = {set, beat, 4'b0} 左对齐; 16 B 行时 beat 段消失(BEATS==1)
+  // 低 LINE_BITS 位 = {beat, word}; BEATS==1 时没有 beat 段 —— 不能图省事让
+  // beat 字段恒占 2 位, 否则拼接会把 set 顶上移 2 位, 回填写进错的 set(永远 miss)。
+`ifdef ICACHE_LINE_16B
+  assign l1_refill_icache_if_index = {memory_pc[31:LINE_BITS], 4'b0};
+`else
+  assign l1_refill_icache_if_index = {memory_pc[31:LINE_BITS], beat_q[161:160], 4'b0};
+`endif
   assign l1_refill_icache_if_fifo = desc_q[1];
-  assign l1_refill_icache_if_ptag = memory_pc[31:15];
+  assign l1_refill_icache_if_ptag = memory_pc[31:TAG_BASE];
   assign l1_refill_icache_if_inst_data = beat_q[127:0];
   assign l1_refill_icache_if_pre_code = beat_q[159:128];
   assign l1_refill_ifctrl_active = !idle;
@@ -194,7 +223,7 @@ module rv32_ifu_l1_refill (
   end
   assign protocol_en = receive;
   assign
-    protocol_nxt = protocol_q || (memory_last != (memory_allocate ? count_q == 3 : count_q == 0));
+    protocol_nxt = protocol_q || (memory_last != (memory_allocate ? count_q == BEATS-1 : count_q == 0));
   always @(posedge forever_cpuclk or negedge cpurst_b) begin : p_protocol
     if (!cpurst_b) protocol_q <= 1'b0;
     else if (protocol_en) protocol_q <= protocol_nxt;

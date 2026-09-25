@@ -4,7 +4,7 @@ import re,json
 import openpyxl
 from rtl_style import public_ports,layout
 ROOT=Path(__file__).resolve().parents[1]
-w=openpyxl.load_workbook(ROOT.parent/'ifu/doc/RV32I_C910_IFU_interface_v1.1_noMMU.xlsx',read_only=True,data_only=True)
+w=openpyxl.load_workbook(ROOT/'doc/RV32I_C910_IFU_interface_v1.1_noMMU.xlsx',read_only=True,data_only=True)
 external={}
 for name,d,_ in w['IFU_Interface'].values:
     m=re.fullmatch(r'(\w+)(\[\d+:\d+\])?',str(name))
@@ -36,8 +36,8 @@ def add(mod,mapping=None,params='',inst=None):
 logic=[]
 add('pcgen',{
  'addrgen_pcgen_pcload':"1'b0",'addrgen_pcgen_pc':"32'b0",
- 'ibctrl_pcgen_pcload':'ib_redirect_all','ibctrl_pcgen_pcload_vld':'ib_redirect_all',
- 'ibctrl_pcgen_pc':'ib_redirect_final_pc','ibctrl_pcgen_way_pred':"2'b11",'ibctrl_pcgen_ip_stall':"1'b0",
+ 'ibctrl_pcgen_pcload':'ib_redirect','ibctrl_pcgen_pcload_vld':'ib_redirect',
+ 'ibctrl_pcgen_pc':'ib_redirect_pc','ibctrl_pcgen_way_pred':"2'b11",'ibctrl_pcgen_ip_stall':"1'b0",
  'ipctrl_pcgen_reissue_pcload':'reissue','ipctrl_pcgen_reissue_pc':'demand_pc',
  'ipctrl_pcgen_reissue_way_pred':'reissue_way','ipctrl_pcgen_chgflw_pcload':'ip_redirect',
  'ipctrl_pcgen_chgflw_pc':'ip_redirect_pc','ipctrl_pcgen_chgflw_way_pred':"2'b11",
@@ -49,20 +49,21 @@ add('pcgen',{
  'vector_pcgen_pcload':'entry_load','vector_pcgen_pc':'entry_pc',
 })
 add('ifctrl',{'frontend_init_done':'fetch_initialized','maintenance_busy':'maint_busy',
- 'lbuf_ifctrl_active':"1'b0",'frontend_redirect':'frontend_redirect',
+ 'frontend_redirect':'frontend_redirect',
  'control_ifctrl_reissue':'fault_accept','cp0_ifu_no_op_req':'stop_fetch',
  'ipctrl_ifctrl_bht_stall':"1'b0",'btb_ifctrl_ready':'btb_lookup_ready',
  'maintenance_array_req':'maintenance_array_req',
  'l1_refill_ifctrl_active':'refill_active_block',
  'ifu_hpcp_frontend_stall':'if_frontend_stall'})
+# The ICache IF read data reach IFDP and maintenance directly; no mux remains.
+cache_map={'icache_if_ifdp_'+f:'raw_cache_'+f
+ for f in ['inst_data0','inst_data1','precode0','precode1','tag_data0','tag_data1','fifo']}
 add('ifdp',{'btb_ifdp_vld':'btb_if_vld','btb_ifdp_pc':'btb_if_pc','btb_ifdp_hit':'btb_if_hit',
  'btb_ifdp_target':'btb_if_target','btb_ifdp_way':'btb_if_way_hint',
  'l0_btb_ifdp_hit':'l0_hit','l0_btb_ifdp_index':'l0_hit_index','l0_btb_ifdp_slot':'l0_hit_slot',
  'l0_btb_ifdp_way':'l0_way_hint','l0_btb_ifdp_type':'l0_hit_type','l0_btb_ifdp_target':'l0_target',
- 'sfp_ifdp_vld':"1'b1",'sfp_ifdp_pc':'ifdp_l0_btb_pc','sfp_ifdp_no_spec':'sfp_no_spec'})
-array_map={'ifu_hpcp_icache_miss_pre':'miss_event','ifctrl_array_grant':'physical_array_grant'}
-for field in ['inst_data0','inst_data1','precode0','precode1','tag_data0','tag_data1','fifo']:
-    array_map['icache_if_ifdp_'+field]='raw_cache_'+field
+ 'sfp_ifdp_vld':"1'b1",'sfp_ifdp_pc':'ifdp_l0_btb_pc','sfp_ifdp_no_spec':'sfp_no_spec',**cache_map})
+array_map={'ifu_hpcp_icache_miss_pre':'miss_event',**cache_map}
 add('if_array',array_map)
 
 pipe_map={'cancel_ip':'cancel_ip','flush':'global_flush','recovery_stall':'bp_recovery_stall',
@@ -81,7 +82,7 @@ add('memory',{'cancel':'memory_cancel','invalidate':'maint_invalidate','enable':
 add('maintenance',{'recovery':'backend_redirect','recovery_pc':'backend_pc',
  'memory_idle':'memory_idle','init_done':'cache_init_done','busy':'maint_busy',
  'invalidate':'maint_invalidate','flush':'maint_flush','resume':'maint_resume',
- 'resume_pc':'maint_resume_pc'})
+ 'resume_pc':'maint_resume_pc',**cache_map})
 add('vector',{'init_done':'ifu_cp0_init_done'})
 add('debug',{'quiescent':'ifu_had_quiescent','global_cancel':'backend_redirect',
  'inject_accept':'debug_inject_accept'})
@@ -89,7 +90,7 @@ add('bp_top',{
  'rtu_ifu_flush':'predictor_commit_restore',
  'frontend_cancel':'global_flush','if_pc':'bp_if_pc','if_query_pc':'bp_query_pc',
  'ib_query_ghr':'ind_query_ghr','ip_pc':'pipe_ifdp_ipdp_vpc','ib_pred_target':'jump_target',
- 'local_recover_vld':'ib_redirect_all','local_recover_ghr':'combined_recover_ghr','ifctrl_bht_pipedown':'bp_pipedown',
+ 'local_recover_vld':'ib_redirect','local_recover_ghr':'ib_recover_ghr','ifctrl_bht_pipedown':'bp_pipedown',
  'ipctrl_bht_con_br_gateclk_en':'bht_event','ipctrl_bht_con_br_taken':'bht_taken',
  'ipctrl_bht_con_br_vld':'bht_event','ipctrl_bht_more_br':'bht_more','ipctrl_bht_vld':'pipe_ip_valid',
  'lbuf_bht_active_state':"1'b0",'lbuf_bht_con_br_taken':"1'b0",'lbuf_bht_con_br_vld':"1'b0",
@@ -110,12 +111,6 @@ add('bp_top',{
 add('sfp',{'enable':'cp0_ifu_nsfe','invalidate':'clear_sfp','cancel':'global_flush',
  'lookup_accept':'ifctrl_ifdp_pipedown','lookup_pc':'ifdp_l0_btb_pc','lookup_mask':'sfp_mask',
  'no_spec':'sfp_no_spec',**{n:'sfp_'+n for n in ['retire_valid','retire_load','retire_store','retire_hit','retire_miss','retire_mispred','retire_pc']}})
-add('lbuf',{'enable':'cp0_ifu_lbuf_en','invalidate':'maint_invalidate','cancel':'global_flush',
- 'record_accept':'ib_accept','record_count':'consume_count','record_packet':'corrected_packet',
- 'lookup_pc':'pcgen_icache_if_index','lookup_accept':'ifctrl_array_fetch',
- 'active':'lbuf_active','waiting':'lbuf_waiting','hit':'lbuf_hit','capture_done':'lbuf_capture_done',
- 'restart_pc':'lbuf_restart_pc','restart_ghr':'lbuf_restart_ghr','data':'lbuf_data','word_mask':'lbuf_word_mask'})
-add('icache_precode',{'data':'lbuf_data','precode':'lbuf_precode'},inst='lbuf_precode')
 region_params='#(.REGION_COUNT(REGION_COUNT),.REGION_BASE(REGION_BASE),.REGION_LIMIT(REGION_LIMIT),.REGION_ATTR(REGION_ATTR))'
 for label,pc,attr in [('fast','pcgen_icache_if_index','region_ifctrl_attr'),
                       ('issue','ifctrl_ifdp_issue_pc','region_ifdp_attr'),
@@ -129,12 +124,12 @@ for n,expr in {
  'entry_pc':'maint_resume ? maint_resume_pc : vector_pcgen_pc',
  'global_flush':'backend_redirect || maint_flush || pcgen_ibctrl_ibuf_flush',
  'predictor_commit_restore':'rtu_ifu_flush || debug_restore',
- 'frontend_redirect':'global_flush || maint_resume || ib_redirect_all || ip_redirect || reissue',
- 'cancel_ip':'global_flush || ib_redirect_all',
+ 'frontend_redirect':'global_flush || maint_resume || ib_redirect || ip_redirect || reissue',
+ 'cancel_ip':'global_flush || ib_redirect',
  'fetch_initialized':'ifu_cp0_init_done && !vector_pcgen_reset_on',
- 'stop_fetch':'cp0_ifu_no_op_req || fault_stop_q || lbuf_waiting',
+ 'stop_fetch':'cp0_ifu_no_op_req || fault_stop_q',
  'refill_active_block':'refill_active_raw || miss_event',
- 'memory_cancel':'global_flush || maint_resume || ib_redirect_all || ip_redirect || way_event',
+ 'memory_cancel':'global_flush || maint_resume || ib_redirect || ip_redirect || way_event',
  'memory_demand_valid':'demand_valid && !cp0_ifu_no_op_req',
  'pipe_demand_ready':'memory_demand_ready && !cp0_ifu_no_op_req',
  'demand_allocate':'cp0_ifu_icache_en && ifdp_ipdp_attr[3]',
@@ -144,7 +139,7 @@ for n,expr in {
  'ifu_yy_xx_no_op':'ifu_cp0_init_done && memory_idle && !maint_busy && software_idle',
  'ifu_had_no_inst':'out_count==0',
  'ifu_had_reset_on':'vector_pcgen_reset_on',
- 'ifu_had_quiescent':'ifu_yy_xx_no_op && ifctrl_idle && ib_empty && ibuf_empty && !debug_busy && !lbuf_active && !lbuf_waiting',
+ 'ifu_had_quiescent':'ifu_yy_xx_no_op && ifctrl_idle && ib_empty && ibuf_empty && !debug_busy',
  'pipe_ip_valid':'inject_valid || ifctrl_ipctrl_vld',
  'pipe_ip_load':'ifctrl_ifdp_pipedown || inject_pipedown',
  'pipe_bht_pred':'bht_pred',
@@ -160,15 +155,6 @@ for n,expr in {
  'sfp_mask':"4'b1111 << ifdp_l0_btb_pc[3:2]",
  'fault_stop_nxt':'!global_flush && !ib_redirect && (fault_stop_q || fault_accept)',
  'fault_stop_en':"1'b1",
- 'ib_redirect_all':'ib_redirect || lbuf_capture_done',
- 'ib_redirect_final_pc':'ib_redirect ? ib_redirect_pc : lbuf_restart_pc',
- 'combined_recover_ghr':'ib_redirect ? ib_recover_ghr : lbuf_restart_ghr',
- 'lbuf_use':'lbuf_active && lbuf_hit && !global_flush',
- 'physical_array_grant':"ifctrl_array_grant & {(!lbuf_use),3'b111}",
- 'lbuf_ifdp_source':'ifctrl_array_fetch && lbuf_use',
- 'lbuf_ifdp_word_mask':'lbuf_word_mask',
- 'lbuf_response_en':'ifctrl_ifdp_issue',
- 'lbuf_response_nxt':"{lbuf_ifdp_source,pcgen_icache_if_index[31:15],lbuf_precode,lbuf_data}",
  'training_ready':'!cp0_ifu_btb_en || btb_update_ready',
 }.items():drive(n,expr,'[31:0]' if n in ['backend_pc','entry_pc'] else '[3:0]' if n=='sfp_mask' else '')
 logic.append('''
@@ -176,17 +162,7 @@ logic.append('''
     if(!cpurst_b) fault_stop_q<=1'b0;
     else if(fault_stop_en) fault_stop_q<=fault_stop_nxt;
   end
-  always @(posedge forever_cpuclk or negedge cpurst_b) begin : p_lbuf_response
-    if(!cpurst_b) lbuf_response_q<=178'b0;
-    else if(lbuf_response_en) lbuf_response_q<=lbuf_response_nxt;
-  end
 ''')
-signals['lbuf_response_nxt']='[177:0]'
-for field,width,expr in [('inst_data0','[127:0]','lbuf_response_q[127:0]'),
- ('inst_data1','[127:0]','lbuf_response_q[127:0]'),('precode0','[31:0]','lbuf_response_q[159:128]'),
- ('precode1','[31:0]','lbuf_response_q[159:128]'),('tag_data0','[17:0]',"{1'b1,lbuf_response_q[176:160]}"),
- ('tag_data1','[17:0]',"{1'b1,lbuf_response_q[176:160]}"),('fifo','',"1'b0")]:
-    drive('icache_if_ifdp_'+field,f'lbuf_response_q[177] ? {expr} : raw_cache_{field}',width)
 
 debug_values={'vpc':'inject_pc','inst_data0':'( {96\'b0,inject_inst} << ({inject_pc[3:2],5\'b0}))',
  'inst_data1':"128'b0",'tag_match0':"3'b111",'tag_match1':"3'b0",'way_pred':"2'b01",
@@ -213,7 +189,7 @@ for lane in range(2):
 for event,expr in {'btb_inst':'btb_used','btb_mispred':'ib_redirect || l0_invalidate',
  'frontend_stall':'if_frontend_stall || pcfifo_wait || recovery_wait',
  'way_reissue':'way_event','ipb_launch':'ipb_launch','ipb_demand_hit':'ipb_demand_hit',
- 'lbuf_active':'lbuf_active','pcfifo_stall':'pcfifo_wait','bht_update_drop':'bht_train_drop',
+ 'lbuf_active':"1'b0",'pcfifo_stall':'pcfifo_wait','bht_update_drop':'bht_train_drop',
  'ras_miss':'return_accept && !ras_top_valid','ind_btb_miss':'ind_miss_event',
  'bju_mispred':'iu_ifu_chgflw_vld && !rtu_ifu_chgflw_vld'}.items():
     drive('ifu_hpcp_'+event,'hpcp_ifu_cnt_en && ('+expr+')')
@@ -235,12 +211,11 @@ module rv32_ifu_top #(
 '''
 s=header+',\n'.join('  '+d+' wire '+width+' '+n for n,(d,width) in external.items())+'\n);\n'
 s+='  reg fault_stop_q;\n'
-s+='  reg [177:0] lbuf_response_q;\n'
 s+='\n'.join('  wire '+width+' '+n+';' for n,width in signals.items() if n not in external)+'\n'
 s+='\n'.join(logic+instances)+'\nendmodule\n'
 (ROOT/'rtl/rv32_ifu_top.v').write_text(layout(s))
 files=[]
-for f in ['files.f','if_stage_files.f','pipeline_files.f','memory_files.f','support_files.f']:
+for f in ['files.f','if_stage_files.f','pipeline_files.f','memory_files.f','support_files.f','lbuf_files.f']:
     files+=(ROOT/'rtl'/f).read_text().splitlines()
 files+=['rtl/rv32_ifu_top.v']
 (ROOT/'rtl/ifu_files.f').write_text('\n'.join(dict.fromkeys(files))+'\n')

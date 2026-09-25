@@ -9,6 +9,9 @@ module rv32_ifu_addrgen (
   input  wire [191:0] source_packet,
   input  wire         ras_valid,
   input  wire         ind_valid,
+  input  wire         lbuf_addrgen_active_state,
+  input  wire         lbuf_addrgen_cache_state,
+  input  wire         lbuf_addrgen_chgflw_mask,
   input  wire [ 31:0] ras_target,
   input  wire [ 31:0] ind_target,
   output wire [191:0] result_packet,
@@ -43,7 +46,10 @@ module rv32_ifu_addrgen (
   assign result_packet = {
     source_packet[191:187], unknown, source_packet[185:160], recorded, instruction
   };
-  assign correction = !source_packet[96] && npc != source_packet[95:64];
+  // In LBUF cache/ACTIVE state the only miss/mispred branch is the loop end, and
+  // the loop-buffer adder supplies its target, so no chgflw may be raised here.
+  assign correction = !source_packet[96] && npc != source_packet[95:64] &&
+    !lbuf_addrgen_active_state && !lbuf_addrgen_cache_state && !lbuf_addrgen_chgflw_mask;
   assign corrected_pc = npc;
   assign retained_ghr = kind == 1 ? {source_packet[180:160], source_packet[122]} :
     source_packet[181:160];

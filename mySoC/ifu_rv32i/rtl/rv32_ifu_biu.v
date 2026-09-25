@@ -5,7 +5,17 @@
 //------------------------------------------------------------------------------
 // Module Declaration
 //------------------------------------------------------------------------------
-module rv32_ifu_biu (
+// [ICACHE 参数化] 回填拍数按行大小推导; 默认 = 原 64 B 行(4 拍)。
+`ifdef ICACHE_LINE_BYTES
+  `define IC_LINE_VAL `ICACHE_LINE_BYTES
+`else
+  `define IC_LINE_VAL 64
+`endif
+
+module rv32_ifu_biu #(
+  parameter IC_LINE = `IC_LINE_VAL,
+  parameter BEATS   = IC_LINE/16
+) (
   input  wire         forever_cpuclk,
   input  wire         cpurst_b,
   input  wire         demand_request,
@@ -67,7 +77,8 @@ module rv32_ifu_biu (
   assign allocate = select_prefetch || demand_allocate;
   assign attr = select_demand ? demand_attr : prefetch_attr;
   assign priv = select_demand ? demand_priv : cp0_yy_priv_mode;
-  assign ifu_biu_rd_len = allocate ? 2'b11 : 2'b00;
+  // 2'b11 = 4 拍(64 B 行) / 2'b00 = 单拍; 16 B 行 ⇒ BEATS==1 ⇒ 单拍
+  assign ifu_biu_rd_len = (allocate && (BEATS > 1)) ? 2'b11 : 2'b00;
   assign ifu_biu_rd_burst = allocate ? 2'b10 : 2'b01;
   assign ifu_biu_rd_size = 3'b100;
   assign ifu_biu_rd_cache = {attr[3], attr[3], 1'b1, attr[2]};

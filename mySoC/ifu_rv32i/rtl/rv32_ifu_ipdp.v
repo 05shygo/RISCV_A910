@@ -13,7 +13,6 @@ module rv32_ifu_ipdp (
   input  wire [  2:0] ifdp_ipdp_tag_match1,
   input  wire [  1:0] ifdp_ipdp_way_pred,
   input  wire         ifdp_ipdp_fault,
-  input  wire         ifdp_ipdp_lbuf_on,
   input  wire [  3:0] ifdp_ipdp_cause,
   input  wire [  3:0] ifdp_ipdp_bkpta,
   input  wire [  3:0] ifdp_ipdp_bkptb,
@@ -91,7 +90,7 @@ module rv32_ifu_ipdp (
         inst
       };
       assign slot_packet[lane*192+:192] = {
-        ifdp_ipdp_lbuf_on,
+        1'b0,
         btb_hit,
         usable,
         pop,

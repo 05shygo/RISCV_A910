@@ -23,14 +23,22 @@ limitations under the License.
 //------------------------------------------------------------------------------
 // Module Declaration
 //------------------------------------------------------------------------------
-module rv32_ifu_bht_sel_array (
+module rv32_ifu_bht_sel_array #(
+  // [BP_SHRINK] 选择阵列行数, 默认 = 原样 128 行 (ADDR_WIDTH=7)。
+  // `+define+BP_SEL_AW=n` 覆盖成 2^n 行, 同样只留索引低位。
+`ifdef BP_SEL_AW
+  parameter SEL_AW = `BP_SEL_AW
+`else
+  parameter SEL_AW = 7
+`endif
+) (
 
   // Predictor and pipeline interface
   input wire        bht_sel_array_cen_b,
   input wire        bht_sel_array_clk_en,
   input wire [15:0] bht_sel_array_din,
   input wire        bht_sel_array_gwen,
-  input wire [ 6:0] bht_sel_array_index,
+  input wire [SEL_AW-1:0] bht_sel_array_index,
   input wire [15:0] bht_sel_bwen,
 
   // Clock, reset and configuration
@@ -68,9 +76,9 @@ module rv32_ifu_bht_sel_array (
 
   //Instance Logic
   rv32_ifu_spram #(
-    .ADDR_WIDTH(7),
+    .ADDR_WIDTH(SEL_AW),
     .DATA_WIDTH(16)
-  ) u_ct_spsram_128x16 (
+  ) u_ct_spsram_sel (
     .A   (bht_sel_array_index),
     .CEN (bht_sel_array_cen_b),
     .CLK (bht_sel_clk),

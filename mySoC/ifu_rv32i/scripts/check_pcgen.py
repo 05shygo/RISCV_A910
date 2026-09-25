@@ -56,7 +56,7 @@ assert not diags, report
 ports = public_ports(text)
 width = lambda w: int(re.fullmatch(r'\[\s*(\d+)\s*:\s*0\s*\]', w)[1])+1 if w else 1
 pp = {n: (d, width(w)) for d, w, n in ports}
-book = openpyxl.load_workbook(ROOT.parent/'ifu/doc/RV32I_C910_IFU_interface_v1.1_noMMU.xlsx',
+book = openpyxl.load_workbook(ROOT/'doc/RV32I_C910_IFU_interface_v1.1_noMMU.xlsx',
                              read_only=True, data_only=True)
 xlsx_checked = []
 for name, direction, _ in book['IFU_Interface'].values:

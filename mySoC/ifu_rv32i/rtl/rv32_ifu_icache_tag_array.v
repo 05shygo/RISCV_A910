@@ -26,17 +26,23 @@ limitations under the License.
 //------------------------------------------------------------------------------
 // Module Declaration
 //------------------------------------------------------------------------------
-module rv32_ifu_icache_tag_array (
+// [ICACHE 参数化] 默认值 = 原 64 KiB/64 B 几何, 不传参时逐位不变。
+module rv32_ifu_icache_tag_array #(
+  parameter INDEX_MSB  = 14,   // 索引最高位 (= INDEX_WIDTH-1)
+  parameter SET_LSB    = 6,    // set 在索引里的最低位 (= LINE_BITS)
+  parameter ADDR_WIDTH = 9,    // = SET_BITS
+  parameter DATA_WIDTH = 37    // = 2*TAG_WIDTH+1
+) (
 
   // Clock, reset and configuration
   input wire forever_cpuclk,
   input wire cp0_ifu_icg_en,
 
   // Cache array and pipeline interface
-  input wire [14:0] ifu_icache_index,
+  input wire [INDEX_MSB:0] ifu_icache_index,
   input wire        ifu_icache_tag_cen_b,
   input wire        ifu_icache_tag_clk_en,
-  input wire [36:0] ifu_icache_tag_din,
+  input wire [DATA_WIDTH-1:0] ifu_icache_tag_din,
   input wire [ 2:0] ifu_icache_tag_wen,
 
   // Clock, reset and configuration
@@ -49,7 +55,11 @@ module rv32_ifu_icache_tag_array (
   //------------------------------------------------------------------------------
   // Net declarations
   //------------------------------------------------------------------------------
-  wire [36:0] ifu_icache_tag_bwen;
+  // [ICACHE 参数化] tag 行布局 = {FIFO, way1(TAG_WIDTH), way0(TAG_WIDTH)},
+  // DATA_WIDTH = 2*TAG_WIDTH+1 ⇒ 每组的位宽必须是 (DATA_WIDTH-1)/2, 不能写死 18
+  // (写死时 TAG_WIDTH!=18 的几何会把 FIFO 位写错位置, 且高位永远被写)。
+  localparam TAG_HALF = (DATA_WIDTH-1)/2;
+  wire [DATA_WIDTH-1:0] ifu_icache_tag_bwen;
   wire        ifu_icache_tag_gwen;
   wire        tag_clk;
   wire        tag_local_en;
@@ -75,16 +85,16 @@ module rv32_ifu_icache_tag_array (
   //Support Bit Write
   assign ifu_icache_tag_gwen = &ifu_icache_tag_wen[2:0];
 
-  assign ifu_icache_tag_bwen[36:0] = {
-    ifu_icache_tag_wen[2], {18{ifu_icache_tag_wen[1]}}, {18{ifu_icache_tag_wen[0]}}
+  assign ifu_icache_tag_bwen[DATA_WIDTH-1:0] = {
+    ifu_icache_tag_wen[2], {TAG_HALF{ifu_icache_tag_wen[1]}}, {TAG_HALF{ifu_icache_tag_wen[0]}}
   };
 
   //Icache Size define
   rv32_ifu_spram #(
-    .ADDR_WIDTH(9),
-    .DATA_WIDTH(37)
+    .ADDR_WIDTH(ADDR_WIDTH),
+    .DATA_WIDTH(DATA_WIDTH)
   ) u_ct_spsram_512x59 (
-    .A   (ifu_icache_index[14:6]),
+    .A   (ifu_icache_index[INDEX_MSB:SET_LSB]),
     .CEN (ifu_icache_tag_cen_b),
     .CLK (tag_clk),
     .D   (ifu_icache_tag_din),

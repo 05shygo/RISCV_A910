@@ -5,7 +5,29 @@
 //------------------------------------------------------------------------------
 // Module Declaration
 //------------------------------------------------------------------------------
-module rv32_ifu_ipb (
+// [ICACHE 参数化] 与 rv32_ifu_icache_if.v 同套 define/公式; 默认 = 原 64 KiB/64 B。
+`ifdef ICACHE_BYTES
+  `define IC_BYTES_VAL `ICACHE_BYTES
+`else
+  `define IC_BYTES_VAL 65536
+`endif
+`ifdef ICACHE_LINE_BYTES
+  `define IC_LINE_VAL `ICACHE_LINE_BYTES
+`else
+  `define IC_LINE_VAL 64
+`endif
+
+module rv32_ifu_ipb #(
+  parameter IC_BYTES  = `IC_BYTES_VAL,
+  parameter IC_LINE   = `IC_LINE_VAL,
+  parameter IC_SETS   = IC_BYTES/(2*IC_LINE),
+  parameter SET_BITS  = $clog2(IC_SETS),
+  parameter LINE_BITS = $clog2(IC_LINE),
+  parameter TAG_BITS  = 32 - SET_BITS - LINE_BITS,
+  parameter TAG_WIDTH = 1 + TAG_BITS,
+  parameter TAG_BASE  = 32 - TAG_BITS,
+  parameter BEATS     = IC_LINE/16
+) (
   input wire forever_cpuclk,
   input wire cpurst_b,
   input wire enable,
@@ -17,8 +39,8 @@ module rv32_ifu_ipb (
   input wire [4:0] region_attr,
   output wire ipb_array_req,
   input wire ifctrl_ipb_grant,
-  input wire [17:0] icache_if_ipb_tag_data0,
-  input wire [17:0] icache_if_ipb_tag_data1,
+  input wire [TAG_WIDTH-1:0] icache_if_ipb_tag_data0,
+  input wire [TAG_WIDTH-1:0] icache_if_ipb_tag_data1,
   output wire [31:0] ipb_icache_if_index,
   output wire ipb_icache_if_req,
   output wire ipb_icache_if_req_for_gateclk,
@@ -43,6 +65,7 @@ module rv32_ifu_ipb (
   output wire launch,
   output wire demand_hit
 );
+  wire [1:0] demand_beat;
   wire [32:0] next_line;
   wire eligible,start,tag_hit,receive,take_replay,replay_end,match_line;
   reg [127:0] block_q [0:3];
@@ -75,7 +98,9 @@ module rv32_ifu_ipb (
   wire replay_offset_en;
 
   localparam [2:0] IDLE=0,CACHE=1,CMP=2,REQ=3,FILL=4,VALID=5,REPLAY=6;
-  assign next_line={1'b0,trigger_pc[31:6],6'b0}+33'd64;
+  // [ICACHE 参数化] 行粒度; 16 B 行时预取的是下一个 16 B 行(原来固定 64 B ⇒ 1 KB 表被灌 4 倍数据)
+  wire [32:0] line_inc = IC_LINE;   // 参数不能直接写进 sized literal
+  assign next_line={1'b0,trigger_pc[31:LINE_BITS],{LINE_BITS{1'b0}}}+line_inc;
   assign region_pc=next_line[31:0];
   assign eligible=enable && !stop && !invalidate && !next_line[32] &&
     next_line[31:12]==trigger_pc[31:12] && region_attr[4] && region_attr[3] && region_attr[0];
@@ -85,21 +110,21 @@ module rv32_ifu_ipb (
   assign ipb_icache_if_req=ipb_array_req;
   assign ipb_icache_if_req_for_gateclk=ipb_array_req;
   assign ipb_icache_if_index=pc_q;
-  assign tag_hit=icache_if_ipb_tag_data0=={1'b1,pc_q[31:15]} ||
-                 icache_if_ipb_tag_data1=={1'b1,pc_q[31:15]};
+  assign tag_hit=icache_if_ipb_tag_data0=={1'b1,pc_q[31:TAG_BASE]} ||
+                 icache_if_ipb_tag_data1=={1'b1,pc_q[31:TAG_BASE]};
   assign memory_request=state_q==REQ && !invalidate && !stop;
   assign memory_pc=pc_q;
   assign memory_attr=attr_q;
   assign launch=memory_request && memory_grant;
   assign memory_ready=state_q==FILL;
   assign receive=memory_valid && memory_ready;
-  assign match_line=demand_pc[31:6]==pc_q[31:6];
+  assign match_line=demand_pc[31:LINE_BITS]==pc_q[31:LINE_BITS];
   assign demand_match=!invalidate && !killed_q && match_line &&
     (state_q==CACHE || state_q==CMP || state_q==REQ || state_q==FILL || state_q==VALID);
   assign demand_grant=demand_request && demand_match && state_q==VALID;
   assign demand_hit=demand_grant;
   assign replay_valid=state_q==REPLAY;
-  assign replay_last=replay_count_q==3;
+  assign replay_last=replay_count_q==(BEATS-1);
   assign replay_data=block_q[replay_offset_q];
   assign take_replay=replay_valid && replay_ready;
   assign replay_end=take_replay && replay_last;
@@ -118,7 +143,9 @@ module rv32_ifu_ipb (
       start ? CACHE : (state_q==CACHE && ifctrl_ipb_grant) ? CMP :
       state_q==CMP ? (tag_hit ? IDLE : REQ) : (state_q==REQ && stop) ? IDLE :
       launch ? FILL : (receive && memory_last) ?
-        ((error_q || memory_error || killed_q || invalidate || count_q!=3) ? IDLE : VALID) :
+        // [ICACHE 参数化] 行长按 BEATS 判; 原来写死 3 ⇒ 16 B 行(count_q 到不了 3)
+        // 永远进不了 VALID ⇒ 预取的行永远不能被复用
+        ((error_q || memory_error || killed_q || invalidate || count_q!=(BEATS-1)) ? IDLE : VALID) :
       demand_grant ? REPLAY : replay_end ? IDLE : state_q;
   always @(posedge forever_cpuclk or negedge cpurst_b) begin : p_state
     if(!cpurst_b) state_q<=IDLE;
@@ -161,7 +188,15 @@ module rv32_ifu_ipb (
     else if(replay_count_en) replay_count_q<=replay_count_nxt;
   end
   assign replay_offset_en=demand_grant || take_replay;
-  assign replay_offset_nxt=demand_grant ? demand_pc[5:4] : replay_offset_q+2'd1;
+  // 行内起始拍号: 64 B 行取 PA[5:4]; 16 B 行只有一拍 ⇒ 恒 0
+  generate
+    if (BEATS > 1) begin : g_demand_beat
+      assign demand_beat = demand_pc[LINE_BITS-1:4];
+    end else begin : g_no_beat
+      assign demand_beat = 2'b0;
+    end
+  endgenerate
+  assign replay_offset_nxt=demand_grant ? demand_beat : replay_offset_q+2'd1;
   always @(posedge forever_cpuclk or negedge cpurst_b) begin : p_replay_offset
     if(!cpurst_b) replay_offset_q<=2'b0;
     else if(replay_offset_en) replay_offset_q<=replay_offset_nxt;

@@ -11,7 +11,20 @@
 //------------------------------------------------------------------------------
 // Module Declaration
 //------------------------------------------------------------------------------
-module rv32_ifu_btb (
+module rv32_ifu_btb #(
+  // [BP_SHRINK] 行数可配, 默认 = 原样 512 行 (row = pc[12:4])。
+  // `+define+BP_BTB_ROW_W=n` 覆盖成 2^n 行。
+  // ⚠ 与 BHT 阵列不同, 这里**同时把标签加宽**: row 用 pc[n+3:4], 标签用
+  //   pc[31:n+4]。否则被丢掉的高位不在标签里, 不同 PC 会"假命中" (指向错的
+  //   目标), 比真实的小表更吃亏 —— 真实设计缩表时是把高位挪进标签的。
+  //   n=9 → row=pc[12:4], tag={1'b1,pc[31:13]}, 与原实现逐位一致。
+`ifdef BP_BTB_ROW_W
+  parameter ROW_W = `BP_BTB_ROW_W,
+`else
+  parameter ROW_W = 9,
+`endif
+  parameter TAG_W = 29 - ROW_W   // = 1'b1(valid) + pc[31:ROW_W+4]
+) (
 
   // Clock, reset and configuration
   input wire forever_cpuclk,
@@ -51,8 +64,8 @@ module rv32_ifu_btb (
   reg          sweeping_q;
   wire         sweeping_nxt;
   wire         sweeping_en;
-  reg  [  8:0] sweep_row_q;
-  wire [  8:0] sweep_row_nxt;
+  reg  [ROW_W-1:0] sweep_row_q;
+  wire [ROW_W-1:0] sweep_row_nxt;
   wire         sweep_row_en;
   reg          init_done_q;
   wire         init_done_nxt;
@@ -90,8 +103,8 @@ module rv32_ifu_btb (
   wire         write_buf;
   wire         rd;
   wire         upd;
-  wire [  8:0] row;
-  wire [ 79:0] tag_q;
+  wire [ROW_W-1:0] row;
+  wire [4*TAG_W-1:0] tag_q;
   wire [135:0] data_q;
   wire         sweep_last;
   wire         active;
@@ -113,7 +126,7 @@ module rv32_ifu_btb (
   assign write_buf    = buf_vld_q && !sweeping_q && !invalidate;
   assign rd           = lookup_vld && lookup_ready;
   assign upd          = update_vld && update_ready && !(|update_pc[1:0]) && !(|update_target[1:0]);
-  assign row          = sweeping_q ? sweep_row_q : write_buf ? buf_pc_q[12:4] : lookup_pc[12:4];
+  assign row          = sweeping_q ? sweep_row_q : write_buf ? buf_pc_q[ROW_W+3:4] : lookup_pc[ROW_W+3:4];
 
   // A buffered write owns the single port; same row may be answered next cycle.
   assign lookup_ready = init_done_q && enable && !invalidate && !write_buf && !cancel;
@@ -135,23 +148,23 @@ module rv32_ifu_btb (
 
   generate
     for (b = 0; b < 2; b = b + 1) begin : g_bank
-      wire [39:0] tag_d;
-      wire [39:0] tag_write_data;
+      wire [2*TAG_W-1:0] tag_d;
+      wire [2*TAG_W-1:0] tag_write_data;
       wire [67:0] data_d;
       wire [ 1:0] selected;
-      wire [39:0] tag_mask;
+      wire [2*TAG_W-1:0] tag_mask;
       wire [67:0] data_mask;
 
-      assign tag_d          = {2{{1'b1, buf_pc_q[31:13]}}};
-      assign tag_write_data = sweeping_q ? 40'b0 : tag_d;
+      assign tag_d          = {2{{1'b1, buf_pc_q[31:ROW_W+4]}}};
+      assign tag_write_data = sweeping_q ? {2*TAG_W{1'b0}} : tag_d;
       assign data_d         = {2{{buf_way_q, buf_target_q}}};
       assign selected       = (buf_pc_q[3] == (b != 0)) ? (2'b01 << buf_pc_q[2]) : 2'b00;
-      assign tag_mask       = sweeping_q ? 40'b0 : {{20{!selected[1]}}, {20{!selected[0]}}};
+      assign tag_mask       = sweeping_q ? {2*TAG_W{1'b0}} : {{TAG_W{!selected[1]}}, {TAG_W{!selected[0]}}};
       assign data_mask      = {{34{!selected[1]}}, {34{!selected[0]}}};
 
       rv32_ifu_spram #(
-        .ADDR_WIDTH(9),
-        .DATA_WIDTH(40)
+        .ADDR_WIDTH(ROW_W),
+        .DATA_WIDTH(2*TAG_W)
       ) u_tags (
         .CLK (forever_cpuclk),
         .CEN (tag_cen),
@@ -159,10 +172,10 @@ module rv32_ifu_btb (
         .A   (row),
         .D   (tag_write_data),
         .WEN (tag_mask),
-        .Q   (tag_q[b*40+:40])
+        .Q   (tag_q[b*2*TAG_W+:2*TAG_W])
       );
       rv32_ifu_spram #(
-        .ADDR_WIDTH(9),
+        .ADDR_WIDTH(ROW_W),
         .DATA_WIDTH(68)
       ) u_data (
         .CLK (forever_cpuclk),
@@ -188,7 +201,7 @@ module rv32_ifu_btb (
       assign update_bypass[s] = upd && update_pc[31:4] == rd_pc_q[31:4] && update_pc[3:2] == s[1:0];
       assign
         slot_hit[s] = slot_eligible[s] && (update_bypass[s] || buffer_bypass[s] ||
-                                           (tag_q[s*20+19] && tag_q[s*20+:19] == rd_pc_q[31:13]));
+                                           (tag_q[s*TAG_W+TAG_W-1] && tag_q[s*TAG_W+:TAG_W-1] == rd_pc_q[31:ROW_W+4]));
       assign slot_target[s*32+:32] = update_bypass[s] ? update_target :
         buffer_bypass[s] ? buf_target_q : data_q[s*34+:32];
       assign slot_way_hint[s*2+:2] = update_bypass[s] ? update_way :
@@ -206,7 +219,7 @@ module rv32_ifu_btb (
   assign sweeping_nxt   = invalidate;
   assign sweeping_en    = invalidate || (sweeping_q && sweep_last);
 
-  assign sweep_row_nxt  = invalidate ? 9'b0 : sweep_row_q + 9'd1;
+  assign sweep_row_nxt  = invalidate ? {ROW_W{1'b0}} : sweep_row_q + 1'b1;
   assign sweep_row_en   = invalidate || (sweeping_q && !sweep_last);
 
   assign init_done_nxt  = !invalidate;
@@ -255,7 +268,7 @@ module rv32_ifu_btb (
 
   always @(posedge forever_cpuclk or negedge cpurst_b) begin : p_sweep_row
     if (!cpurst_b) begin
-      sweep_row_q <= 9'b0;
+      sweep_row_q <= {ROW_W{1'b0}};
     end else if (sweep_row_en) begin
       sweep_row_q <= sweep_row_nxt;
     end

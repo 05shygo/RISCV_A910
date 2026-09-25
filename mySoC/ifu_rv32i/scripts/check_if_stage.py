@@ -41,7 +41,7 @@ for mod in new_modules:
         assert re.search(r'<=\s*\w+_nxt(?:\[\w+\])?;',b)
     assert not re.search(r'\b(?:mmu|itlb)_\w+|\bh0_\w+', text)
 
-book = openpyxl.load_workbook(ROOT.parent/'ifu/doc/RV32I_C910_IFU_interface_v1.1_noMMU.xlsx',
+book = openpyxl.load_workbook(ROOT/'doc/RV32I_C910_IFU_interface_v1.1_noMMU.xlsx',
                              read_only=True, data_only=True)
 excel={}
 for n,d,_ in book['IFU_Interface'].values:

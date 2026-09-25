@@ -1,0 +1,98 @@
+
+/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/asm/c3_only.elf:     file format elf32-littleriscv
+
+
+Disassembly of section .text:
+
+00000000 <_start>:
+   0:	0080006f          	j	8 <reset_vector>
+   4:	0000                	unimp
+	...
+
+00000008 <reset_vector>:
+   8:	20000f93          	li	t6,512
+   c:	00000493          	li	s1,0
+  10:	00000513          	li	a0,0
+  14:	1ac0006f          	j	1c0 <class3>
+	...
+
+000001c0 <class3>:
+ 1c0:	0014c493          	xori	s1,s1,1
+ 1c4:	00000013          	nop
+ 1c8:	00000013          	nop
+ 1cc:	00000013          	nop
+ 1d0:	00048463          	beqz	s1,1d8 <c3a0>
+ 1d4:	00150513          	addi	a0,a0,1
+
+000001d8 <c3a0>:
+ 1d8:	00000013          	nop
+ 1dc:	00000013          	nop
+ 1e0:	00048463          	beqz	s1,1e8 <c3a1>
+ 1e4:	00150513          	addi	a0,a0,1
+
+000001e8 <c3a1>:
+ 1e8:	00000013          	nop
+ 1ec:	00000013          	nop
+ 1f0:	00048463          	beqz	s1,1f8 <c3a2>
+ 1f4:	00150513          	addi	a0,a0,1
+
+000001f8 <c3a2>:
+ 1f8:	00000013          	nop
+ 1fc:	00000013          	nop
+ 200:	00048463          	beqz	s1,208 <c3a3>
+ 204:	00150513          	addi	a0,a0,1
+
+00000208 <c3a3>:
+ 208:	00000013          	nop
+ 20c:	00000013          	nop
+ 210:	00048463          	beqz	s1,218 <c3a4>
+ 214:	00150513          	addi	a0,a0,1
+
+00000218 <c3a4>:
+ 218:	00000013          	nop
+ 21c:	00000013          	nop
+ 220:	00048463          	beqz	s1,228 <c3a5>
+ 224:	00150513          	addi	a0,a0,1
+
+00000228 <c3a5>:
+ 228:	00000013          	nop
+ 22c:	00000013          	nop
+ 230:	00048463          	beqz	s1,238 <c3a6>
+ 234:	00150513          	addi	a0,a0,1
+
+00000238 <c3a6>:
+ 238:	00000013          	nop
+ 23c:	00000013          	nop
+ 240:	00048463          	beqz	s1,248 <c3a7>
+ 244:	00150513          	addi	a0,a0,1
+
+00000248 <c3a7>:
+ 248:	00000013          	nop
+ 24c:	00000013          	nop
+
+00000250 <loop_ctrl>:
+ 250:	ffff8f93          	addi	t6,t6,-1
+ 254:	f60f96e3          	bnez	t6,1c0 <class3>
+ 258:	00000513          	li	a0,0
+ 25c:	05d00893          	li	a7,93
+ 260:	00000073          	ecall
+ 264:	c0001073          	unimp
+
+Disassembly of section .riscv.attributes:
+
+00000000 <.riscv.attributes>:
+   0:	1e41                	addi	t3,t3,-16
+   2:	0000                	unimp
+   4:	7200                	flw	fs0,32(a2)
+   6:	7369                	lui	t1,0xffffa
+   8:	01007663          	bgeu	zero,a6,14 <reset_vector+0xc>
+   c:	0014                	0x14
+   e:	0000                	unimp
+  10:	7205                	lui	tp,0xfffe1
+  12:	3376                	fld	ft6,376(sp)
+  14:	6932                	flw	fs2,12(sp)
+  16:	7032                	flw	ft0,44(sp)
+  18:	5f30                	lw	a2,120(a4)
+  1a:	326d                	jal	fffff9c4 <__global_pointer$+0xffffdf5c>
+  1c:	3070                	fld	fa2,224(s0)
+	...
