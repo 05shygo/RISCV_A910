@@ -7,19 +7,18 @@
 // 不需要二次查表 —— 这是 2 级流水能成立的关键: 预测必须在**指令译码之前**就绪,
 // 否则 PC 回不到 F0。
 //
-// 每个 slot 存 {valid, 类型, 2 位方向计数器, 目标}:
-//   * 一个 slot 同时管目标与方向 ⇒ 最简的"块内双模态(bimodal)"预测器。
-//     索引里天然带 PC 位 (块地址), 正好补上原 BHT "行索引一位 PC 都没有" 的
-//     结构性短板 (见 memory bp-class3-root-cause / bp-area-frontier)。
-//   * 类型区分 条件分支 / JAL / JALR: 后两者恒 taken, 目标来自表而非立即数。
+// 每个 slot 存 {valid, is_cond, target[15:2]} = 16 位 (早先 34 位)。
+// **不存方向** —— 方向是 rv32ifu2_bht (gshare) 的活; 两处各存一份必然训练走两条路。
 //
 // 索引与标签 (思路同 ifu_rv32i 的 L1 BTB, 但表小得多、做成同步读以配合顶层
 // "F0 给地址、F1 用结果" 的时序):
-//   row = pc[ROW_AW+3 : 4],  tag = pc[31 : ROW_AW+4]
+//   row = pc[ROW_AW+3 : 4],  tag = pc[TAG_HI : ROW_AW+4]
 //
-// ⚠️ **标签必须随行数一起加宽**。只截索引不拓宽标签的话, 被丢掉的高位不进标签,
-// 不同 PC 会**假命中**并拿到别人的目标 —— 那是"取错指令", 比真实的冲突 miss 糟得多。
-// (原面积实验专门记过这条: memory bp-area-vs-accuracy.md "缩放模型的关键点"。)
+// ⚠️ **标签必须覆盖所有参与索引的 PC 位**。只截索引不拓宽标签的话, 被丢掉的高位
+// 不进标签, 不同 PC 会**假命中**并拿到别人的目标 —— 那是"取错指令", 比真实的冲突
+// miss 糟得多。(原面积实验专门记过这条: memory bp-area-vs-accuracy.md "缩放模型
+// 的关键点"。) 这里 tag 只到 TAG_HI=15, 是**有意的**: 本 SoC 取指地址上界 64 KB,
+// pc[31:16] 恒 0, 丢掉不产生假命中 —— 但扩地址空间时 TAG_HI 必须跟着放宽。
 //
 // 训练 (EX 级回送):
 //   * 行标签不匹配 / slot 无效 ⇒ 整行换标签 + 分配该 slot, 计数器按本次结果播种;
@@ -53,20 +52,30 @@ module rv32ifu2_btb #(
 );
 
 localparam NR_ROWS  = 1 << ROW_AW;
-localparam TAG_LSB  = ROW_AW + 4;
-localparam TAG_BITS = 32 - TAG_LSB;
+
+// 行标签只需要区分同一个行索引内的不同行, 而本 SoC 的取指地址上界是 64 KB
+// (defines.vh 的 `ADDR_IN_MAP(a) = a <= 32'h0000_FFFF), 所以 pc[31:16] 恒 0,
+// 标签只需 pc[TAG_HI:TAG_LSB] —— 22 位压到 6 位。
+// ⚠️ 这个压缩把 IFU 更紧地绑死在 64 KB 地址空间上: 一旦 PC 超过 0xFFFF,
+// 高位被丢掉会让**不同的 PC 假命中同一行**(拿到别人的目标), 比取到垃圾更危险。
+// 扩地址空间时 TAG_HI 必须跟着放宽。
+localparam TAG_LSB  = ROW_AW + 4;      // 行索引占 pc[ROW_AW+3:4]
+localparam TAG_HI   = 15;              // 地址空间 64 KB
+localparam TAG_BITS = TAG_HI - TAG_LSB + 1;   // 6
 
 // slot 字段布局。
 // ⚠️ **这里不存方向计数器** —— 方向统一由 rv32ifu2_bht (gshare) 给。早先版本每
 // slot 带一个 2 位计数器当"块内双模态", 但它在严格交替的模式上恒错 0.19%,
 // 而方向本来就是 gshare 的活; 两处各存一份只会让训练走两条路, 必然后悔。
+// 类型只需 **1 位**: 消费侧只用 `slot_jmp = jal | jalr` (顶层 sl_taken 那一行),
+// jal 与 jalr 的区别**从来没有被用过** —— 原设计里 jal 的目标来自立即数、
+// jalr 的来自表, 但那是原设计的分工; 这里的表两种都存, 区分就没意义了。
+// ⇒ 一个有效 slot 只可能是"条件分支"或"跳转"二选一, 1 位足够。
 localparam SL_VLD      = 0;
-localparam SL_COND     = 1;
-localparam SL_JAL      = 2;
-localparam SL_JALR     = 3;
-localparam SL_TGT_BASE = 4;                 // 30 位: target[31:2]
-localparam SLOT_W      = 34;
-localparam ROW_W       = SLOTS * SLOT_W;
+localparam SL_COND     = 1;                 // 1 = 条件分支, 0 = 跳转
+localparam SL_TGT_BASE = 2;                 // 14 位: target[15:2]
+localparam SLOT_W      = 16;                // {valid, cond, target[15:2]}
+localparam ROW_W       = SLOTS * SLOT_W;    // 64 位/行 (原 136)
 
 // ---------------------------------------------------------------------------
 // 表: 数据行 + 行标签 (行标签 bit[TAG_BITS] = 行有效)
@@ -75,7 +84,7 @@ reg [ROW_W-1:0]    dat_q [0:NR_ROWS-1];
 reg [TAG_BITS:0]   tag_q [0:NR_ROWS-1];
 
 wire [ROW_AW-1:0]   rd_row = rd_pc[TAG_LSB-1:4];
-wire [TAG_BITS-1:0] rd_tag = rd_pc[31:TAG_LSB];
+wire [TAG_BITS-1:0] rd_tag = rd_pc[TAG_HI:TAG_LSB];
 
 reg [ROW_AW-1:0]   q_row_q;
 reg [TAG_BITS-1:0] q_tag_q;
@@ -97,13 +106,14 @@ generate
 for (g = 0; g < SLOTS; g = g + 1) begin : g_slot
     wire [SLOT_W-1:0] s = q_dat[g*SLOT_W +: SLOT_W];
     wire        vld   = s[SL_VLD];
-    wire        jal   = s[SL_JAL];
-    wire        jalr  = s[SL_JALR];
-    wire [31:0] tgt   = {s[SL_TGT_BASE +: 30], 2'b00};
+    // 目标只存低 14 位, 高位由地址空间上界补 0 (见上面 TAG_HI 的说明)
+    wire [31:0] tgt   = {16'h0000, s[SL_TGT_BASE +: 14], 2'b00};
 
     assign slot_vld[g]    = q_row_hit & vld;
     assign slot_cond[g]   = s[SL_COND];
-    assign slot_jmp[g]    = jal | jalr;
+    // 有效且非条件分支 ⇒ 跳转。用 vld 门控 (原 jal|jalr 没门控, 但每个消费者都
+    // 自己 & sl_vld, 所以两者等价; 门控一下少一路 X 传播)。
+    assign slot_jmp[g]    = vld & ~s[SL_COND];
     assign slot_target[g*32 +: 32] = tgt;
 end
 endgenerate
@@ -112,7 +122,7 @@ endgenerate
 // 训练
 // ---------------------------------------------------------------------------
 wire [ROW_AW-1:0]   u_row  = upd_pc[TAG_LSB-1:4];
-wire [TAG_BITS-1:0] u_tag  = upd_pc[31:TAG_LSB];
+wire [TAG_BITS-1:0] u_tag  = upd_pc[TAG_HI:TAG_LSB];
 wire [1:0]          u_slot = upd_pc[3:2];
 
 wire [TAG_BITS:0]   u_rtag  = tag_q[u_row];
@@ -129,14 +139,12 @@ wire [SLOT_W-1:0]   u_s     = u_dat[u_slot*SLOT_W +: SLOT_W];
 // PC 全 X, 而所有短用例都测不出来(短用例里没有"先分配后翻向"的足够长历史)。
 // 所以: 旧字段不可信时一律填 0。
 wire slot_old_ok = u_rowok & u_s[SL_VLD];
-wire [31:0] new_target = upd_taken        ? upd_target
-                       : slot_old_ok      ? {u_s[SL_TGT_BASE +: 30], 2'b00}
-                       :                    32'b0;
+wire [31:0] new_target = upd_taken   ? upd_target
+                       : slot_old_ok ? {16'h0000, u_s[SL_TGT_BASE +: 14], 2'b00}
+                       :               32'b0;
 
 wire [SLOT_W-1:0] new_s = {
-    new_target[31:2],       // [33:4] 30 位
-    upd_jalr,               // [3]
-    upd_jal,                // [2]
+    new_target[15:2],       // [15:2] 14 位
     upd_cond,               // [1]
     1'b1                    // [0] valid
 };
