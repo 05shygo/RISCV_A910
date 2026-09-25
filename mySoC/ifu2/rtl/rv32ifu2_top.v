@@ -32,15 +32,11 @@ module rv32ifu2_top #(
     parameter ICACHE_EN = 1,
     parameter BP_EN     = 1,
     // ---- 几何与表尺寸 ----
-    //
-    // 全部可由 Makefile 的 +define+ 覆盖, 这样扫点不用改 RTL (原 ifu_rv32i 的
-    // ICACHE_BYTES / BP_* 是同一套做法)。⚠️ 用 define 驱动 parameter 而不是
-    // 反过来: parameter 有默认值, 忘了接 define 的话扫出来的"不同配置"其实是
-    // 同一个配置 —— 这正是原树 icache 参数化踩过的坑 (首版容量表全废)。
+    // 全部可由 Makefile 的 +define+ 覆盖, 扫点不用改 RTL。
 `ifdef ICACHE_BYTES
     parameter IC_BYTES  = `ICACHE_BYTES,
 `else
-    parameter IC_BYTES  = 1024,      // 与 Makefile 默认一致, 便于和 IFU=1 对照
+    parameter IC_BYTES  = 1024,
 `endif
 `ifdef ICACHE_LINE_BYTES
     parameter IC_LINE   = `ICACHE_LINE_BYTES,
@@ -51,32 +47,28 @@ module rv32ifu2_top #(
 `ifdef BP_BTB_ROW_AW
     parameter BTB_ROW_AW = `BP_BTB_ROW_AW,
 `else
-    parameter BTB_ROW_AW = 6,        // 64 行 × 4 slot = 256 项
+    parameter BTB_ROW_AW = 6,
 `endif
 `ifdef BP_BHT_ROW_AW
     parameter BHT_ROW_AW = `BP_BHT_ROW_AW,
 `else
-    parameter BHT_ROW_AW = 9,        // 512 行 × 4 slot × 2bit = 4 Kbit
+    parameter BHT_ROW_AW = 9,
 `endif
 `ifdef BP_GHR_W
-    parameter GHR_W      = `BP_GHR_W,// 全局历史宽度
+    parameter GHR_W      = `BP_GHR_W,
 `else
     parameter GHR_W      = 12,
 `endif
-    // RAS 深度 log2 (8 项) 与它在 chk 快照里占的位段
 `ifdef BP_RAS
     parameter RAS_EN     = `BP_RAS,
 `else
-    parameter RAS_EN     = 0,        // 默认关: CoreMark 上它是 +0.25%, 见 doc §4
+    parameter RAS_EN     = 0,
 `endif
-    parameter RAS_AW     = 3,
+    parameter RAS_AW      = 3,
     parameter RAS_CHK_LSB = GHR_W,
     parameter RAS_CHK_MSB = GHR_W + RAS_AW,
-    parameter CHK_BTBHIT  = GHR_W + RAS_AW + 1,   // chk 里"BTB 命中"标志位
-    parameter CHK_PREDTK  = GHR_W + RAS_AW + 2,   // chk 里"预测方向"位
-    // 哨兵参数: 上面每个 `ifdef 分支里的 parameter 都带逗号, 需要有一个
-    // 无条件跟在最后的参数, 否则 `endif 之后直接是 `)(` 时列表尾会多一个逗号。
-    // 以后往上面加参数也不会踩到这个。
+    // 哨兵: 每个 `ifdef 分支里的 parameter 都带逗号, 需要有个无条件跟在最后的
+    // 参数, 否则 `endif 之后直接是 `)(` 时列表尾会多一个逗号。
     parameter _param_list_sentinel = 1'b0
 )(
     input  wire         clk,
@@ -239,19 +231,12 @@ wire [ 3:0]  btb_cond;
 wire [ 3:0]  btb_jmp;
 wire [127:0] btb_target;
 wire         btb_init_done;
-wire [ 7:0]  bht_ctr;          // 4 slot × 2 bit 计数器
-wire         bht_init_done;
-
-// RAS 的输出要先于"交付/截断"那段声明 —— 截断时要用栈顶覆盖 ret 的目标。
-// (声明与例化分开只是 Verilog 的顺序要求, 不是逻辑上的先后。)
 wire [31:0] ras_top;
 wire        ras_top_vld_raw;
 wire [RAS_AW:0] ras_ptr;
-
-// RAS_EN=0 时把"栈顶有效"钉死为 0: ret 一律回落到 BTB 目标, 也不做压/弹。
-// 用挂在输出上而不是 `ifdef 掉整个例化 —— 两种配置走的是同一份 RTL,
-// 不会出现"关了之后某条路径没编进去"这种只在一种配置下暴露的差异。
 wire ras_top_vld = ras_top_vld_raw & RAS_EN;
+wire [ 7:0]  bht_ctr;          // 4 slot × 2 bit 计数器
+wire         bht_init_done;
 
 rv32ifu2_btb #(
     .ROW_AW (BTB_ROW_AW),
@@ -277,11 +262,6 @@ rv32ifu2_btb #(
 // 方向: 条件分支问 gshare(BHT), JAL/JALR 恒 taken。
 // 原设计的教训是"方向表的索引里一位 PC 都没有", 所以这里方向只由 BHT 给,
 // BTB 只管"有哪些控制转移、目标在哪"。
-// ⚠️ 拼接是**高位在前**: {a,b,c,d} 里 a 落在 bit3。slot i 的计数器在
-// bht_ctr[2i+1:2i], 所以 slot0 的 MSB 必须放到 bit0 —— 写成
-// {bht_ctr[1], bht_ctr[3], ...} 就把四个 slot 的方向整体倒过来了: 谁读谁的邻居,
-// 表现是"方向几乎全错"(branch_bench 类 1 从 96% 掉到 4.5%), 而表里看得见非零行,
-// 很容易误判成"写没落对地方"。
 wire [ 3:0] bht_taken = {bht_ctr[7], bht_ctr[5], bht_ctr[3], bht_ctr[1]};
 
 // 初始化扫描期间两张表的 X 都会经 slot_vld / 方向流进截断位置 → next_pc。
@@ -318,7 +298,6 @@ wire [31:0] btb_tgt_raw = btb_t0 ? btb_target[0*32 +: 32]
                         : btb_t1 ? btb_target[1*32 +: 32]
                         : btb_t2 ? btb_target[2*32 +: 32]
                         :          btb_target[3*32 +: 32];
-
 
 // 想推几条: 到 taken 那条为止(含); 没有 taken 就推满本块剩余; 再受 3 发射限制。
 wire [ 2:0] want_to_taken = {1'b0, taken_slot} - {1'b0, pc_ofs} + 3'd1;
@@ -388,19 +367,12 @@ wire [31:0] pc0 = q_pc;
 wire [31:0] pc1 = q_pc + 32'd4;
 wire [31:0] pc2 = q_pc + 32'd8;
 
-// 被预测 taken 的那条指令 (用来判它是不是 ret; 越界 lane 的值不关心 ——
-// 那种情况下 reached_taken 必为 0, 目标根本不会被采用)
 wire [1:0]  taken_lane = taken_slot - pc_ofs;
 wire [31:0] taken_inst = (taken_lane == 2'd0) ? inst0
                        : (taken_lane == 2'd1) ? inst1 : inst2;
-wire        t_is_jalr  = (taken_inst[6:0] == 7'b1100_111);       // JALR
-wire [4:0]  t_rd       = taken_inst[11:7];
-wire [4:0]  t_rs1      = taken_inst[19:15];
-wire        t_is_ret   = t_is_jalr & ((t_rs1 == 5'd1) | (t_rs1 == 5'd5))
-                                  & (t_rd  == 5'd0);
-
-// ret 的目标问 RAS, 不问 BTB: BTB 只记得住最近一次的目标, 而 ret 的目标随调用
-// 深度变化 —— 这是 jal/jalr 误预测的主要来源。
+wire        t_is_jalr  = (taken_inst[6:0] == 7'b1100_111);
+wire        t_is_ret   = t_is_jalr & ((taken_inst[19:15] == 5'd1) | (taken_inst[19:15] == 5'd5))
+                                  & (taken_inst[11:7]  == 5'd0);
 wire [31:0] taken_tgt = (t_is_ret & ras_top_vld) ? ras_top : btb_tgt_raw;
 
 wire [2:0] slot_l0 = {1'b0, pc_ofs};
@@ -529,68 +501,39 @@ end
 //
 // ghr_q 就是块首 GHR: 本块的分支要到本拍末尾才推进它, 而块是本拍才被交付的。
 // ---------------------------------------------------------------------------
-// chk = {RAS 指针, GHR}。两者都是**块首**的值 —— 同一节拍本块的三条 lane 相同,
-// 与"表按块索引"的口径一致 (见上面 GHR 那段的长注释)。
 wire [24:0] chk_snap = {{(25-RAS_CHK_MSB-1){1'b0}}, ras_ptr, ghr_q[GHR_W-1:0]};
-
-// 再带上两个**逐 lane** 的预测元信息, 供归因用 (只读, 不参与任何逻辑):
-//   bit CHK_BTBHIT: 预测时这一 slot 在 BTB 里有没有条目 (没有 ⇒ 只能猜"不跳")
-//   bit CHK_PREDTK: 预测时的方向
-// 没有这两位就无法区分"方向表猜错了"和"BTB 根本没这条分支" —— 这两种瓶颈
-// 的修法完全不同 (前者加历史/表, 后者加 CAM/容量)。
-wire chk0_f = chk_snap;
-wire chk1_f = chk_snap;
-wire chk2_f = chk_snap;
-
-assign chk0 = chk0_f;
-assign chk1 = chk1_f;
-assign chk2 = chk2_f;
+assign chk0 = chk_snap;
+assign chk1 = chk_snap;
+assign chk2 = chk_snap;
 
 assign ib_push0 = {chk0, make_packet(pc0, inst0, npc0, lane0_taken)};
 assign ib_push1 = {chk1, make_packet(pc1, inst1, npc1, lane1_taken)};
 assign ib_push2 = {chk2, make_packet(pc2, inst2, npc2, lane2_taken)};
 
-// ---------------------------------------------------------------------------
-// RAS
-//
-// 一拍最多压一条 / 弹一条: 一个取指包里出现两条 call (或两条 ret) 极少,
-// 而真出现时只记第一条 —— 只影响预测质量, 不影响正确性 (误预测会兜底)。
-// ---------------------------------------------------------------------------
-wire [2:0] c_lane = { (inst2[6:0] == 7'b1100_111) & ((inst2[11:7]==5'd1)|(inst2[11:7]==5'd5)) & pushed_m[2],
-                      (inst1[6:0] == 7'b1100_111) & ((inst1[11:7]==5'd1)|(inst1[11:7]==5'd5)) & pushed_m[1],
-                      (inst0[6:0] == 7'b1100_111) & ((inst0[11:7]==5'd1)|(inst0[11:7]==5'd5)) & pushed_m[0] };
-wire [2:0] r_lane = { (inst2[6:0] == 7'b1100_111) & ((inst2[19:15]==5'd1)|(inst2[19:15]==5'd5)) & (inst2[11:7]==5'd0) & pushed_m[2],
-                      (inst1[6:0] == 7'b1100_111) & ((inst1[19:15]==5'd1)|(inst1[19:15]==5'd5)) & (inst1[11:7]==5'd0) & pushed_m[1],
-                      (inst0[6:0] == 7'b1100_111) & ((inst0[19:15]==5'd1)|(inst0[19:15]==5'd5)) & (inst0[11:7]==5'd0) & pushed_m[0] };
-// jal rd,x1|5 也算 call
-wire [2:0] j_lane = { (inst2[6:0] == 7'b1101_111) & ((inst2[11:7]==5'd1)|(inst2[11:7]==5'd5)) & pushed_m[2],
-                      (inst1[6:0] == 7'b1101_111) & ((inst1[11:7]==5'd1)|(inst1[11:7]==5'd5)) & pushed_m[1],
-                      (inst0[6:0] == 7'b1101_111) & ((inst0[11:7]==5'd1)|(inst0[11:7]==5'd5)) & pushed_m[0] };
-
+wire [2:0] c_lane = { (inst2[6:0]==7'b1100_111)&((inst2[11:7]==5'd1)|(inst2[11:7]==5'd5))&pushed_m[2],
+                      (inst1[6:0]==7'b1100_111)&((inst1[11:7]==5'd1)|(inst1[11:7]==5'd5))&pushed_m[1],
+                      (inst0[6:0]==7'b1100_111)&((inst0[11:7]==5'd1)|(inst0[11:7]==5'd5))&pushed_m[0] };
+wire [2:0] r_lane = { (inst2[6:0]==7'b1100_111)&((inst2[19:15]==5'd1)|(inst2[19:15]==5'd5))&(inst2[11:7]==5'd0)&pushed_m[2],
+                      (inst1[6:0]==7'b1100_111)&((inst1[19:15]==5'd1)|(inst1[19:15]==5'd5))&(inst1[11:7]==5'd0)&pushed_m[1],
+                      (inst0[6:0]==7'b1100_111)&((inst0[19:15]==5'd1)|(inst0[19:15]==5'd5))&(inst0[11:7]==5'd0)&pushed_m[0] };
+wire [2:0] j_lane = { (inst2[6:0]==7'b1101_111)&((inst2[11:7]==5'd1)|(inst2[11:7]==5'd5))&pushed_m[2],
+                      (inst1[6:0]==7'b1101_111)&((inst1[11:7]==5'd1)|(inst1[11:7]==5'd5))&pushed_m[1],
+                      (inst0[6:0]==7'b1101_111)&((inst0[11:7]==5'd1)|(inst0[11:7]==5'd5))&pushed_m[0] };
 wire [2:0] push_lane = (c_lane | j_lane) & {3{RAS_EN}};
 wire [2:0] ras_push_num = {2'b00, push_lane[0]} | {2'b00, push_lane[1]} | {2'b00, push_lane[2]};
 wire [2:0] ras_pop_num  = ({2'b00, r_lane[0]} | {2'b00, r_lane[1]} | {2'b00, r_lane[2]}) & {3{RAS_EN}};
-
-wire [31:0] push_ret_pc = push_lane[0] ? (pc0 + 32'd4)
-                        : push_lane[1] ? (pc1 + 32'd4)
-                        :                (pc2 + 32'd4);
+wire [31:0] push_ret_pc = push_lane[0] ? (pc0+32'd4) : push_lane[1] ? (pc1+32'd4) : (pc2+32'd4);
 
 rv32ifu2_ras #(
-    .DEPTH (1 << RAS_AW),
-    .AW    (RAS_AW)
+    .DEPTH (1 << RAS_AW), .AW (RAS_AW)
 ) u_ras (
-    .clk         (clk),
-    .rst         (rst),
-    .push_num    (ras_push_num),
-    .push_pc0    (push_ret_pc),
-    .push_pc1    (push_ret_pc),
-    .push_pc2    (push_ret_pc),
-    .pop_num     (ras_pop_num),
-    .top         (ras_top),
-    .top_vld     (ras_top_vld_raw),
-    .ptr_out     (ras_ptr),
-    .restore_vld (redirect),
-    .restore_ptr (iu_btb_chk[RAS_CHK_MSB:RAS_CHK_LSB])
+    .clk(clk), .rst(rst),
+    .push_num(ras_push_num),
+    .push_pc0(push_ret_pc), .push_pc1(push_ret_pc), .push_pc2(push_ret_pc),
+    .pop_num(ras_pop_num),
+    .top(ras_top), .top_vld(ras_top_vld_raw), .ptr_out(ras_ptr),
+    .restore_vld(redirect),
+    .restore_ptr(iu_btb_chk[RAS_CHK_MSB:RAS_CHK_LSB])
 );
 
 rv32ifu2_bht #(
@@ -649,7 +592,6 @@ assign next_pc = rst            ? RESET_PC
 // 状态
 // ---------------------------------------------------------------------------
 assign init_done = init_all;
-
 
 
 /* verilator lint_off UNUSED */
