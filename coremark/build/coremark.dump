@@ -3979,7 +3979,7 @@ Disassembly of section .data:
 	...
 
 00003630 <seed4_volatile>:
-    3630:	0002                	c.slli64	zero
+    3630:	001e                	c.slli	zero,0x7
 	...
 
 00003634 <seed3_volatile>:

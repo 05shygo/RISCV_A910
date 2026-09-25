@@ -9,7 +9,7 @@
 `ifdef ICACHE_LINE_BYTES
   `define IC_LINE_VAL `ICACHE_LINE_BYTES
 `else
-  `define IC_LINE_VAL 64
+  `define IC_LINE_VAL 16
 `endif
 
 module rv32_ifu_biu #(

@@ -68,7 +68,7 @@ module miniRV_SoC (
       output logic [31:0]  debug_wb_value      //
   );
       logic        cpu_clk = fpga_clk;
-`ifndef USE_IFU
+`ifndef USE_IFU_ANY
       logic [31:0] inst_addr;       // ????
       logic [31:0] inst;           // ????
 `endif
@@ -87,7 +87,7 @@ module miniRV_SoC (
       myCPU Core_cpu (
           .cpu_rst            (fpga_rst),
           .cpu_clk            (cpu_clk),
-`ifndef USE_IFU
+`ifndef USE_IFU_ANY
           .inst_addr          (inst_addr),        // ???????????
           .inst               (inst),
 `endif
@@ -106,7 +106,7 @@ module miniRV_SoC (
           .debug_wb_value     (debug_wb_value)
       );
 
-`ifndef USE_IFU
+`ifndef USE_IFU_ANY
      //just instantiate model and connect signals,don't creat IP core
       IROM Mem_IROM (
           .a          (inst_addr),

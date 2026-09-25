@@ -16,16 +16,16 @@ limitations under the License.
 //------------------------------------------------------------------------------
 // Module Declaration
 //------------------------------------------------------------------------------
-// [ICACHE 参数化] 与 rv32_ifu_icache_if.v 同套 define/公式; 默认 = 原 64 KiB/64 B。
+// [ICACHE 参数化] 与 rv32_ifu_icache_if.v 同套 define/公式; 默认 = 1 KiB/16 B 行。
 `ifdef ICACHE_BYTES
   `define IC_BYTES_VAL `ICACHE_BYTES
 `else
-  `define IC_BYTES_VAL 65536
+  `define IC_BYTES_VAL 1024
 `endif
 `ifdef ICACHE_LINE_BYTES
   `define IC_LINE_VAL `ICACHE_LINE_BYTES
 `else
-  `define IC_LINE_VAL 64
+  `define IC_LINE_VAL 16
 `endif
 
 module rv32_ifu_ifdp #(

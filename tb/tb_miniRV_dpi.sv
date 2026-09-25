@@ -116,6 +116,294 @@ module tb_miniRV_dpi;
     dut_csr_mip = int'(dut_timer_irq) << MIE_MTIE_BIT;
   endfunction
 
+`ifdef USE_IFU2
+  // ---------------------------------------------------------------------------
+  // ifu2 (自研 2 级前端) 观测
+  //
+  // 下面那一大段 `ifdef USE_IFU 的探针绑的是旧层次 (dut.Core_cpu.u_ifu_subsys.
+  // u_ifu_top.u_bp_top...), IFU=2 时整个不编译 —— 这里只留对照实验真正需要的
+  // 几个量: 周期数是所有 A/B 的主指标, 其余用来解释周期花在哪。
+  // 完整探针 (L0/BHT/GHR) 在 Phase 4 补。
+  // ---------------------------------------------------------------------------
+  integer n2_retire   = 0;   // 退休指令数
+  integer n2_bubble   = 0;   // 核心在等、IFU 没货的拍数
+  integer n2_init     = 0;   // IFU 初始化完成前的拍数
+  integer n2_biu_txn  = 0;   // BIU 读事务数 (i-cache 行填充)
+  integer n2_cond     = 0;   // 条件分支 (EX 解析)
+  integer n2_mis_cond = 0;   // 条件分支误预测
+  integer n2_jmp      = 0;   // jal / jalr
+  integer n2_mis_jmp  = 0;   // jal / jalr 误预测
+
+  // branch_bench 的逐类统计。口径与 `ifdef USE_IFU 那一段完全一致 (同样的
+  // ~stall & ~redirect 门控, 同样的 PC 区间), 这样两边的准确率可以直接对比。
+  function automatic integer bench_class2(input [31:0] pc);
+    if      (pc >= 32'h0000_0100 && pc < 32'h0000_0140) return 1;
+    else if (pc >= 32'h0000_0140 && pc < 32'h0000_01c0) return 2;
+    else if (pc >= 32'h0000_01c0 && pc < 32'h0000_0250) return 3;
+    else if (pc >= 32'h0000_0250 && pc < 32'h0000_0290) return 4;
+    else if (pc >= 32'h0000_0290 && pc < 32'h0000_0320) return 5;
+    else                                                return 0;
+  endfunction
+
+  integer bc2_cond [0:5];    // 逐类条件分支数
+  integer bc2_mis  [0:5];    // 逐类条件分支误预测
+  integer bc2_jmp  [0:5];    // 逐类 jal/jalr
+  integer bc2_misj [0:5];    // 逐类 jal/jalr 误预测
+
+  // ⚠️ 必须显式清零: integer 数组上电是 X, 而 `X + 1` 还是 X, 计数会永远出不来。
+  initial begin
+    integer i2;
+    for (i2 = 0; i2 <= 5; i2 = i2 + 1) begin
+      bc2_cond[i2] = 0; bc2_mis[i2] = 0; bc2_jmp[i2] = 0; bc2_misj[i2] = 0;
+    end
+  end
+
+  // NPC_SEL 编码 (mySoC/defines.vh): 0=NEXT 1=BRANCH 2=ALU(jalr) 3=JAL
+  wire [1:0] n2_npc_op   = dut.Core_cpu.ex_npc_op;
+  wire       n2_ex_vld   = dut.Core_cpu.have_inst_EX & ~dut.Core_cpu.stall
+                          & ~dut.Core_cpu.redirect;
+  wire       n2_is_cond  = n2_ex_vld & (dut.Core_cpu.ex_npc_op == 2'd1);
+  wire       n2_is_jmp   = n2_ex_vld & ((dut.Core_cpu.ex_npc_op == 2'd2) ||
+                                        (dut.Core_cpu.ex_npc_op == 2'd3));
+  wire       n2_misp     = dut.Core_cpu.mispredict & n2_ex_vld;
+
+  // ---------------------------------------------------------------------------
+  // 气泡归因 (互斥分桶, 口径与 `ifdef USE_IFU 的 report_bubble_stats 完全一致,
+  // 这样两个前端的账可以直接并排看)。
+  //
+  // ifu2 特有的子归因: "核在等、IFU 没货" 时 IFU 到底卡在哪 ——
+  //   * cache 没有这一行 (q_hit=0): 回填通路
+  //   * 有货但队列是空的 (q_hit=1 且 ib_cnt=0): 取指没跟上消费
+  // ---------------------------------------------------------------------------
+  integer b2_accept=0, b2_init=0, b2_flush=0, b2_stall=0, b2_nofetch=0;
+  integer b2_nf_miss=0, b2_nf_qempty=0, b2_nf_other=0;
+  integer b2_raw_stall=0, b2_raw_muldiv=0, b2_raw_loaduse=0;
+  integer b2_trap=0, b2_misp=0;
+  // 重定向后到下一次 if_accept 的等待拍数 (只归因, 不与上面互斥)
+  integer b2_rf_redir=0, b2_rf_flush=0, b2_ev_redir=0, b2_ev_flush=0;
+  reg     b2_rf_armed = 1'b0;
+  reg     b2_rf_isflush = 1'b0;
+
+`ifdef M2PROBE
+  // ---------------------------------------------------------------------------
+  // 误预测归因: "方向表猜错" 还是 "BTB 根本没这条分支"?
+  //   chk[15] = 预测时该 slot 在 BTB 里有没有条目
+  //   chk[16] = 预测时的方向
+  // 两者的修法完全不同 —— 前者要加历史/换索引, 后者要加 CAM/容量。
+  // ---------------------------------------------------------------------------
+  integer m2_cond=0, m2_cond_mis=0, m2_cond_nobtb=0, m2_cond_dir=0;
+  integer m2_jmp=0,  m2_jmp_mis=0,  m2_jmp_nobtb=0,  m2_jmp_tgt=0;
+  integer m2_pt_nt=0, m2_pn_t=0;      // 过预测 taken / 漏预测 taken (条件分支)
+  // 逐 PC 误预测直方图 (按 pc[9:2], 256 档), 用来找"责任最大的那几条静态分支"
+  integer m2_hist_mis [0:255];
+  integer m2_hist_ct  [0:255];
+
+  initial begin
+    integer z;
+    for (z = 0; z < 256; z = z + 1) begin m2_hist_mis[z] = 0; m2_hist_ct[z] = 0; end
+  end
+
+  wire w2_ct_ok   = dut.Core_cpu.iu_btb_update_vld;      // 已含 have_inst_EX/~stall/~redirect
+  wire w2_ct_cond = w2_ct_ok & dut.Core_cpu.iu_btb_is_cond;
+  wire w2_ct_jmp  = w2_ct_ok & (dut.Core_cpu.iu_btb_is_jal | dut.Core_cpu.iu_btb_is_jalr);
+  wire w2_ct_mis  = w2_ct_ok & dut.Core_cpu.mispredict;
+  wire w2_ct_hit  = dut.Core_cpu.iu_btb_chk[15];
+  wire w2_ct_tk   = dut.Core_cpu.iu_btb_chk[16];
+
+  always @(posedge clk) if (!rst) begin
+    if (w2_ct_cond) begin
+      m2_cond <= m2_cond + 1;
+      m2_hist_ct[dut.Core_cpu.iu_btb_cur_pc[9:2]] <= m2_hist_ct[dut.Core_cpu.iu_btb_cur_pc[9:2]] + 1;
+      if (w2_ct_mis) begin
+        m2_cond_mis <= m2_cond_mis + 1;
+        m2_hist_mis[dut.Core_cpu.iu_btb_cur_pc[9:2]] <= m2_hist_mis[dut.Core_cpu.iu_btb_cur_pc[9:2]] + 1;
+        if (!w2_ct_hit) m2_cond_nobtb <= m2_cond_nobtb + 1;
+        else            m2_cond_dir   <= m2_cond_dir   + 1;
+        if ( w2_ct_tk) m2_pt_nt <= m2_pt_nt + 1;   // 猜跳, 实际没跳
+        else           m2_pn_t  <= m2_pn_t  + 1;   // 猜不跳, 实际跳了
+      end
+    end
+    if (w2_ct_jmp) begin
+      m2_jmp <= m2_jmp + 1;
+      m2_hist_ct[dut.Core_cpu.iu_btb_cur_pc[9:2]] <= m2_hist_ct[dut.Core_cpu.iu_btb_cur_pc[9:2]] + 1;
+      if (w2_ct_mis) begin
+        m2_jmp_mis <= m2_jmp_mis + 1;
+        m2_hist_mis[dut.Core_cpu.iu_btb_cur_pc[9:2]] <= m2_hist_mis[dut.Core_cpu.iu_btb_cur_pc[9:2]] + 1;
+        if (!w2_ct_hit) m2_jmp_nobtb <= m2_jmp_nobtb + 1;
+        else            m2_jmp_tgt   <= m2_jmp_tgt   + 1;
+      end
+    end
+  end
+
+`endif
+  wire w2_c_flush = dut.Core_cpu.flush_if_id | dut.Core_cpu.ifu_idu_flush;
+  wire w2_c_stall = dut.Core_cpu.stall;
+  wire w2_miss    = ~dut.Core_cpu.u_ifu_subsys.q_hit;
+  wire w2_qempty  = dut.Core_cpu.u_ifu_subsys.ib_cnt == 4'd0;
+  wire w2_redir   = dut.Core_cpu.u_ifu_subsys.redirect;
+  wire w2_flush   = dut.Core_cpu.rtu_ifu_flush | dut.Core_cpu.rtu_ifu_chgflw_vld;
+
+  always @(posedge clk) if (!rst) begin
+    if (dut.Core_cpu.if_accept)                       b2_accept  <= b2_accept  + 1;
+    else if (!dut.Core_cpu.ifu_init_done)             b2_init    <= b2_init    + 1;
+    else if (w2_c_flush)                              b2_flush   <= b2_flush   + 1;
+    else if (w2_c_stall)                              b2_stall   <= b2_stall   + 1;
+    else begin
+      b2_nofetch <= b2_nofetch + 1;
+      if      (w2_miss)   b2_nf_miss   <= b2_nf_miss   + 1;
+      else if (w2_qempty) b2_nf_qempty <= b2_nf_qempty + 1;
+      else                b2_nf_other  <= b2_nf_other  + 1;
+    end
+    // 原始 (不互斥)
+    if (w2_c_stall)                b2_raw_stall  <= b2_raw_stall  + 1;
+    if (dut.Core_cpu.muldiv_stall) b2_raw_muldiv <= b2_raw_muldiv + 1;
+    if (w2_c_stall & ~dut.Core_cpu.muldiv_stall)
+                                   b2_raw_loaduse<= b2_raw_loaduse+ 1;
+    if (dut.Core_cpu.mispredict)   b2_misp       <= b2_misp       + 1;
+    if (dut.Core_cpu.redirect)     b2_trap       <= b2_trap       + 1;
+    // 重定向/冲刷之后, 前端重新出指令要几拍
+    if (w2_redir) begin
+      b2_rf_armed <= 1'b1;
+      b2_rf_isflush <= w2_flush;
+      b2_ev_redir <= b2_ev_redir + 1;
+      if (w2_flush) b2_ev_flush <= b2_ev_flush + 1;
+    end else if (b2_rf_armed) begin
+      if (dut.Core_cpu.if_accept) b2_rf_armed <= 1'b0;
+      else if (b2_rf_isflush)     b2_rf_flush <= b2_rf_flush + 1;
+      else                        b2_rf_redir <= b2_rf_redir + 1;
+    end
+  end
+
+  always @(posedge clk) if (!rst) begin
+    if (dut.Core_cpu.retire_now) n2_retire <= n2_retire + 1;
+    if (dut.Core_cpu.if_bubble)  n2_bubble <= n2_bubble + 1;
+    if (!dut.Core_cpu.ifu_init_done) n2_init <= n2_init + 1;
+    if (dut.Core_cpu.ifu_biu_rd_req & dut.Core_cpu.ifu_biu_rd_grnt)
+      n2_biu_txn <= n2_biu_txn + 1;
+
+    if (n2_is_cond) begin
+      n2_cond <= n2_cond + 1;
+      bc2_cond[bench_class2(dut.Core_cpu.pc_EX)] <= bc2_cond[bench_class2(dut.Core_cpu.pc_EX)] + 1;
+      if (n2_misp) begin
+        n2_mis_cond <= n2_mis_cond + 1;
+        bc2_mis[bench_class2(dut.Core_cpu.pc_EX)] <= bc2_mis[bench_class2(dut.Core_cpu.pc_EX)] + 1;
+      end
+    end
+    if (n2_is_jmp) begin
+      n2_jmp <= n2_jmp + 1;
+      bc2_jmp[bench_class2(dut.Core_cpu.pc_EX)] <= bc2_jmp[bench_class2(dut.Core_cpu.pc_EX)] + 1;
+      if (n2_misp) begin
+        n2_mis_jmp <= n2_mis_jmp + 1;
+        bc2_misj[bench_class2(dut.Core_cpu.pc_EX)] <= bc2_misj[bench_class2(dut.Core_cpu.pc_EX)] + 1;
+      end
+    end
+  end
+
+  task report_ifu2_stats();
+    $display("-------- IFU2 (2-stage front-end) --------");
+    $display("  cycles          = %0d", cycles);
+    $display("  retired inst    = %0d", n2_retire);
+    // 先除后乘: retire 超过 210 万时 retire*1000 会撑爆 32 位有符号并打印成负数
+      $display("  IPC (x1000)     = %0d", (cycles == 0) ? 0 : (n2_retire / (cycles/1000 + 1)));
+    $display("  fetch bubble    = %0d", n2_bubble);
+    $display("  IFU init cycles = %0d", n2_init);
+    $display("  BIU read txn    = %0d", n2_biu_txn);
+    if ($test$plusargs("BENCH")) begin
+      integer c, tot_c, tot_m;
+      tot_c = 0; tot_m = 0;
+      $display("  --- 逐类方向准确率 (口径同 USE_IFU 的 report_bench_stats) ---");
+      for (c = 1; c <= 5; c = c + 1) begin
+        tot_c = tot_c + bc2_cond[c];
+        tot_m = tot_m + bc2_mis[c];
+        if (bc2_cond[c] > 0)
+          $display("    cls%0d cond=%0d mis=%0d acc=%0d.%02d%%",
+                   c, bc2_cond[c], bc2_mis[c], ((bc2_cond[c]-bc2_mis[c])*100)/bc2_cond[c],
+                   (((bc2_cond[c]-bc2_mis[c])*10000)/bc2_cond[c]) % 100);
+      end
+      if (tot_c > 0)
+        $display("    total cond=%0d mis=%0d acc=%0d.%02d%%",
+                 tot_c, tot_m, ((tot_c-tot_m)*100)/tot_c, (((tot_c-tot_m)*10000)/tot_c)%100);
+      $display("    jal/jalr=%0d mis=%0d", n2_jmp, n2_mis_jmp);
+      $display("    mispred=%0d ctrl_total=%0d", n2_mis_cond+n2_mis_jmp, n2_cond+n2_jmp);
+`ifdef M2PROBE
+      $display("  ================ 分支预测归因 ================");
+      $display("  条件分支 : %0d 条, 误预测 %0d -> 准确率 %0d.%02d%%",
+               m2_cond, m2_cond_mis, (m2_cond>0)?((m2_cond-m2_cond_mis)*100/m2_cond):0,
+               (m2_cond>0)?(((m2_cond-m2_cond_mis)*10000/m2_cond)%100):0);
+      $display("    其中 BTB 没这条分支 : %0d (%0.1f%% 的条件误预测)",
+               m2_cond_nobtb, (m2_cond_mis>0)?100.0*m2_cond_nobtb/m2_cond_mis:0.0);
+      $display("    其中 BTB 有、方向猜错 : %0d (%0.1f%%)",
+               m2_cond_dir, (m2_cond_mis>0)?100.0*m2_cond_dir/m2_cond_mis:0.0);
+      $display("      过预测(猜跳没跳) %0d / 漏预测(猜不跳跳了) %0d", m2_pt_nt, m2_pn_t);
+      $display("  JAL/JALR : %0d 条, 误预测 %0d -> 准确率 %0d.%02d%%",
+               m2_jmp, m2_jmp_mis, (m2_jmp>0)?((m2_jmp-m2_jmp_mis)*100/m2_jmp):0,
+               (m2_jmp>0)?(((m2_jmp-m2_jmp_mis)*10000/m2_jmp)%100):0);
+      $display("    其中 BTB 没这条 : %0d ; BTB 有、目标错 : %0d", m2_jmp_nobtb, m2_jmp_tgt);
+      begin
+        integer k, b1, b2, b3, b4, b5, b6, b7, b8;
+        integer i1,i2,i3,i4,i5,i6,i7,i8, t;
+        b1=0;b2=0;b3=0;b4=0;b5=0;b6=0;b7=0;b8=0;
+        i1=0;i2=0;i3=0;i4=0;i5=0;i6=0;i7=0;i8=0;
+        for (k = 0; k < 256; k = k + 1) begin
+          t = m2_hist_mis[k];
+          if (t > b1) begin b8=b7;i8=i7; b7=b6;i7=i6; b6=b5;i6=i5; b5=b4;i5=i4;
+                            b4=b3;i4=i3; b3=b2;i3=i2; b2=b1;i2=i1; b1=t;i1=k; end
+          else if (t > b2) begin b8=b7;i8=i7; b7=b6;i7=i6; b6=b5;i6=i5; b5=b4;i5=i4;
+                               b4=b3;i4=i3; b3=b2;i3=i2; b2=t;i2=k; end
+          else if (t > b3) begin b8=b7;i8=i7; b7=b6;i7=i6; b6=b5;i6=i5; b5=b4;i5=i4;
+                               b4=b3;i4=i3; b3=t;i3=k; end
+          else if (t > b4) begin b8=b7;i8=i7; b7=b6;i7=i6; b6=b5;i6=i5; b5=b4;i5=i4;
+                               b4=t;i4=k; end
+          else if (t > b5) begin b8=b7;i8=i7; b7=b6;i7=i6; b6=b5;i6=i5; b5=t;i5=k; end
+          else if (t > b6) begin b8=b7;i8=i7; b7=b6;i7=i6; b6=t;i6=k; end
+          else if (t > b7) begin b8=b7;i8=i7; b7=t;i7=k; end
+          else if (t > b8) begin b8=t;i8=k; end
+        end
+        $display("  误预测最多的 8 个 16B 区间 (PC 基址 / 误预测 / 该区间控制转移数 / 准确率):");
+        $display("     0x%04x  %6d / %6d  %s", i1*4, b1, m2_hist_ct[i1],
+                 (m2_hist_ct[i1]>0)?"":"" );
+        $display("     0x%04x  %6d / %6d", i2*4, b2, m2_hist_ct[i2]);
+        $display("     0x%04x  %6d / %6d", i3*4, b3, m2_hist_ct[i3]);
+        $display("     0x%04x  %6d / %6d", i4*4, b4, m2_hist_ct[i4]);
+        $display("     0x%04x  %6d / %6d", i5*4, b5, m2_hist_ct[i5]);
+        $display("     0x%04x  %6d / %6d", i6*4, b6, m2_hist_ct[i6]);
+        $display("     0x%04x  %6d / %6d", i7*4, b7, m2_hist_ct[i7]);
+        $display("     0x%04x  %6d / %6d", i8*4, b8, m2_hist_ct[i8]);
+      end
+`endif
+      $display("  ================ 取指气泡拆解 (口径同 USE_IFU) ================");
+      $display("  总拍数                      : %0d", cycles);
+      $display("  核接受指令 (if_accept=1)    : %0d (%0.2f%%)", b2_accept, 100.0*b2_accept/cycles);
+      $display("  不给指令 (if_accept=0)      : %0d (%0.2f%%)",
+               cycles-b2_accept, 100.0*(cycles-b2_accept)/cycles);
+      $display("    1. IFU 初始化未完成       : %0d", b2_init);
+      $display("    2. 冲刷 (mispredict/陷阱) : %0d", b2_flush);
+      $display("    3. 核内停顿               : %0d", b2_stall);
+      $display("    4. 核在等, IFU 没货       : %0d (%0.2f%%)",
+               b2_nofetch, 100.0*b2_nofetch/cycles);
+      $display("       4a. cache 没有这一行   : %0d", b2_nf_miss);
+      $display("       4b. 有行但队列空       : %0d", b2_nf_qempty);
+      $display("       4c. 其它               : %0d", b2_nf_other);
+      $display("  核内停顿原始(muldiv/load-use): %0d / %0d", b2_raw_muldiv, b2_raw_loaduse);
+      $display("  误预测 %0d / 陷阱 %0d", b2_misp, b2_trap);
+      $display("  冲刷后重填等待: 误预测路 %0d 拍 (%0d 次, 平均 %0d.%02d 拍), 陷阱路 %0d 拍",
+               b2_rf_redir, b2_ev_redir,
+               (b2_ev_redir>0)?b2_rf_redir/b2_ev_redir:0, (b2_ev_redir>0)?(b2_rf_redir*100/b2_ev_redir)%100:0,
+               b2_rf_flush);
+      $display("  ==============================================================");
+      begin
+        integer r, nz, tot;
+        nz = 0; tot = 0;
+        for (r = 0; r < 512; r = r + 1) begin
+          if (dut.Core_cpu.u_ifu_subsys.u_bht.ctr_q[r] !== 8'h00) nz = nz + 1;
+          tot = tot + 1;
+        end
+        $display("    BHT rows nonzero = %0d / %0d", nz, tot);
+      end
+    end
+  endtask
+`endif
+
   always @(posedge clk) begin
     cycles <= cycles + 1;
     gm_set_cycle(cycles + 1);
@@ -172,6 +460,9 @@ module tb_miniRV_dpi;
     if (bench_en) report_coremark_selfdist();
           if (bench_en) report_coremark_selfdist();
 `endif
+`ifdef USE_IFU2
+          report_ifu2_stats();
+`endif
           $finish;
         end else begin
           $display("Test Point Failed");
@@ -184,6 +475,9 @@ module tb_miniRV_dpi;
           if (bench_en) report_bench_stats();
     if (bench_en) report_coremark_selfdist();
           if (bench_en) report_coremark_selfdist();
+`endif
+`ifdef USE_IFU2
+          report_ifu2_stats();
 `endif
           $fatal(1, "Test Point Failed");
         end
@@ -206,6 +500,9 @@ module tb_miniRV_dpi;
     report_bubble_stats();
     if (bench_en) report_bench_stats();
     if (bench_en) report_coremark_selfdist();
+`endif
+`ifdef USE_IFU2
+    report_ifu2_stats();
 `endif
     $fatal(1, "Timed out - simulation exceeded MAX_CYCLES");
   end
@@ -296,6 +593,38 @@ module tb_miniRV_dpi;
   integer n_init       = 0;  // IFU 初始化完成前的拍数
   integer n_misp_raw   = 0;  // 不做 ~stall/~redirect 门控的误预测拍数 (自检用)
 
+  // ---------------------------------------------------------------------------
+  // [2026-09-25 前端微架构矩阵] ICache / 前端交接点观测 (纯观测, 不改 DUT 行为)
+  //
+  // icache 的 access/miss 计数在 RTL 里本来就有 (rv32_ifu_icache_if.v:344-376),
+  // 但被 hpcp_ifu_cnt_en 门控, 而 SoC 把它恒接 0 (ifu_subsys.v), 所以顶层
+  // ifu_hpcp_icache_* 永远是 0。这里直接用 RTL 自己的事件源 (同一根线),
+  // 绕开那道门控; 另外用 cp0_ifu_icache_en 门控, 保证 ICACHE=0 时不虚计。
+  //   access 事件 = 该文件 event_source[0] = seq_data_req | chgflw
+  //   miss   事件 = 该文件 event_source[1] = ifu_hpcp_icache_miss_pre (IP 级判 miss)
+  // ---------------------------------------------------------------------------
+  wire ic_en_w      = dut.Core_cpu.u_ifu_subsys.u_ifu_top.cp0_ifu_icache_en;
+  wire ic_access_w  = ic_en_w &&
+    (dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_if_array.u_icache_if.pcgen_icache_if_seq_data_req ||
+     dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_if_array.u_icache_if.pcgen_icache_if_chgflw);
+  wire ic_miss_w    = ic_en_w &&
+    dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_if_array.u_icache_if.ifu_hpcp_icache_miss_pre;
+  wire refill_run_w = dut.Core_cpu.u_ifu_subsys.u_ifu_top.refill_active_block;
+  wire ib_accept_w  = dut.Core_cpu.u_ifu_subsys.u_ifu_top.ib_accept;
+  // IF 级真的发出了取指 (cache 读或 bypass 读) / IF 手里有块但 IP 不收 (后端反压, 不是 IF 延迟)
+  wire if_issue_w   = dut.Core_cpu.u_ifu_subsys.u_ifu_top.ifctrl_ifdp_issue;
+  wire ip_hold_w    = dut.Core_cpu.u_ifu_subsys.u_ifu_top.ifctrl_ifdp_hold;
+  wire ip_redir_w   = dut.Core_cpu.u_ifu_subsys.u_ifu_top.ip_redirect;
+  wire l0_inval_w   = dut.Core_cpu.u_ifu_subsys.u_ifu_top.l0_invalidate;
+  integer n_ic_access = 0;   // I-Cache 读事件 (行填充/查询)
+  integer n_ic_miss   = 0;   // I-Cache miss (IP 级判定)
+  integer n_refill_cyc= 0;   // refill/miss 处理占用拍数
+  integer n_ib_accept = 0;   // IF→IB 交接的 16B 块数 (ib_accept)
+  integer n_if_issue  = 0;   // IF 级发出取指的拍数 (cache/bypass 都一样算)
+  integer n_ip_hold   = 0;   // IF 有块但 IP 不收 (后端反压) 的拍数
+  integer n_ip_redir  = 0;   // IP 级改向 (L1 BTB / 块内 L0) 次数
+  integer n_l0_inval  = 0;   // L0 失效次数 (与 ip_redir 对账)
+
   wire st_ctrl_ok = dut.Core_cpu.have_inst_EX & ~dut.Core_cpu.stall
                   & ~dut.Core_cpu.redirect;
   wire st_cond    = dut.Core_cpu.iu_bht_check_vld;   // 已含 have_inst_EX&BRANCH&~stall&~redirect
@@ -310,6 +639,14 @@ module tb_miniRV_dpi;
     if (~dut.Core_cpu.if_accept)   n_bubble  <= n_bubble  + 1;
     if (dut.Core_cpu.ifu_biu_rd_req & dut.Core_cpu.ifu_biu_rd_grnt)
                                    n_fill    <= n_fill    + 1;
+    if (ic_access_w)  n_ic_access  <= n_ic_access  + 1;
+    if (ic_miss_w)    n_ic_miss    <= n_ic_miss    + 1;
+    if (refill_run_w) n_refill_cyc <= n_refill_cyc + 1;
+    if (ib_accept_w)  n_ib_accept  <= n_ib_accept  + 1;
+    if (if_issue_w)   n_if_issue   <= n_if_issue   + 1;
+    if (ip_hold_w)    n_ip_hold    <= n_ip_hold    + 1;
+    if (ip_redir_w)   n_ip_redir   <= n_ip_redir   + 1;
+    if (l0_inval_w)   n_l0_inval   <= n_l0_inval   + 1;
     if (st_cond) begin
       n_cond       <= n_cond       + 1;
       n_cond_tpred <= n_cond_tpred + dut.Core_cpu.ex_bht_pred;
@@ -364,6 +701,24 @@ module tb_miniRV_dpi;
       $display("IFU 取指气泡拍数              : %0d (%0.2f%%)",
                n_bubble, cycles ? 100.0*n_bubble/cycles : 0.0);
       $display("IFU BIU 读事务 (i-cache 填充) : %0d", n_fill);
+      // [2026-09-25 前端微架构矩阵]
+      $display("I-Cache 读事件 / miss         : %0d / %0d (miss 率 %0.2f%%)",
+               n_ic_access, n_ic_miss,
+               n_ic_access ? 100.0*n_ic_miss/n_ic_access : 0.0);
+      $display("每 miss 的 BIU 读事务         : %0.2f",
+               n_ic_miss ? 1.0*n_fill/n_ic_miss : 0.0);
+      $display("refill/miss 处理占用拍数      : %0d (%0.2f%%)",
+               n_refill_cyc, cycles ? 100.0*n_refill_cyc/cycles : 0.0);
+      $display("IF→IP 交接 16B 块数           : %0d  (每块 %0.2f 拍, 每拍 %0.3f 块)",
+               n_ib_accept, n_ib_accept ? 1.0*cycles/n_ib_accept : 0.0,
+               cycles ? 1.0*n_ib_accept/cycles : 0.0);
+      $display("IF 发出取指拍数 / 发而不交     : %0d / %0d  (每交付块发 %.3f 次)",
+               n_if_issue, n_if_issue - n_ib_accept,
+               n_ib_accept ? 1.0*n_if_issue/n_ib_accept : 0.0);
+      $display("IF 有块但 IP 不收 (后端反压)   : %0d (%0.2f%%)",
+               n_ip_hold, cycles ? 100.0*n_ip_hold/cycles : 0.0);
+      $display("IP 级改向 / L0 失效           : %0d / %0d", n_ip_redir, n_l0_inval);
+      $display("每拍交付指令数 (retire/cycle) : %0.3f", cycles ? 1.0*n_retire/cycles : 0.0);
       $display("未门控的 mispredict 拍数      : %0d (自检, 与上面 %0d 应接近)",
                n_misp_raw, n_mispred);
       $display("=============================================");
@@ -1438,6 +1793,9 @@ module tb_miniRV_dpi;
   wire        ipc_dir, ipc_tgt, ipc_typ;
   wire [191:0] ipc_lastpkt;
   wire [ 3:0] ipc_lastidx;
+  wire [ 1:0] ipc_l0slot;         // [2026-09-25] 原先漏声明 ⇒ 隐式 1 bit 网,
+                                  // 复算里 slot 比较只用到 slot[0], 于是本项
+                                  // "不符拍数" 恒为大数, 自检失效 (详见下方注释)
   wire [31:0] ipc_l0target;
   wire [ 2:0] ipc_l0type;
 
@@ -1458,10 +1816,12 @@ module tb_miniRV_dpi;
                  & (dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_pipeline.u_ipctrl.last_packet[95:64] == ipc_l0target);
   wire ipc_corr_x = dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_pipeline.u_ipctrl.l0_correct;
   assign ipc_dir = ipc_ev & ~ipc_lastpkt[122];                 // 包内方向预测说不跳
-  // 刻意不做 slot 比较: ipctrl 的 slot 输入端口经分层引用读出来像"只取低位"
-  // (lastidx 与它恒差 2), 不可信. 而 dir/tgt/typ 三桶之和应当精确等于
-  // "有命中的 invalidate 数" —— 这本身就是对"编译进 simv 的 l0_correct 究竟
-  // 有没有 slot 项"的检验.
+  // [2026-09-25 更正] 原注释说"刻意不做 slot 比较, 因为 ipctrl 的 slot 端口
+  // 经分层引用读出来像只取低位"。查明真因是 TB 侧 `ipc_l0slot` 漏了声明:
+  // 隐式网是 1 bit, `last_index == ipc_l0slot` 实际只比了 slot[0], 所以看起来
+  // "恒差 2"。补上 `wire [1:0] ipc_l0slot` 后, 下面 ipc_mine 与 RTL 的 l0_correct
+  // 是同一个表达式, "不符拍数" 应当精确为 0 —— 那才是这个自检该有的样子。
+  // (三桶之和 = 有命中的 invalidate 数这一条本来就不依赖 slot, 不受影响。)
   assign ipc_typ = ipc_ev & ipc_lastpkt[122]
                  & (ipc_lastpkt[108:106] != ipc_l0type);       // 方向对, 类型不符
   assign ipc_tgt = ipc_ev & ipc_lastpkt[122] & (ipc_lastpkt[108:106] == ipc_l0type)

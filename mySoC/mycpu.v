@@ -2,11 +2,20 @@
 
 `include "defines.vh"
 
+// 取指级的三选一 (由 Makefile 的 IFU= 选择):
+//   IFU=0       旧 PC/NPC/IROM 通路
+//   IFU=1       ifu_rv32i (C910 派生, 3 级)
+//   IFU=2       ifu2      (自研 2 级 3 发射, 见 mySoC/ifu2/)
+// 三个宏都在 Makefile 的 DEFINES 里定义: USE_IFU / USE_IFU2 各自标识一款前端,
+// USE_IFU_ANY = "任意一款 IFU 在用"。凡是"有 IFU 就成立"的门控 (IROM 端口、
+// 误预测重定向) 一律用 USE_IFU_ANY; 只有确实只针对 C910 那款的才用 USE_IFU
+// (例如 tb 里绑旧层次的探针)。
+
 module myCPU (
     input  wire         cpu_rst,
     input  wire         cpu_clk,
 
-`ifndef USE_IFU
+`ifndef USE_IFU_ANY
     // Interface to IROM
     output wire [13:0]  inst_addr,
     input  wire [31:0]  inst,
@@ -35,7 +44,7 @@ wire [31:0] pc_EX, pc_MEM, pc_WB;
 wire        have_inst_ID, have_inst_EX, have_inst_MEM, have_inst_WB;
 
 
-`ifndef USE_IFU
+`ifndef USE_IFU_ANY
 wire [31:0] if_npc;
 `endif
 wire [31:0] if_pc;
@@ -100,7 +109,7 @@ wire [31:0] mem_wD;
 wire [31:0] wb_wD;
 wire [31:0] mem_wD_temp;
 
-`ifndef USE_IFU
+`ifndef USE_IFU_ANY
 assign inst_addr = if_pc[15:2];
 `endif
 //assign Bus_wen = ram_we;
@@ -195,8 +204,8 @@ wire retire_now   = have_inst_WB & ~irq_taken;
 // (陷阱自己的 mepc/mcause/mstatus 写发生在重定向边沿, 所以也排除 redirect.)
 wire csr_quiescent = ~redirect & ~ex_csr_we & ~mem_csr_we & ~wb_csr_we;
 
-`ifdef USE_IFU
-// ===================== IFU (rv32_ifu_top) 取指 =====================
+`ifdef USE_IFU_ANY
+// ===================== IFU 取指 =====================
 // 每拍只消费 lane0 一条。无效槽的 data 是全 0 (会被译码成"非法指令"),
 // 所以必须用 if_accept 门控; 取不到时给 IF_ID 灌气泡, 让流水线照常前进。
 // 绝不能去停 ID_EX: EX_MEM 的 stall 是"插气泡"语义而非"保持", 停 ID_EX
@@ -218,6 +227,21 @@ wire        iu_bht_condbr_taken;
 wire        iu_bht_pred;
 wire [ 24:0] iu_chk_idx;
 
+`ifdef USE_IFU2
+// ifu2 的预测器训练回送: "EX 解析掉了一条控制转移, 它是什么、去了哪"。
+// 与上面那组 C910 风格的 iu_bht_* 的区别是**覆盖 jal/jalr** —— 原设计只回送
+// 条件分支, jalr 的目标学习完全缺失 (jalr 从不写 BTB, 见 memory
+// cpu-btb-index-conflict 的微架构补记), 那是 L1 BTB 唯一真正在干的活。
+wire        iu_btb_update_vld;
+wire [31:0] iu_btb_cur_pc;
+wire        iu_btb_taken;
+wire [31:0] iu_btb_target;
+wire        iu_btb_is_cond;
+wire        iu_btb_is_jal;
+wire        iu_btb_is_jalr;
+wire [24:0] iu_btb_chk;
+`endif
+
 // BIU 总线 (rv32_ifu_top <-> ifu_biu_mem)
 wire        ifu_biu_rd_req;
 wire [31:0] ifu_biu_rd_addr;
@@ -238,7 +262,77 @@ wire        rtu_ifu_flush;
 wire        rtu_ifu_chgflw_vld;
 wire [31:0] rtu_ifu_chgflw_pc;
 
-ifu_subsys u_ifu_subsys (
+// 前端两个总开关从 Makefile 的 +define+ 派生后透传给 ifu_subsys。
+// 不定义 ICACHE_OFF / BP_OFF 时两者都是 1, 与改动前逐位相同。
+`ifdef ICACHE_OFF
+localparam IFU_ICACHE_EN = 1'b0;
+`else
+localparam IFU_ICACHE_EN = 1'b1;
+`endif
+`ifdef BP_OFF
+localparam IFU_BP_EN = 1'b0;
+`else
+localparam IFU_BP_EN = 1'b1;
+`endif
+
+`ifdef USE_IFU2
+// 自研 2 级 3 发射前端。它不再需要 ifu_subsys 那层适配 —— 端口名本来就是
+// 按本核的取指级语义定的, 不需要 PCFIFO/维护/断点/HAD 那套桩。
+rv32ifu2_top #(
+    .ICACHE_EN (IFU_ICACHE_EN),
+    .BP_EN     (IFU_BP_EN)
+) u_ifu_subsys (
+    .clk           (cpu_clk),
+    .rst           (cpu_rst),
+    .idu_inst0_vld (ifu_inst0_vld),
+    .idu_inst0_data(ifu_inst0_data),
+    .idu_inst0_chk (ifu_inst0_chk),
+    .idu_inst1_vld (),
+    .idu_inst1_data(),
+    .idu_inst1_chk (),
+    .idu_inst2_vld (),
+    .idu_inst2_data(),
+    .idu_inst2_chk (),
+    .idu_flush     (ifu_idu_flush),
+    .idu_accept_num(if_accept ? 2'd1 : 2'd0),
+    .iu_chgflw_vld (iu_ifu_chgflw_vld),
+    .iu_chgflw_pc  (iu_ifu_chgflw_pc),
+    .iu_bht_check_vld     (iu_bht_check_vld),
+    .iu_cur_pc            (iu_cur_pc),
+    .iu_bht_condbr_taken  (iu_bht_condbr_taken),
+    .iu_bht_pred          (iu_bht_pred),
+    .iu_chk_idx           (iu_chk_idx),
+`ifdef USE_IFU2
+    .iu_btb_update_vld    (iu_btb_update_vld),
+    .iu_btb_cur_pc        (iu_btb_cur_pc),
+    .iu_btb_taken         (iu_btb_taken),
+    .iu_btb_target        (iu_btb_target),
+    .iu_btb_is_cond       (iu_btb_is_cond),
+    .iu_btb_is_jal        (iu_btb_is_jal),
+    .iu_btb_is_jalr       (iu_btb_is_jalr),
+    .iu_btb_chk           (iu_btb_chk),
+`endif
+    .rtu_flush     (rtu_ifu_flush),
+    .rtu_chgflw_vld(rtu_ifu_chgflw_vld),
+    .rtu_chgflw_pc (rtu_ifu_chgflw_pc),
+    .init_done     (ifu_init_done),
+    .biu_rd_req    (ifu_biu_rd_req),
+    .biu_rd_addr   (ifu_biu_rd_addr),
+    .biu_rd_id     (ifu_biu_rd_id),
+    .biu_rd_len    (ifu_biu_rd_len),
+    .biu_rd_grnt   (ifu_biu_rd_grnt),
+    .biu_rd_data_vld(ifu_biu_rd_data_vld),
+    .biu_rd_data   (ifu_biu_rd_data),
+    .biu_rd_rid    (ifu_biu_rd_rid),
+    .biu_rd_last   (ifu_biu_rd_last),
+    .biu_rd_resp   (ifu_biu_rd_resp),
+    .biu_r_ready   (ifu_biu_r_ready)
+);
+`else
+ifu_subsys #(
+    .ICACHE_EN (IFU_ICACHE_EN),
+    .BP_EN     (IFU_BP_EN)
+) u_ifu_subsys (
     .clk           (cpu_clk),
     .rst           (cpu_rst),
     .idu_inst0_vld (ifu_inst0_vld),
@@ -275,6 +369,7 @@ ifu_subsys u_ifu_subsys (
     .biu_rd_resp   (ifu_biu_rd_resp),
     .biu_r_ready   (ifu_biu_r_ready)
 );
+`endif
 
 ifu_biu_mem u_ifu_biu_mem (
     .clk               (cpu_clk),
@@ -610,7 +705,7 @@ wire [31:0] ex_target = ex_is_jalr ? ex_alu_c : (pc_EX + ex_sext);
 wire ex_inst_misaligned = have_inst_EX & (ex_br_taken | ex_is_jump | ex_is_jalr)
                         & (ex_target[1:0] != 2'b00);
 
-`ifdef USE_IFU
+`ifdef USE_IFU_ANY
 // ===================== 误预测检测与前端重定向 =====================
 // 真实后继 PC。与旧 NPC.v 不同, 这里直接用 pc_EX 作基准, 不再依赖
 // "if_pc == pc_EX + 8" 那个关系 (旧 NPC 里 PC + offset - 8 的 -8 就是
@@ -645,6 +740,30 @@ assign iu_cur_pc           = pc_EX;
 assign iu_bht_condbr_taken = ex_alu_f;
 assign iu_bht_pred         = ex_bht_pred;
 assign iu_chk_idx          = ex_bht_chk;
+
+`ifdef USE_IFU2
+// ifu2 的预测器训练: 条件分支 / JAL / JALR 一律回送。
+//   * 用 actual_npc 而不是各自算一遍目标 —— 它已经是"真实后继 PC", 分支不跳时
+//     就是 pc+4, 对 BTB 的"不跳"训练正好用不上目标, 由 upd_taken 决定写不写。
+//   * ~stall 与上面 iu_bht_check_vld 同理: ID_EX 停顿时是保持, 不加门控同一条
+//     指令会在 EX 停多拍、把同一次解析重复上报, 把方向计数器反复往同一方向推。
+//   * ~redirect (陷阱) 同拍的那条已被冲刷, 不能训练。
+//   * 注意**不能**加 ~mispredict: 误预测那一次恰恰是最该学的一次。
+assign iu_btb_update_vld = have_inst_EX
+                         & ((ex_npc_op == `NPC_SEL_BRANCH) ||
+                            (ex_npc_op == `NPC_SEL_JAL)    ||
+                            (ex_npc_op == `NPC_SEL_ALU))
+                         & ~stall & ~redirect;
+assign iu_btb_cur_pc = pc_EX;
+assign iu_btb_taken  = (ex_npc_op == `NPC_SEL_BRANCH) ? ex_alu_f : 1'b1;
+assign iu_btb_target = actual_npc;
+assign iu_btb_is_cond = (ex_npc_op == `NPC_SEL_BRANCH);
+assign iu_btb_is_jal  = ex_is_jump;
+assign iu_btb_is_jalr = ex_is_jalr;
+// GHR 快照随指令走完全程 (IFU 打包 → IF_ID → ID_EX → 这里), 与指令天然同序。
+// 不能用"重定向时再读一次 GHR"那种做法 —— 那时 GHR 已经被错误路径上的块推过了。
+assign iu_btb_chk = ex_bht_chk;
+`endif
 // WB 提交点陷阱/中断/mret 重定向
 assign rtu_ifu_flush     = redirect;
 assign rtu_ifu_chgflw_vld = redirect;

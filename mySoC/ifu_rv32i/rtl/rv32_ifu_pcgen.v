@@ -19,16 +19,16 @@ limitations under the License.
 //------------------------------------------------------------------------------
 // Module Declaration
 //------------------------------------------------------------------------------
-// [ICACHE 参数化] 只用行大小(判断"顺序取指何时换 set"); 默认 = 原 64 B 行。
+// [ICACHE 参数化] 只用行大小(判断"顺序取指何时换 set"); 默认 = 16 B 行。
 `ifdef ICACHE_BYTES
   `define IC_BYTES_VAL `ICACHE_BYTES
 `else
-  `define IC_BYTES_VAL 65536
+  `define IC_BYTES_VAL 1024
 `endif
 `ifdef ICACHE_LINE_BYTES
   `define IC_LINE_VAL `ICACHE_LINE_BYTES
 `else
-  `define IC_LINE_VAL 64
+  `define IC_LINE_VAL 16
 `endif
 
 module rv32_ifu_pcgen (

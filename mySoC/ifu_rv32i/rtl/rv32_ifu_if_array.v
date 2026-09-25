@@ -5,18 +5,18 @@
 //------------------------------------------------------------------------------
 // Module Declaration
 //------------------------------------------------------------------------------
-// [ICACHE 参数化] 与 rv32_ifu_icache_if.v 同套 define/公式; 默认 = 原 64 KiB/64 B。
+// [ICACHE 参数化] 与 rv32_ifu_icache_if.v 同套 define/公式; 默认 = 1 KiB/16 B 行。
 // 本模块只做端口穿线, 但端口宽度必须跟几何一致 —— 写死 17/18 位会在几何改动后
 // 静默截断 tag, 表现为"永不命中"(不会报错, 只会变慢)。
 `ifdef ICACHE_BYTES
   `define IC_BYTES_VAL `ICACHE_BYTES
 `else
-  `define IC_BYTES_VAL 65536
+  `define IC_BYTES_VAL 1024
 `endif
 `ifdef ICACHE_LINE_BYTES
   `define IC_LINE_VAL `ICACHE_LINE_BYTES
 `else
-  `define IC_LINE_VAL 64
+  `define IC_LINE_VAL 16
 `endif
 
 module rv32_ifu_if_array #(

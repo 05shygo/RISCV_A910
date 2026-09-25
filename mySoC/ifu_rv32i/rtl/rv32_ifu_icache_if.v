@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// RV32I/no-MMU derivative: 默认 64 KiB / two ways / 64 B lines / 512 sets,
+// RV32I/no-MMU derivative: 默认 1 KiB / two ways / 16 B lines / 32 sets,
 // 由模块参数 IC_BYTES/IC_LINE 决定; 索引 = {set, beat, word} 左对齐,
 // set = INDEX_WIDTH-1 : LINE_BITS, word 恒 4 bit。
 // Tag row = {FIFO, valid1, tag1[TAG_BITS-1:0], valid0, tag0[TAG_BITS-1:0]}.
@@ -32,12 +32,12 @@ limitations under the License.
 `ifdef ICACHE_BYTES
   `define IC_BYTES_VAL `ICACHE_BYTES
 `else
-  `define IC_BYTES_VAL 65536
+  `define IC_BYTES_VAL 1024
 `endif
 `ifdef ICACHE_LINE_BYTES
   `define IC_LINE_VAL `ICACHE_LINE_BYTES
 `else
-  `define IC_LINE_VAL 64
+  `define IC_LINE_VAL 16
 `endif
 
 module rv32_ifu_icache_if #(

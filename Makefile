@@ -17,12 +17,29 @@ SIMV := $(BUILD_DIR)/simv
 TESTFILE := $(PWD)/meminit.bin
 
 RAM ?= ram.v
-# IFU=1: 用 ifu_rv32i (C910 派生前端) 替换取指级; IFU=0: 旧 PC/NPC/IROM 通路.
+# 取指级三选一:
+#   IFU=0  旧 PC/NPC/IROM 通路
+#   IFU=1  ifu_rv32i (C910 派生前端, 3 级, 41 文件 14,967 行)
+#   IFU=2  ifu2 (自研 2 级 3 发射前端, mySoC/ifu2/)
 IFU ?= 1
 # LBUF=1: 打开循环缓冲 (cp0_ifu_lbuf_en=1); LBUF=0: LBUF 状态机常驻 IDLE.
 # 只在 IFU=1 下有意义 (LBUF 属于 ifu_rv32i).
 LBUF ?= 0
+# ICACHE=1: 打开 I-Cache (cp0_ifu_icache_en/pref_en=1); ICACHE=0: 走 bypass 读.
+# BP=1: 打开分支预测 (BHT/L1-BTB/L0-BTB/间接/RAS); BP=0: 5 者全关.
+# 两者都只在 IFU=1 下有意义, 由 mySoC/ifu_subsys.v 的 ICACHE_EN/BP_EN 参数接收.
+ICACHE ?= 1
+BP ?= 1
+# IFU=2 时换成自研 2 级前端 ifu2 的 RTL。两棵树的模块名不重名, 但顶层只有一棵
+# 能被例化 —— 旧树整个不参与编译, elaborate 更快, 也不会把死代码带进网表。
+# ifu_subsys.v 必须一并排除: 它是 rv32_ifu_top 的 SoC 适配层, 而那棵树这时
+# 不在文件列表里, 留着一个例化不存在模块的 wrapper 会让 elaborate 直接失败。
+ifeq ($(IFU),2)
+VSRC := $(filter-out $(PWD)/mySoC/ifu_subsys.v, $(wildcard $(PWD)/mySoC/*.v)) \
+        $(wildcard $(PWD)/mySoC/ifu2/rtl/*.v) $(PWD)/vsrc/$(RAM)
+else
 VSRC := $(wildcard $(PWD)/mySoC/*.v) $(wildcard $(PWD)/mySoC/ifu_rv32i/rtl/*.v) $(PWD)/vsrc/$(RAM)
+endif
 SVSRC := $(wildcard $(PWD)/tb/*.sv)
 DPIC := $(wildcard $(PWD)/dpi/*.c)
 CSRC_GM := $(wildcard $(PWD)/golden_model/*.c) $(wildcard $(PWD)/golden_model/stage/*.c) $(wildcard $(PWD)/golden_model/peripheral/*.c)
@@ -31,8 +48,25 @@ DEFINES := +define+PATH=$(TESTFILE)
 ifeq ($(IFU),1)
 DEFINES += +define+USE_IFU
 endif
+# IFU=2 只定义 USE_IFU2, 不定义 USE_IFU: tb 里那一大段绑旧层次的探针
+# (dut.Core_cpu.u_ifu_subsys.u_ifu_top.u_bp_top...) 因此不参与编译。
+ifeq ($(IFU),2)
+DEFINES += +define+USE_IFU2
+endif
+# "用了任何一款 IFU 就成立"的门控。必须由 Makefile 定义而不是 RTL 内部 `define ——
+# 用到的文件不止 mycpu.v (miniRV_SoC.v 的 IROM 端口也是), 而 `define 的作用范围
+# 取决于文件编译顺序, 靠 RTL 里定义会随时序变化。
+ifneq ($(IFU),0)
+DEFINES += +define+USE_IFU_ANY
+endif
 ifeq ($(LBUF),1)
 DEFINES += +define+USE_LBUF
+endif
+ifeq ($(ICACHE),0)
+DEFINES += +define+ICACHE_OFF
+endif
+ifeq ($(BP),0)
+DEFINES += +define+BP_OFF
 endif
 
 # FSDB (Verdi) detection
@@ -102,6 +136,17 @@ $(LBUF_CFG): FORCE
 	@mkdir -p $(BUILD_DIR)
 	@echo "$(LBUF)" | cmp -s - $@ || echo "$(LBUF)" > $@
 
+ICACHE_CFG := $(BUILD_DIR)/.icache_cfg
+BP_EN_CFG  := $(BUILD_DIR)/.bp_en_cfg
+
+$(ICACHE_CFG): FORCE
+	@mkdir -p $(BUILD_DIR)
+	@echo "$(ICACHE)" | cmp -s - $@ || echo "$(ICACHE)" > $@
+
+$(BP_EN_CFG): FORCE
+	@mkdir -p $(BUILD_DIR)
+	@echo "$(BP)" | cmp -s - $@ || echo "$(BP)" > $@
+
 # ---------------------------------------------------------------------------
 # BP_* : 分支预测器表尺寸 (面积-准确率实验用)
 #
@@ -125,8 +170,8 @@ $(LBUF_CFG): FORCE
 #   BP_BTB_ROW_W= BP_IND_AW= ...
 # 面积/跑分全表见 doc/bp_three_way_zh.md §5 与 memory bp-area-frontier-2026-09-24。
 # ---------------------------------------------------------------------------
-ICACHE_BYTES      ?=
-ICACHE_LINE_BYTES ?=
+ICACHE_BYTES      ?= 1024
+ICACHE_LINE_BYTES ?= 16
 BP_PRE_FOLD  ?= 1
 BP_PRE_AW    ?= 5
 BP_SEL_AW    ?= 4
@@ -142,10 +187,14 @@ BP_DEFS := $(if $(filter 16,$(ICACHE_LINE_BYTES)),+define+ICACHE_LINE_16B) \
            $(if $(BP_SEL_AW),+define+BP_SEL_AW=$(BP_SEL_AW)) \
            $(if $(BP_BTB_ROW_W),+define+BP_BTB_ROW_W=$(BP_BTB_ROW_W)) \
            $(if $(BP_L0_ENTRIES),+define+BP_L0_ENTRIES=$(BP_L0_ENTRIES)) \
-           $(if $(BP_IND_AW),+define+BP_IND_AW=$(BP_IND_AW))
+           $(if $(BP_IND_AW),+define+BP_IND_AW=$(BP_IND_AW)) \
+           $(if $(BP_BTB_ROW_AW),+define+BP_BTB_ROW_AW=$(BP_BTB_ROW_AW)) \
+           $(if $(BP_BHT_ROW_AW),+define+BP_BHT_ROW_AW=$(BP_BHT_ROW_AW)) \
+           $(if $(BP_GHR_W),+define+BP_GHR_W=$(BP_GHR_W)) \
+           $(if $(BP_RAS),+define+BP_RAS=$(BP_RAS))
 
 BP_CFG := $(BUILD_DIR)/.bp_cfg
-BP_SIG := $(BP_PRE_FOLD)-$(BP_PRE_AW)-$(BP_SEL_AW)-$(BP_BTB_ROW_W)-$(BP_L0_ENTRIES)-$(BP_IND_AW)-$(ICACHE_BYTES)-$(ICACHE_LINE_BYTES)
+BP_SIG := $(BP_PRE_FOLD)-$(BP_PRE_AW)-$(BP_SEL_AW)-$(BP_BTB_ROW_W)-$(BP_L0_ENTRIES)-$(BP_IND_AW)-$(ICACHE_BYTES)-$(ICACHE_LINE_BYTES)-$(BP_BTB_ROW_AW)-$(BP_BHT_ROW_AW)-$(BP_GHR_W)-$(BP_RAS)
 
 $(BP_CFG): FORCE
 	@mkdir -p $(BUILD_DIR)
@@ -153,7 +202,7 @@ $(BP_CFG): FORCE
 
 FORCE:
 
-$(SIMV): $(VSRC) $(SVSRC) $(DPIC) $(CSRC_GM) $(IFU_CFG) $(LBUF_CFG) $(BP_CFG)
+$(SIMV): $(VSRC) $(SVSRC) $(DPIC) $(CSRC_GM) $(IFU_CFG) $(LBUF_CFG) $(BP_CFG) $(ICACHE_CFG) $(BP_EN_CFG)
 	@mkdir -p $(BUILD_DIR)
 	$(VCS) $(VCS_FLAGS) $(VCS_FLAGS_EXTRA) $(INC) $(DEFINES) $(BP_DEFS) $(FSDB_VCS) -CFLAGS -DVCS \
 	  -CFLAGS -I$(PWD)/golden_model/include \

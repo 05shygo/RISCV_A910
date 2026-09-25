@@ -33,11 +33,20 @@
 // 的 L0 项从不武装, 这条路径基本走不到, 是更好的预测把它暴露出来的。
 // 修复见 rv32_ifu_ipctrl.v 的 l0_in_fragment (加在 redirect_pc 的 select 上)。
 module ifu_subsys #(
+`ifdef ICACHE_OFF
+    parameter ICACHE_EN = 0,       // I-Cache 开关 (make ICACHE=0; 关掉走 1 拍 bypass 读)
+`else
     parameter ICACHE_EN = 1,       // I-Cache 开关 (关掉走 1 拍 bypass 读)
+`endif
 `ifdef USE_LBUF
     parameter LBUF_EN   = 1,       // 循环缓冲开关 (make LBUF=1)
 `else
     parameter LBUF_EN   = 0,       // 循环缓冲开关 (make LBUF=1 打开)
+`endif
+`ifdef BP_OFF
+    parameter BP_EN     = 0,       // 分支预测总开关 (make BP=0)
+`else
+    parameter BP_EN     = 1,       // 分支预测总开关 (make BP=0 时全部关掉)
 `endif
     parameter BHT_TRAIN_EN = 1     // BHT 检查/训练 (关掉可回到无历史的旧行为)
 )(
@@ -104,11 +113,16 @@ rv32_ifu_top #(
     .cp0_ifu_rvbr            (32'h0),
     .ifu_cp0_init_done       (init_done),
     .ifu_yy_xx_no_op         (),
-    .cp0_ifu_bht_en          (1'b1),
-    .cp0_ifu_btb_en          (1'b1),
-    .cp0_ifu_ind_btb_en      (1'b1),
-    .cp0_ifu_l0btb_en        (1'b1),
-    .cp0_ifu_ras_en          (1'b1),
+    // BP_EN 统一驱动 5 个预测器使能。任务书点名的是 bht/btb/l0btb 三个, 这里
+    // 顺带把 ind_btb/ras 也接上: 只关前三个的话 RAS 仍会预测 ret 目标、间接
+    // BTB 仍会预测 jalr 目标 (rv32_ifu_ras.v:1657 的 ras_top_valid 里就有
+    // cp0_ifu_ras_en 项), "BP 关掉" 就不是真正的无预测基线了。
+    // 默认 BP_EN=1 时这 5 个全是 1'b1, 与改动前逐位相同。
+    .cp0_ifu_bht_en          (BP_EN),
+    .cp0_ifu_btb_en          (BP_EN),
+    .cp0_ifu_ind_btb_en      (BP_EN),
+    .cp0_ifu_l0btb_en        (BP_EN),
+    .cp0_ifu_ras_en          (BP_EN),
     .cp0_ifu_lbuf_en         (LBUF_EN),
     .cp0_ifu_icache_en       (ICACHE_EN),
     .cp0_ifu_icache_pref_en  (ICACHE_EN),
