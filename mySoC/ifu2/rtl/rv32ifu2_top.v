@@ -57,7 +57,7 @@ module rv32ifu2_top #(
 `ifdef BP_GHR_W
     parameter GHR_W      = `BP_GHR_W,
 `else
-    parameter GHR_W      = 12,
+    parameter GHR_W      = 8,   // 与 Makefile 默认一致; 见 doc §4 "GHR 宽度扫点"
 `endif
 `ifdef BP_RAS
     parameter RAS_EN     = `BP_RAS,
@@ -67,6 +67,10 @@ module rv32ifu2_top #(
     parameter RAS_AW      = 3,
     parameter RAS_CHK_LSB = GHR_W,
     parameter RAS_CHK_MSB = GHR_W + RAS_AW,
+    // chk 里两个**只给 TB 归因用**的标志位 (见下面 chk_snap 那段)。放在
+    // RAS_CHK_MSB+2 起: bit 15 是 ras_ptr[3], bit 16 留空。
+    parameter CHK_BTBHIT  = GHR_W + RAS_AW + 2,
+    parameter CHK_PREDTK  = GHR_W + RAS_AW + 3,
     // 哨兵: 每个 `ifdef 分支里的 parameter 都带逗号, 需要有个无条件跟在最后的
     // 参数, 否则 `endif 之后直接是 `)(` 时列表尾会多一个逗号。
     parameter _param_list_sentinel = 1'b0
@@ -502,9 +506,33 @@ end
 // ghr_q 就是块首 GHR: 本块的分支要到本拍末尾才推进它, 而块是本拍才被交付的。
 // ---------------------------------------------------------------------------
 wire [24:0] chk_snap = {{(25-RAS_CHK_MSB-1){1'b0}}, ras_ptr, ghr_q[GHR_W-1:0]};
-assign chk0 = chk_snap;
-assign chk1 = chk_snap;
-assign chk2 = chk_snap;
+
+// 再带两个**逐 lane** 的预测元信息, 只供 TB 归因用, 不参与任何逻辑:
+//   CHK_BTBHIT: 预测时这一 slot 在 BTB 里有没有条目 (没有 ⇒ 只能猜"不跳")
+//   CHK_PREDTK: 预测时的方向
+// 没有这两位就无法区分"方向表猜错了"和"BTB 根本没这条分支" —— 两者的修法完全不同
+// (前者换索引/加历史, 后者加 CAM/容量), 而 TAGE 只解决前者, 所以这个拆分决定了
+// TAGE 到底有没有用武之地。
+//
+// ⚠️ 位段选在 RAS_CHK_MSB+2 起: ras_ptr 占 [RAS_CHK_MSB:RAS_CHK_LSB]=[15:12],
+// bit 15 **不是空闲位** —— 早先版本把 BTBHIT 放在 bit15, 直接和 ras_ptr[3] 撞了。
+// bit 16 留空, 用 17/18。
+// ⚠️⚠️ **位宽必须显式写**。`wire x = expr;` 在 Verilog 里**不推断宽度, 一律 1 位** ——
+// 写成 `wire chk0_f = chk_snap | ...;` 会把 25 位的 chk 截成只剩 bit0 (即 ghr_q[0]),
+// 整个 GHR 快照被毁, BHT 训练索引随之崩掉。
+// 症状: branch_bench 从 161,528 涨到 208,964、方向准确率 95.00% → 54.30%、
+// 类 3 恰好回到 50.00% —— 看起来完全像"预测表被改坏了", 而真凶只是少写了 [24:0]。
+// 本工程此前已踩过同类坑 (隐式 1 位线网把 ex_pred_npc 变成恒 0), 别再踩第三次。
+wire [24:0] chk0_f = chk_snap | (vld_rot[0] ? (25'd1 << CHK_BTBHIT) : 25'd0)
+                             | (tk_rot[0]  ? (25'd1 << CHK_PREDTK) : 25'd0);
+wire [24:0] chk1_f = chk_snap | (vld_rot[1] ? (25'd1 << CHK_BTBHIT) : 25'd0)
+                             | (tk_rot[1]  ? (25'd1 << CHK_PREDTK) : 25'd0);
+wire [24:0] chk2_f = chk_snap | (vld_rot[2] ? (25'd1 << CHK_BTBHIT) : 25'd0)
+                             | (tk_rot[2]  ? (25'd1 << CHK_PREDTK) : 25'd0);
+
+assign chk0 = chk0_f;
+assign chk1 = chk1_f;
+assign chk2 = chk2_f;
 
 assign ib_push0 = {chk0, make_packet(pc0, inst0, npc0, lane0_taken)};
 assign ib_push1 = {chk1, make_packet(pc1, inst1, npc1, lane1_taken)};

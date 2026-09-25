@@ -207,8 +207,10 @@ module tb_miniRV_dpi;
   wire w2_ct_cond = w2_ct_ok & dut.Core_cpu.iu_btb_is_cond;
   wire w2_ct_jmp  = w2_ct_ok & (dut.Core_cpu.iu_btb_is_jal | dut.Core_cpu.iu_btb_is_jalr);
   wire w2_ct_mis  = w2_ct_ok & dut.Core_cpu.mispredict;
-  wire w2_ct_hit  = dut.Core_cpu.iu_btb_chk[15];
-  wire w2_ct_tk   = dut.Core_cpu.iu_btb_chk[16];
+  // ⚠️ 位段与 rv32ifu2_top.v 的 CHK_BTBHIT/CHK_PREDTK 必须一致 (GHR_W+RAS_AW+2/+3 = 17/18)。
+  // 早先写的 15/16 是错的: bit15 是 ras_ptr[3]。
+  wire w2_ct_hit  = dut.Core_cpu.iu_btb_chk[17];
+  wire w2_ct_tk   = dut.Core_cpu.iu_btb_chk[18];
 
   always @(posedge clk) if (!rst) begin
     if (w2_ct_cond) begin

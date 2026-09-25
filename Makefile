@@ -178,6 +178,7 @@ BP_SEL_AW    ?= 4
 BP_BTB_ROW_W ?= 2
 BP_IND_AW    ?= 2
 BP_L0_ENTRIES ?= 16
+BP_GHR_W     ?= 8     # GHR 宽度: 索引只有 ROW_AW=9 位, 历史超过 8 位就开始互相干扰
 
 BP_DEFS := $(if $(filter 16,$(ICACHE_LINE_BYTES)),+define+ICACHE_LINE_16B) \
            $(if $(ICACHE_BYTES),+define+ICACHE_BYTES=$(ICACHE_BYTES)) \
