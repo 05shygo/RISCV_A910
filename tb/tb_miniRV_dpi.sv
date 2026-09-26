@@ -207,10 +207,13 @@ module tb_miniRV_dpi;
   wire w2_ct_cond = w2_ct_ok & dut.Core_cpu.iu_btb_is_cond;
   wire w2_ct_jmp  = w2_ct_ok & (dut.Core_cpu.iu_btb_is_jal | dut.Core_cpu.iu_btb_is_jalr);
   wire w2_ct_mis  = w2_ct_ok & dut.Core_cpu.mispredict;
-  // ⚠️ 位段与 rv32ifu2_top.v 的 CHK_BTBHIT/CHK_PREDTK 必须一致 (GHR_W+RAS_AW+2/+3 = 17/18)。
-  // 早先写的 15/16 是错的: bit15 是 ras_ptr[3]。
-  wire w2_ct_hit  = dut.Core_cpu.iu_btb_chk[17];
-  wire w2_ct_tk   = dut.Core_cpu.iu_btb_chk[18];
+  // ⚠️ 位号**跟着 RTL 的参数走**, 别再写死数字。
+  // 这段探针已经静默失效过一次: GHR_W 从 12 改到 8 之后 CHK_BTBHIT/CHK_PREDTK
+  // 从 17/18 挪到了 13/14, 而这里还读 17/18 —— 那两个位在空白区里恒 0, 于是
+  // "方向错 vs BTB 没这条"的归因整个废掉 (每一条都算成 BTB 没这条)。
+  // 直接层次化引用 rv32ifu2_top 的 localparam, 以后调参数不会再漂。
+  wire w2_ct_hit  = dut.Core_cpu.iu_btb_chk[dut.Core_cpu.u_ifu_subsys.CHK_BTBHIT];
+  wire w2_ct_tk   = dut.Core_cpu.iu_btb_chk[dut.Core_cpu.u_ifu_subsys.CHK_PREDTK];
 
   always @(posedge clk) if (!rst) begin
     if (w2_ct_cond) begin
@@ -393,15 +396,29 @@ module tb_miniRV_dpi;
                (b2_ev_redir>0)?b2_rf_redir/b2_ev_redir:0, (b2_ev_redir>0)?(b2_rf_redir*100/b2_ev_redir)%100:0,
                b2_rf_flush);
       $display("  ==============================================================");
+      // 方向表的"有多少行真的被写过" —— 用来判断表是不是大得没用/小得不够。
+      // gshare 数计数器行; TAGE 数行有效位为 1 的行 (清干净的行是全 0)。
+      // ⚠️ BP_PRED=1 时没有 u_bht 这个实例, 不分支的话整个 tb 编不过。
+`ifdef BP_PRED
+      begin
+        integer r, nz, tot;
+        nz = 0;
+        tot = $size(dut.Core_cpu.u_ifu_subsys.g_tage.u_tage.tag_q);
+        for (r = 0; r < tot; r = r + 1)
+          if (dut.Core_cpu.u_ifu_subsys.g_tage.u_tage.tag_q[r] !== 0) nz = nz + 1;
+        $display("    TAGE rows valid = %0d / %0d", nz, tot);
+      end
+`else
       begin
         integer r, nz, tot;
         nz = 0; tot = 0;
         for (r = 0; r < 512; r = r + 1) begin
-          if (dut.Core_cpu.u_ifu_subsys.u_bht.ctr_q[r] !== 8'h00) nz = nz + 1;
+          if (dut.Core_cpu.u_ifu_subsys.g_gshare.u_bht.ctr_q[r] !== 8'h00) nz = nz + 1;
           tot = tot + 1;
         end
         $display("    BHT rows nonzero = %0d / %0d", nz, tot);
       end
+`endif
     end
   endtask
 `endif

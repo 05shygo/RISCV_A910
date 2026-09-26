@@ -178,7 +178,39 @@ BP_SEL_AW    ?= 4
 BP_BTB_ROW_W ?= 2
 BP_IND_AW    ?= 2
 BP_L0_ENTRIES ?= 16
-BP_GHR_W     ?= 8     # GHR 宽度: 索引只有 ROW_AW=9 位, 历史超过 8 位就开始互相干扰
+# ---------------------------------------------------------------------------
+# BP_PRED : 方向预测器二选一 (只对 IFU=2 有意义)
+#   1 = TAGE   (rv32ifu2_tage, **默认**, 2026-09-26 起)
+#   0 = gshare (rv32ifu2_bht, 旧默认, 保留做 A/B 与回归基线)
+# 实测 (同镜像, 47 用例 difftest 全过):
+#   branch_bench 161,496 -> 159,722 拍, 方向准确率 95.02% -> 96.57%
+#   CoreMark     11,362,153 -> 11,285,969 拍 (-0.67%), retired inst 逐位不变
+# 代价: 方向表面积 4,104 -> 8,464 bit (整机预测器 8,920 -> 13,008 bit)。
+# 回旧基线: make ... BP_PRED=0
+# ---------------------------------------------------------------------------
+BP_PRED      ?= 1
+# TAGE 几何。空 = 用 RTL 里的默认值 (T0_AW=6/ROW=6/N=4/TAG=6/L=2:5:9:14, 8,464 bit)。
+# 这个默认点是 RTL 侧扫出来的: CoreMark 最快的配置是 128 行 × 4 表 (15,890 bit,
+# -0.88%), 但多花 7,426 bit 只换 0.21% —— 按 doc §4 那张"每比特收益表"的口径
+# 不到 0.028 %/Kbit, 在**自己的边际价值标尺上**就不划算, 所以停在 64 行。
+#   make ... BP_TAGE_AW=7 BP_TAGE_TAG_W=5 BP_GHR_W=18 \
+#        BP_TAGE_L1=2 BP_TAGE_L2=5 BP_TAGE_L3=10 BP_TAGE_L4=16   # -> 15,890 bit
+# ⚠️ 两个硬约束, 越界都会在 time 0 报一句人能看懂的话然后 $fatal:
+#   BP_GHR_W <= 18  (25 位 chk 的预算, CHK_FPRED = GHR_W + 6)
+#   BP_TAGE_TAG_W <= 12 - BP_TAGE_AW  (64 KB 地址空间能给的位置)
+BP_T0_AW     ?=
+BP_T0_HIST   ?=        # T0 索引里掺几位历史 (0 = 纯双模态)。⚠️ define 名是 BP_TAGE_T0H
+BP_TAGE_AW   ?=
+BP_TAGE_N    ?=
+BP_TAGE_TAG_W ?=
+BP_TAGE_L1   ?=
+BP_TAGE_L2   ?=
+BP_TAGE_L3   ?=
+BP_TAGE_L4   ?=
+
+# GHR 宽度: gshare 只有 ROW_AW=9 位的索引, 历史超过 8 位就开始互相干扰 (doc §4 扫点);
+# TAGE 每张表有自己的宽度, 没有那个自抵消, 长历史才有用 ⇒ 默认 16。
+BP_GHR_W     ?= $(if $(filter-out 0,$(BP_PRED)),16,8)
 
 BP_DEFS := $(if $(filter 16,$(ICACHE_LINE_BYTES)),+define+ICACHE_LINE_16B) \
            $(if $(ICACHE_BYTES),+define+ICACHE_BYTES=$(ICACHE_BYTES)) \
@@ -192,10 +224,21 @@ BP_DEFS := $(if $(filter 16,$(ICACHE_LINE_BYTES)),+define+ICACHE_LINE_16B) \
            $(if $(BP_BTB_ROW_AW),+define+BP_BTB_ROW_AW=$(BP_BTB_ROW_AW)) \
            $(if $(BP_BHT_ROW_AW),+define+BP_BHT_ROW_AW=$(BP_BHT_ROW_AW)) \
            $(if $(BP_GHR_W),+define+BP_GHR_W=$(BP_GHR_W)) \
-           $(if $(BP_RAS),+define+BP_RAS=$(BP_RAS))
+           $(if $(BP_RAS),+define+BP_RAS=$(BP_RAS)) \
+           $(if $(filter-out 0,$(BP_PRED)),+define+BP_PRED=$(BP_PRED)) \
+           $(if $(BP_T0_AW),+define+BP_T0_AW=$(BP_T0_AW)) \
+           $(if $(BP_T0_HIST),+define+BP_TAGE_T0H=$(BP_T0_HIST)) \
+           $(if $(BP_TAGE_AW),+define+BP_TAGE_AW=$(BP_TAGE_AW)) \
+           $(if $(BP_TAGE_N),+define+BP_TAGE_N=$(BP_TAGE_N)) \
+           $(if $(BP_TAGE_TAG_W),+define+BP_TAGE_TAG_W=$(BP_TAGE_TAG_W)) \
+           $(if $(BP_TAGE_L1),+define+BP_TAGE_L1=$(BP_TAGE_L1)) \
+           $(if $(BP_TAGE_L2),+define+BP_TAGE_L2=$(BP_TAGE_L2)) \
+           $(if $(BP_TAGE_L3),+define+BP_TAGE_L3=$(BP_TAGE_L3)) \
+           $(if $(BP_TAGE_L4),+define+BP_TAGE_L4=$(BP_TAGE_L4))
 
 BP_CFG := $(BUILD_DIR)/.bp_cfg
-BP_SIG := $(BP_PRE_FOLD)-$(BP_PRE_AW)-$(BP_SEL_AW)-$(BP_BTB_ROW_W)-$(BP_L0_ENTRIES)-$(BP_IND_AW)-$(ICACHE_BYTES)-$(ICACHE_LINE_BYTES)-$(BP_BTB_ROW_AW)-$(BP_BHT_ROW_AW)-$(BP_GHR_W)-$(BP_RAS)
+BP_SIG := $(BP_PRE_FOLD)-$(BP_PRE_AW)-$(BP_SEL_AW)-$(BP_BTB_ROW_W)-$(BP_L0_ENTRIES)-$(BP_IND_AW)-$(ICACHE_BYTES)-$(ICACHE_LINE_BYTES)-$(BP_BTB_ROW_AW)-$(BP_BHT_ROW_AW)-$(BP_GHR_W)-$(BP_RAS)\
+          -$(BP_PRED)-$(BP_T0_AW)-$(BP_T0_HIST)-$(BP_TAGE_AW)-$(BP_TAGE_N)-$(BP_TAGE_TAG_W)-$(BP_TAGE_L1)-$(BP_TAGE_L2)-$(BP_TAGE_L3)-$(BP_TAGE_L4)
 
 $(BP_CFG): FORCE
 	@mkdir -p $(BUILD_DIR)

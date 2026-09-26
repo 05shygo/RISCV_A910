@@ -44,6 +44,63 @@ module rv32ifu2_top #(
     parameter IC_LINE   = 16,
 `endif
     parameter IC_WAYS   = 2,
+    // ---- 方向预测器二选一 (Makefile 的 BP_PRED) ----
+    //   1 = TAGE   (rv32ifu2_tage, 按 TAGE_branch_predi.md, **默认**)
+    //   0 = gshare (rv32ifu2_bht, 旧默认, 留做 A/B 与回归基线)
+    // Makefile 只在非 0 时才 +define+BP_PRED, 所以 tb 里的 `ifdef BP_PRED`
+    // 与这里的取值天然一致。
+`ifdef BP_PRED
+    parameter BP_PRED_MODE = `BP_PRED,
+`else
+    parameter BP_PRED_MODE = 0,
+`endif
+    // TAGE 几何。⚠️ TAG_W <= 12 - TAGE_ROW_AW (64 KB 地址空间, 见 tage.v 头注释),
+    // 越界会在 elaborate 时报 $fatal 而不是静默跑一个残废配置。
+`ifdef BP_T0_AW
+    parameter TAGE_T0_AW   = `BP_T0_AW,
+`else
+    parameter TAGE_T0_AW   = 6,
+`endif
+`ifdef BP_TAGE_AW
+    parameter TAGE_ROW_AW  = `BP_TAGE_AW,
+`else
+    parameter TAGE_ROW_AW  = 6,
+`endif
+`ifdef BP_TAGE_N
+    parameter TAGE_NTAB    = `BP_TAGE_N,
+`else
+    parameter TAGE_NTAB    = 4,
+`endif
+`ifdef BP_TAGE_TAG_W
+    parameter TAGE_TAG_W   = `BP_TAGE_TAG_W,
+`else
+    parameter TAGE_TAG_W   = 6,
+`endif
+`ifdef BP_TAGE_T0H
+    parameter TAGE_T0_HIST = `BP_TAGE_T0H,
+`else
+    parameter TAGE_T0_HIST = 0,
+`endif
+`ifdef BP_TAGE_L1
+    parameter TAGE_L1      = `BP_TAGE_L1,
+`else
+    parameter TAGE_L1      = 2,
+`endif
+`ifdef BP_TAGE_L2
+    parameter TAGE_L2      = `BP_TAGE_L2,
+`else
+    parameter TAGE_L2      = 5,
+`endif
+`ifdef BP_TAGE_L3
+    parameter TAGE_L3      = `BP_TAGE_L3,
+`else
+    parameter TAGE_L3      = 9,
+`endif
+`ifdef BP_TAGE_L4
+    parameter TAGE_L4      = `BP_TAGE_L4,
+`else
+    parameter TAGE_L4      = 14,
+`endif
 `ifdef BP_BTB_ROW_AW
     parameter BTB_ROW_AW = `BP_BTB_ROW_AW,
 `else
@@ -57,7 +114,11 @@ module rv32ifu2_top #(
 `ifdef BP_GHR_W
     parameter GHR_W      = `BP_GHR_W,
 `else
-    parameter GHR_W      = 8,   // 与 Makefile 默认一致; 见 doc §4 "GHR 宽度扫点"
+    // gshare 默认 8: 见 doc §4 的 "GHR 宽度扫点" —— 它的索引只有 9 位,
+    // 更长的历史会被 `f[i % ROW_AW]` 折到低位上互相抵消, 实测越长越差。
+    // TAGE 每张表有**自己的**宽度, 不存在那个自抵消, 长历史才有用, 所以默认给 16。
+    // 两者共用一个参数: TAGE 那套由 Makefile 传 BP_GHR_W, 或吃这个条件默认。
+    parameter GHR_W      = (BP_PRED_MODE != 0) ? 16 : 8,
 `endif
 `ifdef BP_RAS
     parameter RAS_EN     = `BP_RAS,
@@ -67,10 +128,27 @@ module rv32ifu2_top #(
     parameter RAS_AW      = 3,
     parameter RAS_CHK_LSB = GHR_W,
     parameter RAS_CHK_MSB = GHR_W + RAS_AW,
-    // chk 里两个**只给 TB 归因用**的标志位 (见下面 chk_snap 那段)。放在
-    // RAS_CHK_MSB+2 起: bit 15 是 ras_ptr[3], bit 16 留空。
-    parameter CHK_BTBHIT  = GHR_W + RAS_AW + 2,
-    parameter CHK_PREDTK  = GHR_W + RAS_AW + 3,
+    // chk 的字段布局。⚠️ **改这里必须同时改 tb 里跟着参数走的切片**
+    // (tb_miniRV_dpi.sv 的 M2PROBE 那一段), 否则探针会静默读到别的位。
+    // 这份位账已经漂过一次: GHR_W 从 12 改到 8 之后 CHK_BTBHIT/CHK_PREDTK
+    // 从 17/18 挪到了 13/14, 而 tb 还在读 17/18 —— 那两个位在空白区里恒 0,
+    // 于是 M2PROBE 的"方向错 vs BTB 没这条"归因整个失效。
+    //
+    //   [GHR_W-1:0]        GHR 快照
+    //   [RAS_CHK_MSB:LSB]  ras_ptr (RAS_AW+1 位)
+    //   [CHK_BTBHIT]       TB 归因: 预测时这个 slot 在 BTB 里有没有条目
+    //   [CHK_PREDTK]       TB 归因: 预测时的方向 (含 BTB 门控)
+    //   [CHK_FPRED]        TAGE 训练用: 方向表**原始**给出的方向 (无 BTB 门控)
+    //   ⚠️ 整份 chk 只有 25 位, 所以 **GHR_W <= 18** (RAS_AW=3 时)。
+    //   越界的后果是**静默**的: `25'd1 << 26` 在 25 位里就是 0, 那一位永远置不上,
+    //   TAGE 的 upd_fpred 恒读到 0 ⇒ 分配逻辑整条失效, 而所有别的数看起来都正常
+    //   (实测症状: 类 3 恰好 50.00%、类 5 掉回 74.41%、TAGE rows valid = 0)。
+    //   GHR_W=24 更狠 —— 复制次数变负数, 直接 elaborate 失败。
+    //   下面的 initial 块会显式报这个错。
+    parameter CHK_W       = 25,
+    parameter CHK_BTBHIT  = GHR_W + RAS_AW + 1,
+    parameter CHK_PREDTK  = GHR_W + RAS_AW + 2,
+    parameter CHK_FPRED   = GHR_W + RAS_AW + 3,
     // 哨兵: 每个 `ifdef 分支里的 parameter 都带逗号, 需要有个无条件跟在最后的
     // 参数, 否则 `endif 之后直接是 `)(` 时列表尾会多一个逗号。
     parameter _param_list_sentinel = 1'b0
@@ -239,8 +317,8 @@ wire [31:0] ras_top;
 wire        ras_top_vld_raw;
 wire [RAS_AW:0] ras_ptr;
 wire ras_top_vld = ras_top_vld_raw & RAS_EN;
-wire [ 7:0]  bht_ctr;          // 4 slot × 2 bit 计数器
-wire         bht_init_done;
+wire [ 3:0]  dir_pred;         // 方向表给出的逐 slot 原始方向 (未过 BTB 门控)
+wire         dir_init_done;    // 方向表初始化完成 (gshare 或 TAGE, 二选一)
 
 rv32ifu2_btb #(
     .ROW_AW (BTB_ROW_AW),
@@ -263,18 +341,20 @@ rv32ifu2_btb #(
     .upd_jalr      (iu_btb_is_jalr)
 );
 
-// 方向: 条件分支问 gshare(BHT), JAL/JALR 恒 taken。
-// 原设计的教训是"方向表的索引里一位 PC 都没有", 所以这里方向只由 BHT 给,
+// 方向: 条件分支问方向表 (gshare 或 TAGE, 见下面的 generate), JAL/JALR 恒 taken。
+// 原设计的教训是"方向表的索引里一位 PC 都没有", 所以这里方向只由方向表给,
 // BTB 只管"有哪些控制转移、目标在哪"。
-wire [ 3:0] bht_taken = {bht_ctr[7], bht_ctr[5], bht_ctr[3], bht_ctr[1]};
 
 // 初始化扫描期间两张表的 X 都会经 slot_vld / 方向流进截断位置 → next_pc。
 // 显式清掉, 不赌"valid 位会拦住"。
 wire [ 3:0] sl_vld   = btb_vld & {4{btb_init_done}};
-// BHT 扫描期间计数器是 X, 会经 next_pc 传出去 ⇒ 那段时间方向一律按"不跳"。
-// 注意是**只挡方向**, 不用把它并进 init_all: BHT 有 512 行, 并进去会让每条用例
-// 开头白等 512 拍, 而这几百拍里"猜不跳"本来也只影响预测率。
-wire [ 3:0] sl_taken = (btb_cond & bht_taken & {4{bht_init_done}}) | (~btb_cond & btb_jmp);
+// 方向表扫描期间计数器是 X, 会经 next_pc 传出去 ⇒ 那段时间方向一律按"不跳"。
+// 注意是**只挡方向**, 不用把它并进 init_all: gshare 有 512 行 / TAGE 最多 512 拍,
+// 并进去会让每条用例开头白等几百拍, 而这几百拍里"猜不跳"本来也只影响预测率。
+// BP_EN=0 同样把方向按住 —— BP_EN 此前是**死参数**(只在 lint 抑制式里出现过),
+// 顺手接上, 让"预测器全关"能当一个干净基线。
+wire [ 3:0] sl_taken = (btb_cond & dir_pred & {4{dir_init_done & BP_EN}})
+                     | (~btb_cond & btb_jmp);
 wire        init_all = ic_init_done & btb_init_done;
 
 // ---------------------------------------------------------------------------
@@ -445,6 +525,10 @@ reg [GHR_W-1:0] ghr_q;
 wire [3:0] vld_rot  = sl_vld   >> pc_ofs;
 wire [3:0] tk_rot   = sl_taken >> pc_ofs;
 wire [3:0] cond_rot = (btb_cond & sl_vld) >> pc_ofs;
+// 方向表的**原始**方向 (未过 BTB 门控), 同样旋转成 lane 编号。
+// TAGE 的 u 更新与分配都要求"方向表自己当时的判断", 而不是"最终发给核心的方向"
+// —— BTB 没有这一行时两者不同, 混用会让 u 整段不更新、还会在纯 BTB miss 上误分配。
+wire [3:0] fp_rot   = dir_pred >> pc_ofs;
 
 // 只有进 IBUF 的 lane 参与历史推进
 wire [2:0] pushed_m = { (ib_push_acc == 2'd3), (ib_push_acc >= 2'd2), (ib_push_acc >= 2'd1) };
@@ -505,7 +589,16 @@ end
 //
 // ghr_q 就是块首 GHR: 本块的分支要到本拍末尾才推进它, 而块是本拍才被交付的。
 // ---------------------------------------------------------------------------
-wire [24:0] chk_snap = {{(25-RAS_CHK_MSB-1){1'b0}}, ras_ptr, ghr_q[GHR_W-1:0]};
+// ⚠️ 这份 GHR 快照与上面 `rd_ghr(ghr_after)` 的索引是**一对**: 读索引用的是
+// "下一拍的 ghr_q", 而这里存的就是下一拍的 ghr_q。谁要单独改一边 —— 比如照
+// 文档 §4 规则 2 把它换成"块首 GHR"却不改 F0 的 rd_ghr —— 立刻重现原设计那个
+// "读写索引不一致 ⇒ 一整类分支收到 0 次写"的病 (memory bp-class3-root-cause)。
+// (顺带更正: 文档说必须是"块首 GHR、三条 lane 相同", 实际做到的是"每条 lane
+//  推进时自己的 GHR"。SPEC 上实测后者**更好** 0.58pp, 所以别去"修"它。)
+// 高位补零的个数**钳到 0**: 不让 GHR_W 过大时变成负复制数而在 elaborate 期
+// 报一个看不懂的错 —— 那种配置由下面的 initial 显式 $fatal 拦。
+localparam CHK_PAD = (CHK_W > RAS_CHK_MSB + 1) ? (CHK_W - RAS_CHK_MSB - 1) : 0;
+wire [CHK_W-1:0] chk_snap = {{CHK_PAD{1'b0}}, ras_ptr, ghr_q[GHR_W-1:0]};
 
 // 再带两个**逐 lane** 的预测元信息, 只供 TB 归因用, 不参与任何逻辑:
 //   CHK_BTBHIT: 预测时这一 slot 在 BTB 里有没有条目 (没有 ⇒ 只能猜"不跳")
@@ -524,11 +617,14 @@ wire [24:0] chk_snap = {{(25-RAS_CHK_MSB-1){1'b0}}, ras_ptr, ghr_q[GHR_W-1:0]};
 // 类 3 恰好回到 50.00% —— 看起来完全像"预测表被改坏了", 而真凶只是少写了 [24:0]。
 // 本工程此前已踩过同类坑 (隐式 1 位线网把 ex_pred_npc 变成恒 0), 别再踩第三次。
 wire [24:0] chk0_f = chk_snap | (vld_rot[0] ? (25'd1 << CHK_BTBHIT) : 25'd0)
-                             | (tk_rot[0]  ? (25'd1 << CHK_PREDTK) : 25'd0);
+                             | (tk_rot[0]  ? (25'd1 << CHK_PREDTK) : 25'd0)
+                             | (fp_rot[0]  ? (25'd1 << CHK_FPRED)  : 25'd0);
 wire [24:0] chk1_f = chk_snap | (vld_rot[1] ? (25'd1 << CHK_BTBHIT) : 25'd0)
-                             | (tk_rot[1]  ? (25'd1 << CHK_PREDTK) : 25'd0);
+                             | (tk_rot[1]  ? (25'd1 << CHK_PREDTK) : 25'd0)
+                             | (fp_rot[1]  ? (25'd1 << CHK_FPRED)  : 25'd0);
 wire [24:0] chk2_f = chk_snap | (vld_rot[2] ? (25'd1 << CHK_BTBHIT) : 25'd0)
-                             | (tk_rot[2]  ? (25'd1 << CHK_PREDTK) : 25'd0);
+                             | (tk_rot[2]  ? (25'd1 << CHK_PREDTK) : 25'd0)
+                             | (fp_rot[2]  ? (25'd1 << CHK_FPRED)  : 25'd0);
 
 assign chk0 = chk0_f;
 assign chk1 = chk1_f;
@@ -564,23 +660,75 @@ rv32ifu2_ras #(
     .restore_ptr(iu_btb_chk[RAS_CHK_MSB:RAS_CHK_LSB])
 );
 
-rv32ifu2_bht #(
-    .ROW_AW (BHT_ROW_AW),
-    .GHR_W  (GHR_W),
-    .SLOTS  (4)
-) u_bht (
-    .clk       (clk),
-    .rst       (rst),
-    .rd_pc     (next_pc),
-    .rd_ghr    (ghr_after),
-    .slot_ctr  (bht_ctr),
-    .init_done (bht_init_done),
-    .upd_vld   (iu_bht_check_vld),
-    .upd_pc    (iu_cur_pc),
-    .upd_ghr   (iu_chk_idx[GHR_W-1:0]),
-    .upd_slot  (iu_cur_pc[3:2]),
-    .upd_taken (iu_bht_condbr_taken)
-);
+// 方向表二选一。两者端口一一对应 (rd_pc/rd_ghr → 逐 slot 方向 + init_done,
+// 以及同一组训练脉冲), 所以这里只是一个 generate 开关。
+//
+// ⚠️ 两者都**只**由 iu_bht_check_vld 训练 (条件分支)。绝不能用 iu_btb_update_vld,
+//    那个还含 JAL/JALR —— 会给没有方向的分支教 "taken"。
+// ⚠️ TAGE 还要一位 upd_fpred: 预测当时方向表**原始**给出的方向。顶层**不能**拿
+//    iu_bht_pred 顶替 (那是 sl_taken, 被 btb_vld 门控过), 见 rv32ifu2_tage.v 头注释。
+generate
+if (BP_PRED_MODE == 0) begin : g_gshare
+    wire [ 7:0] bht_ctr;       // 4 slot × 2 bit 计数器
+    wire        bht_init_done;
+    // ⚠️ {a,b,c,d} 是高位在前: 这样拼 bit0 才是 slot0 (原设计在这里整体倒过一次)
+    wire [ 3:0] bht_taken = {bht_ctr[7], bht_ctr[5], bht_ctr[3], bht_ctr[1]};
+
+    assign dir_pred      = bht_taken;
+    assign dir_init_done = bht_init_done;
+
+    rv32ifu2_bht #(
+        .ROW_AW (BHT_ROW_AW),
+        .GHR_W  (GHR_W),
+        .SLOTS  (4)
+    ) u_bht (
+        .clk       (clk),
+        .rst       (rst),
+        .rd_pc     (next_pc),
+        .rd_ghr    (ghr_after),
+        .slot_ctr  (bht_ctr),
+        .init_done (bht_init_done),
+        .upd_vld   (iu_bht_check_vld),
+        .upd_pc    (iu_cur_pc),
+        .upd_ghr   (iu_chk_idx[GHR_W-1:0]),
+        .upd_slot  (iu_cur_pc[3:2]),
+        .upd_taken (iu_bht_condbr_taken)
+    );
+end else begin : g_tage
+    wire [ 3:0] tage_pred;
+    wire        tage_init_done;
+
+    assign dir_pred      = tage_pred;
+    assign dir_init_done = tage_init_done;
+
+    rv32ifu2_tage #(
+        .T0_AW   (TAGE_T0_AW),
+        .ROW_AW  (TAGE_ROW_AW),
+        .NTAB    (TAGE_NTAB),
+        .TAG_W   (TAGE_TAG_W),
+        .GHR_W   (GHR_W),
+        .T0_HIST (TAGE_T0_HIST),
+        .SLOTS   (4),
+        .TAG_HI  (15),
+        .L1      (TAGE_L1),
+        .L2      (TAGE_L2),
+        .L3      (TAGE_L3),
+        .L4      (TAGE_L4)
+    ) u_tage (
+        .clk       (clk),
+        .rst       (rst),
+        .rd_pc     (next_pc),
+        .rd_ghr    (ghr_after),
+        .slot_pred (tage_pred),
+        .init_done (tage_init_done),
+        .upd_vld   (iu_bht_check_vld),
+        .upd_pc    (iu_cur_pc),
+        .upd_ghr   (iu_chk_idx[GHR_W-1:0]),
+        .upd_taken (iu_bht_condbr_taken),
+        .upd_fpred (iu_btb_chk[CHK_FPRED])
+    );
+end
+endgenerate
 
 
 assign idu_inst0_vld  = ib_vld[0] & ~idu_flush;
@@ -621,13 +769,24 @@ assign next_pc = rst            ? RESET_PC
 // ---------------------------------------------------------------------------
 assign init_done = init_all;
 
+// ---------------------------------------------------------------------------
+// chk 位预算自检 (照 rv32ifu2_icache.v 对 IC_WAYS 的做法)
+// 见 CHK_* 那段注释: 越界是**静默**失效, 必须显式拦。
+// ---------------------------------------------------------------------------
+// synopsys translate_off
+initial begin
+    if (CHK_FPRED >= CHK_W) begin
+        $display("[IFU2-TOP] chk 只有 %0d 位, 但 GHR_W=%0d 把 CHK_FPRED 顶到 %0d —— 放不下。",
+                 CHK_W, GHR_W, CHK_FPRED);
+        $display("           把 GHR_W 压到 <= %0d, 或者把 chk 整体加宽 (IBUF 宽度 /",
+                 CHK_W - RAS_AW - 4);
+        $display("           idu_inst*_chk / IF_ID / ID_EX / tb 的切片都要跟着改)。");
+        $fatal;
+    end
+    $display("[IFU2-TOP] GHR_W=%0d chk: GHR[%0d:0] ras[%0d:%0d] BTBHIT=%0d PREDTK=%0d FPRED=%0d",
+             GHR_W, GHR_W-1, RAS_CHK_MSB, RAS_CHK_LSB, CHK_BTBHIT, CHK_PREDTK, CHK_FPRED);
+end
+// synopsys translate_on
 
-/* verilator lint_off UNUSED */
-// 这一组是 Phase 2c (gshare) 才用的 C910 风格回送; 现在留着接线位置但没接。
-// 别误当成漏接 —— 当前训练走的是 iu_btb_* 那一组。
-wire        unused_bht_check = iu_bht_check_vld ^ iu_bht_condbr_taken ^ iu_bht_pred ^ BP_EN;
-wire [31:0] unused_bht_pc    = iu_cur_pc;
-wire [24:0] unused_chk_idx   = iu_chk_idx;
-/* verilator lint_on UNUSED */
 
 endmodule
