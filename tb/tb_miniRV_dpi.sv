@@ -177,7 +177,7 @@ module tb_miniRV_dpi;
   // ---------------------------------------------------------------------------
   integer b2_accept=0, b2_init=0, b2_flush=0, b2_stall=0, b2_nofetch=0;
   integer b2_nf_miss=0, b2_nf_qempty=0, b2_nf_other=0;
-  integer b2_raw_stall=0, b2_raw_muldiv=0, b2_raw_loaduse=0;
+  integer b2_raw_stall=0, b2_raw_div=0, b2_raw_mul=0, b2_raw_loaduse=0;
   integer b2_trap=0, b2_misp=0;
   // 重定向后到下一次 if_accept 的等待拍数 (只归因, 不与上面互斥)
   integer b2_rf_redir=0, b2_rf_flush=0, b2_ev_redir=0, b2_ev_flush=0;
@@ -393,8 +393,11 @@ module tb_miniRV_dpi;
     end
     // 原始 (不互斥)
     if (w2_c_stall)                b2_raw_stall  <= b2_raw_stall  + 1;
-    if (dut.Core_cpu.muldiv_stall) b2_raw_muldiv <= b2_raw_muldiv + 1;
-    if (w2_c_stall & ~dut.Core_cpu.muldiv_stall)
+    // 重构后"核内停顿"有三个来源, 分开记: 除法占住 EX / 乘法冒险停 ID /
+    // load-use (三者本来就互斥)
+    if (dut.Core_cpu.div_stall)    b2_raw_div    <= b2_raw_div    + 1;
+    if (dut.Core_cpu.mul_stall)    b2_raw_mul    <= b2_raw_mul    + 1;
+    if (w2_c_stall & ~dut.Core_cpu.div_stall & ~dut.Core_cpu.mul_stall)
                                    b2_raw_loaduse<= b2_raw_loaduse+ 1;
     if (dut.Core_cpu.mispredict)   b2_misp       <= b2_misp       + 1;
     if (dut.Core_cpu.redirect)     b2_trap       <= b2_trap       + 1;
@@ -521,7 +524,8 @@ module tb_miniRV_dpi;
       $display("       4a. cache 没有这一行   : %0d", b2_nf_miss);
       $display("       4b. 有行但队列空       : %0d", b2_nf_qempty);
       $display("       4c. 其它               : %0d", b2_nf_other);
-      $display("  核内停顿原始(muldiv/load-use): %0d / %0d", b2_raw_muldiv, b2_raw_loaduse);
+      $display("  核内停顿原始(div/mul/load-use): %0d / %0d / %0d",
+               b2_raw_div, b2_raw_mul, b2_raw_loaduse);
       $display("  误预测 %0d / 陷阱 %0d", b2_misp, b2_trap);
       $display("  冲刷后重填等待: 误预测路 %0d 拍 (%0d 次, 平均 %0d.%02d 拍), 陷阱路 %0d 拍",
                b2_rf_redir, b2_ev_redir,
@@ -684,17 +688,16 @@ module tb_miniRV_dpi;
     $display("        INST ID=%08x | have_inst ID/EX/MEM/WB=%b%b%b%b",
              dut.Core_cpu.id_inst, dut.Core_cpu.have_inst_ID, dut.Core_cpu.have_inst_EX,
              dut.Core_cpu.have_inst_MEM, dut.Core_cpu.have_inst_WB);
-    $display("        CTRL stall=%b muldiv_stall=%b flush_if=%b flush_ex=%b branched=%b",
-             dut.Core_cpu.stall, dut.Core_cpu.muldiv_stall, dut.Core_cpu.flush_if_id,
-             dut.Core_cpu.flush_id_ex, dut.Core_cpu.branched);
-    $display("        MULDIV ex_is_muldiv=%b valid_i=%b ready=%b busy=%b | v1/2/3=%b%b%b p1=%08x p2=%08x p3=%08x",
-             dut.Core_cpu.ex_is_muldiv, dut.Core_cpu.U_MUL_DIV.valid_i,
-             dut.Core_cpu.muldiv_ready, dut.Core_cpu.muldiv_busy,
-             dut.Core_cpu.U_MUL_DIV.mul_valid_stage1, dut.Core_cpu.U_MUL_DIV.mul_valid_stage2,
-             dut.Core_cpu.U_MUL_DIV.mul_valid_stage3,
-             dut.Core_cpu.U_MUL_DIV.mul_result_stage1[31:0],
-             dut.Core_cpu.U_MUL_DIV.mul_result_stage2[31:0],
-             dut.Core_cpu.U_MUL_DIV.mul_result_stage3[31:0]);
+    $display("        CTRL stall=%b div_stall=%b mul_stall=%b flush_if=%b flush_ex=%b branched=%b",
+             dut.Core_cpu.stall, dut.Core_cpu.div_stall, dut.Core_cpu.mul_stall,
+             dut.Core_cpu.flush_if_id, dut.Core_cpu.flush_id_ex, dut.Core_cpu.branched);
+    $display("        MULDIV ex_is_muldiv=%b(mul=%b div=%b) req_vld=%b resp_vld=%b(is_div=%b) rsp=%08x | m1_vld=%b m2_vld=%b r_vld=%b",
+             dut.Core_cpu.ex_is_muldiv, dut.Core_cpu.ex_is_mul, dut.Core_cpu.ex_is_div,
+             dut.Core_cpu.U_MUL_DIV.req_valid, dut.Core_cpu.md_resp_vld,
+             dut.Core_cpu.md_resp_is_div, dut.Core_cpu.md_resp_data,
+             dut.Core_cpu.U_MUL_DIV.U_MUL_PIPE.req_vld,
+             dut.Core_cpu.U_MUL_DIV.U_MUL_PIPE.vld_m2,
+             dut.Core_cpu.U_MUL_DIV.U_MUL_PIPE.resp_vld_r);
     $display("        TRAP redirect=%b exc=%b(%0d) irq=%b mret=%b | IDexc=%b(%0d) tval=%08x | EXloc=%b(%0d) tgt=%08x bad=%b is_load=%b is_st=%b",
              dut.Core_cpu.redirect, dut.Core_cpu.wb_exc_valid, dut.Core_cpu.wb_exc_cause,
              dut.Core_cpu.irq_taken, dut.Core_cpu.wb_is_mret,
@@ -2021,7 +2024,7 @@ module tb_miniRV_dpi;
   // 数, 便于核对 (每拍可以有多个原因).
   integer b_accept = 0, b_init = 0, b_flush = 0, b_stall = 0, b_nofetch = 0;
   integer b_raw_init = 0, b_raw_stall = 0, b_raw_flush = 0, b_raw_iflush = 0,
-          b_raw_novld = 0, b_raw_muldiv = 0, b_raw_loaduse = 0;
+          b_raw_novld = 0, b_raw_div = 0, b_raw_mul = 0, b_raw_loaduse = 0;
   integer b_nf_reissue = 0, b_nf_bpread = 0, b_nf_frontend = 0, b_nf_other = 0;
 
 
@@ -2052,8 +2055,9 @@ module tb_miniRV_dpi;
     // ---- 原始计数 (不互斥), 自检用 ----
     if (!dut.Core_cpu.ifu_init_done)  b_raw_init   <= b_raw_init   + 1;
     if (dut.Core_cpu.stall)           b_raw_stall  <= b_raw_stall  + 1;
-    if (dut.Core_cpu.muldiv_stall)    b_raw_muldiv <= b_raw_muldiv + 1;
-    if (dut.Core_cpu.stall & ~dut.Core_cpu.muldiv_stall)
+    if (dut.Core_cpu.div_stall)       b_raw_div    <= b_raw_div    + 1;
+    if (dut.Core_cpu.mul_stall)       b_raw_mul    <= b_raw_mul    + 1;
+    if (dut.Core_cpu.stall & ~dut.Core_cpu.div_stall & ~dut.Core_cpu.mul_stall)
                                       b_raw_loaduse<= b_raw_loaduse+ 1;
     if (dut.Core_cpu.flush_if_id)     b_raw_flush  <= b_raw_flush  + 1;
     if (dut.Core_cpu.ifu_idu_flush)   b_raw_iflush <= b_raw_iflush + 1;
@@ -2909,8 +2913,8 @@ module tb_miniRV_dpi;
                rf_redir, rf_inval, rf_flush, rf_wait);
       $display("     其中落在「其它」桶内      : %0d  (占该桶 %0.2f%%)",
                rf_in_bucket, (b_nf_other>0)?100.0*rf_in_bucket/b_nf_other:0.0);
-      $display("  原始计数(不互斥): init=%0d stall=%0d(load-use %0d / muldiv %0d) flush_if_id=%0d ifu_idu_flush=%0d !inst0_vld=%0d",
-               b_raw_init, b_raw_stall, b_raw_loaduse, b_raw_muldiv,
+      $display("  原始计数(不互斥): init=%0d stall=%0d(load-use %0d / div %0d / mul %0d) flush_if_id=%0d ifu_idu_flush=%0d !inst0_vld=%0d",
+               b_raw_init, b_raw_stall, b_raw_loaduse, b_raw_div, b_raw_mul,
                b_raw_flush, b_raw_iflush, b_raw_novld);
       $display("=============================================");
     end

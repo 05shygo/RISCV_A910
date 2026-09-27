@@ -39,6 +39,10 @@ module EX_MEM(
     // 所以只有在【没有 CSR 写在任何一级在途】时, 两边的 CSR 才一定一致.
     input                           ex_csr_we    ,
     input                           ex_rf_we     ,
+    // 这条指令是乘法. 乘法的结果不在 ex_wD/mem_wD 里 —— 它 2 拍后才从乘除法单元
+    // 自己的写回口出来, 由 mycpu.v 在 WB 级用这个标志把它换进 wb_wD。
+    // 一路带到 WB 是为了让"响应属于哪条指令"由指令自己说了算, 而不是靠数拍数。
+    input                           ex_is_mul    ,
     input                           ex_ram_we    ,
     input [31:0]                    ex_alu_c     ,
     input [`DRAM_SEL_WIDTH-1:0]     ex_dram_sel  ,
@@ -54,6 +58,7 @@ module EX_MEM(
     output reg [`RF_WSEL_WIDTH-1:0] mem_rf_wsel  ,
     output reg [4:0]                mem_wR       ,
     output reg [31:0]               mem_wD_temp  ,
+    output reg                      mem_is_mul   ,
     output reg                      mem_irq_safe ,
     output reg                      mem_exc_valid,
     output reg [3:0]                mem_exc_cause,
@@ -78,6 +83,7 @@ always @(posedge clk or posedge rst) begin
         mem_rf_wsel  <= 0;
         mem_wR       <= 0;
         mem_wD_temp  <= 0;
+        mem_is_mul   <= 1'b0;
         mem_irq_safe <= 1'b1;
         mem_exc_valid<= 1'b0;
         mem_exc_cause<= 0;
@@ -100,6 +106,7 @@ always @(posedge clk or posedge rst) begin
         mem_rf_wsel  <= 0;
         mem_wR       <= 0;
         mem_wD_temp  <= 0;
+        mem_is_mul   <= 1'b0;
         mem_irq_safe <= 1'b1;
         mem_exc_valid<= 1'b0;
         mem_exc_cause<= 0;
@@ -115,6 +122,7 @@ always @(posedge clk or posedge rst) begin
         mem_rf_wsel  <= ex_rf_wsel ;
         mem_wR       <= ex_wR      ;
         mem_wD_temp  <= ex_wD      ;
+        mem_is_mul   <= ex_is_mul  ;
         mem_irq_safe <= ex_irq_safe;
         mem_exc_valid<= ex_exc_valid;
         mem_exc_cause<= ex_exc_cause;

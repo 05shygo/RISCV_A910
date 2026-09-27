@@ -108,6 +108,9 @@ wire [31:0] ex_wD;
 wire [31:0] mem_wD;
 wire [31:0] wb_wD;
 wire [31:0] mem_wD_temp;
+// 乘法标志随流水下传 (EX_MEM / MEM_WB 各一位), 到 WB 用来选写回数据
+wire        mem_is_mul;
+wire        wb_is_mul;
 
 `ifndef USE_IFU_ANY
 assign inst_addr = if_pc[15:2];
@@ -125,13 +128,32 @@ wire id_rf2_used;
 
 wire branched;
 
-// RV32M signals
+// ===================== RV32M: 乘除法单元接口 =====================
+// 单元是**真流水**的乘法 + radix-4 的除法, 两条独立流水共用一个带 tag 的
+// 请求/写回口 (见 mySoC/MUL_DIV.v)。核这边分四件事:
+//
+//   1. 发射: ex_is_muldiv & ex_rf_we 那一拍把请求递进去 (req_valid);
+//   2. 乘法**不阻塞流水**: 结果 2 拍后从写回口出来, 靠 `is_mul` 随流水下传,
+//      在 WB 级换进 wb_wD (下面是 wb_wD_eff);
+//   3. 除法仍占住 EX 等结果 (div_stall), 结果在 EX 级就地折进 alu_c;
+//   4. 乘法在飞到 WB 之前不能前递、消费者要停 (Hazard_Detection 的 mul_stall)。
+localparam MD_TAG_W = 7;              // PRF=128 → 7 位 (doc §3.1); P1 里接 rd 序号
+
 wire id_is_muldiv;
 wire ex_is_muldiv;
-wire [31:0] muldiv_result;
-wire muldiv_ready;
-wire muldiv_busy;
-wire muldiv_stall;
+// ALU_MUL..ALU_MULHU = 16..19, ALU_DIV..ALU_REMU = 20..23 (defines.vh),
+// 所以 alu_op[2] 正好就是"乘还是除"那一位, 低 3 位正好是 MD_OP_* 的编码。
+wire ex_is_mul = ex_is_muldiv & ~ex_alu_op[2];
+wire ex_is_div = ex_is_muldiv &  ex_alu_op[2];
+
+wire [31:0]          md_resp_data;
+wire                 md_resp_vld;
+wire [MD_TAG_W-1:0]  md_resp_tag;
+wire                 md_resp_is_div;
+wire                 md_mul_ready;
+wire                 md_div_busy;
+wire        mul_stall;                // 乘法冒险停 ID (来自 Hazard_Detection)
+wire        div_stall;                // 除法占住 EX
 
 // ===================== 系统指令 / CSR / 陷阱 =====================
 // ID 级 (Control 译码)
@@ -195,6 +217,16 @@ wire [31:0] trap_tval   = irq_taken ? 32'b0 : wb_exc_tval;
 // 被中断 squash 掉的指令也不写. 必须从源头掐掉 —— 只改 debug_wb_ena 是不够的,
 // 因为 RegFile 和转发逻辑(Hazard_Detection 的 wb_rf_we)都在用它.
 wire wb_rf_we_eff = wb_rf_we & ~wb_exc & ~irq_taken;
+
+// ---------------------------------------------------------------------------
+// WB 级写回数据: 乘法的结果在这里接进来 (doc §7)
+// ---------------------------------------------------------------------------
+// doc §7 写的是"并进 mem_wD (MEM_WB 入口加 mux)", 但按 §3.3 的时序图, 乘法是
+// T 拍发射、T+2 拍出响应 —— 那是乘法自己的 **WB 拍**, 而 wb_wD 早在 T+1 边沿就
+// 从 mem_wD 锁好了, 赶不上 MEM_WB 入口。所以 mux 落在 WB 级的输出上。
+// 正确性靠"响应属于哪条指令由指令自己说了算": is_mul 跟着指令走完流水, 而
+// 乘法的发射拍与它的 WB 拍相差恒定 2 拍, 两者天然对齐 (见 MUL_DIV.v 的说明)。
+wire [31:0] wb_wD_eff = wb_is_mul ? md_resp_data : wb_wD;
 // 提交脉冲 (被中断 squash 掉的那条不算退休, 否则 instret 会多计)
 wire retire_now   = have_inst_WB & ~irq_taken;
 
@@ -538,7 +570,7 @@ RegFile U_RegFile(
     .rR2(id_inst[24:20]),
     .wR(wb_wR),
     .we(wb_rf_we_eff),
-    .wD(wb_wD),
+    .wD(wb_wD_eff),
     .rD1(id_rD1),
     .rD2(id_rD2)
 );
@@ -640,24 +672,52 @@ ALU U_ALU(
     .alu_f(ex_alu_f)
 );
 
-// RV32M Multiplier and Divider Unit
-MUL_DIV U_MUL_DIV(
-    .clk(cpu_clk),
-    .rst(cpu_rst),
-    .A(ex_A),
-    .B(ex_B),
-    .alu_op(ex_alu_op),
-    .valid_i(ex_is_muldiv & ex_rf_we),
-    .result(muldiv_result),
-    .ready_o(muldiv_ready),
-    .busy_o(muldiv_busy)
+// RV32M Multiplier and Divider Unit (真流水 + tag 接口, 见 mySoC/MUL_DIV.v)
+//   * req_op: MD_OP_* 与 ALU_OP 的 M 段低 3 位一一对应 (见 defines.vh 的注释);
+//   * req_tag: P1 里就是 rd 的序号 —— 换乱序核时改成 rename 的 preg 即可,
+//     单元和这里的其余接线都不用动 (doc §7);
+//   * req_src2 / req_acc_mode: MAC 口, P1 接 0 (doc §4.6 已把插入点定死在 M2);
+//   * wb_grant: 写回口仲裁。本核只有这一条乘除法流水在用它, 接 1;
+//   * flush_valid: 顺序核重定向即全清 (乱序核换成 flush_tag 比较, 见 §6.3)。
+MUL_DIV #(
+    .DATA_W (32),
+    .TAG_W  (MD_TAG_W)
+) U_MUL_DIV (
+    .clk          (cpu_clk),
+    .rst          (cpu_rst),
+    .req_valid    (ex_is_muldiv & ex_rf_we),
+    .req_op       ({1'b0, ex_alu_op[2:0]}),
+    .req_src0     (ex_A),
+    .req_src1     (ex_B),
+    .req_tag      ({{(MD_TAG_W-5){1'b0}}, ex_wR}),
+    .req_src2     (64'b0),
+    .req_acc_mode (`MD_ACC_NONE),
+    .mul_ready    (md_mul_ready),
+    .div_busy     (md_div_busy),
+    .resp_valid   (md_resp_vld),
+    .resp_data    (md_resp_data),
+    .resp_tag     (md_resp_tag),
+    .resp_is_div  (md_resp_is_div),
+    .wb_grant     (1'b1),
+    .flush_valid  (redirect),
+    .flush_tag    ({MD_TAG_W{1'b0}})
 );
 
-// 乘除法单元导致的流水线暂停
-assign muldiv_stall = ex_is_muldiv & ~muldiv_ready;
+// ---------------------------------------------------------------------------
+// 除法: 占住 EX 等结果 (doc §5.5 "慢就慢, 但绝不阻塞别人")
+// ---------------------------------------------------------------------------
+// `& md_resp_is_div` 不能省: 乘法是真流水, 它完全可能在除法迭代期间从写回口
+// 出来一条响应 —— 那条响应属于**另一条**指令 (它自己会走到 WB, 由 wb_wD_eff
+// 取走)。不区分的话除法会拿着乘法的 resp 提前放行, 结果错得毫无痕迹。
+assign div_stall = ex_is_div & ~(md_resp_vld & md_resp_is_div);
 
-// 使用乘除法结果或ALU结果
-wire [31:0] ex_alu_c_final = ex_is_muldiv ? muldiv_result : ex_alu_c;
+// ---------------------------------------------------------------------------
+// 结果通路
+// ---------------------------------------------------------------------------
+// 除法结果在这一拍就折进流水 (被 div_stall 顶住的那几拍, 结果出来才放行),
+// 于是它照常沿 EX→MEM→WB 退休, 提交点/精确异常全都不用改。
+// 乘法的结果不在这一拍 —— 见下面的 wb_wD_eff。
+wire [31:0] ex_alu_c_final = ex_is_div ? md_resp_data : ex_alu_c;
 
 EX_wD_MUX1 U_EX_wD_MUX1(
     .rf_wsel (ex_rf_wsel),
@@ -834,7 +894,7 @@ CSR U_CSR(
 EX_MEM U_EX_MEM(
     .clk            (cpu_clk),
     .rst            (cpu_rst),
-    .stall          (muldiv_stall),  // 传递乘除法暂停信号
+    .stall          (div_stall),     // 只剩除法会占住 EX (乘法已真流水, 不再停顿)
     .flush          (redirect),      // 陷阱重定向: 与 stall 做同样的清空
     .ex_irq_safe    (ex_irq_safe),
     .ex_exc_valid   (ex_exc_valid_f),
@@ -843,6 +903,7 @@ EX_MEM U_EX_MEM(
     .ex_is_mret     (ex_is_mret),
     .ex_csr_we      (ex_csr_we  ),
     .ex_rf_we       (ex_rf_we    ),
+    .ex_is_mul      (ex_is_mul   ),
     .ex_ram_we      (ex_ram_we   ),
     .ex_alu_c       (ex_alu_c_final),  // 使用包含乘除法结果的最终值
     .ex_dram_sel    (ex_dram_sel ),
@@ -858,6 +919,7 @@ EX_MEM U_EX_MEM(
     .mem_rf_wsel    (mem_rf_wsel ),
     .mem_wR         (mem_wR      ),
     .mem_wD_temp    (mem_wD_temp ),
+    .mem_is_mul     (mem_is_mul  ),
     .mem_irq_safe   (mem_irq_safe),
     .mem_exc_valid  (mem_exc_valid),
     .mem_exc_cause  (mem_exc_cause),
@@ -909,6 +971,7 @@ MEM_WB U_MEM_WB(
     .mem_csr_we      (mem_csr_we ),
     .wb_csr_we       (wb_csr_we  ),
     .mem_rf_we       (mem_rf_we),
+    .mem_is_mul      (mem_is_mul),
     .mem_wR          (mem_wR),
     .mem_wD          (mem_wD),
     .wb_irq_safe     (wb_irq_safe),
@@ -917,6 +980,7 @@ MEM_WB U_MEM_WB(
     .wb_exc_tval     (wb_exc_tval),
     .wb_is_mret      (wb_is_mret),
     .wb_rf_we        (wb_rf_we),
+    .wb_is_mul       (wb_is_mul),
     .wb_wR           (wb_wR),
     .wb_wD           (wb_wD),
 
@@ -947,17 +1011,20 @@ Hazard_Detection U_Hazard_Detection(
     .wb_wR          (wb_wR       ),
     .ex_wD          (ex_wD       ),
     .mem_wD         (mem_wD      ),
-    .wb_wD          (wb_wD       ),
+    .wb_wD          (wb_wD_eff   ),
     .id_rR1         (id_inst[19:15]),
     .id_rR2         (id_inst[24:20]),
     .branched       (branched    ),
     .trap           (redirect    ),
     .ex_rf_we       (ex_rf_we    ),
     .mem_rf_we      (mem_rf_we   ),
+    .ex_is_mul      (ex_is_mul   ),
+    .mem_is_mul     (mem_is_mul  ),
     // 转发源也要用掐过的写使能: 陷阱指令(非对齐 load)的结果不能写回,
     // 也就不能被后面的指令转发走
     .wb_rf_we       (wb_rf_we_eff ),
-    .muldiv_stall   (muldiv_stall), // RV32M stall
+    .div_stall      (div_stall   ), // 除法占住 EX
+    .mul_stall      (mul_stall   ), // 乘法冒险停 ID (归因统计用)
     .stall          (stall       ),
     .flush_IF_ID    (flush_if_id ),
     .flush_ID_EX    (flush_id_ex ),
@@ -973,7 +1040,7 @@ Hazard_Detection U_Hazard_Detection(
     // 用掐过的写使能: 陷阱指令(非对齐 load)不写 rd, 被中断 squash 的也不写
     assign debug_wb_ena       = wb_rf_we_eff & (wb_wR != 5'b0);
     assign debug_wb_reg       = wb_wR;
-    assign debug_wb_value     = wb_wD;
+    assign debug_wb_value     = wb_wD_eff;
 `endif
 
 endmodule

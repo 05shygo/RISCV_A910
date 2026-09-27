@@ -35,6 +35,10 @@ module MEM_WB(
     input                       mem_is_mret  ,
     input                       mem_csr_we   ,
     input                       mem_rf_we ,
+    // 这条指令是乘法: 它的结果不在 mem_wD 里, 由 mycpu.v 在 WB 级换进 wb_wD
+    // (必须和其余 payload 走**同一条条件链**, 否则会出现"is_mul 还挂着、
+    //  payload 已被冲掉"的幽灵指令).
+    input                       mem_is_mul ,
     input [4:0]                mem_wR    ,
     input [31:0]                mem_wD    ,
     output reg                  wb_irq_safe  ,
@@ -44,6 +48,7 @@ module MEM_WB(
     output reg                  wb_is_mret   ,
     output reg                  wb_csr_we    ,
     output reg                  wb_rf_we  ,
+    output reg                  wb_is_mul ,
     output reg [4:0]           wb_wR     ,
     output reg [31:0]           wb_wD	,
 
@@ -59,6 +64,7 @@ module MEM_WB(
 always @(posedge clk or posedge rst) begin
     if(rst || flush) begin
         wb_rf_we     <= 0;
+        wb_is_mul    <= 1'b0;
         wb_wR        <= 0;
         wb_wD        <= 0;
         wb_irq_safe  <= 1'b1;
@@ -69,6 +75,7 @@ always @(posedge clk or posedge rst) begin
         wb_csr_we    <= 1'b0;
     end else begin
         wb_rf_we     <= mem_rf_we ;
+        wb_is_mul    <= mem_is_mul;
         wb_wR        <= mem_wR    ;
         wb_wD        <= mem_wD    ;
         wb_irq_safe  <= mem_irq_safe ;

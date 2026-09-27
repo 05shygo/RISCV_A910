@@ -98,7 +98,7 @@ CROSS     ?= riscv64-unknown-elf-
 ASM_SRCS  := $(wildcard $(PWD)/asm/*.S)
 ASM_BINS  := $(patsubst $(PWD)/asm/%.S,$(PWD)/bin/%.bin,$(ASM_SRCS))
 
-.PHONY: all build run run-all verdi clean help coremark asm
+.PHONY: all build run run-all verdi clean help coremark asm muldiv-unit
 
 asm: $(ASM_BINS)
 
@@ -282,6 +282,29 @@ run: build
 	@ln -sf $(PWD)/bin/$(TEST).bin $(TESTFILE)
 	@mkdir -p waveform
 	$(SIMV) +vcs+lic+wait $(SIM_ARGS) -l $(BUILD_DIR)/sim.log
+
+# ---------------------------------------------------------------------------
+# 单元级 TB: 直接驱动乘除法单元 (tb/unit/tb_muldiv_unit.sv), 不经整核。
+#
+# 为什么要单开一套: 整核 difftest 只说"某条指令结果不对", 定位不到是 Booth 阵列、
+# 压缩树还是除法的迭代数算错; 而 II=1、"被冲刷的乘法绝不写回"这类时序性质在整核
+# 里很难构造。这里用独立的 BUILD_DIR, 和主流程的 obj_vcs 互不干扰。
+#
+#   make muldiv-unit
+# ---------------------------------------------------------------------------
+UNIT_BUILD := $(PWD)/obj_unit
+UNIT_SIMV  := $(UNIT_BUILD)/simv
+UNIT_SRC   := $(PWD)/mySoC/MUL_DIV.v $(PWD)/mySoC/mul_pipe.v $(PWD)/mySoC/div_pipe.v
+UNIT_TB    := $(PWD)/tb/unit/tb_muldiv_unit.sv
+
+muldiv-unit: $(UNIT_SIMV)
+	@$(UNIT_SIMV) -l $(UNIT_BUILD)/sim.log
+
+$(UNIT_SIMV): $(UNIT_SRC) $(UNIT_TB)
+	@mkdir -p $(UNIT_BUILD)
+	$(VCS) $(VCS_FLAGS) $(INC) -top tb_muldiv_unit -o $(UNIT_SIMV) \
+	  -Mdir=$(UNIT_BUILD)/csrc -l $(UNIT_BUILD)/compile.log \
+	  $(UNIT_SRC) $(UNIT_TB)
 
 run-all: build
 	@mkdir -p waveform

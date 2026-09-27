@@ -60,6 +60,26 @@
 `define ALU_REM 22
 `define ALU_REMU 23
 
+// ---- 乘除法单元 (MUL_DIV) 的请求操作码 req_op[3:0] ----
+// 单元内部只认这套编码, 不认 ALU_OP: 这样接口与核里 ALU 的算子编码解耦,
+// P2 换乱序核时只要把 tag/仲裁接上, 单元一行不用改。
+// 与 ALU_OP 的对应关系是**刻意**选的: ALU_MUL..ALU_REMU = 16..23, 二进制是
+// 1_0000..1_0111, 低 3 位正好是 0..7 —— 所以 mycpu.v 直接给
+// `{1'b0, ex_alu_op[2:0]}` 就是下面这张表 (见 mycpu.v 例化处的注释)。
+`define MD_OP_MUL    4'd0
+`define MD_OP_MULH   4'd1
+`define MD_OP_MULHSU 4'd2
+`define MD_OP_MULHU  4'd3
+`define MD_OP_DIV    4'd4
+`define MD_OP_DIVU   4'd5
+`define MD_OP_REM    4'd6
+`define MD_OP_REMU   4'd7
+
+// MAC 累加口 (doc §4.6): 接口第一天就留, P1 接 0/`MD_ACC_NONE`
+`define MD_ACC_NONE 2'b00
+`define MD_ACC_ADD  2'b01
+`define MD_ACC_SUB  2'b10
+
 `define RF_WSEL_WIDTH 2
 `define RF_WSEL_ALUC 0
 `define RF_WSEL_DRAM 1
