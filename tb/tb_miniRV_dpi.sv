@@ -241,6 +241,138 @@ module tb_miniRV_dpi;
   end
 
 `endif
+
+`ifdef BTPROBE
+  // ---------------------------------------------------------------------------
+  // BTB 的"一行 4 slot"几何到底用掉多少?
+  //
+  // 要回答的是: 块索引 (一行 = 一个 16 B 块 + 一个共享标签) 配上 4 个 (offset,target)
+  // slot, 在实际负载上是不是浪费面积 —— 如果占用行里平均只有 ~1 个 slot 有效,
+  // 那 64/71 的位宽就基本白花, 换成更紧凑的编码同等面积能装下多得多的分支。
+  //
+  // 两个口径:
+  //  静态 占用扫描 ($finish 时): 扫描整个阵列, 统计"占用行"的行数, 以及每行
+  //        有效 slot 数的直方图。这是阵列的**稳定占用**。
+  //  动态 取指块分支密度: 每来一个新的取指地址, 数一次 slot_vld 的 popcount。
+  //        这是取指流的**分支密度**(含没命中的块 —— 那份是容量 miss 不是浪费)。
+  // ---------------------------------------------------------------------------
+  integer btp_occ   = 0;
+  integer btp_slots = 0;
+  integer btp_hist  [0:4];      // 占用行: 几个 slot 有效
+  integer btp_dyn   [0:4];      // 取指地址: 几个 slot 命中
+  integer btp_lk    = 0;
+  integer btp_dynsum = 0;
+  // ⚠️ slot i **就是**块内第 i 个字 (训练侧 `u_slot = upd_pc[3:2]`, 使用侧
+  //    `sl_vld[pc_ofs]`)。所以"slot 数"和"块内位置"是绑死的 —— 想知道砍到
+  //    2 个 slot 会丢什么, 必须知道**分支落在哪个位置**, 只看"几个分支"会得出
+  //    完全错误的乐观结论。
+  integer btp_pos   [0:3];      // 静态: 占用行里落在位置 i 的有效 slot 数
+  integer btp_mask  [0:15];     // 静态: 4 位有效掩码的直方图
+  integer btp_dpos  [0:3];      // 动态: 取指地址在位置 i 命中多少次
+  // 交付侧: MAX_ISSUE=3 而一块 4 条 ⇒ 无分支的直线块会被拆成 3+1 两次查表。
+  // `next_pc = q_pc + 4*ib_push_acc` (rv32ifu2_top.v), 所以"同一 16 B 块被连着
+  // 取两次"就是拆分事件。这是乱序 3 发射下会**直接顶到吞吐**的那个数。
+  integer btp_push  [0:4];      // ib_push_acc 直方图 (MAX_ISSUE=4 ⇒ 0..4)
+  integer btp_ev    = 0;        // 取指事件数 (= 取指地址变化次数)
+  integer btp_pushsum = 0;      // 推进 IBUF 的指令总数
+  integer btp_split = 0;        // 同块被连续取两次的次数
+
+  initial begin
+    integer z;
+    for (z = 0; z <= 4; z = z + 1) begin btp_hist[z] = 0; btp_dyn[z] = 0; end
+    for (z = 0; z <= 3; z = z + 1) begin btp_pos[z] = 0; btp_dpos[z] = 0; end
+    for (z = 0; z <= 4; z = z + 1) btp_push[z] = 0;
+    for (z = 0; z <= 15; z = z + 1) btp_mask[z] = 0;
+  end
+
+  wire [31:0] btp_pc = dut.Core_cpu.u_ifu_subsys.next_pc;
+  reg  [31:0] btp_pc_q = 32'hFFFF_FFFF;
+
+  always @(posedge clk) if (!rst) begin
+    btp_pc_q <= btp_pc;
+    if (btp_pc != btp_pc_q) begin     // 只在"换了一个取指地址"时数, 避免停顿重复计数
+      integer n;
+      // 同一 16 B 块被连着取两次 (MAX_ISSUE=3 < 4 条/块 的直接后果)
+      if (btp_pc[31:4] == btp_pc_q[31:4]) btp_split <= btp_split + 1;
+      btp_ev <= btp_ev + 1;
+      n = 0;
+      if (dut.Core_cpu.u_ifu_subsys.btb_vld[0]) n = n + 1;
+      if (dut.Core_cpu.u_ifu_subsys.btb_vld[1]) n = n + 1;
+      if (dut.Core_cpu.u_ifu_subsys.btb_vld[2]) n = n + 1;
+      if (dut.Core_cpu.u_ifu_subsys.btb_vld[3]) n = n + 1;
+      btp_dyn[n] <= btp_dyn[n] + 1;
+      btp_lk     <= btp_lk + 1;
+      btp_dynsum <= btp_dynsum + n;
+      if (dut.Core_cpu.u_ifu_subsys.btb_vld[0]) btp_dpos[0] <= btp_dpos[0] + 1;
+      if (dut.Core_cpu.u_ifu_subsys.btb_vld[1]) btp_dpos[1] <= btp_dpos[1] + 1;
+      if (dut.Core_cpu.u_ifu_subsys.btb_vld[2]) btp_dpos[2] <= btp_dpos[2] + 1;
+      if (dut.Core_cpu.u_ifu_subsys.btb_vld[3]) btp_dpos[3] <= btp_dpos[3] + 1;
+    end
+    // 每拍记一次实际收下的条数 (含 0 = 没推)
+    btp_push[dut.Core_cpu.u_ifu_subsys.ib_push_acc] <=
+        btp_push[dut.Core_cpu.u_ifu_subsys.ib_push_acc] + 1;
+    btp_pushsum <= btp_pushsum + dut.Core_cpu.u_ifu_subsys.ib_push_acc;
+  end
+
+  final begin : btp_report
+    integer r, s, n, mk;
+    integer nr;
+    nr = dut.Core_cpu.u_ifu_subsys.u_btb.NR_ROWS;
+    btp_occ = 0; btp_slots = 0;
+    for (r = 0; r < nr; r = r + 1) begin
+      // 行有效位 = tag_q 的最高位 (rv32ifu2_btb.v 的 {行有效, tag})
+      if (dut.Core_cpu.u_ifu_subsys.u_btb.tag_q[r][dut.Core_cpu.u_ifu_subsys.u_btb.TAG_BITS]) begin
+        n = 0; mk = 0;
+        for (s = 0; s < 4; s = s + 1)
+          if (dut.Core_cpu.u_ifu_subsys.u_btb.dat_q[r][s*16 + dut.Core_cpu.u_ifu_subsys.u_btb.SL_VLD]) begin
+            n = n + 1;
+            mk = mk | (1 << s);
+            btp_pos[s] = btp_pos[s] + 1;
+          end
+        btp_occ   = btp_occ + 1;
+        btp_slots = btp_slots + n;
+        btp_hist[n] = btp_hist[n] + 1;
+        btp_mask[mk] = btp_mask[mk] + 1;
+      end
+    end
+    $display("-------- BTB 4-slot 几何占用 (BTPROBE) --------");
+    $display("  阵列行数        = %0d (物理)", nr);
+    $display("  占用行          = %0d (%.1f%% of 阵列)", btp_occ,
+             (nr > 0) ? 100.0*btp_occ/nr : 0.0);
+    $display("  占用行内有效slot = %0d (平均 %.3f 个/行)", btp_slots,
+             (btp_occ > 0) ? 1.0*btp_slots/btp_occ : 0.0);
+    for (r = 0; r <= 4; r = r + 1)
+      if (btp_hist[r] > 0)
+        $display("    占用行里 %0d 个 slot 有效 : %0d 行 (%.1f%%)", r, btp_hist[r],
+                 (btp_occ > 0) ? 100.0*btp_hist[r]/btp_occ : 0.0);
+    $display("  取指地址数      = %0d, 命中 slot 合计 = %0d (平均 %.3f 个/地址)", btp_lk,
+             btp_dynsum, (btp_lk > 0) ? 1.0*btp_dynsum/btp_lk : 0.0);
+    for (r = 0; r <= 4; r = r + 1)
+      if (btp_dyn[r] > 0)
+        $display("    取指地址命中 %0d 个 slot : %0d (%.1f%%)", r, btp_dyn[r],
+                 (btp_lk > 0) ? 100.0*btp_dyn[r]/btp_lk : 0.0);
+
+    // ---- 位置分布: 决定"能不能砍 slot" 的那个数 ----
+    $display("  --- 块内位置分布 (slot i 就是块内第 i 个字) ---");
+    for (r = 0; r <= 3; r = r + 1)
+      $display("    位置 %0d : 静态占用 %0d 行 (%.1f%%), 动态命中 %0d 次 (%.1f%%)",
+               r, btp_pos[r], (btp_occ > 0) ? 100.0*btp_pos[r]/btp_occ : 0.0,
+               btp_dpos[r], (btp_lk > 0) ? 100.0*btp_dpos[r]/btp_lk : 0.0);
+    $display("  --- 交付侧: 一块 4 条 vs MAX_ISSUE=3 ---");
+    $display("    取指事件(地址变化) = %0d, 推出指令 = %0d, 平均 %.3f 条/事件",
+             btp_ev, btp_pushsum, (btp_ev > 0) ? 1.0*btp_pushsum/btp_ev : 0.0);
+    $display("    **同块被连续取两次** = %0d (%.1f%% 的取指事件)", btp_split,
+             (btp_ev > 0) ? 100.0*btp_split/btp_ev : 0.0);
+    for (r = 0; r <= 4; r = r + 1)
+      $display("    ib_push_acc=%0d : %0d 拍 (%.1f%%)", r, btp_push[r],
+               (cycles > 0) ? 100.0*btp_push[r]/cycles : 0.0);
+    $display("  有效掩码直方图 (bit i = 位置 i 有分支):");
+    for (r = 0; r <= 15; r = r + 1)
+      if (btp_mask[r] > 0)
+        $display("    %4b : %0d 行 (%.1f%%)", r, btp_mask[r],
+                 (btp_occ > 0) ? 100.0*btp_mask[r]/btp_occ : 0.0);
+  end
+`endif
   wire w2_c_flush = dut.Core_cpu.flush_if_id | dut.Core_cpu.ifu_idu_flush;
   wire w2_c_stall = dut.Core_cpu.stall;
   wire w2_miss    = ~dut.Core_cpu.u_ifu_subsys.q_hit;

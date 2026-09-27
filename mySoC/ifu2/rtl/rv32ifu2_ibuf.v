@@ -27,14 +27,19 @@ module rv32ifu2_ibuf #(
     input  wire         flush,
 
     // ---- 入队 (来自 F1), 逐 lane 有效 ----
-    input  wire [  1:0] push_num,      // 本拍想推进几条 (0..3)
+    // ⚠️ 入队侧 4 宽、出队侧仍是 3 宽 (核心是 3 发射)。两侧不等宽是**有意的**:
+    //    一个 16 B 块正好 4 条指令, 只有把宽度做到 4 才能"一块一拍推完"。
+    //    否则 fetch 侧被 3 卡住: 4 条要推两拍 (3+1), 直线代码封顶 2 IPC ——
+    //    这条顶压在目标 3 发射之下。出队侧保持 3 是核心自己的消费上限。
+    input  wire [  2:0] push_num,      // 本拍想推进几条 (0..4)
     input  wire [W-1:0] push_data0,
     input  wire [W-1:0] push_data1,
     input  wire [W-1:0] push_data2,
+    input  wire [W-1:0] push_data3,
 
     // 实际收下了几条。取指侧必须**按它**推进 PC —— 按 push_num 推进会跳过
     // 队列没装下的那几条, 那是静默丢指令, difftest 会抓但很难查。
-    output wire [  1:0] push_accept,
+    output wire [  2:0] push_accept,
 
     // ---- 出队 (到 IDU), 逐 lane 有效 ----
     output wire [W-1:0] out_data0,
@@ -65,10 +70,11 @@ reg [AW+1:0] cnt_q;                    // 0..DEPTH, 要比索引宽
 // ---------------------------------------------------------------------------
 wire [AW+1:0] space = DEPTH[AW+1:0] - cnt_q;
 
-wire [1:0] acc_push = (space == 0)                     ? 2'd0 :
-                      (space == 1)                     ? ((push_num >= 2'd1) ? 2'd1 : 2'd0) :
-                      (space == 2)                     ? ((push_num >= 2'd2) ? 2'd2 : push_num) :
-                                                         push_num;
+wire [2:0] acc_push = (space == 0) ? 3'd0 :
+                      (space == 1) ? ((push_num >= 3'd1) ? 3'd1 : 3'd0) :
+                      (space == 2) ? ((push_num >= 3'd2) ? 3'd2 : push_num) :
+                      (space == 3) ? ((push_num >= 3'd3) ? 3'd3 : push_num) :
+                                     push_num;
 
 assign push_accept = acc_push;
 
@@ -85,9 +91,9 @@ assign out_data0 = empty ? push_data0 : ent_q[idx0];
 assign out_data1 = empty ? push_data1 : ent_q[idx1];
 assign out_data2 = empty ? push_data2 : ent_q[idx2];
 
-assign out_vld[0] = empty ? (acc_push >= 2'd1) : 1'b1;
-assign out_vld[1] = empty ? (acc_push >= 2'd2) : (cnt_q >= 2);
-assign out_vld[2] = empty ? (acc_push >= 2'd3) : (cnt_q >= 3);
+assign out_vld[0] = empty ? (acc_push >= 3'd1) : 1'b1;
+assign out_vld[1] = empty ? (acc_push >= 3'd2) : (cnt_q >= 2);
+assign out_vld[2] = empty ? (acc_push >= 3'd3) : (cnt_q >= 3);
 
 assign count = cnt_q;                  // 直接给全宽: 截位会让"满队列=8"读成 0
 assign full  = (space == 0);
@@ -98,15 +104,17 @@ assign full  = (space == 0);
 wire [AW-1:0] w0 = head_q + cnt_q[AW-1:0];
 wire [AW-1:0] w1 = w0 + {{(AW-1){1'b0}}, 1'b1};
 wire [AW-1:0] w2 = w0 + 2'd2;
+wire [AW-1:0] w3 = w0 + 2'd3;
 
 always @(posedge clk) begin
     if (rst | flush) begin
         head_q <= {AW{1'b0}};
         cnt_q  <= {(AW+2){1'b0}};
     end else begin
-        if (acc_push >= 2'd1) ent_q[w0] <= push_data0;
-        if (acc_push >= 2'd2) ent_q[w1] <= push_data1;
-        if (acc_push >= 2'd3) ent_q[w2] <= push_data2;
+        if (acc_push >= 3'd1) ent_q[w0] <= push_data0;
+        if (acc_push >= 3'd2) ent_q[w1] <= push_data1;
+        if (acc_push >= 3'd3) ent_q[w2] <= push_data2;
+        if (acc_push >= 3'd4) ent_q[w3] <= push_data3;
         head_q <= head_q + pop_num;
         cnt_q  <= cnt_q + acc_push - pop_num;
     end

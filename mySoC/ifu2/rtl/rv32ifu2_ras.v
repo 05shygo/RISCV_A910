@@ -33,11 +33,12 @@ module rv32ifu2_ras #(
     input  wire         rst,           // 高有效
 
     // ---- F1: 本拍推进 IBUF 的 lane 里的 call / ret ----
-    input  wire [ 2:0]  push_num,      // 本拍压入几条 (0..3)
+    input  wire [ 3:0]  push_num,      // 本拍压入几条 (0..4)
     input  wire [31:0]  push_pc0,      // 返回地址 (= 该 call 的 pc + 4)
     input  wire [31:0]  push_pc1,
     input  wire [31:0]  push_pc2,
-    input  wire [ 2:0]  pop_num,       // 本拍弹出几条 (0..3)
+    input  wire [31:0]  push_pc3,
+    input  wire [ 3:0]  pop_num,       // 本拍弹出几条 (0..4)
 
     // ---- 栈顶 (组合读, F1 算 next_pc 用) ----
     output wire [31:0]  top,
@@ -54,15 +55,21 @@ reg        evld [0:DEPTH-1];           // 该格内容是否可信
 reg [AW:0] sp_q;                       // 0..DEPTH (DEPTH = 满)
 
 // 先弹后压
-wire [AW:0] sp_after_pop = (sp_q >= {1'b0, pop_num}) ? (sp_q - {1'b0, pop_num})
-                                                     : {(AW+1){1'b0}};
-wire [AW:0] sp_sum       = sp_after_pop + {1'b0, push_num};
+//
+// ⚠️ sp 的位宽 [AW:0] **不能动**: 它经 ptr_out 进 chk 的 RAS 位段 (top.v 的
+//    RAS_CHK_MSB/LSB), 改宽会平移下游所有位切片 —— 本工程反复踩过的坑。
+//    这里够用: push/pop 最多 4, DEPTH+4 = 12 < 2^(AW+1) = 16。
+//    切片 [AW-1:0] 取的是计数值本身 (0..4 装得下), 不是丢高位。
+wire [AW:0] sp_after_pop = (sp_q >= {1'b0, pop_num[AW-1:0]}) ? (sp_q - {1'b0, pop_num[AW-1:0]})
+                                                             : {(AW+1){1'b0}};
+wire [AW:0] sp_sum       = sp_after_pop + {1'b0, push_num[AW-1:0]};
 wire [AW:0] sp_nxt       = (sp_sum > DEPTH[AW:0]) ? DEPTH[AW:0] : sp_sum;
 
 // 压入位置: 栈底 = 0, 栈顶 = sp-1
 wire [AW:0] pw0 = sp_after_pop;
 wire [AW:0] pw1 = sp_after_pop + 1'b1;
 wire [AW:0] pw2 = sp_after_pop + 2'd2;
+wire [AW:0] pw3 = sp_after_pop + 2'd3;
 
 // 栈顶: 空栈 或 该格内容不可信 时无效 (顶层会回落到 BTB 目标)
 assign top_vld = (sp_q != {(AW+1){1'b0}}) & evld[sp_q - 1'b1];
@@ -85,9 +92,10 @@ always @(posedge clk) begin
         for (i = 0; i < DEPTH; i = i + 1)
             if (i >= restore_ptr[AW-1:0]) evld[i] <= 1'b0;
     end else begin
-        if (push_num >= 3'd1) begin stk[pw0[AW-1:0]] <= push_pc0; evld[pw0[AW-1:0]] <= 1'b1; end
-        if (push_num >= 3'd2) begin stk[pw1[AW-1:0]] <= push_pc1; evld[pw1[AW-1:0]] <= 1'b1; end
-        if (push_num >= 3'd3) begin stk[pw2[AW-1:0]] <= push_pc2; evld[pw2[AW-1:0]] <= 1'b1; end
+        if (push_num >= 4'd1) begin stk[pw0[AW-1:0]] <= push_pc0; evld[pw0[AW-1:0]] <= 1'b1; end
+        if (push_num >= 4'd2) begin stk[pw1[AW-1:0]] <= push_pc1; evld[pw1[AW-1:0]] <= 1'b1; end
+        if (push_num >= 4'd3) begin stk[pw2[AW-1:0]] <= push_pc2; evld[pw2[AW-1:0]] <= 1'b1; end
+        if (push_num >= 4'd4) begin stk[pw3[AW-1:0]] <= push_pc3; evld[pw3[AW-1:0]] <= 1'b1; end
         sp_q <= sp_nxt;
     end
 end

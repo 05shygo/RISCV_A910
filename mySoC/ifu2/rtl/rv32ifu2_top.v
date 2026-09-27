@@ -76,6 +76,29 @@ module rv32ifu2_top #(
 `else
     parameter TAGE_TAG_W   = 6,
 `endif
+    // 逐表**逻辑**行数 (回答"每一级的表 entry 数不同会怎样")。缺省 = 跟随
+    // TAGE_ROW_AW ⇒ 四张表同尺寸, 与加这几个参数之前逐位相同。
+    // ⚠️ 约束 TAGE_TAG_W >= 12 - TAGE_RAi, tage.v 末尾自检会 $fatal。
+`ifdef BP_TAGE_RA1
+    parameter TAGE_RA1     = `BP_TAGE_RA1,
+`else
+    parameter TAGE_RA1     = TAGE_ROW_AW,
+`endif
+`ifdef BP_TAGE_RA2
+    parameter TAGE_RA2     = `BP_TAGE_RA2,
+`else
+    parameter TAGE_RA2     = TAGE_ROW_AW,
+`endif
+`ifdef BP_TAGE_RA3
+    parameter TAGE_RA3     = `BP_TAGE_RA3,
+`else
+    parameter TAGE_RA3     = TAGE_ROW_AW,
+`endif
+`ifdef BP_TAGE_RA4
+    parameter TAGE_RA4     = `BP_TAGE_RA4,
+`else
+    parameter TAGE_RA4     = TAGE_ROW_AW,
+`endif
 `ifdef BP_TAGE_T0H
     parameter TAGE_T0_HIST = `BP_TAGE_T0H,
 `else
@@ -100,6 +123,25 @@ module rv32ifu2_top #(
     parameter TAGE_L4      = `BP_TAGE_L4,
 `else
     parameter TAGE_L4      = 14,
+`endif
+    // USE_SEL 的几何。它**按构造与 T0 解耦**: ps==0 (只剩 T0 命中) 时 fpred 直接取
+    // t0_pred, USE_SEL 根本不被查询 (rv32ifu2_tage.v 的 fpred 那一行), 训练侧也被
+    // u_usel_en 挡掉 —— 所以它的适用域是"命中 tagged 表的分支", 与 T0 有多少项无关。
+    // ⚠️ USEL_AW 一旦超过 ROW_AW 会抬高 INIT_ROWS, 初始化扫描变长.
+`ifdef BP_TAGE_USEL_AW
+    parameter TAGE_USEL_AW   = `BP_TAGE_USEL_AW,
+`else
+    parameter TAGE_USEL_AW   = 6,
+`endif
+`ifdef BP_TAGE_USEL_W
+    parameter TAGE_USEL_W    = `BP_TAGE_USEL_W,
+`else
+    parameter TAGE_USEL_W    = 4,
+`endif
+`ifdef BP_TAGE_USEL_GATE
+    parameter TAGE_USEL_GATE = `BP_TAGE_USEL_GATE,
+`else
+    parameter TAGE_USEL_GATE = 1,
 `endif
 `ifdef BP_BTB_ROW_AW
     parameter BTB_ROW_AW = `BP_BTB_ROW_AW,
@@ -220,7 +262,10 @@ module rv32ifu2_top #(
 // ---------------------------------------------------------------------------
 localparam [31:0] RESET_PC    = 32'h0000_0000;
 localparam        LINE_BITS   = $clog2(IC_LINE);
-localparam [1:0]  MAX_ISSUE   = 2'd3;          // 3 发射
+// ⚠️ 4, 不是 3。交付宽度必须 >= 16 B 块里的指令数 (4), 否则一个无分支的直线块
+// 要推两拍 (3+1), **直线代码封顶 2 IPC** —— 顶压在 3 发射的目标之下。
+// 这是"块 = 4 条"与"推入宽度 = 3"之间的硬冲突, 不是调优问题。
+localparam [2:0]  MAX_ISSUE   = 3'd4;          // 一拍最多交付 4 条 = 整个 16 B 块
 
 // ---------------------------------------------------------------------------
 // 重定向
@@ -386,7 +431,9 @@ wire [31:0] btb_tgt_raw = btb_t0 ? btb_target[0*32 +: 32]
 // 想推几条: 到 taken 那条为止(含); 没有 taken 就推满本块剩余; 再受 3 发射限制。
 wire [ 2:0] want_to_taken = {1'b0, taken_slot} - {1'b0, pc_ofs} + 3'd1;
 wire [ 2:0] want_cnt_raw  = any_taken ? want_to_taken : blk_left;
-wire [ 1:0] want_push     = (want_cnt_raw >= 3'd3) ? MAX_ISSUE : want_cnt_raw[1:0];
+// want_cnt_raw 天然落在 [1,4] (blk_left = 4-pc_ofs, want_to_taken = taken_slot-pc_ofs+1),
+// 所以这里只是"再受发射宽度限制", MAX_ISSUE=4 时恒等。
+wire [ 2:0] want_push     = (want_cnt_raw > MAX_ISSUE) ? MAX_ISSUE : want_cnt_raw;
 
 wire        can_push  = q_hit & init_all;
 
@@ -395,7 +442,11 @@ wire        can_push  = q_hit & init_all;
 assign refill_req = ~q_hit & ~refill_busy & init_all & ~redirect;
 
 // 重定向当拍不推进: 此时 q_pc 还是旧路径的 PC, 推下去就是错误路径的指令。
-wire [ 1:0] push_num = (can_push & ~redirect) ? want_push : 2'd0;
+// ⚠️ 位宽必须 >= want_push 的位宽。这里曾经还是 [1:0], 而 want_push 已经是 [2:0]:
+//    want_push=4 (3'b100) 截成 2'b00 = 0 ⇒ **一条都推不进去**, next_pc 原地不动,
+//    BIU 只发 1 次事务然后整条流水线空转 (实测 retired=0, fetch bubble≈满拍)。
+//    正是本工程反复踩的"隐式截断"那一族 —— 改宽度时把**所有**同族声明一起改。
+wire [ 2:0] push_num = (can_push & ~redirect) ? want_push : 3'd0;
 
 // ---------------------------------------------------------------------------
 // IDU 包拼装
@@ -442,6 +493,8 @@ endfunction
 wire [31:0] inst0 = q_data[{(pc_ofs + 2'd0), 5'b0} +: 32];
 wire [31:0] inst1 = q_data[{(pc_ofs + 2'd1), 5'b0} +: 32];
 wire [31:0] inst2 = q_data[{(pc_ofs + 2'd2), 5'b0} +: 32];
+// lane3 只在 pc_ofs==0 时有意义 (blk_left=4 才推得到第 4 条), 那时索引是 3, 不会越界。
+wire [31:0] inst3 = q_data[{(pc_ofs + 2'd3), 5'b0} +: 32];
 
 // ⚠️ lane 的 PC 是 q_pc + 4*i, **不能**再加 pc_ofs: q_pc 本身就是"本拍第一条
 // 要交付的指令的 PC", 偏移已经含在里面了(它只在重定向落到块中间时才非 0)。
@@ -450,10 +503,13 @@ wire [31:0] inst2 = q_data[{(pc_ofs + 2'd2), 5'b0} +: 32];
 wire [31:0] pc0 = q_pc;
 wire [31:0] pc1 = q_pc + 32'd4;
 wire [31:0] pc2 = q_pc + 32'd8;
+wire [31:0] pc3 = q_pc + 32'd12;
 
+// taken_lane = taken_slot - pc_ofs, 落在 [0,3] (两者都在 0..3 且 taken_slot >= pc_ofs)
 wire [1:0]  taken_lane = taken_slot - pc_ofs;
 wire [31:0] taken_inst = (taken_lane == 2'd0) ? inst0
-                       : (taken_lane == 2'd1) ? inst1 : inst2;
+                       : (taken_lane == 2'd1) ? inst1
+                       : (taken_lane == 2'd2) ? inst2 : inst3;
 wire        t_is_jalr  = (taken_inst[6:0] == 7'b1100_111);
 wire        t_is_ret   = t_is_jalr & ((taken_inst[19:15] == 5'd1) | (taken_inst[19:15] == 5'd5))
                                   & (taken_inst[11:7]  == 5'd0);
@@ -462,14 +518,17 @@ wire [31:0] taken_tgt = (t_is_ret & ras_top_vld) ? ras_top : btb_tgt_raw;
 wire [2:0] slot_l0 = {1'b0, pc_ofs};
 wire [2:0] slot_l1 = slot_l0 + 3'd1;
 wire [2:0] slot_l2 = slot_l0 + 3'd2;
+wire [2:0] slot_l3 = slot_l0 + 3'd3;
 
 wire lane0_taken = any_taken & (slot_l0 == {1'b0, taken_slot});
 wire lane1_taken = any_taken & (slot_l1 == {1'b0, taken_slot});
 wire lane2_taken = any_taken & (slot_l2 == {1'b0, taken_slot});
+wire lane3_taken = any_taken & (slot_l3 == {1'b0, taken_slot});
 
 wire [31:0] npc0 = lane0_taken ? taken_tgt : (pc0 + 32'd4);
 wire [31:0] npc1 = lane1_taken ? taken_tgt : (pc1 + 32'd4);
 wire [31:0] npc2 = lane2_taken ? taken_tgt : (pc2 + 32'd4);
+wire [31:0] npc3 = lane3_taken ? taken_tgt : (pc3 + 32'd4);
 
 // ---------------------------------------------------------------------------
 // IBUF
@@ -477,12 +536,12 @@ wire [31:0] npc2 = lane2_taken ? taken_tgt : (pc2 + 32'd4);
 // push 数据里要带**本 lane 自己的** GHR 快照 (chk), 而快照要用 ib_push_acc 算,
 // 所以这里只声明, 赋值放到 GHR 块之后 —— 顺序只是 Verilog 的声明顺序要求,
 // 不是逻辑上的先后。
-wire [152:0] ib_push0, ib_push1, ib_push2;
-wire [ 24:0] chk0, chk1, chk2;
+wire [152:0] ib_push0, ib_push1, ib_push2, ib_push3;
+wire [ 24:0] chk0, chk1, chk2, chk3;
 
-wire [152:0] ib_out0, ib_out1, ib_out2;
+wire [152:0] ib_out0, ib_out1, ib_out2;      // 出队侧仍是 3 (核心是 3 发射)
 wire [  2:0] ib_vld;
-wire [  1:0] ib_push_acc;
+wire [  2:0] ib_push_acc;
 wire [  3:0] ib_cnt;
 wire         ib_full;
 
@@ -497,6 +556,7 @@ rv32ifu2_ibuf #(
     .push_data0(ib_push0),
     .push_data1(ib_push1),
     .push_data2(ib_push2),
+    .push_data3(ib_push3),
     .push_accept(ib_push_acc),
     .out_data0 (ib_out0),
     .out_data1 (ib_out1),
@@ -531,33 +591,34 @@ wire [3:0] cond_rot = (btb_cond & sl_vld) >> pc_ofs;
 wire [3:0] fp_rot   = dir_pred >> pc_ofs;
 
 // 只有进 IBUF 的 lane 参与历史推进
-wire [2:0] pushed_m = { (ib_push_acc == 2'd3), (ib_push_acc >= 2'd2), (ib_push_acc >= 2'd1) };
-wire [2:0] lane_cond = { cond_rot[2], cond_rot[1], cond_rot[0] } & pushed_m;
-wire [2:0] lane_tk   = { tk_rot[2],   tk_rot[1],   tk_rot[0]   };
+wire [3:0] pushed_m = { (ib_push_acc == 3'd4), (ib_push_acc >= 3'd3),
+                        (ib_push_acc >= 3'd2), (ib_push_acc >= 3'd1) };
+wire [3:0] lane_cond = { cond_rot[3], cond_rot[2], cond_rot[1], cond_rot[0] } & pushed_m;
+wire [3:0] lane_tk   = { tk_rot[3],   tk_rot[2],   tk_rot[1],   tk_rot[0]   };
 
-function [2:0] ghr_pack;               // 按 lane 顺序压成低位连续的位串
-    input [2:0] c;
-    input [2:0] t;
+function [3:0] ghr_pack;               // 按 lane 顺序压成低位连续的位串
+    input [3:0] c;
+    input [3:0] t;
     integer i;
-    reg [2:0] b;
+    reg [3:0] b;
     begin
-        b = 3'b000;
-        for (i = 0; i < 3; i = i + 1)
-            if (c[i]) b = {b[1:0], t[i]};
+        b = 4'b0000;
+        for (i = 0; i < 4; i = i + 1)
+            if (c[i]) b = {b[2:0], t[i]};
         ghr_pack = b;
     end
 endfunction
 
-function [1:0] ghr_cnt;
-    input [2:0] c;
+function [2:0] ghr_cnt;
+    input [3:0] c;
     begin
-        ghr_cnt = {1'b0, c[0]} + {1'b0, c[1]} + {1'b0, c[2]};
+        ghr_cnt = {2'b0, c[0]} + {2'b0, c[1]} + {2'b0, c[2]} + {2'b0, c[3]};
     end
 endfunction
 
-wire [2:0]       ghr_bits = ghr_pack(lane_cond, lane_tk);   // 仅用于推进 GHR
-wire [1:0]       ghr_n    = ghr_cnt(lane_cond);
-wire [GHR_W-1:0] ghr_next = (ghr_q << ghr_n) | {{(GHR_W-3){1'b0}}, ghr_bits};
+wire [3:0]       ghr_bits = ghr_pack(lane_cond, lane_tk);   // 仅用于推进 GHR
+wire [2:0]       ghr_n    = ghr_cnt(lane_cond);
+wire [GHR_W-1:0] ghr_next = (ghr_q << ghr_n) | {{(GHR_W-4){1'b0}}, ghr_bits};
 
 // 重定向时的 GHR 恢复
 // 条件分支误预测 ⇒ 拨回块首再补一位真实方向。块内第 2/3 条分支时这是**近似**
@@ -625,35 +686,49 @@ wire [24:0] chk1_f = chk_snap | (vld_rot[1] ? (25'd1 << CHK_BTBHIT) : 25'd0)
 wire [24:0] chk2_f = chk_snap | (vld_rot[2] ? (25'd1 << CHK_BTBHIT) : 25'd0)
                              | (tk_rot[2]  ? (25'd1 << CHK_PREDTK) : 25'd0)
                              | (fp_rot[2]  ? (25'd1 << CHK_FPRED)  : 25'd0);
+wire [24:0] chk3_f = chk_snap | (vld_rot[3] ? (25'd1 << CHK_BTBHIT) : 25'd0)
+                             | (tk_rot[3]  ? (25'd1 << CHK_PREDTK) : 25'd0)
+                             | (fp_rot[3]  ? (25'd1 << CHK_FPRED)  : 25'd0);
 
 assign chk0 = chk0_f;
 assign chk1 = chk1_f;
 assign chk2 = chk2_f;
+assign chk3 = chk3_f;
 
 assign ib_push0 = {chk0, make_packet(pc0, inst0, npc0, lane0_taken)};
 assign ib_push1 = {chk1, make_packet(pc1, inst1, npc1, lane1_taken)};
 assign ib_push2 = {chk2, make_packet(pc2, inst2, npc2, lane2_taken)};
+assign ib_push3 = {chk3, make_packet(pc3, inst3, npc3, lane3_taken)};
 
-wire [2:0] c_lane = { (inst2[6:0]==7'b1100_111)&((inst2[11:7]==5'd1)|(inst2[11:7]==5'd5))&pushed_m[2],
+wire [3:0] c_lane = { (inst3[6:0]==7'b1100_111)&((inst3[11:7]==5'd1)|(inst3[11:7]==5'd5))&pushed_m[3],
+                      (inst2[6:0]==7'b1100_111)&((inst2[11:7]==5'd1)|(inst2[11:7]==5'd5))&pushed_m[2],
                       (inst1[6:0]==7'b1100_111)&((inst1[11:7]==5'd1)|(inst1[11:7]==5'd5))&pushed_m[1],
                       (inst0[6:0]==7'b1100_111)&((inst0[11:7]==5'd1)|(inst0[11:7]==5'd5))&pushed_m[0] };
-wire [2:0] r_lane = { (inst2[6:0]==7'b1100_111)&((inst2[19:15]==5'd1)|(inst2[19:15]==5'd5))&(inst2[11:7]==5'd0)&pushed_m[2],
+wire [3:0] r_lane = { (inst3[6:0]==7'b1100_111)&((inst3[19:15]==5'd1)|(inst3[19:15]==5'd5))&(inst3[11:7]==5'd0)&pushed_m[3],
+                      (inst2[6:0]==7'b1100_111)&((inst2[19:15]==5'd1)|(inst2[19:15]==5'd5))&(inst2[11:7]==5'd0)&pushed_m[2],
                       (inst1[6:0]==7'b1100_111)&((inst1[19:15]==5'd1)|(inst1[19:15]==5'd5))&(inst1[11:7]==5'd0)&pushed_m[1],
                       (inst0[6:0]==7'b1100_111)&((inst0[19:15]==5'd1)|(inst0[19:15]==5'd5))&(inst0[11:7]==5'd0)&pushed_m[0] };
-wire [2:0] j_lane = { (inst2[6:0]==7'b1101_111)&((inst2[11:7]==5'd1)|(inst2[11:7]==5'd5))&pushed_m[2],
+wire [3:0] j_lane = { (inst3[6:0]==7'b1101_111)&((inst3[11:7]==5'd1)|(inst3[11:7]==5'd5))&pushed_m[3],
+                      (inst2[6:0]==7'b1101_111)&((inst2[11:7]==5'd1)|(inst2[11:7]==5'd5))&pushed_m[2],
                       (inst1[6:0]==7'b1101_111)&((inst1[11:7]==5'd1)|(inst1[11:7]==5'd5))&pushed_m[1],
                       (inst0[6:0]==7'b1101_111)&((inst0[11:7]==5'd1)|(inst0[11:7]==5'd5))&pushed_m[0] };
-wire [2:0] push_lane = (c_lane | j_lane) & {3{RAS_EN}};
-wire [2:0] ras_push_num = {2'b00, push_lane[0]} | {2'b00, push_lane[1]} | {2'b00, push_lane[2]};
-wire [2:0] ras_pop_num  = ({2'b00, r_lane[0]} | {2'b00, r_lane[1]} | {2'b00, r_lane[2]}) & {3{RAS_EN}};
-wire [31:0] push_ret_pc = push_lane[0] ? (pc0+32'd4) : push_lane[1] ? (pc1+32'd4) : (pc2+32'd4);
+wire [3:0] push_lane = (c_lane | j_lane) & {4{RAS_EN}};
+wire [3:0] ras_push_num = {3'b000, push_lane[0]} | {3'b000, push_lane[1]}
+                        | {3'b000, push_lane[2]} | {3'b000, push_lane[3]};
+wire [3:0] ras_pop_num  = ({3'b000, r_lane[0]} | {3'b000, r_lane[1]}
+                        |  {3'b000, r_lane[2]} | {3'b000, r_lane[3]}) & {4{RAS_EN}};
+// ⚠️ 四个 lane 的返回地址**都取同一个** push_ret_pc —— 与 RAS 一直以来的做法一致
+//    (多 call 同块时本来就只能记一个)。这里只是把选择器补到 4 路, 不改语义。
+wire [31:0] push_ret_pc = push_lane[0] ? (pc0+32'd4) : push_lane[1] ? (pc1+32'd4)
+                        : push_lane[2] ? (pc2+32'd4) : (pc3+32'd4);
 
 rv32ifu2_ras #(
     .DEPTH (1 << RAS_AW), .AW (RAS_AW)
 ) u_ras (
     .clk(clk), .rst(rst),
     .push_num(ras_push_num),
-    .push_pc0(push_ret_pc), .push_pc1(push_ret_pc), .push_pc2(push_ret_pc),
+    .push_pc0(push_ret_pc), .push_pc1(push_ret_pc),
+    .push_pc2(push_ret_pc), .push_pc3(push_ret_pc),
     .pop_num(ras_pop_num),
     .top(ras_top), .top_vld(ras_top_vld_raw), .ptr_out(ras_ptr),
     .restore_vld(redirect),
@@ -704,6 +779,10 @@ end else begin : g_tage
     rv32ifu2_tage #(
         .T0_AW   (TAGE_T0_AW),
         .ROW_AW  (TAGE_ROW_AW),
+        .ROW_AW_T1 (TAGE_RA1),
+        .ROW_AW_T2 (TAGE_RA2),
+        .ROW_AW_T3 (TAGE_RA3),
+        .ROW_AW_T4 (TAGE_RA4),
         .NTAB    (TAGE_NTAB),
         .TAG_W   (TAGE_TAG_W),
         .GHR_W   (GHR_W),
@@ -713,7 +792,10 @@ end else begin : g_tage
         .L1      (TAGE_L1),
         .L2      (TAGE_L2),
         .L3      (TAGE_L3),
-        .L4      (TAGE_L4)
+        .L4      (TAGE_L4),
+        .USEL_AW (TAGE_USEL_AW),
+        .USEL_W  (TAGE_USEL_W),
+        .USEL_GATE (TAGE_USEL_GATE)
     ) u_tage (
         .clk       (clk),
         .rst       (rst),
@@ -752,12 +834,13 @@ assign idu_inst2_chk  = ib_out2[152:128];
 // 重定向优先: 目标地址当拍就进阵列, 下一拍 q_pc 即是目标, 所以重定向进 PC
 // 是**零气泡**(只要命中), 与 C910 版"IU redirect 走 pc_bus 快速路径"等价。
 // ---------------------------------------------------------------------------
-wire [31:0] pc_adv = {28'd0, ib_push_acc, 2'b00};
+// 推进量 = 实际收下的条数 × 4 (最大 4 条 = 16 B, 正好一个块)
+wire [31:0] pc_adv = {27'd0, ib_push_acc, 2'b00};
 
 // 只有"想推的条数全部推进去了"才算真的走到了那条 taken 分支, 这时 PC 才去目标。
 // 队列空间不够时只推进了一部分, 分支还没进去, PC 必须按顺序继续 —— 否则会跳过
 // 分支之前那些还没交付的指令。
-wire reached_taken = any_taken & ({1'b0, ib_push_acc} == want_cnt_raw);
+wire reached_taken = any_taken & (ib_push_acc == want_cnt_raw);
 
 assign next_pc = rst            ? RESET_PC
                : redirect       ? redirect_pc

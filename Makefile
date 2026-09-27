@@ -197,7 +197,8 @@ BP_PRED      ?= 1
 #        BP_TAGE_L1=2 BP_TAGE_L2=5 BP_TAGE_L3=10 BP_TAGE_L4=16   # -> 15,890 bit
 # ⚠️ 两个硬约束, 越界都会在 time 0 报一句人能看懂的话然后 $fatal:
 #   BP_GHR_W <= 18  (25 位 chk 的预算, CHK_FPRED = GHR_W + 6)
-#   BP_TAGE_TAG_W <= 12 - BP_TAGE_AW  (64 KB 地址空间能给的位置)
+#   BP_TAGE_TAG_W >= 12 - min(BP_TAGE_RAi)  (标签要装下索引让出来的那几位;
+#        ⚠️ 上了逐表行数之后这条是**下界**, 方向与以前相反 —— 以前是 <= 12-AW)
 BP_T0_AW     ?=
 BP_T0_HIST   ?=        # T0 索引里掺几位历史 (0 = 纯双模态)。⚠️ define 名是 BP_TAGE_T0H
 BP_TAGE_AW   ?=
@@ -207,6 +208,18 @@ BP_TAGE_L1   ?=
 BP_TAGE_L2   ?=
 BP_TAGE_L3   ?=
 BP_TAGE_L4   ?=
+# USE_SEL 的项数/位宽/门控。按构造与 T0 解耦 (见 top.v 那里的注释):
+# 只有"命中 tagged 表"的分支才会查询/训练它, 所以它不必和 T0 同深。
+# ⚠️ 抬过 BP_TAGE_AW 会加长初始化扫描 (INIT_ROWS 取三者最大)。
+BP_TAGE_USEL_AW   ?=
+BP_TAGE_USEL_W    ?=
+BP_TAGE_USEL_GATE ?=
+# 逐表逻辑行数 (回答"每一级的表 entry 数不同会怎样")。空 = 四张表同尺寸。
+# ⚠️ 缩表要把 BP_TAGE_TAG_W 同步加宽到 >= 12 - min(RAi), 否则 tage.v 会 $fatal。
+BP_TAGE_RA1  ?=
+BP_TAGE_RA2  ?=
+BP_TAGE_RA3  ?=
+BP_TAGE_RA4  ?=
 
 # GHR 宽度: gshare 只有 ROW_AW=9 位的索引, 历史超过 8 位就开始互相干扰 (doc §4 扫点);
 # TAGE 每张表有自己的宽度, 没有那个自抵消, 长历史才有用 ⇒ 默认 16。
@@ -234,11 +247,20 @@ BP_DEFS := $(if $(filter 16,$(ICACHE_LINE_BYTES)),+define+ICACHE_LINE_16B) \
            $(if $(BP_TAGE_L1),+define+BP_TAGE_L1=$(BP_TAGE_L1)) \
            $(if $(BP_TAGE_L2),+define+BP_TAGE_L2=$(BP_TAGE_L2)) \
            $(if $(BP_TAGE_L3),+define+BP_TAGE_L3=$(BP_TAGE_L3)) \
-           $(if $(BP_TAGE_L4),+define+BP_TAGE_L4=$(BP_TAGE_L4))
+           $(if $(BP_TAGE_L4),+define+BP_TAGE_L4=$(BP_TAGE_L4)) \
+           $(if $(BP_TAGE_USEL_AW),+define+BP_TAGE_USEL_AW=$(BP_TAGE_USEL_AW)) \
+           $(if $(BP_TAGE_USEL_W),+define+BP_TAGE_USEL_W=$(BP_TAGE_USEL_W)) \
+           $(if $(BP_TAGE_USEL_GATE),+define+BP_TAGE_USEL_GATE=$(BP_TAGE_USEL_GATE)) \
+           $(if $(BP_TAGE_RA1),+define+BP_TAGE_RA1=$(BP_TAGE_RA1)) \
+           $(if $(BP_TAGE_RA2),+define+BP_TAGE_RA2=$(BP_TAGE_RA2)) \
+           $(if $(BP_TAGE_RA3),+define+BP_TAGE_RA3=$(BP_TAGE_RA3)) \
+           $(if $(BP_TAGE_RA4),+define+BP_TAGE_RA4=$(BP_TAGE_RA4))
 
 BP_CFG := $(BUILD_DIR)/.bp_cfg
 BP_SIG := $(BP_PRE_FOLD)-$(BP_PRE_AW)-$(BP_SEL_AW)-$(BP_BTB_ROW_W)-$(BP_L0_ENTRIES)-$(BP_IND_AW)-$(ICACHE_BYTES)-$(ICACHE_LINE_BYTES)-$(BP_BTB_ROW_AW)-$(BP_BHT_ROW_AW)-$(BP_GHR_W)-$(BP_RAS)\
-          -$(BP_PRED)-$(BP_T0_AW)-$(BP_T0_HIST)-$(BP_TAGE_AW)-$(BP_TAGE_N)-$(BP_TAGE_TAG_W)-$(BP_TAGE_L1)-$(BP_TAGE_L2)-$(BP_TAGE_L3)-$(BP_TAGE_L4)
+          -$(BP_PRED)-$(BP_T0_AW)-$(BP_T0_HIST)-$(BP_TAGE_AW)-$(BP_TAGE_N)-$(BP_TAGE_TAG_W)-$(BP_TAGE_L1)-$(BP_TAGE_L2)-$(BP_TAGE_L3)-$(BP_TAGE_L4)\
+          -$(BP_TAGE_USEL_AW)-$(BP_TAGE_USEL_W)-$(BP_TAGE_USEL_GATE)\
+          -$(BP_TAGE_RA1)-$(BP_TAGE_RA2)-$(BP_TAGE_RA3)-$(BP_TAGE_RA4)
 
 $(BP_CFG): FORCE
 	@mkdir -p $(BUILD_DIR)
