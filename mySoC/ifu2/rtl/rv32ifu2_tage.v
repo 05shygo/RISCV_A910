@@ -946,15 +946,21 @@ module rv32ifu2_tage
 
   // provider / alternate (训练侧)。用 done 标志退出循环,
   // 不用"把循环变量设成 -1"那种写法。
+  //
+  // ⚠️ 第二轮的扫描范围**必须写成不变界**。原来写的是
+  //     if (u_prov != 0) for (pi = u_prov - 2; pi >= 0; pi = pi - 1)
+  // —— VCS/Genus 能过, **Vivado 综合直接报 [Synth 8-3380] loop condition does not
+  // converge** (循环起点是变量, 静态展开不了)。改成对全范围扫描 + `(pi+1) < u_prov`
+  // 门控后**逐位等价**: 原范围内 (pi <= u_prov-2) 的条件就是 pi+1 <= u_prov-1,
+  // 即 pi+1 < u_prov; u_prov==0 时新条件恒假, 与原 `if (u_prov != 0)` 守卫一致。
   always @*
   begin : p_u_prov
     u_prov = 3'd0;
     u_alt  = 3'd0;
     for (pi = NTAB - 1; pi >= 0; pi = pi - 1)
       if (u_hit[pi] && (u_prov == 3'd0)) u_prov = pi + 1;
-    if (u_prov != 3'd0)
-      for (pi = u_prov - 2; pi >= 0; pi = pi - 1)
-        if (u_hit[pi] && (u_alt == 3'd0)) u_alt = pi + 1;
+    for (pi = NTAB - 1; pi >= 0; pi = pi - 1)
+      if (u_hit[pi] && (u_alt == 3'd0) && ((pi + 1) < u_prov)) u_alt = pi + 1;
   end // p_u_prov
 
   // ⚠️ u_prov / u_alt 为 0 时下面的 u_ent[..-1] 会越界读。用一个"安全编号"顶住 ——
@@ -1059,8 +1065,10 @@ module rv32ifu2_tage
   always @*
   begin : p_u_alloc
     u_k = 3'd0;
-    for (ci = ((u_prov == 3'd0) ? 0 : u_prov); ci < NTAB; ci = ci + 1)
-      if ((u_eff[ci] == 2'b00) && (u_k == 3'd0)) u_k = ci + 1;
+    // ⚠️ 同上: 起点原为变量 (u_prov), Vivado 展开不了。改成全范围**升序**扫描
+    // + `ci >= u_prov` 门控 —— 升序保证"最低编号优先"与原实现一致 (不能改降序)。
+    for (ci = 0; ci < NTAB; ci = ci + 1)
+      if ((ci >= u_prov) && (u_eff[ci] == 2'b00) && (u_k == 3'd0)) u_k = ci + 1;
 
     u_k_tag_same = 1'b0;
     if (u_k != 3'd0)
@@ -1161,14 +1169,20 @@ module rv32ifu2_tage
         end
         else
         begin
-          for (wi = ((u_prov == 3'd0) ? 0 : u_prov); wi < NTAB; wi = wi + 1)
+          // ⚠️ 同上: 不变界 + `wi >= u_prov` 门控。等价性有额外一层保证:
+          //    本 always 块开头的默认赋值已把**所有** u2_* 清成 0 (流水寄存器,
+          //    没有"保持"语义), 所以不在扫描范围内的 wi 拿到的就是"没写"。
+          for (wi = 0; wi < NTAB; wi = wi + 1)
           begin
-            u2_pv_we  [wi] <= 1'b1;
-            u2_pv_addr[wi] <= u1_row_idx[wi];
-            u2_pv_data[wi] <= slot_put(tb_row_up[wi], u1_slot,
-                                       {u_ent[wi][SLOT_VLD_POS],
-                                        u_ent[wi][SLOT_PRED_POS +: SLOT_PRED_W],
-                                        u_age[wi]});
+            if (wi >= u_prov)
+            begin
+              u2_pv_we  [wi] <= 1'b1;
+              u2_pv_addr[wi] <= u1_row_idx[wi];
+              u2_pv_data[wi] <= slot_put(tb_row_up[wi], u1_slot,
+                                         {u_ent[wi][SLOT_VLD_POS],
+                                          u_ent[wi][SLOT_PRED_POS +: SLOT_PRED_W],
+                                          u_age[wi]});
+            end
           end
         end
       end
