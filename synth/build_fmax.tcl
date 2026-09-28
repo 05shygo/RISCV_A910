@@ -161,6 +161,16 @@ add_files -fileset constrs_1 $xdc
 # ---------------------------------------------------------------------------
 # 跑流程
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# [第三轮实测 2026-09-29] 实现策略: Performance_NetDelay_high
+#   本设计关键路径走线占 87~88% (逐跳 ~0.41ns, 与负载数/物理跨度都无关), 正是指南里
+#   "Net Delay 主导"那一支。6.5ns 点实测 WNS -0.473 -> -0.191 (+0.282ns); 与 RTL
+#   五刀叠加后 6.5ns 点直接收敛 (最紧通过点 ~6.35ns, 147.4 -> ~157MHz)。
+#   同批对照: ExplorePostRoutePhysOpt +0.215 / Explore +0.126 / Retiming +0.056 /
+#             Flow_PerfOptimized_high+Explore -0.037 / merge_equivalent_drivers -0.12。
+# ---------------------------------------------------------------------------
+set_property strategy Performance_NetDelay_high [get_runs impl_1]
+
 launch_runs synth_1 -jobs 8
 wait_on_run synth_1
 if {[get_property PROGRESS [get_runs synth_1]] ne "100%"} {
