@@ -537,12 +537,31 @@ module tb_miniRV_dpi;
       // ⚠️ BP_PRED=1 时没有 u_bht 这个实例, 不分支的话整个 tb 编不过。
 `ifdef BP_PRED
       begin
-        integer r, nz, tot;
-        nz = 0;
-        tot = $size(dut.Core_cpu.u_ifu_subsys.g_tage.u_tage.tag_q);
-        for (r = 0; r < tot; r = r + 1)
-          if (dut.Core_cpu.u_ifu_subsys.g_tage.u_tage.tag_q[r] !== 0) nz = nz + 1;
-        $display("    TAGE rows valid = %0d / %0d", nz, tot);
+        // TAGE 的阵列自 2026-09-28 起是**逐表**的 (每张表一对 64 深的分布式 RAM,
+        // 见 rv32ifu2_tage.v 的 g_tab), 不再是平铺的 tag_q[256]。4 张表按常量
+        // 下标展开扫 —— 层次名不能用变量下标。这依赖 g_tab 对 NTABMAX 张表
+        // 无条件例化存储, 那条在 RTL 里有注释说明。
+        integer r, nz, tot, mism;
+        nz = 0; mism = 0;
+        tot = 4 * $size(dut.Core_cpu.u_ifu_subsys.g_tage.u_tage.g_tab[0].tg_p);
+        for (r = 0; r < $size(dut.Core_cpu.u_ifu_subsys.g_tage.u_tage.g_tab[0].tg_p);
+             r = r + 1) begin
+          // 预测副本: 行有效位为 1 的行 = 真被写过 (清干净的行是全 0)
+          if (dut.Core_cpu.u_ifu_subsys.g_tage.u_tage.g_tab[0].tg_p[r] !== 0) nz = nz + 1;
+          if (dut.Core_cpu.u_ifu_subsys.g_tage.u_tage.g_tab[1].tg_p[r] !== 0) nz = nz + 1;
+          if (dut.Core_cpu.u_ifu_subsys.g_tage.u_tage.g_tab[2].tg_p[r] !== 0) nz = nz + 1;
+          if (dut.Core_cpu.u_ifu_subsys.g_tage.u_tage.g_tab[3].tg_p[r] !== 0) nz = nz + 1;
+          // 自检: 预测副本与训练副本必须逐位相同 (两份共用同一个写口, 内容恒等)
+          if (dut.Core_cpu.u_ifu_subsys.g_tage.u_tage.g_tab[0].tg_p[r]
+           !== dut.Core_cpu.u_ifu_subsys.g_tage.u_tage.g_tab[0].tg_u[r]) mism = mism + 1;
+          if (dut.Core_cpu.u_ifu_subsys.g_tage.u_tage.g_tab[1].tg_p[r]
+           !== dut.Core_cpu.u_ifu_subsys.g_tage.u_tage.g_tab[1].tg_u[r]) mism = mism + 1;
+          if (dut.Core_cpu.u_ifu_subsys.g_tage.u_tage.g_tab[2].tg_p[r]
+           !== dut.Core_cpu.u_ifu_subsys.g_tage.u_tage.g_tab[2].tg_u[r]) mism = mism + 1;
+          if (dut.Core_cpu.u_ifu_subsys.g_tage.u_tage.g_tab[3].tg_p[r]
+           !== dut.Core_cpu.u_ifu_subsys.g_tage.u_tage.g_tab[3].tg_u[r]) mism = mism + 1;
+        end
+        $display("    TAGE rows valid = %0d / %0d (tg 双副本不一致 = %0d)", nz, tot, mism);
       end
 `else
       begin
