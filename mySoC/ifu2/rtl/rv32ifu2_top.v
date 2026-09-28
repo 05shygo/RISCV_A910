@@ -441,12 +441,33 @@ wire        can_push  = q_hit & init_all;
 // init_done 显式挡住扫描期, 不依赖 X 的取值 (X 在 Verilog 里 `& 0` 是 0, 但别赌)。
 assign refill_req = ~q_hit & ~refill_busy & init_all & ~redirect;
 
-// 重定向当拍不推进: 此时 q_pc 还是旧路径的 PC, 推下去就是错误路径的指令。
 // ⚠️ 位宽必须 >= want_push 的位宽。这里曾经还是 [1:0], 而 want_push 已经是 [2:0]:
 //    want_push=4 (3'b100) 截成 2'b00 = 0 ⇒ **一条都推不进去**, next_pc 原地不动,
 //    BIU 只发 1 次事务然后整条流水线空转 (实测 retired=0, fetch bubble≈满拍)。
 //    正是本工程反复踩的"隐式截断"那一族 —— 改宽度时把**所有**同族声明一起改。
-wire [ 2:0] push_num = (can_push & ~redirect) ? want_push : 3'd0;
+//
+// ---------------------------------------------------------------------------
+// 这里原先还有 `& ~redirect` ("重定向当拍不推进, 此时 q_pc 还是旧路径的 PC")。
+// 2026-09-28 去掉: **它在语义上是冗余的, 但物理上代价极大。**
+//
+// 冗余的理由 (逐条核过, 不是推理):
+//   * IBUF 侧: rv32ifu2_ibuf.v 的 `if (rst | flush)` 分支里**根本不写 ent_q**,
+//     而本模块例化时 `.flush(redirect)` ⇒ 重定向那拍 ent_q 无论如何不会被写。
+//   * push_accept 的**每一个**消费者都被 redirect 在更高优先级上覆盖:
+//       - ghr_after (下面 GHR 那段): rtu_* → 全 0; iu_chgflw_vld → ghr_restore;
+//       - next_pc   (文件末尾):     `redirect ? redirect_pc : ...`;
+//       - RAS (rv32ifu2_ras.v):     `restore_vld` 是 if/else if 的**最高优先级**,
+//                                   压栈/弹栈整体被跳过, 连指针都由快照拨回。
+//
+// 代价的理由: 带着 gating, redirect 会一路穿透 acc_push → pushed_m/lane_cond →
+// ghr_next → ghr_after, 以及 pc_adv/reached_taken → next_pc, 还有 chk/ib_push*
+// → IBUF ent_q 的写数据锥。FPGA 报告里 500 条最差路径有 453 条落在 IBUF ent_q,
+// 而 redirect 正是这条链的源头 —— 4~6 级纯控制串联。
+//
+// 去掉之后 redirect 只剩三个终点, 全是"最后一层 mux 的选通": next_pc 的顶层
+// select、ghr_after 的 select、IBUF 的 flush。实测周期数逐位不变。
+// ---------------------------------------------------------------------------
+wire [ 2:0] push_num = can_push ? want_push : 3'd0;
 
 // ---------------------------------------------------------------------------
 // IDU 包拼装
