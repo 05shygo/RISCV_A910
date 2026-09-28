@@ -11,8 +11,13 @@ bin/*.hex128
 meminit.hex
 meminit128.hex
 
-# Vivado 综合报告/工程 (fmax 时序收敛用, 由用户从另一台机器拷进来, 不入库)
-fmax_impl_beh_*.ns/
+# Vivado 综合报告/工程 (fmax 时序收敛用, 由用户从另一台机器拷进来, 165 MB, 不入库)
+fmax_impl_beh_*/
+
+# tb/branch_predictor_championship 是**自带 .git 的嵌套仓库** (16 MB, C++ 选型模型)。
+# 直接 git add 会变成 gitlink, 但没有 .gitmodules ⇒ 别人 clone 下来是个空目录。
+# 要正式纳入请二选一: 加 .gitmodules 走 submodule, 或者删掉它的 .git 再整目录入库。
+tb/branch_predictor_championship/
 
 # VCS/Verdi 构建产物（2026-09-25: 此前误提交进仓库, 600 个文件已从索引移除;
 # 下面的 obj_*/novas* 用通配符覆盖, 上面的单项是历史条目）
