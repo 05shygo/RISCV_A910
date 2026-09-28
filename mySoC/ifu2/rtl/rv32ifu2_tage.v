@@ -115,9 +115,12 @@
 //   * 每个阵列都是教科书模板 (`if (we) mem[a] <= d;` + `assign q = mem[ra];`),
 //     带 `ram_style = "distributed"` ⇒ 落 RAM64X1D 而不是 FF。
 //
-//   ⚠️ 训练侧仍然是**单拍**的读-改-写 (见下面的 p_train)。这一步只动存储形态,
-//      算法与拍序**逐位不变** —— 判据就是 CoreMark 周期数与 branch_bench 逐位相等。
-//      切训练的组合环是下一步的事 (训练打两拍), 那一步会改变训练可见性的延迟。
+//   * **训练打两拍** (2026-09-28 第二步): 训练原本是**一整条组合链**跑在一拍里
+//     (ID_EX.ex_bht_chk → 折历史 → 行索引 → 读阵列 → 命中/优先级 → 计数器递推 →
+//     写数据 → 阵列的 D 端), 综合报告里那是全设计最差的一条 (23 级逻辑、12.6 ns,
+//     其中 10.6 ns 是布线)。现在切成 E / U1 / U2 三段, 每段起点都是一级寄存器,
+//     见下面 §训练打两拍。**这一步会改变训练可见性的延迟** (写落盘晚两拍),
+//     所以它的判据是实测周期数与准确率, 不是"逐位不变"。
 //
 //   ⚠️ use_sel_q 保持寄存器阵列 (64×4 = 256 FF, 可忽略), 但**另加一份只存符号位
 //      的分布式 RAM 副本** `usel_sgn_p` 给 F1 —— 预测路径只要最高位, 而 FF 阵列的
@@ -259,7 +262,7 @@ module rv32ifu2_tage
 
   // ---- 逐表阵列的两份副本, 以及它们各自的读口 ----
   //   `_p` 副本: F1 预测读, 读地址 q_row_idx[gi]      (与顶层同拍)
-  //   `_u` 副本: 训练读,   读地址 u_row_idx[gi]      (与训令同拍)
+  //   `_u` 副本: 训练读,   读地址 u1_row_idx[gi]     (U1 那一级)
   // 两份内容恒等 —— 写口同时写两边。分两份是因为两个读地址互不相关, 分布式 RAM
   // 只能靠复制来加读口 (与其让工具隐式复制, 不如显式写出来, 端口数一眼可数)。
   wire [ROW_W-1:0] tb_row_rd [0:NTABMAX-1];        // 预测读: 整行 {4 × {vld,pred,u}}
@@ -267,21 +270,36 @@ module rv32ifu2_tage
   wire [ROW_W-1:0] tb_row_up [0:NTABMAX-1];        // 训练读: 整行
   wire [TAG_W:0]   tb_tag_up [0:NTABMAX-1];        // 训练读: {行有效, tag}
 
+  // ---- 训练的两级流水 (2026-09-28 加, 见下面 §训练打两拍) ----
+  //
+  //   U1: 索引/控制打一拍 (源是 upd_pc/upd_ghr 现算出来的组合量)
+  //   U2: 写命令打一拍 —— 写口真正用的是这一级
+  reg              u1_vld;
+  reg [ROW_AW-1:0] u1_row_idx [0:NTAB-1];
+  reg [TAG_W-1:0]  u1_row_tag [0:NTAB-1];
+  reg [T0_AW-1:0]  u1_t0_idx;
+  reg [USEL_AW-1:0] u1_usel_idx;
+  reg [1:0]        u1_slot;
+  reg              u1_taken;
+  reg              u1_fpred;
+
   // ---- 每表一个写口 (训练/扫描共用) ----
   // 原本 pv_q 一拍最多 16 个写地址, 现在按表拆开后**每张表每拍至多一个**:
   // provider 与分配/老化按构造落在不同的表上 (老化从 provider 的下一张开始扫),
-  // 而"清同行其它 slot"与 init 都并进了整行写。
-  reg              tab_pv_we   [0:NTABMAX-1];
-  reg [ROW_AW-1:0] tab_pv_addr [0:NTABMAX-1];
-  reg [ROW_W-1:0]  tab_pv_data [0:NTABMAX-1];
-  reg              tab_tg_we   [0:NTABMAX-1];
-  reg [TAG_W:0]    tab_tg_data [0:NTABMAX-1];
+  // 而"清同行其它 slot"与 init 都并进了整行写。加了流水之后这条不变量仍然成立 ——
+  // U2 只有一份寄存器, 每拍至多一笔写命令在落盘。
+  reg              u2_pv_we   [0:NTABMAX-1];
+  reg [ROW_AW-1:0] u2_pv_addr [0:NTABMAX-1];
+  reg [ROW_W-1:0]  u2_pv_data [0:NTABMAX-1];
+  reg              u2_tg_we   [0:NTABMAX-1];
+  reg [TAG_W:0]    u2_tg_data [0:NTABMAX-1];
 
   // ---- T0: 同样行打包 + 双副本 ----
   (* ram_style = "distributed" *) reg [T0_ROW_W-1:0] t0_p [0:T0_ROWS-1];
   (* ram_style = "distributed" *) reg [T0_ROW_W-1:0] t0_u [0:T0_ROWS-1];
   wire [T0_ROW_W-1:0] t0_row_rd;
   wire [T0_ROW_W-1:0] t0_row_up;
+  reg  [T0_AW-1:0]    t0_waddr;                    // U2 写地址
   reg  [T0_ROW_W-1:0] t0_wdata;
   reg                 t0_we;
   wire [1:0]          t0_s [0:SLOTS-1];            // 预测读按 slot 拆开给 t0_pred
@@ -290,6 +308,7 @@ module rv32ifu2_tage
   reg [USEL_W-1:0] use_sel_q [0:USEL_ROWS-1];
   reg              usel_sgn_p [0:USEL_ROWS-1];     // 只存最高位 (= 符号)
   reg              usel_we;
+  reg [USEL_AW-1:0] usel_waddr;                    // U2 写地址
   reg [USEL_W-1:0] usel_wdata;
 
   // 初始化扫描
@@ -346,7 +365,7 @@ module rv32ifu2_tage
   wire [1:0]       u_prov_u_keep;
   wire [2:0]       u_prov_pred_nxt;
   wire [1:0]       u_t0_nxt;
-  wire [USEL_AW-1:0] u_usel_idx;
+  wire [USEL_AW-1:0] u_usel_idx_c;   // 组合算出来的 (U1 的输入)
   wire               u_usel_en;
   wire               u_usel_up;
   wire [USEL_W-1:0]  u_usel_nxt;
@@ -637,15 +656,15 @@ module rv32ifu2_tage
           end
           else
           begin
-            if (tab_pv_we[gi])
+            if (u2_pv_we[gi])
             begin
-              pv_p[tab_pv_addr[gi]] <= tab_pv_data[gi];
-              pv_u[tab_pv_addr[gi]] <= tab_pv_data[gi];
+              pv_p[u2_pv_addr[gi]] <= u2_pv_data[gi];
+              pv_u[u2_pv_addr[gi]] <= u2_pv_data[gi];
             end
-            if (tab_tg_we[gi])
+            if (u2_tg_we[gi])
             begin
-              tg_p[tab_pv_addr[gi]] <= tab_tg_data[gi];
-              tg_u[tab_pv_addr[gi]] <= tab_tg_data[gi];
+              tg_p[u2_pv_addr[gi]] <= u2_tg_data[gi];
+              tg_u[u2_pv_addr[gi]] <= u2_tg_data[gi];
             end
           end
         end // p_tab
@@ -655,9 +674,18 @@ module rv32ifu2_tage
             // 预测读 (F1) —— 地址是 F0 打过来的寄存器
             assign tb_row_rd[gi] = pv_p[q_row_idx[gi]];
             assign tb_tag_rd[gi] = tg_p[q_row_idx[gi]];
-            // 训练读 —— 地址是 (upd_pc, upd_ghr) 现算的
-            assign tb_row_up[gi] = pv_u[u_row_idx[gi]];
-            assign tb_tag_up[gi] = tg_u[u_row_idx[gi]];
+
+            // 训练读 —— 地址是 U1 打过来的寄存器。
+            //
+            // ⚠️ **旁路是必需的**: U1 这一拍读表时, U2 那笔写正在**同一个边沿**落盘,
+            //    所以组合读到的还是旧值。不补这一路, 连着两拍训到同一行时会丢掉前一笔
+            //    (紧循环里的分支真的会这样)。旁路之后读侧看到的就等价于"所有更早的
+            //    训练都已落盘", 与不流水的版本逐位相同 —— 见头注释 §训练打两拍。
+            //    比较口径必须是**表号 + 行号**, 不能用近似量。
+            wire pv_byp = u2_pv_we[gi] & (u2_pv_addr[gi] == u1_row_idx[gi]);
+            wire tg_byp = u2_tg_we[gi] & (u2_pv_addr[gi] == u1_row_idx[gi]);
+            assign tb_row_up[gi] = pv_byp ? u2_pv_data[gi] : pv_u[u1_row_idx[gi]];
+            assign tb_tag_up[gi] = tg_byp ? u2_tg_data[gi] : tg_u[u1_row_idx[gi]];
           end
         else
           begin : g_unused
@@ -684,13 +712,14 @@ module rv32ifu2_tage
     end
     else if (t0_we)
     begin
-      t0_p[u_t0_idx] <= t0_wdata;
-      t0_u[u_t0_idx] <= t0_wdata;
+      t0_p[t0_waddr] <= t0_wdata;
+      t0_u[t0_waddr] <= t0_wdata;
     end
   end // p_t0
 
   assign t0_row_rd = t0_p[q_t0_idx];
-  assign t0_row_up = t0_u[u_t0_idx];
+  // 训练读 + 旁路 (同 pv/tg, 理由见 g_used 那段注释)
+  assign t0_row_up = (t0_we & (t0_waddr == u1_t0_idx)) ? t0_wdata : t0_u[u1_t0_idx];
 
   always @(posedge clk)
   begin : p_usel
@@ -704,10 +733,14 @@ module rv32ifu2_tage
     end
     else if (usel_we)
     begin
-      use_sel_q [u_usel_idx] <= usel_wdata;
-      usel_sgn_p[u_usel_idx] <= usel_wdata[USEL_W-1];
+      use_sel_q [usel_waddr] <= usel_wdata;
+      usel_sgn_p[usel_waddr] <= usel_wdata[USEL_W-1];
     end
   end // p_usel
+
+  // 训练读 + 旁路 (同 pv/tg)
+  wire [USEL_W-1:0] usel_rd = (usel_we & (usel_waddr == u1_usel_idx))
+                            ? usel_wdata : use_sel_q[u1_usel_idx];
 
   // ---------------------------------------------------------------------------
   //  F1: 逐表读行 (行打包后每张表只有一个读口)
@@ -813,6 +846,31 @@ module rv32ifu2_tage
 
   // ---------------------------------------------------------------------------
   //  训练路径: 用 (upd_pc, upd_ghr) 重算一切
+  //
+  //  §训练打两拍 (2026-09-28)
+  //
+  //  加流水之前, 训练是**一整条组合链**跑在一拍里的:
+  //      ID_EX.ex_bht_chk → fold_history → 行索引 → 读阵列 → 命中/优先级 →
+  //      3 位计数器递推 → 写数据 → 阵列的 D 端
+  //  综合报告里这是全设计最差的一条, 而路径上 23 级逻辑里大部分是**读阵列的 mux**
+  //  (4×MUXF7 + 4×MUXF8), 12.6 ns 里 10.6 ns 是布线 —— 逻辑级的账其实不难看,
+  //  难看的是一整块阵列摊开之后的物理距离。上一版把阵列改成逐表 LUTRAM 之后读侧
+  //  从 1024:1 缩到 64:1, 但那仍是同一拍里的组合链。
+  //
+  //  这里把它切成三段, 每段的起点都是一级寄存器:
+  //      E    (upd_vld 那一拍) 组合算索引                     → U1 寄存器
+  //      U1   读表 + 命中判定 + provider/分配/老化 + 计数器递推 → U2 寄存器
+  //      U2   写口 (地址/数据/使能)
+  //
+  //  ⚠️ **唯一一处会改变行为的地方**: 写落盘从"E 边沿"推迟到"E+2 边沿"。
+  //     U1 那一段的读用旁路补齐 (见 g_used / t0 / usel_rd 三处的注释), 所以**训练
+  //     自己看到的表状态与不流水时逐位相同**; 变的是"预测读"能看到这次训练结果的
+  //     时刻晚了两拍。紧循环 (体长 1~2 拍) 里可能因此少学到一次, 长程稳态不受影响。
+  //     这一步的判据是**实测周期数与准确率**, 不是"逐位不变"。
+  //
+  //  ⚠️ 索引仍然在 E 那一拍从 (upd_pc, upd_ghr) **重算**, 没有改成随 chk 携带。
+  //     理由见头注释 §Training: 携带的编号会在 F1→EX 的几拍里过期 (表还在被别的
+  //     分支写), 拿它当写地址会改到别的块的表项上。重算是读写索引一致性的保证。
   // ---------------------------------------------------------------------------
   generate
     for (gi = 0; gi < NTAB; gi = gi + 1)
@@ -830,18 +888,58 @@ module rv32ifu2_tage
   assign u_slot = upd_pc[3:2];
 
   assign u_t0_idx = t0_index(upd_pc, upd_ghr);
+
+  assign u_usel_idx_c = usel_index(upd_pc, upd_ghr);
+
+  // ---- U1: 索引与控制打一拍 ----
+  // 只打"索引/控制"这一层, 不打折出来的历史树 —— 折历史 (fold_history) 本身是
+  // XOR 树, 放在 U1 的起点这一段里, 后面整段就与它无关了。
+  always @(posedge clk)
+  begin : p_u1
+    if (rst)
+    begin
+      u1_vld    <= 1'b0;
+      u1_t0_idx <= {T0_AW{1'b0}};
+      u1_usel_idx <= {USEL_AW{1'b0}};
+      u1_slot   <= 2'b00;
+      u1_taken  <= 1'b0;
+      u1_fpred  <= 1'b0;
+      for (wj = 0; wj < NTAB; wj = wj + 1)
+      begin
+        u1_row_idx[wj] <= {ROW_AW{1'b0}};
+        u1_row_tag[wj] <= {TAG_W{1'b0}};
+      end
+    end
+    else
+    begin
+      // 扫描期间不训练 (与原来一致): init_done_q 为 0 时 u1_vld 恒 0,
+      // 于是 U2 那级只会锁进全 0 的写命令。
+      u1_vld    <= upd_vld & init_done_q;
+      u1_t0_idx <= u_t0_idx;
+      u1_usel_idx <= u_usel_idx_c;
+      u1_slot   <= u_slot;
+      u1_taken  <= upd_taken;
+      u1_fpred  <= upd_fpred;
+      for (wj = 0; wj < NTAB; wj = wj + 1)
+      begin
+        u1_row_idx[wj] <= u_row_idx[wj];
+        u1_row_tag[wj] <= u_row_tag[wj];
+      end
+    end
+  end // p_u1
+
   // T0 是 2 位计数器, 借高两位拼成"3 位口径"以便和 tagged 表统一比较 ——
   // 只有 bit[2] (方向) 会被用到。
-  assign u_t0_pred = {t0_row_up[u_slot*2 + T0_TAKEN_POS], 2'b00};
+  assign u_t0_pred = {t0_row_up[u1_slot*2 + T0_TAKEN_POS], 2'b00};
 
-  assign u_t0_nxt = ctr2_next(t0_row_up[u_slot*2 +: 2], upd_taken);
+  assign u_t0_nxt = ctr2_next(t0_row_up[u1_slot*2 +: 2], u1_taken);
 
   generate
     for (gi = 0; gi < NTAB; gi = gi + 1)
       begin : g_u_read
         assign u_tag_row[gi] = tb_tag_up[gi];
-        assign u_ent    [gi] = tb_row_up[gi][u_slot*SLOT_W +: SLOT_W];
-        assign u_hit    [gi] = u_tag_row[gi][TAG_W] & (u_tag_row[gi][TAG_W-1:0] == u_row_tag[gi])
+        assign u_ent    [gi] = tb_row_up[gi][u1_slot*SLOT_W +: SLOT_W];
+        assign u_hit    [gi] = u_tag_row[gi][TAG_W] & (u_tag_row[gi][TAG_W-1:0] == u1_row_tag[gi])
                              & u_ent[gi][SLOT_VLD_POS];
       end
   endgenerate
@@ -869,7 +967,7 @@ module rv32ifu2_tage
                                     : u_ent[u_prov_s-1][SLOT_PRED_POS +: SLOT_PRED_W];
   assign u_apred = (u_alt  == 3'd0) ? u_t0_pred
                                     : u_ent[u_alt_s -1][SLOT_PRED_POS +: SLOT_PRED_W];
-  assign u_misp  = (upd_fpred != upd_taken);
+  assign u_misp  = (u1_fpred != u1_taken);
 
   // ---------------------------------------------------------------------------
   // USE_SEL 的更新 (规格: "当 altpred 与最终的分支结果相同时递增, 反之递减")
@@ -881,12 +979,12 @@ module rv32ifu2_tage
   //    门控版 (经典 TAGE 是"provider 弱且 altpred != pcpn 时才训练") 可以 A/B,
   //    但那是规格之外的改动。
   // ---------------------------------------------------------------------------
-  // 写索引: **同一个 usel_index**, 只是换成 (upd_pc, upd_ghr)。
-  // ⚠️ upd_ghr 是随指令走完全程的那份 GHR 快照, 与表索引用的是同一对 (pc, ghr),
-  //    所以读写必然同址 (memory bp-class3-root-cause 那条纪律)。
-  assign u_usel_idx = usel_index(upd_pc, upd_ghr);
-  assign u_usel_up  = (u_apred[2] == upd_taken);
-  assign u_usel_nxt = usel_ctr_next(use_sel_q[u_usel_idx], u_usel_up);
+  // 写索引: **同一个 usel_index**, 只是换成 (upd_pc, upd_ghr) —— 它在 E 那一拍算好
+  // 后打进了 u1_usel_idx, 这里读的是 U1 的副本。读地址与写地址是同一个寄存器,
+  // 所以读写必然同址 (memory bp-class3-root-cause 那条纪律)。
+  // ⚠️ upd_ghr 是随指令走完全程的那份 GHR 快照, 与表索引用的是同一对 (pc, ghr)。
+  assign u_usel_up  = (u_apred[2] == u1_taken);
+  assign u_usel_nxt = usel_ctr_next(usel_rd, u_usel_up);
 
   // 门控 (USEL_GATE=1, 默认): 只在"**决定权真的交给了 USE_SEL**"的那些分支上训练 ——
   // 即 provider 弱信心 **且** altpred 与 pcpn 不一致。
@@ -918,10 +1016,10 @@ module rv32ifu2_tage
   //    ⇒ 带过来的这一位 fpred 同时充当了条件与方向, chk 宽度不用动。
   // ---------------------------------------------------------------------------
   assign u_prov_u_nxt    = ctr2_next(u_ent[u_prov_s-1][SLOT_U_POS +: SLOT_U_W],
-                                     upd_fpred == upd_taken);
+                                     u1_fpred == u1_taken);
   // u 保持不变那一支: `altpred == fpred` 时 u 不动, 只更新 pred
   assign u_prov_u_keep   = u_ent[u_prov_s-1][SLOT_U_POS +: SLOT_U_W];
-  assign u_prov_pred_nxt = ctr3_next(u_ppred, upd_taken);
+  assign u_prov_pred_nxt = ctr3_next(u_ppred, u1_taken);
 
   // ---------------------------------------------------------------------------
   //  分配 (规格 §6 策略 A/B/C)
@@ -967,11 +1065,11 @@ module rv32ifu2_tage
     u_k_tag_same = 1'b0;
     if (u_k != 3'd0)
       u_k_tag_same = u_tag_row[u_k-1][TAG_W]
-                   & (u_tag_row[u_k-1][TAG_W-1:0] == u_row_tag[u_k-1]);
+                   & (u_tag_row[u_k-1][TAG_W-1:0] == u1_row_tag[u_k-1]);
   end // p_u_alloc
 
   // 新分配的表项: pred = 本次结果的弱方向 (011/100), u = 0
-  assign u_alloc_pred = upd_taken ? 3'b100 : 3'b011;
+  assign u_alloc_pred = u1_taken ? 3'b100 : 3'b011;
 
   // 老化递减: 比 provider 更长的表的 u 各减 1 (规格 §6 (A)-2, 类 LSU 效果)
   generate
@@ -984,7 +1082,7 @@ module rv32ifu2_tage
   endgenerate
 
   // ---------------------------------------------------------------------------
-  //  写命令生成 (组合)
+  //  U2: 写命令打一拍
   //
   //  所有写入落在**互不重叠**的表上: provider 的表 vs 分配/老化落到的更长的
   //  表, 按构造是不同表 —— 于是"每张表每拍一个写口"这条不变量成立, 也是这次
@@ -992,48 +1090,60 @@ module rv32ifu2_tage
   //  新的写源, 行为是确定的而不是"两个 always 分支各写各的"。
   //
   //  与平铺版的逐位对应关系:
-  //    * provider 写 = 整行里替换掉第 u_slot 个 slot 的 {vld, pred, u}
+  //    * provider 写 = 整行里替换掉第 u1_slot 个 slot 的 {vld, pred, u}
   //    * 分配写     = 整行 (行标签被替换时其余 slot 清零, 否则保留 —— 见 §6 偏离 3)
-  //    * 老化写     = 整行里只替换第 u_slot 个 slot 的 u
+  //    * 老化写     = 整行里只替换第 u1_slot 个 slot 的 u
   //    * tag 写     = 只有分配那一路才有
+  //
+  //  U2 是**打拍**的 (非阻塞写 u2_* 寄存器) —— 这正是切断那条组合环的那一下:
+  //  上面那一大段判定全部落在 U1 这一拍里, 结果只走寄存器到写口, 写口后面
+  //  只剩"地址 + 数据 + 使能"三组寄存器到阵列的 D 端。
+  //
+  //  ⚠️ 每个分支都必须显式把**所有** u2_* 写一遍 (没有"保持"语义): 它们是流水
+  //     寄存器, 靠"本拍没有训练就写 0"来表达"本拍没有训练"。漏清一路就是一笔幽灵写。
   // ---------------------------------------------------------------------------
-  always @*
-  begin : p_wr_cmd
-    for (ci = 0; ci < NTABMAX; ci = ci + 1)
+  always @(posedge clk)
+  begin : p_u2
+    integer li;
+    for (li = 0; li < NTABMAX; li = li + 1)
     begin
-      tab_pv_we[ci]   = 1'b0;
-      tab_pv_addr[ci] = {ROW_AW{1'b0}};
-      tab_pv_data[ci] = {ROW_W{1'b0}};
-      tab_tg_we[ci]   = 1'b0;
-      tab_tg_data[ci] = {(TAG_W+1){1'b0}};
+      u2_pv_we[li]   <= 1'b0;
+      u2_pv_addr[li] <= {ROW_AW{1'b0}};
+      u2_pv_data[li] <= {ROW_W{1'b0}};
+      u2_tg_we[li]   <= 1'b0;
+      u2_tg_data[li] <= {(TAG_W+1){1'b0}};
     end
+    t0_we      <= 1'b0;
+    t0_waddr   <= {T0_AW{1'b0}};
+    t0_wdata   <= {T0_ROW_W{1'b0}};
+    usel_we    <= 1'b0;
+    usel_waddr <= {USEL_AW{1'b0}};
+    usel_wdata <= {USEL_W{1'b0}};
 
-    t0_we    = 1'b0;
-    t0_wdata = {T0_ROW_W{1'b0}};
-    usel_we  = 1'b0;
-    usel_wdata = {USEL_W{1'b0}};
-
-    if (init_done_q && upd_vld)
+    // rst / 扫描期间: 上面那组默认值已经把在途命令清成 0, 不需要再写一遍
+    if (!rst && init_done_q && u1_vld)
     begin
       // 0) USE_SEL (门控见 u_usel_en 处的注释)。它自成一张小表, 与其它写入不冲突。
-      usel_we    = u_usel_en;
-      usel_wdata = u_usel_nxt;
+      usel_we    <= u_usel_en;
+      usel_waddr <= u1_usel_idx;
+      usel_wdata <= u_usel_nxt;
 
       // 1) provider 的 pred **无条件**更新 (规格 §5/§6);
       //    u 只在 `altpred != fpred` 时更新 (否则保持原值)。
       if (u_prov == 3'd0)
       begin
-        t0_we    = 1'b1;
-        t0_wdata = t0_put(t0_row_up, u_slot, u_t0_nxt);
+        t0_we    <= 1'b1;
+        t0_waddr <= u1_t0_idx;
+        t0_wdata <= t0_put(t0_row_up, u1_slot, u_t0_nxt);
       end
       else
       begin
-        tab_pv_we  [u_prov-1] = 1'b1;
-        tab_pv_addr[u_prov-1] = u_row_idx[u_prov-1];
-        tab_pv_data[u_prov-1] = slot_put(tb_row_up[u_prov-1], u_slot,
+        u2_pv_we  [u_prov-1] <= 1'b1;
+        u2_pv_addr[u_prov-1] <= u1_row_idx[u_prov-1];
+        u2_pv_data[u_prov-1] <= slot_put(tb_row_up[u_prov-1], u1_slot,
                                          {1'b1, u_prov_pred_nxt,
-                                          (u_apred[2] != upd_fpred) ? u_prov_u_nxt
-                                                                    : u_prov_u_keep});
+                                          (u_apred[2] != u1_fpred) ? u_prov_u_nxt
+                                                                   : u_prov_u_keep});
       end
 
       // 2) 误预测 ⇒ 分配 / 老化
@@ -1041,21 +1151,21 @@ module rv32ifu2_tage
       begin
         if (u_k != 3'd0)
         begin
-          tab_pv_we  [u_k-1] = 1'b1;
-          tab_pv_addr[u_k-1] = u_row_idx[u_k-1];
+          u2_pv_we  [u_k-1] <= 1'b1;
+          u2_pv_addr[u_k-1] <= u1_row_idx[u_k-1];
           // 只有行标签真的被替换时才清同行其它 slot (见上面"三处偏离"第 3 条)
-          tab_pv_data[u_k-1] = slot_put(u_k_tag_same ? tb_row_up[u_k-1] : {ROW_W{1'b0}},
-                                        u_slot, {1'b1, u_alloc_pred, 2'b00});
-          tab_tg_we  [u_k-1] = 1'b1;
-          tab_tg_data[u_k-1] = {1'b1, u_row_tag[u_k-1]};
+          u2_pv_data[u_k-1] <= slot_put(u_k_tag_same ? tb_row_up[u_k-1] : {ROW_W{1'b0}},
+                                        u1_slot, {1'b1, u_alloc_pred, 2'b00});
+          u2_tg_we  [u_k-1] <= 1'b1;
+          u2_tg_data[u_k-1] <= {1'b1, u1_row_tag[u_k-1]};
         end
         else
         begin
           for (wi = ((u_prov == 3'd0) ? 0 : u_prov); wi < NTAB; wi = wi + 1)
           begin
-            tab_pv_we  [wi] = 1'b1;
-            tab_pv_addr[wi] = u_row_idx[wi];
-            tab_pv_data[wi] = slot_put(tb_row_up[wi], u_slot,
+            u2_pv_we  [wi] <= 1'b1;
+            u2_pv_addr[wi] <= u1_row_idx[wi];
+            u2_pv_data[wi] <= slot_put(tb_row_up[wi], u1_slot,
                                        {u_ent[wi][SLOT_VLD_POS],
                                         u_ent[wi][SLOT_PRED_POS +: SLOT_PRED_W],
                                         u_age[wi]});
@@ -1063,7 +1173,7 @@ module rv32ifu2_tage
         end
       end
     end
-  end // p_wr_cmd
+  end // p_u2
 
   // ---------------------------------------------------------------------------
   //  配置自检 + 打印 (照 rv32ifu2_icache.v 的做法)
