@@ -188,6 +188,33 @@ report_utilization -file [file join $PROJ_DIR utilization.rpt]
 # 终点都落在 TAGE 的 pv_q 写口上, 那份分布才是判断"该动哪"的依据。
 report_timing -delay_type max -max_paths 500 -file [file join $PROJ_DIR timing_paths500.rpt]
 
+# ---------------------------------------------------------------------------
+# ⚠️ 上面那份 500 条有个**盲区**: `-nworst 1` 意味着每个终点只报它最差的那一条,
+#    而实测 500 条全部从同一个寄存器位 (EX 级的 ex_csr_addr_reg) 出发 ——
+#    **前端 F1 那一拍自己的路径一条都看不到**。
+#
+#    而 F1 那一拍 (icache tag 比较 + BTB 行匹配 + TAGE 读/优先/use_sel + taken
+#    选择 + next_pc) 正是做完 EX→前端那几刀之后会顶上来的一段, 现在完全没有数据。
+#
+# 这份按 **-nworst 8** 报: 同一个终点最多列 8 条不同起点的路径。
+# 于是对同一个前端终点, 既能看到 EX 起点那条, 也能看到 q_pc/q_data 起点那条 ——
+# 不用猜"F1 到底多长", 也不依赖任何层次名 (综合后名字会变)。
+# ---------------------------------------------------------------------------
+report_timing -delay_type max -max_paths 200 -nworst 8 -file [file join $PROJ_DIR timing_paths_f1.rpt]
+
+# 定向: 直接从 F1 的 PC 寄存器出发的最差路径。名字在综合后可能被优化掉,
+# 所以包在 catch 里 —— 取不到就跳过, 不影响整个流程 (上面那份 nworst 8 仍在)。
+if {[catch {
+    set f1_src [get_pins -hier -filter {NAME =~ "*u_icache/q_pc_q_reg*/C"}]
+    if {[llength $f1_src] > 0} {
+        report_timing -delay_type max -from $f1_src -max_paths 20 -nworst 3 \
+            -file [file join $PROJ_DIR timing_from_qpc.rpt]
+        puts "F1 report: [llength $f1_src] 个 q_pc_q 起点"
+    } else {
+        puts "F1 report: 找不到 u_icache/q_pc_q_reg, 跳过"
+    }
+} err]} { puts "F1 report skipped: $err" }
+
 set wns  [get_property SLACK [get_timing_paths -delay_type max -max_paths 1]]
 set fmax [expr {1000.0 / ($PERIOD - $wns)}]
 
@@ -203,6 +230,26 @@ foreach p [get_timing_paths -delay_type max -max_paths 8] {
 set ncrit 0
 foreach p [get_timing_paths -delay_type max -max_paths 200 -slack_lesser_than 0] { incr ncrit }
 puts "VIOLATING PATHS (slack<0, up to 200): $ncrit"
+
+# ---------------------------------------------------------------------------
+# 关键判据: **非 EX 起点**的最差路径有多长。
+#   EX↔前端那几刀砍完之后, 顶上来的一定是前端 F1 自己那一拍 (从 q_pc/q_row_idx/
+#   ctr_q 这些寄存器出发)。这条数字直接告诉我们"F1 还有多少余量", 也是决定
+#   要不要动 TAGE / gshare 的依据。一并打进 log 的 FMAX_SUMMARY 附近, 好抓。
+# ---------------------------------------------------------------------------
+set non_ex ""
+foreach p [get_timing_paths -delay_type max -max_paths 300 -nworst 8] {
+    if {[string match "*ex_csr_addr*" [get_property STARTPOINT_PIN $p]]} { continue }
+    set non_ex $p
+    break
+}
+if {$non_ex ne ""} {
+    puts [format "WORST_NON_EX slack=%.3fns  %s -> %s" \
+        [get_property SLACK $non_ex] \
+        [get_property STARTPOINT_PIN $non_ex] [get_property ENDPOINT_PIN $non_ex]]
+} else {
+    puts "WORST_NON_EX 没有非 ex_csr_addr 起点的路径 (前 300 个终点全是它)"
+}
 puts [format "FMAX_SUMMARY period=%s mode=%s wns=%.4f fmax_mhz=%.2f" \
       $PERIOD $MODE $wns $fmax]
 puts "================================================================"
