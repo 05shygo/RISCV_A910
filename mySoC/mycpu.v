@@ -796,7 +796,24 @@ wire ex_store_oob = have_inst_EX & ex_is_store & ~`ADDR_IN_MAP(ex_alu_c);
 wire ex_br_taken = (ex_npc_op == `NPC_SEL_BRANCH) && ex_alu_f;
 wire ex_is_jump  = (ex_npc_op == `NPC_SEL_JAL);
 wire ex_is_jalr  = (ex_npc_op == `NPC_SEL_ALU);
-wire [31:0] ex_target = ex_is_jalr ? ex_alu_c : (pc_EX + ex_sext);
+
+// ---------------------------------------------------------------------------
+// 三个后继 PC 候选值**从寄存器直算**, 不再串在 ALU 后面 (2026-09-28)
+//
+// 原来 actual_npc 取的是 ex_alu_c (分支/JAL 走 pc_EX+sext, jalr 走 ALU 的 A+B)。
+// 那条路是 ex_A_final → ALU 32 位进位链 (5 级) → 目标 → mux, 而 FPGA 的关键路径
+// 恰好就是 "EX 重定向 → 前端数组地址" —— ALU 进位链白占 5 级。
+//
+// jalr 的目标 = ALU 的 A+B, 而 jalr 的 alua_sel=ALUA_SEL_RD1 / alub_sel=ALUB_SEL_SEXT
+// (Control.v 的 SYSTEM 臂), 且 jalr 的 ex_csr_op 恒为 NONE ⇒ ex_A_final == ex_A。
+// 所以 npc_jalr = ex_A + ex_B 与原来的 ex_alu_c **逐位相同**, 只是把加法器搬到
+// 并行位置、从寄存器直接起算。5% 利用率下多两个 32 位加法器是免费的。
+// ---------------------------------------------------------------------------
+wire [31:0] npc_pc4  = pc_EX + 32'd4;       // 顺序后继
+wire [31:0] npc_imm  = pc_EX + ex_sext;     // 分支 / JAL 目标
+wire [31:0] npc_jalr = ex_A + ex_B;         // jalr 目标 (= ALU 的 A+B)
+
+wire [31:0] ex_target = ex_is_jalr ? npc_jalr : npc_imm;
 wire ex_inst_misaligned = have_inst_EX & (ex_br_taken | ex_is_jump | ex_is_jalr)
                         & (ex_target[1:0] != 2'b00);
 
@@ -805,9 +822,10 @@ wire ex_inst_misaligned = have_inst_EX & (ex_br_taken | ex_is_jump | ex_is_jalr)
 // 真实后继 PC。与旧 NPC.v 不同, 这里直接用 pc_EX 作基准, 不再依赖
 // "if_pc == pc_EX + 8" 那个关系 (旧 NPC 里 PC + offset - 8 的 -8 就是
 // 为这个关系打的补丁)。
-wire [31:0] actual_npc = ex_is_jalr ? ex_alu_c
-                       : (ex_br_taken | ex_is_jump) ? (pc_EX + ex_sext)
-                       : (pc_EX + 32'd4);
+// 三个候选值都已在上面并行算好, 这里只剩一层 3 路 mux。
+wire [31:0] actual_npc = ex_is_jalr ? npc_jalr
+                       : (ex_br_taken | ex_is_jump) ? npc_imm
+                       : npc_pc4;
 // 非对齐目标不重定向: IFU 对非对齐目标只会预测 pc+4, 必然判"误预测",
 // 但把非对齐 PC 发给 IFU 只会让它报取指故障并停住 (fault_stop_q 要等
 // 重定向才清) —— 交给 ex_inst_misaligned 异常在 WB 处理。
