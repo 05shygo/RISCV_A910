@@ -138,6 +138,34 @@ assign id_rf1_used = ~((opcode == `OPCODE_LUI) || (opcode == `OPCODE_JAL));
 assign id_rf2_used = ((opcode == `OPCODE_R) || (opcode == `OPCODE_S) || (opcode == `OPCODE_B));
 
 always @(*) begin
+    // -----------------------------------------------------------------------
+    // 无条件默认值 —— **必须留在 case 之前** (2026-09-28)
+    //
+    // 这段 case 有几条分支不给某些信号赋值 (R 不给 sext_op; LUI/JAL 不给
+    // alu_op/alua_sel/alub_sel; S/B 不给 rf_wsel; 7 条不给 dram_sel)。
+    // 缺赋值 ⇒ Vivado 推断电平敏感 latch (实测 Control 出 6 处、16 个 LDCE),
+    // 而 latch 的门是数据信号 ⇒ 被报成 `TIMING-20 Non-clocked latch`,
+    // 那些路径**根本不进时序分析**, 工具也不会去优化它们。
+    //
+    // 逐条核过每个"洞"的下游都走不到: 洞所在的分支里, 那个信号要么不被消费
+    // (例如 S/B 的 rf_wsel —— rf_we=0, 写回被门控), 要么被同分支给的别的信号
+    // 排除 (例如 LUI/JAL 的 alu_op —— rf_wsel 是 SEXT/PC4, ALU 结果不进写回)。
+    // 合法指令语义不变。
+    //
+    // dram_sel 缺省取 LB 而不是 LW: LB 让 ex_wsize_word/ex_wsize_half 都为 0,
+    // 于是 ex_addr_bad 连 ex_alu_c 都不看 —— 那些分支本来就不访存, 少一份
+    // "非访存指令的地址"进异常判据。**不要**改成 SW/SH。
+    // -----------------------------------------------------------------------
+    sext_op  = `Sext_I;
+    npc_op   = `NPC_SEL_NEXT;
+    alu_op   = `ALU_ADD;
+    alua_sel = `ALUA_SEL_RD1;
+    alub_sel = `ALUB_SEL_RD2;
+    rf_wsel  = `RF_WSEL_ALUC;
+    dram_sel = `DRAM_SEL_LB;
+    rf_we    = 1'b0;
+    ram_we   = 1'b0;
+    is_muldiv = 1'b0;
     case (opcode)
         `OPCODE_R: begin
             npc_op = `NPC_SEL_NEXT;
@@ -198,7 +226,10 @@ always @(*) begin
                     `FUNCT3_SLTU: begin
                         alu_op = `ALU_SLTU;
                     end
+                    // 不可达 (8 个 funct3 在上面全枚举了), 但空 default 在
+                    // "这个块已经全赋值"之后是个坑 —— 补上, 别留给下一个读者。
                     default begin
+                        alu_op = `ALU_ADD;
                     end
                 endcase
             end
@@ -285,7 +316,12 @@ always @(*) begin
                 `FUNCT3_SB: dram_sel = `DRAM_SEL_SB;
                 `FUNCT3_SH: dram_sel = `DRAM_SEL_SH;
                 `FUNCT3_SW: dram_sel = `DRAM_SEL_SW;
-                default: dram_sel = 0;
+                // ⚠️ 这里是 `0` (= DRAM_SEL_LW, 一个**读**选择子) 而 ram_we=1。
+                //    配合 MEM.v 的 `wdata_out` 原先也是 latch, 非法 store funct3 时
+                //    实际写进内存的是**上一笔 store 的残留数据** —— 历史相关的垃圾。
+                //    改成 SW 后这个角落 = "按 SW 写 wdin", 确定且与 MEM.v 的
+                //    default 臂一致。合法 funct3 走不到这里。
+                default: dram_sel = `DRAM_SEL_SW;
             endcase
         end
         `OPCODE_B: begin

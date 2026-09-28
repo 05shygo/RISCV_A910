@@ -37,7 +37,14 @@ assign we_out = we_in;
 assign addr_out = addr_in;
 
 always @(*) begin
-    case (dram_sel) 
+    // 读分支不给 wdata_out 赋值、写分支不给 rdo 赋值 —— 缺这两行 Vivado 会推断出
+    // 64 位 latch (TIMING-20 Non-clocked latch)。下游都进不去: rdo 只在
+    // rf_wsel==DRAM 时进写回, 而 store 的 rf_we=0; wdata_out 只经 Bus_wdata 出去,
+    // 而 load 的 Bus_wen=0 (perip_bridge.v 的端口契约: Bus_wen==0 时 Bus_wdata 是垃圾)。
+    // 所以填什么都不影响合法指令。 (2026-09-28)
+    rdo        = 32'b0;
+    wdata_out  = wdin;
+    case (dram_sel)
         `DRAM_SEL_LW: begin
             rdo = DRAM_rdata_in;
         end
