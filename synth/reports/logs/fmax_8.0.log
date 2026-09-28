@@ -1,0 +1,2208 @@
+
+****** Vivado v2023.2 (64-bit)
+  **** SW Build 4029153 on Fri Oct 13 20:13:54 MDT 2023
+  **** IP Build 4028589 on Sat Oct 14 00:45:43 MDT 2023
+  **** SharedData Build 4025554 on Tue Oct 10 17:18:54 MDT 2023
+    ** Copyright 1986-2022 Xilinx, Inc. All Rights Reserved.
+    ** Copyright 2022-2023 Advanced Micro Devices, Inc. All Rights Reserved.
+
+source build_fmax.tcl
+# set PERIOD 12.2
+# set MODE   "impl"
+# set BIN    ""
+# if {[llength $argv] >= 1} { set PERIOD [lindex $argv 0] }
+# if {[llength $argv] >= 2} { set MODE   [lindex $argv 1] }
+# if {[llength $argv] >= 3} { set BIN    [lindex $argv 2] }
+# set SP   [file normalize [file dirname [info script]]]
+# set ROOT [file normalize [file join $SP ..]]
+# if {$BIN eq ""} { set BIN [file join $ROOT bin coremark.bin] }
+# if {![file exists $BIN]} { error "镜像不存在: $BIN" }
+# puts "================================================================"
+================================================================
+# puts "FMAX RUN: period=$PERIOD ns  mode=$MODE"
+FMAX RUN: period=8.0 ns  mode=impl
+# puts "ROOT=$ROOT"
+ROOT=/home/st-wangjun/project/RISCV_A910
+# puts "BIN =$BIN"
+BIN =/home/st-wangjun/project/RISCV_A910/bin/coremark.bin
+# puts "================================================================"
+================================================================
+# set PROJ_NAME "fmax_${MODE}_${PERIOD}ns"
+# set PROJ_DIR  [file join $SP "vivado" $PROJ_NAME]
+# if {[file exists $PROJ_DIR]} {
+#     if {[catch {file delete -force $PROJ_DIR} err]} {
+#         error "工程目录存在且删不掉 (多半有进程占着): $err"
+#     }
+# }
+# file mkdir $PROJ_DIR
+# proc gen_hex_images {bin_path hex32_path hex128_path rows} {
+#     set fh [open $bin_path rb]
+#     set data [read $fh]
+#     close $fh
+# 
+#     set need [expr {$rows * 4}]
+#     if {[string length $data] < $need} {
+#         append data [string repeat "\x00" [expr {$need - [string length $data]}]]
+#     }
+# 
+#     binary scan $data c* bytes
+#     set nwords [expr {[string length $data] / 4}]
+# 
+#     set words [list]
+#     for {set i 0} {$i < $nwords} {incr i} {
+#         set b0 [lindex $bytes [expr {$i*4    }]]
+#         set b1 [lindex $bytes [expr {$i*4 + 1}]]
+#         set b2 [lindex $bytes [expr {$i*4 + 2}]]
+#         set b3 [lindex $bytes [expr {$i*4 + 3}]]
+#         lappend words [expr {(($b3 & 0xff) << 24) | (($b2 & 0xff) << 16) |
+#                              (($b1 & 0xff) <<  8) |  ($b0 & 0xff)}]
+#     }
+# 
+#     set f1 [open $hex32_path w]
+#     foreach w $words { puts $f1 [format %08x $w] }
+#     close $f1
+# 
+#     set f2 [open $hex128_path w]
+#     for {set i 0} {$i < $nwords} {incr i 4} {
+#         puts $f2 [format "%08x%08x%08x%08x" \
+#                   [lindex $words [expr {$i+3}]] [lindex $words [expr {$i+2}]] \
+#                   [lindex $words [expr {$i+1}]] [lindex $words [expr {$i  }]]]
+#     }
+#     close $f2
+# 
+#     puts "HEX: $hex32_path ([expr {$nwords}] 字) + $hex128_path ([expr {$nwords/4}] 块)"
+# }
+# set HEX_ROWS 16384
+# set hex32  [file join $PROJ_DIR meminit.hex]
+# set hex128 [file join $PROJ_DIR meminit128.hex]
+# gen_hex_images $BIN $hex32 $hex128 $HEX_ROWS
+HEX: /home/st-wangjun/project/RISCV_A910/synth/vivado/fmax_impl_8.0ns/meminit.hex (16384 字) + /home/st-wangjun/project/RISCV_A910/synth/vivado/fmax_impl_8.0ns/meminit128.hex (4096 块)
+# create_project -force $PROJ_NAME $PROJ_DIR -part xc7k325tffg900-2
+# set src_files {}
+# foreach f [lsort [glob -nocomplain [file join $ROOT mySoC *.v]]] {
+#     if {[file tail $f] eq "ifu_subsys.v"} { continue }
+#     lappend src_files $f
+# }
+# foreach f [lsort [glob -nocomplain [file join $ROOT mySoC ifu2 rtl *.v]]] {
+#     lappend src_files $f
+# }
+# lappend src_files [file join $SP top_fmax.v]
+# add_files -norecurse $src_files
+# set_property file_type SystemVerilog [get_files -of [get_filesets sources_1] *.v]
+# set DEFS [list \
+#     USE_IFU2 \
+#     USE_IFU_ANY \
+#     BP_PRED=1 \
+#     BP_GHR_W=16 \
+#     ICACHE_BYTES=1024 \
+#     ICACHE_LINE_BYTES=16 \
+#     ICACHE_LINE_16B \
+#     PATHHEX=$hex32 \
+#     PATH128=$hex128 \
+# ]
+# set_property verilog_define $DEFS [get_filesets sources_1]
+# set_property include_dirs [list [file join $ROOT mySoC] [file join $ROOT vsrc]] [get_filesets sources_1]
+# set_property top top_fmax [get_filesets sources_1]
+# set xdc [file join $PROJ_DIR fmax_gen.xdc]
+# set fh [open $xdc w]
+# puts $fh "create_clock -name clk -period $PERIOD \[get_ports clk\]"
+# puts $fh "set_input_delay  -clock clk 2.0 \[get_ports rst\]"
+# puts $fh "set_false_path -to \[get_ports {o_dbg_pc o_dbg_value o_dbg_reg o_dbg_ena o_dbg_have}\]"
+# close $fh
+# add_files -fileset constrs_1 $xdc
+# launch_runs synth_1 -jobs 8
+WARNING: [Vivado 12-7122] Auto Incremental Compile:: No reference checkpoint was found in run synth_1. Auto-incremental flow will not be run, the standard flow will be run instead.
+[Mon Sep 28 19:59:09 2026] Launched synth_1...
+Run output will be captured here: /home/st-wangjun/project/RISCV_A910/synth/vivado/fmax_impl_8.0ns/fmax_impl_8.0ns.runs/synth_1/runme.log
+# wait_on_run synth_1
+[Mon Sep 28 19:59:09 2026] Waiting for synth_1 to finish...
+
+*** Running vivado
+    with args -log top_fmax.vds -m64 -product Vivado -mode batch -messageDb vivado.pb -notrace -source top_fmax.tcl
+
+
+****** Vivado v2023.2 (64-bit)
+  **** SW Build 4029153 on Fri Oct 13 20:13:54 MDT 2023
+  **** IP Build 4028589 on Sat Oct 14 00:45:43 MDT 2023
+  **** SharedData Build 4025554 on Tue Oct 10 17:18:54 MDT 2023
+    ** Copyright 1986-2022 Xilinx, Inc. All Rights Reserved.
+    ** Copyright 2022-2023 Advanced Micro Devices, Inc. All Rights Reserved.
+
+source top_fmax.tcl -notrace
+Command: synth_design -top top_fmax -part xc7k325tffg900-2
+Starting synth_design
+Attempting to get a license for feature 'Synthesis' and/or device 'xc7k325t'
+INFO: [Common 17-349] Got license for feature 'Synthesis' and/or device 'xc7k325t'
+INFO: [Device 21-403] Loading part xc7k325tffg900-2
+INFO: [Synth 8-7079] Multithreading enabled for synth_design using a maximum of 4 processes.
+INFO: [Synth 8-7078] Launching helper process for spawning children vivado processes
+INFO: [Synth 8-7075] Helper process launched with PID 27972
+---------------------------------------------------------------------------------
+Starting RTL Elaboration : Time (s): cpu = 00:00:03 ; elapsed = 00:00:03 . Memory (MB): peak = 2208.094 ; gain = 406.852 ; free physical = 95688 ; free virtual = 955944
+---------------------------------------------------------------------------------
+INFO: [Synth 8-11241] undeclared symbol 'timer_int_flag', assumed default net type 'wire' [/home/st-wangjun/project/RISCV_A910/mySoC/miniRV_SoC.v:130]
+WARNING: [Synth 8-8895] 'timer_int_flag' is already implicitly declared on line 130 [/home/st-wangjun/project/RISCV_A910/mySoC/miniRV_SoC.v:152]
+INFO: [Synth 8-11241] undeclared symbol 'if_accept', assumed default net type 'wire' [/home/st-wangjun/project/RISCV_A910/mySoC/mycpu.v:339]
+WARNING: [Synth 8-8895] 'if_accept' is already implicitly declared on line 339 [/home/st-wangjun/project/RISCV_A910/mySoC/mycpu.v:434]
+WARNING: [Synth 8-11121] redeclaration of ANSI port 'q_hit' is not allowed [/home/st-wangjun/project/RISCV_A910/mySoC/ifu2/rtl/rv32ifu2_icache.v:124]
+INFO: [Synth 8-6157] synthesizing module 'top_fmax' [/home/st-wangjun/project/RISCV_A910/synth/top_fmax.v:12]
+INFO: [Synth 8-6157] synthesizing module 'BUFG' [/home/st-wangjun/hv/tools/Xilinx/Vivado/2023.2/scripts/rt/data/unisim_comp.v:1951]
+INFO: [Synth 8-6155] done synthesizing module 'BUFG' (0#1) [/home/st-wangjun/hv/tools/Xilinx/Vivado/2023.2/scripts/rt/data/unisim_comp.v:1951]
+INFO: [Synth 8-6157] synthesizing module 'miniRV_SoC' [/home/st-wangjun/project/RISCV_A910/mySoC/miniRV_SoC.v:60]
+INFO: [Synth 8-6157] synthesizing module 'myCPU' [/home/st-wangjun/project/RISCV_A910/mySoC/mycpu.v:14]
+INFO: [Synth 8-6157] synthesizing module 'rv32ifu2_top' [/home/st-wangjun/project/RISCV_A910/mySoC/ifu2/rtl/rv32ifu2_top.v:30]
+	Parameter ICACHE_EN bound to: 1'b1 
+	Parameter BP_EN bound to: 1'b1 
+INFO: [Synth 8-6157] synthesizing module 'rv32ifu2_tage' [/home/st-wangjun/project/RISCV_A910/mySoC/ifu2/rtl/rv32ifu2_tage.v:130]
+	Parameter T0_AW bound to: 6 - type: integer 
+	Parameter ROW_AW bound to: 6 - type: integer 
+	Parameter ROW_AW_T1 bound to: 6 - type: integer 
+	Parameter ROW_AW_T2 bound to: 6 - type: integer 
+	Parameter ROW_AW_T3 bound to: 6 - type: integer 
+	Parameter ROW_AW_T4 bound to: 6 - type: integer 
+	Parameter NTAB bound to: 4 - type: integer 
+	Parameter TAG_W bound to: 6 - type: integer 
+	Parameter GHR_W bound to: 16 - type: integer 
+	Parameter T0_HIST bound to: 0 - type: integer 
+	Parameter SLOTS bound to: 4 - type: integer 
+	Parameter TAG_HI bound to: 15 - type: integer 
+	Parameter L1 bound to: 2 - type: integer 
+	Parameter L2 bound to: 5 - type: integer 
+	Parameter L3 bound to: 9 - type: integer 
+	Parameter L4 bound to: 14 - type: integer 
+	Parameter USEL_AW bound to: 6 - type: integer 
+	Parameter USEL_W bound to: 4 - type: integer 
+	Parameter USEL_GATE bound to: 1 - type: integer 
+INFO: [Synth 8-6155] done synthesizing module 'rv32ifu2_tage' (0#1) [/home/st-wangjun/project/RISCV_A910/mySoC/ifu2/rtl/rv32ifu2_tage.v:130]
+INFO: [Synth 8-6157] synthesizing module 'rv32ifu2_icache' [/home/st-wangjun/project/RISCV_A910/mySoC/ifu2/rtl/rv32ifu2_icache.v:68]
+	Parameter IC_BYTES bound to: 1024 - type: integer 
+	Parameter IC_LINE bound to: 16 - type: integer 
+	Parameter IC_WAYS bound to: 2 - type: integer 
+	Parameter ICACHE_EN bound to: 1'b1 
+INFO: [Synth 8-6157] synthesizing module 'rv32ifu2_spram' [/home/st-wangjun/project/RISCV_A910/mySoC/ifu2/rtl/rv32ifu2_spram.v:64]
+	Parameter ADDR_W bound to: 5 - type: integer 
+	Parameter DATA_W bound to: 24 - type: integer 
+INFO: [Synth 8-6157] synthesizing module 'rv32ifu2_spram_prim' [/home/st-wangjun/project/RISCV_A910/mySoC/ifu2/rtl/rv32ifu2_spram.v:141]
+	Parameter ADDR_W bound to: 5 - type: integer 
+	Parameter DATA_W bound to: 24 - type: integer 
+INFO: [Synth 8-6155] done synthesizing module 'rv32ifu2_spram_prim' (0#1) [/home/st-wangjun/project/RISCV_A910/mySoC/ifu2/rtl/rv32ifu2_spram.v:141]
+INFO: [Synth 8-6155] done synthesizing module 'rv32ifu2_spram' (0#1) [/home/st-wangjun/project/RISCV_A910/mySoC/ifu2/rtl/rv32ifu2_spram.v:64]
+INFO: [Synth 8-6157] synthesizing module 'rv32ifu2_spram__parameterized0' [/home/st-wangjun/project/RISCV_A910/mySoC/ifu2/rtl/rv32ifu2_spram.v:64]
+	Parameter ADDR_W bound to: 5 - type: integer 
+	Parameter DATA_W bound to: 128 - type: integer 
+INFO: [Synth 8-6157] synthesizing module 'rv32ifu2_spram_prim__parameterized0' [/home/st-wangjun/project/RISCV_A910/mySoC/ifu2/rtl/rv32ifu2_spram.v:141]
+	Parameter ADDR_W bound to: 5 - type: integer 
+	Parameter DATA_W bound to: 128 - type: integer 
+INFO: [Synth 8-6155] done synthesizing module 'rv32ifu2_spram_prim__parameterized0' (0#1) [/home/st-wangjun/project/RISCV_A910/mySoC/ifu2/rtl/rv32ifu2_spram.v:141]
+INFO: [Synth 8-6155] done synthesizing module 'rv32ifu2_spram__parameterized0' (0#1) [/home/st-wangjun/project/RISCV_A910/mySoC/ifu2/rtl/rv32ifu2_spram.v:64]
+INFO: [Synth 8-6155] done synthesizing module 'rv32ifu2_icache' (0#1) [/home/st-wangjun/project/RISCV_A910/mySoC/ifu2/rtl/rv32ifu2_icache.v:68]
+INFO: [Synth 8-6157] synthesizing module 'rv32ifu2_refill' [/home/st-wangjun/project/RISCV_A910/mySoC/ifu2/rtl/rv32ifu2_refill.v:20]
+	Parameter IC_LINE bound to: 16 - type: integer 
+INFO: [Synth 8-6155] done synthesizing module 'rv32ifu2_refill' (0#1) [/home/st-wangjun/project/RISCV_A910/mySoC/ifu2/rtl/rv32ifu2_refill.v:20]
+INFO: [Synth 8-6157] synthesizing module 'rv32ifu2_btb' [/home/st-wangjun/project/RISCV_A910/mySoC/ifu2/rtl/rv32ifu2_btb.v:27]
+	Parameter ROW_AW bound to: 6 - type: integer 
+	Parameter SLOTS bound to: 4 - type: integer 
+INFO: [Synth 8-6155] done synthesizing module 'rv32ifu2_btb' (0#1) [/home/st-wangjun/project/RISCV_A910/mySoC/ifu2/rtl/rv32ifu2_btb.v:27]
+INFO: [Synth 8-6157] synthesizing module 'rv32ifu2_ibuf' [/home/st-wangjun/project/RISCV_A910/mySoC/ifu2/rtl/rv32ifu2_ibuf.v:18]
+	Parameter DEPTH bound to: 8 - type: integer 
+	Parameter W bound to: 153 - type: integer 
+INFO: [Synth 8-6155] done synthesizing module 'rv32ifu2_ibuf' (0#1) [/home/st-wangjun/project/RISCV_A910/mySoC/ifu2/rtl/rv32ifu2_ibuf.v:18]
+INFO: [Synth 8-6157] synthesizing module 'rv32ifu2_ras' [/home/st-wangjun/project/RISCV_A910/mySoC/ifu2/rtl/rv32ifu2_ras.v:28]
+	Parameter DEPTH bound to: 8 - type: integer 
+	Parameter AW bound to: 3 - type: integer 
+INFO: [Synth 8-6155] done synthesizing module 'rv32ifu2_ras' (0#1) [/home/st-wangjun/project/RISCV_A910/mySoC/ifu2/rtl/rv32ifu2_ras.v:28]
+INFO: [Synth 8-6155] done synthesizing module 'rv32ifu2_top' (0#1) [/home/st-wangjun/project/RISCV_A910/mySoC/ifu2/rtl/rv32ifu2_top.v:30]
+INFO: [Synth 8-6157] synthesizing module 'ifu_biu_mem' [/home/st-wangjun/project/RISCV_A910/mySoC/ifu_biu_mem.v:40]
+INFO: [Synth 8-6157] synthesizing module 'sync_rom_1r1w' [/home/st-wangjun/project/RISCV_A910/mySoC/sync_mem.v:163]
+	Parameter ADDR_W bound to: 12 - type: integer 
+	Parameter DATA_W bound to: 128 - type: integer 
+INFO: [Synth 8-6157] synthesizing module 'sync_rom_1r1w_prim' [/home/st-wangjun/project/RISCV_A910/mySoC/sync_mem.v:183]
+	Parameter ADDR_W bound to: 12 - type: integer 
+	Parameter DATA_W bound to: 128 - type: integer 
+INFO: [Synth 8-3876] $readmem data file '/home/st-wangjun/project/RISCV_A910/synth/vivado/fmax_impl_8.0ns/meminit128.hex' is read successfully [/home/st-wangjun/project/RISCV_A910/mySoC/sync_mem.v:196]
+INFO: [Synth 8-6155] done synthesizing module 'sync_rom_1r1w_prim' (0#1) [/home/st-wangjun/project/RISCV_A910/mySoC/sync_mem.v:183]
+INFO: [Synth 8-6155] done synthesizing module 'sync_rom_1r1w' (0#1) [/home/st-wangjun/project/RISCV_A910/mySoC/sync_mem.v:163]
+INFO: [Synth 8-6155] done synthesizing module 'ifu_biu_mem' (0#1) [/home/st-wangjun/project/RISCV_A910/mySoC/ifu_biu_mem.v:40]
+INFO: [Synth 8-6157] synthesizing module 'IF_ID' [/home/st-wangjun/project/RISCV_A910/mySoC/IF_ID.v:23]
+INFO: [Synth 8-6155] done synthesizing module 'IF_ID' (0#1) [/home/st-wangjun/project/RISCV_A910/mySoC/IF_ID.v:23]
+INFO: [Synth 8-6157] synthesizing module 'SEXT' [/home/st-wangjun/project/RISCV_A910/mySoC/SEXT.v:23]
+INFO: [Synth 8-6155] done synthesizing module 'SEXT' (0#1) [/home/st-wangjun/project/RISCV_A910/mySoC/SEXT.v:23]
+INFO: [Synth 8-6157] synthesizing module 'Control' [/home/st-wangjun/project/RISCV_A910/mySoC/Control.v:23]
+INFO: [Synth 8-226] default block is never used [/home/st-wangjun/project/RISCV_A910/mySoC/Control.v:154]
+INFO: [Synth 8-226] default block is never used [/home/st-wangjun/project/RISCV_A910/mySoC/Control.v:170]
+INFO: [Synth 8-6155] done synthesizing module 'Control' (0#1) [/home/st-wangjun/project/RISCV_A910/mySoC/Control.v:23]
+INFO: [Synth 8-6157] synthesizing module 'RegFile' [/home/st-wangjun/project/RISCV_A910/mySoC/RegFile.v:25]
+INFO: [Synth 8-6155] done synthesizing module 'RegFile' (0#1) [/home/st-wangjun/project/RISCV_A910/mySoC/RegFile.v:25]
+INFO: [Synth 8-6157] synthesizing module 'ALU_input_MUX' [/home/st-wangjun/project/RISCV_A910/mySoC/ALU_input_MUX.v:23]
+INFO: [Synth 8-6155] done synthesizing module 'ALU_input_MUX' (0#1) [/home/st-wangjun/project/RISCV_A910/mySoC/ALU_input_MUX.v:23]
+INFO: [Synth 8-6157] synthesizing module 'ID_EX' [/home/st-wangjun/project/RISCV_A910/mySoC/ID_EX.v:23]
+INFO: [Synth 8-6155] done synthesizing module 'ID_EX' (0#1) [/home/st-wangjun/project/RISCV_A910/mySoC/ID_EX.v:23]
+INFO: [Synth 8-6157] synthesizing module 'ALU' [/home/st-wangjun/project/RISCV_A910/mySoC/ALU.v:24]
+INFO: [Synth 8-6155] done synthesizing module 'ALU' (0#1) [/home/st-wangjun/project/RISCV_A910/mySoC/ALU.v:24]
+INFO: [Synth 8-6157] synthesizing module 'MUL_DIV' [/home/st-wangjun/project/RISCV_A910/mySoC/MUL_DIV.v:35]
+	Parameter DATA_W bound to: 32 - type: integer 
+	Parameter TAG_W bound to: 7 - type: integer 
+INFO: [Synth 8-6157] synthesizing module 'mul_pipe' [/home/st-wangjun/project/RISCV_A910/mySoC/mul_pipe.v:35]
+	Parameter TAG_W bound to: 7 - type: integer 
+INFO: [Synth 8-6155] done synthesizing module 'mul_pipe' (0#1) [/home/st-wangjun/project/RISCV_A910/mySoC/mul_pipe.v:35]
+INFO: [Synth 8-6157] synthesizing module 'div_pipe' [/home/st-wangjun/project/RISCV_A910/mySoC/div_pipe.v:54]
+	Parameter TAG_W bound to: 7 - type: integer 
+INFO: [Synth 8-6155] done synthesizing module 'div_pipe' (0#1) [/home/st-wangjun/project/RISCV_A910/mySoC/div_pipe.v:54]
+INFO: [Synth 8-6155] done synthesizing module 'MUL_DIV' (0#1) [/home/st-wangjun/project/RISCV_A910/mySoC/MUL_DIV.v:35]
+INFO: [Synth 8-6157] synthesizing module 'EX_wD_MUX1' [/home/st-wangjun/project/RISCV_A910/mySoC/EX_wD_MUX1.v:23]
+INFO: [Synth 8-6155] done synthesizing module 'EX_wD_MUX1' (0#1) [/home/st-wangjun/project/RISCV_A910/mySoC/EX_wD_MUX1.v:23]
+INFO: [Synth 8-6157] synthesizing module 'CSR' [/home/st-wangjun/project/RISCV_A910/mySoC/CSR.v:18]
+INFO: [Synth 8-6155] done synthesizing module 'CSR' (0#1) [/home/st-wangjun/project/RISCV_A910/mySoC/CSR.v:18]
+INFO: [Synth 8-6157] synthesizing module 'EX_MEM' [/home/st-wangjun/project/RISCV_A910/mySoC/EX_MEM.v:23]
+INFO: [Synth 8-6155] done synthesizing module 'EX_MEM' (0#1) [/home/st-wangjun/project/RISCV_A910/mySoC/EX_MEM.v:23]
+WARNING: [Synth 8-7071] port 'mem_csr_we' of module 'EX_MEM' is unconnected for instance 'U_EX_MEM' [/home/st-wangjun/project/RISCV_A910/mySoC/mycpu.v:910]
+WARNING: [Synth 8-7023] instance 'U_EX_MEM' of module 'EX_MEM' has 38 connections declared, but only 37 given [/home/st-wangjun/project/RISCV_A910/mySoC/mycpu.v:910]
+INFO: [Synth 8-6157] synthesizing module 'MEM' [/home/st-wangjun/project/RISCV_A910/mySoC/MEM.v:23]
+INFO: [Synth 8-226] default block is never used [/home/st-wangjun/project/RISCV_A910/mySoC/MEM.v:40]
+INFO: [Synth 8-226] default block is never used [/home/st-wangjun/project/RISCV_A910/mySoC/MEM.v:45]
+INFO: [Synth 8-226] default block is never used [/home/st-wangjun/project/RISCV_A910/mySoC/MEM.v:54]
+INFO: [Synth 8-226] default block is never used [/home/st-wangjun/project/RISCV_A910/mySoC/MEM.v:82]
+INFO: [Synth 8-6155] done synthesizing module 'MEM' (0#1) [/home/st-wangjun/project/RISCV_A910/mySoC/MEM.v:23]
+INFO: [Synth 8-6157] synthesizing module 'MEM_wD_MUX' [/home/st-wangjun/project/RISCV_A910/mySoC/MEM_wD_MUX.v:23]
+INFO: [Synth 8-6155] done synthesizing module 'MEM_wD_MUX' (0#1) [/home/st-wangjun/project/RISCV_A910/mySoC/MEM_wD_MUX.v:23]
+INFO: [Synth 8-6157] synthesizing module 'MEM_WB' [/home/st-wangjun/project/RISCV_A910/mySoC/MEM_WB.v:23]
+INFO: [Synth 8-6155] done synthesizing module 'MEM_WB' (0#1) [/home/st-wangjun/project/RISCV_A910/mySoC/MEM_WB.v:23]
+INFO: [Synth 8-6157] synthesizing module 'Hazard_Detection' [/home/st-wangjun/project/RISCV_A910/mySoC/Hazard_Detection.v:21]
+INFO: [Synth 8-6155] done synthesizing module 'Hazard_Detection' (0#1) [/home/st-wangjun/project/RISCV_A910/mySoC/Hazard_Detection.v:21]
+INFO: [Synth 8-6155] done synthesizing module 'myCPU' (0#1) [/home/st-wangjun/project/RISCV_A910/mySoC/mycpu.v:14]
+INFO: [Synth 8-6157] synthesizing module 'perip_bridge' [/home/st-wangjun/project/RISCV_A910/mySoC/perip_bridge.v:26]
+INFO: [Synth 8-6155] done synthesizing module 'perip_bridge' (0#1) [/home/st-wangjun/project/RISCV_A910/mySoC/perip_bridge.v:26]
+INFO: [Synth 8-6157] synthesizing module 'sync_ram_1r1w' [/home/st-wangjun/project/RISCV_A910/mySoC/sync_mem.v:63]
+	Parameter ADDR_W bound to: 14 - type: integer 
+	Parameter DATA_W bound to: 32 - type: integer 
+INFO: [Synth 8-6157] synthesizing module 'sync_ram_1r1w_prim' [/home/st-wangjun/project/RISCV_A910/mySoC/sync_mem.v:126]
+	Parameter ADDR_W bound to: 14 - type: integer 
+	Parameter DATA_W bound to: 32 - type: integer 
+INFO: [Synth 8-3876] $readmem data file '/home/st-wangjun/project/RISCV_A910/synth/vivado/fmax_impl_8.0ns/meminit.hex' is read successfully [/home/st-wangjun/project/RISCV_A910/mySoC/sync_mem.v:142]
+INFO: [Synth 8-6155] done synthesizing module 'sync_ram_1r1w_prim' (0#1) [/home/st-wangjun/project/RISCV_A910/mySoC/sync_mem.v:126]
+INFO: [Synth 8-6155] done synthesizing module 'sync_ram_1r1w' (0#1) [/home/st-wangjun/project/RISCV_A910/mySoC/sync_mem.v:63]
+INFO: [Synth 8-6155] done synthesizing module 'miniRV_SoC' (0#1) [/home/st-wangjun/project/RISCV_A910/mySoC/miniRV_SoC.v:60]
+INFO: [Synth 8-6155] done synthesizing module 'top_fmax' (0#1) [/home/st-wangjun/project/RISCV_A910/synth/top_fmax.v:12]
+WARNING: [Synth 8-6014] Unused sequential element q_usel_idx_reg was removed.  [/home/st-wangjun/project/RISCV_A910/mySoC/ifu2/rtl/rv32ifu2_tage.v:334]
+WARNING: [Synth 8-6014] Unused sequential element u1_usel_idx_reg was removed.  [/home/st-wangjun/project/RISCV_A910/mySoC/ifu2/rtl/rv32ifu2_tage.v:742]
+WARNING: [Synth 8-4767] Trying to implement RAM ' ' in registers. Block RAM or DRAM implementation is not possible; see log for reasons.
+	1: RAM has multiple writes via different ports in same process. If RAM inferencing intended, write to one port per process. 
+	2: Unable to determine number of words or word size in RAM. 
+	3: No valid read/write found for RAM. 
+RAM dissolved into registers
+WARNING: [Synth 8-4767] Trying to implement RAM 'ent_q_reg' in registers. Block RAM or DRAM implementation is not possible; see log for reasons.
+Reason is one or more of the following :
+	1: RAM has multiple writes via different ports in same process. If RAM inferencing intended, write to one port per process. 
+	2: Unable to determine number of words or word size in RAM. 
+	3: No valid read/write found for RAM. 
+RAM "ent_q_reg" dissolved into registers
+WARNING: [Synth 8-6014] Unused sequential element op_r_reg was removed.  [/home/st-wangjun/project/RISCV_A910/mySoC/div_pipe.v:207]
+WARNING: [Synth 8-3848] Net mem_csr_we in module/entity myCPU does not have driver. [/home/st-wangjun/project/RISCV_A910/mySoC/mycpu.v:192]
+WARNING: [Synth 8-7129] Port flush_tag[6] in module MUL_DIV is either unconnected or has no load
+WARNING: [Synth 8-7129] Port flush_tag[5] in module MUL_DIV is either unconnected or has no load
+WARNING: [Synth 8-7129] Port flush_tag[4] in module MUL_DIV is either unconnected or has no load
+WARNING: [Synth 8-7129] Port flush_tag[3] in module MUL_DIV is either unconnected or has no load
+WARNING: [Synth 8-7129] Port flush_tag[2] in module MUL_DIV is either unconnected or has no load
+WARNING: [Synth 8-7129] Port flush_tag[1] in module MUL_DIV is either unconnected or has no load
+WARNING: [Synth 8-7129] Port flush_tag[0] in module MUL_DIV is either unconnected or has no load
+WARNING: [Synth 8-7129] Port pop_num[3] in module rv32ifu2_ras is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[31] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[30] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[29] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[28] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[27] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[26] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[25] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[24] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[23] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[22] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[21] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[20] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[19] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[18] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[17] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[16] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[3] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[2] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[1] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[0] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port upd_pc[31] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port upd_pc[30] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port upd_pc[29] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port upd_pc[28] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port upd_pc[27] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port upd_pc[26] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port upd_pc[25] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port upd_pc[24] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port upd_pc[23] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port upd_pc[22] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port upd_pc[21] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port upd_pc[20] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port upd_pc[19] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port upd_pc[18] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port upd_pc[17] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port upd_pc[16] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port upd_pc[1] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port upd_pc[0] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port upd_target[31] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port upd_target[30] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port upd_target[29] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port upd_target[28] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port upd_target[27] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port upd_target[26] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port upd_target[25] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port upd_target[24] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port upd_target[23] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port upd_target[22] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port upd_target[21] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port upd_target[20] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port upd_target[19] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port upd_target[18] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port upd_target[17] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port upd_target[16] in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port upd_jal in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port upd_jalr in module rv32ifu2_btb is either unconnected or has no load
+WARNING: [Synth 8-7129] Port req_pc[3] in module rv32ifu2_refill is either unconnected or has no load
+WARNING: [Synth 8-7129] Port req_pc[2] in module rv32ifu2_refill is either unconnected or has no load
+WARNING: [Synth 8-7129] Port req_pc[1] in module rv32ifu2_refill is either unconnected or has no load
+WARNING: [Synth 8-7129] Port req_pc[0] in module rv32ifu2_refill is either unconnected or has no load
+WARNING: [Synth 8-7129] Port biu_rd_rid in module rv32ifu2_refill is either unconnected or has no load
+WARNING: [Synth 8-7129] Port biu_rd_last in module rv32ifu2_refill is either unconnected or has no load
+WARNING: [Synth 8-7129] Port biu_rd_resp[1] in module rv32ifu2_refill is either unconnected or has no load
+WARNING: [Synth 8-7129] Port biu_rd_resp[0] in module rv32ifu2_refill is either unconnected or has no load
+WARNING: [Synth 8-7129] Port refill_pc[3] in module rv32ifu2_icache is either unconnected or has no load
+WARNING: [Synth 8-7129] Port refill_pc[2] in module rv32ifu2_icache is either unconnected or has no load
+WARNING: [Synth 8-7129] Port refill_pc[1] in module rv32ifu2_icache is either unconnected or has no load
+WARNING: [Synth 8-7129] Port refill_pc[0] in module rv32ifu2_icache is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[31] in module rv32ifu2_tage is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[30] in module rv32ifu2_tage is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[29] in module rv32ifu2_tage is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[28] in module rv32ifu2_tage is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[27] in module rv32ifu2_tage is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[26] in module rv32ifu2_tage is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[25] in module rv32ifu2_tage is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[24] in module rv32ifu2_tage is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[23] in module rv32ifu2_tage is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[22] in module rv32ifu2_tage is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[21] in module rv32ifu2_tage is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[20] in module rv32ifu2_tage is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[19] in module rv32ifu2_tage is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[18] in module rv32ifu2_tage is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[17] in module rv32ifu2_tage is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[16] in module rv32ifu2_tage is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[3] in module rv32ifu2_tage is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[2] in module rv32ifu2_tage is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[1] in module rv32ifu2_tage is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_pc[0] in module rv32ifu2_tage is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_ghr[15] in module rv32ifu2_tage is either unconnected or has no load
+WARNING: [Synth 8-7129] Port rd_ghr[14] in module rv32ifu2_tage is either unconnected or has no load
+WARNING: [Synth 8-7129] Port upd_pc[31] in module rv32ifu2_tage is either unconnected or has no load
+WARNING: [Synth 8-7129] Port upd_pc[30] in module rv32ifu2_tage is either unconnected or has no load
+INFO: [Common 17-14] Message 'Synth 8-7129' appears 100 times and further instances of the messages will be disabled. Use the Tcl command set_msg_config to change the current settings.
+---------------------------------------------------------------------------------
+Finished RTL Elaboration : Time (s): cpu = 00:00:05 ; elapsed = 00:00:06 . Memory (MB): peak = 2371.141 ; gain = 569.898 ; free physical = 94946 ; free virtual = 955240
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Start Handling Custom Attributes
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Finished Handling Custom Attributes : Time (s): cpu = 00:00:06 ; elapsed = 00:00:06 . Memory (MB): peak = 2385.977 ; gain = 584.734 ; free physical = 94952 ; free virtual = 955234
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Finished RTL Optimization Phase 1 : Time (s): cpu = 00:00:06 ; elapsed = 00:00:06 . Memory (MB): peak = 2385.977 ; gain = 584.734 ; free physical = 94952 ; free virtual = 955234
+---------------------------------------------------------------------------------
+Netlist sorting complete. Time (s): cpu = 00:00:00.11 ; elapsed = 00:00:00.11 . Memory (MB): peak = 2391.914 ; gain = 0.000 ; free physical = 94945 ; free virtual = 955211
+INFO: [Project 1-570] Preparing netlist for logic optimization
+
+Processing XDC Constraints
+Initializing timing engine
+Parsing XDC File [/home/st-wangjun/project/RISCV_A910/synth/vivado/fmax_impl_8.0ns/fmax_gen.xdc]
+Finished Parsing XDC File [/home/st-wangjun/project/RISCV_A910/synth/vivado/fmax_impl_8.0ns/fmax_gen.xdc]
+Completed Processing XDC Constraints
+
+Netlist sorting complete. Time (s): cpu = 00:00:00 ; elapsed = 00:00:00 . Memory (MB): peak = 2564.383 ; gain = 0.000 ; free physical = 94878 ; free virtual = 955144
+INFO: [Project 1-111] Unisim Transformation Summary:
+No Unisim elements were transformed.
+
+Constraint Validation Runtime : Time (s): cpu = 00:00:00.36 ; elapsed = 00:00:00.07 . Memory (MB): peak = 2564.383 ; gain = 0.000 ; free physical = 94870 ; free virtual = 955135
+---------------------------------------------------------------------------------
+Finished Constraint Validation : Time (s): cpu = 00:00:14 ; elapsed = 00:00:13 . Memory (MB): peak = 2564.383 ; gain = 763.141 ; free physical = 94859 ; free virtual = 955128
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Start Loading Part and Timing Information
+---------------------------------------------------------------------------------
+Loading part: xc7k325tffg900-2
+---------------------------------------------------------------------------------
+Finished Loading Part and Timing Information : Time (s): cpu = 00:00:14 ; elapsed = 00:00:13 . Memory (MB): peak = 2564.383 ; gain = 763.141 ; free physical = 94859 ; free virtual = 955128
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Start Applying 'set_property' XDC Constraints
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Finished applying 'set_property' XDC Constraints : Time (s): cpu = 00:00:14 ; elapsed = 00:00:13 . Memory (MB): peak = 2564.383 ; gain = 763.141 ; free physical = 94858 ; free virtual = 955129
+---------------------------------------------------------------------------------
+INFO: [Synth 8-802] inferred FSM for state register 'state_q_reg' in module 'rv32ifu2_refill'
+INFO: [Synth 8-802] inferred FSM for state register 'state_reg' in module 'div_pipe'
+---------------------------------------------------------------------------------------------------
+                   State |                     New Encoding |                Previous Encoding 
+---------------------------------------------------------------------------------------------------
+                  S_IDLE |                              001 |                               00
+                   S_REQ |                              010 |                               01
+                  S_WAIT |                              100 |                               10
+---------------------------------------------------------------------------------------------------
+INFO: [Synth 8-3354] encoded FSM with state register 'state_q_reg' using encoding 'one-hot' in module 'rv32ifu2_refill'
+WARNING: [Synth 8-327] inferring latch for variable 'sext_op_reg' [/home/st-wangjun/project/RISCV_A910/mySoC/Control.v:207]
+WARNING: [Synth 8-327] inferring latch for variable 'alu_op_reg' [/home/st-wangjun/project/RISCV_A910/mySoC/Control.v:155]
+WARNING: [Synth 8-327] inferring latch for variable 'alua_sel_reg' [/home/st-wangjun/project/RISCV_A910/mySoC/Control.v:144]
+WARNING: [Synth 8-327] inferring latch for variable 'alub_sel_reg' [/home/st-wangjun/project/RISCV_A910/mySoC/Control.v:145]
+WARNING: [Synth 8-327] inferring latch for variable 'rf_wsel_reg' [/home/st-wangjun/project/RISCV_A910/mySoC/Control.v:146]
+WARNING: [Synth 8-327] inferring latch for variable 'dram_sel_reg' [/home/st-wangjun/project/RISCV_A910/mySoC/Control.v:256]
+WARNING: [Synth 8-327] inferring latch for variable 'alu_c_reg' [/home/st-wangjun/project/RISCV_A910/mySoC/ALU.v:37]
+---------------------------------------------------------------------------------------------------
+                   State |                     New Encoding |                Previous Encoding 
+---------------------------------------------------------------------------------------------------
+                 ST_IDLE |                            00001 |                              000
+                 ST_PREP |                            00010 |                              001
+                 ST_ITER |                            00100 |                              010
+                ST_FIXUP |                            01000 |                              011
+                  iSTATE |                            10000 |                              100
+*
+---------------------------------------------------------------------------------------------------
+INFO: [Synth 8-3354] encoded FSM with state register 'state_reg' using encoding 'one-hot' in module 'div_pipe'
+WARNING: [Synth 8-327] inferring latch for variable 'wdata_out_reg' [/home/st-wangjun/project/RISCV_A910/mySoC/MEM.v:79]
+WARNING: [Synth 8-327] inferring latch for variable 'rdo_reg' [/home/st-wangjun/project/RISCV_A910/mySoC/MEM.v:42]
+---------------------------------------------------------------------------------
+Finished RTL Optimization Phase 2 : Time (s): cpu = 00:00:16 ; elapsed = 00:00:16 . Memory (MB): peak = 2564.383 ; gain = 763.141 ; free physical = 94848 ; free virtual = 955124
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Start RTL Component Statistics 
+---------------------------------------------------------------------------------
+Detailed RTL Component Info : 
++---Adders : 
+	   3 Input   64 Bit       Adders := 1     
+	   3 Input   35 Bit       Adders := 3     
+	   2 Input   34 Bit       Adders := 1     
+	   2 Input   32 Bit       Adders := 17    
+	   3 Input   32 Bit       Adders := 1     
+	   2 Input    7 Bit       Adders := 2     
+	   3 Input    7 Bit       Adders := 1     
+	   2 Input    6 Bit       Adders := 2     
+	   4 Input    5 Bit       Adders := 1     
+	   2 Input    4 Bit       Adders := 3     
+	   3 Input    4 Bit       Adders := 1     
+	   2 Input    3 Bit       Adders := 8     
+	   3 Input    3 Bit       Adders := 3     
+	   4 Input    3 Bit       Adders := 1     
+	   2 Input    2 Bit       Adders := 11    
++---XORs : 
+	   3 Input     64 Bit         XORs := 17    
+	   2 Input     32 Bit         XORs := 1     
+	   2 Input      6 Bit         XORs := 16    
+	   2 Input      1 Bit         XORs := 44    
+	   3 Input      1 Bit         XORs := 8     
++---Registers : 
+	              153 Bit    Registers := 8     
+	              128 Bit    Registers := 5     
+	               64 Bit    Registers := 6     
+	               34 Bit    Registers := 1     
+	               33 Bit    Registers := 1     
+	               32 Bit    Registers := 84    
+	               25 Bit    Registers := 2     
+	               24 Bit    Registers := 8     
+	               16 Bit    Registers := 1     
+	               12 Bit    Registers := 1     
+	                8 Bit    Registers := 1     
+	                7 Bit    Registers := 10    
+	                6 Bit    Registers := 17    
+	                5 Bit    Registers := 6     
+	                4 Bit    Registers := 7     
+	                3 Bit    Registers := 4     
+	                2 Bit    Registers := 10    
+	                1 Bit    Registers := 69    
++---RAMs : 
+	             512K Bit	(16384 X 32 bit)          RAMs := 1     
+	               4K Bit	(32 X 128 bit)          RAMs := 2     
+	               4K Bit	(64 X 64 bit)          RAMs := 1     
+	              768 Bit	(32 X 24 bit)          RAMs := 2     
+	              448 Bit	(64 X 7 bit)          RAMs := 1     
+	              256 Bit	(64 X 4 bit)          RAMs := 1     
+	               64 Bit	(64 X 1 bit)          RAMs := 1     
++---ROMs : 
+	                    ROMs := 1     
++---Muxes : 
+	   2 Input 1224 Bit        Muxes := 2     
+	   2 Input  153 Bit        Muxes := 40    
+	   2 Input  128 Bit        Muxes := 5     
+	   2 Input   64 Bit        Muxes := 6     
+	   4 Input   64 Bit        Muxes := 1     
+	   2 Input   34 Bit        Muxes := 34    
+	   2 Input   33 Bit        Muxes := 1     
+	   2 Input   32 Bit        Muxes := 142   
+	   4 Input   32 Bit        Muxes := 12    
+	   3 Input   32 Bit        Muxes := 1     
+	  17 Input   32 Bit        Muxes := 1     
+	   8 Input   32 Bit        Muxes := 1     
+	   2 Input   25 Bit        Muxes := 3     
+	   2 Input   24 Bit        Muxes := 70    
+	   4 Input   24 Bit        Muxes := 2     
+	   4 Input   16 Bit        Muxes := 2     
+	   2 Input   16 Bit        Muxes := 14    
+	   2 Input   12 Bit        Muxes := 1     
+	   2 Input    8 Bit        Muxes := 11    
+	   4 Input    8 Bit        Muxes := 1     
+	   5 Input    7 Bit        Muxes := 8     
+	   2 Input    7 Bit        Muxes := 14    
+	   4 Input    7 Bit        Muxes := 1     
+	   4 Input    6 Bit        Muxes := 8     
+	   2 Input    6 Bit        Muxes := 80    
+	   4 Input    5 Bit        Muxes := 2     
+	   2 Input    5 Bit        Muxes := 6     
+	  11 Input    5 Bit        Muxes := 1     
+	   7 Input    5 Bit        Muxes := 1     
+	   2 Input    4 Bit        Muxes := 15    
+	   8 Input    4 Bit        Muxes := 2     
+	   7 Input    4 Bit        Muxes := 1     
+	   6 Input    4 Bit        Muxes := 1     
+	   2 Input    3 Bit        Muxes := 24    
+	   9 Input    3 Bit        Muxes := 3     
+	   5 Input    3 Bit        Muxes := 2     
+	  11 Input    3 Bit        Muxes := 2     
+	   6 Input    3 Bit        Muxes := 1     
+	   4 Input    3 Bit        Muxes := 1     
+	   8 Input    3 Bit        Muxes := 1     
+	   2 Input    2 Bit        Muxes := 63    
+	   4 Input    2 Bit        Muxes := 8     
+	  11 Input    2 Bit        Muxes := 3     
+	   3 Input    2 Bit        Muxes := 4     
+	   2 Input    1 Bit        Muxes := 308   
+	   3 Input    1 Bit        Muxes := 51    
+	   4 Input    1 Bit        Muxes := 1     
+	   9 Input    1 Bit        Muxes := 3     
+	   5 Input    1 Bit        Muxes := 4     
+	  11 Input    1 Bit        Muxes := 7     
+	  16 Input    1 Bit        Muxes := 1     
+	   8 Input    1 Bit        Muxes := 9     
+---------------------------------------------------------------------------------
+Finished RTL Component Statistics 
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Start Part Resource Summary
+---------------------------------------------------------------------------------
+Part Resources:
+DSPs: 840 (col length:140)
+BRAMs: 890 (col length: RAMB18 140 RAMB36 70)
+---------------------------------------------------------------------------------
+Finished Part Resource Summary
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Start Cross Boundary and Area Optimization
+---------------------------------------------------------------------------------
+WARNING: [Synth 8-7080] Parallel synthesis criteria is not met
+INFO: [Synth 8-6851] RAM (dat_q_reg) has partial Byte Wide Write Enable pattern, however no output register found in fanout of RAM. Recommended to use supported Byte Wide Write Enable template. 
+INFO: [Synth 8-6851] RAM (dat_q_reg) has partial Byte Wide Write Enable pattern, however no output register found in fanout of RAM. Recommended to use supported Byte Wide Write Enable template. 
+WARNING: [Synth 8-3332] Sequential element (alua_sel_reg[1]) is unused and will be removed from module Control.
+---------------------------------------------------------------------------------
+Finished Cross Boundary and Area Optimization : Time (s): cpu = 00:01:23 ; elapsed = 00:01:24 . Memory (MB): peak = 2758.430 ; gain = 957.188 ; free physical = 93469 ; free virtual = 953821
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Start ROM, RAM, DSP, Shift Register and Retiming Reporting
+---------------------------------------------------------------------------------
+
+ROM: Preliminary Mapping Report
++------------+-------------------------------------+---------------+----------------+
+|Module Name | RTL Object                          | Depth x Width | Implemented As | 
++------------+-------------------------------------+---------------+----------------+
+|ALU         | alu_c                               | 32x1          | LUT            | 
+|top_fmax    | u_ifu_biu_mem/u_rom/u_prim/rd_q_reg | 4096x128      | Block RAM      | 
+|ALU         | alu_c                               | 32x1          | LUT            | 
++------------+-------------------------------------+---------------+----------------+
+
+
+Block RAM: Preliminary Mapping Report (see note below)
++----------------------------------+-----------------------------+------------------------+---+---+------------------------+---+---+------------------+--------+--------+
+|Module Name                       | RTL Object                  | PORT A (Depth x Width) | W | R | PORT B (Depth x Width) | W | R | Ports driving FF | RAMB18 | RAMB36 | 
++----------------------------------+-----------------------------+------------------------+---+---+------------------------+---+---+------------------+--------+--------+
+|Core_cpui_0/u_ifu_subsys/u_icache | u_dat_way0/u_prim/mem_q_reg | 32 x 128(READ_FIRST)   | W |   | 32 x 128(WRITE_FIRST)  |   | R | Port A and B     | 0      | 2      | 
+|Core_cpui_0/u_ifu_subsys/u_icache | u_dat_way1/u_prim/mem_q_reg | 32 x 128(READ_FIRST)   | W |   | 32 x 128(WRITE_FIRST)  |   | R | Port A and B     | 0      | 2      | 
+|top_fmax                          | Mem_DRAM/u_prim/mem_reg     | 16 K x 32(READ_FIRST)  | W |   | 16 K x 32(WRITE_FIRST) |   | R | Port A and B     | 0      | 16     | 
++----------------------------------+-----------------------------+------------------------+---+---+------------------------+---+---+------------------+--------+--------+
+
+Note: The table above is a preliminary report that shows the Block RAMs at the current stage of the synthesis flow. Some Block RAMs may be reimplemented as non Block RAM primitives later in the synthesis flow. Multiple instantiated Block RAMs are reported only once. 
+
+Distributed RAM: Preliminary Mapping Report (see note below)
++-----------------------------------------+-----------------------------+----------------+----------------------+----------------+
+|Module Name                              | RTL Object                  | Inference      | Size (Depth x Width) | Primitives     | 
++-----------------------------------------+-----------------------------+----------------+----------------------+----------------+
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | g_tab[2].tg_u_reg           | User Attribute | 64 x 7               | RAM64M x 6     | 
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | g_tab[1].tg_u_reg           | User Attribute | 64 x 7               | RAM64M x 6     | 
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | g_tab[1].pv_u_reg           | User Attribute | 64 x 24              | RAM64M x 16    | 
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | g_tab[3].pv_u_reg           | User Attribute | 64 x 24              | RAM64M x 16    | 
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | g_tab[0].tg_u_reg           | User Attribute | 64 x 7               | RAM64M x 6     | 
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | g_tab[3].tg_u_reg           | User Attribute | 64 x 7               | RAM64M x 6     | 
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | g_tab[0].pv_u_reg           | User Attribute | 64 x 24              | RAM64M x 16    | 
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | g_tab[2].pv_u_reg           | User Attribute | 64 x 24              | RAM64M x 16    | 
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | t0_u_reg                    | User Attribute | 64 x 8               | RAM64M x 6     | 
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | g_tab[1].tg_p_reg           | User Attribute | 64 x 7               | RAM64M x 6     | 
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | g_tab[1].pv_p_reg           | User Attribute | 64 x 24              | RAM64M x 16    | 
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | g_tab[0].tg_p_reg           | User Attribute | 64 x 7               | RAM64M x 6     | 
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | g_tab[0].pv_p_reg           | User Attribute | 64 x 24              | RAM64M x 16    | 
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | g_tab[2].tg_p_reg           | User Attribute | 64 x 7               | RAM64M x 6     | 
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | g_tab[2].pv_p_reg           | User Attribute | 64 x 24              | RAM64M x 16    | 
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | g_tab[3].tg_p_reg           | User Attribute | 64 x 7               | RAM64M x 6     | 
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | g_tab[3].pv_p_reg           | User Attribute | 64 x 24              | RAM64M x 16    | 
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | t0_p_reg                    | User Attribute | 64 x 8               | RAM64M x 6     | 
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | use_sel_q_reg               | Implied        | 64 x 4               | RAM64M x 4     | 
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | usel_sgn_p_reg              | Implied        | 64 x 1               | RAM64M x 2     | 
+|Core_cpui_0/u_ifu_subsys/u_icache        | u_tag_way0/u_prim/mem_q_reg | Implied        | 32 x 24              | RAM32M x 4     | 
+|Core_cpui_0/u_ifu_subsys/u_icache        | u_tag_way1/u_prim/mem_q_reg | Implied        | 32 x 24              | RAM32M x 4     | 
+|Core_cpui_0/u_ifu_subsys/u_btb           | tag_q_reg                   | Implied        | 64 x 7               | RAM64M x 6     | 
+|Core_cpui_0/u_ifu_subsys/u_btb           | dat_q_reg                   | Implied        | 64 x 64              | RAM64X1D x 64  | 
++-----------------------------------------+-----------------------------+----------------+----------------------+----------------+
+
+Note: The table above is a preliminary report that shows the Distributed RAMs at the current stage of the synthesis flow. Some Distributed RAMs may be reimplemented as non Distributed RAM primitives later in the synthesis flow. Multiple instantiated RAMs are reported only once.
+---------------------------------------------------------------------------------
+Finished ROM, RAM, DSP, Shift Register and Retiming Reporting
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Start Applying XDC Timing Constraints
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Finished Applying XDC Timing Constraints : Time (s): cpu = 00:01:28 ; elapsed = 00:01:28 . Memory (MB): peak = 2758.434 ; gain = 957.191 ; free physical = 93468 ; free virtual = 953820
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Start Timing Optimization
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Finished Timing Optimization : Time (s): cpu = 00:02:08 ; elapsed = 00:02:09 . Memory (MB): peak = 2949.430 ; gain = 1148.188 ; free physical = 92702 ; free virtual = 953055
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Start ROM, RAM, DSP, Shift Register and Retiming Reporting
+---------------------------------------------------------------------------------
+
+Block RAM: Final Mapping Report
++----------------------------------+-----------------------------+------------------------+---+---+------------------------+---+---+------------------+--------+--------+
+|Module Name                       | RTL Object                  | PORT A (Depth x Width) | W | R | PORT B (Depth x Width) | W | R | Ports driving FF | RAMB18 | RAMB36 | 
++----------------------------------+-----------------------------+------------------------+---+---+------------------------+---+---+------------------+--------+--------+
+|top_fmax                          | Mem_DRAM/u_prim/mem_reg     | 16 K x 32(READ_FIRST)  | W |   | 16 K x 32(WRITE_FIRST) |   | R | Port A and B     | 0      | 16     | 
+|Core_cpui_0/u_ifu_subsys/u_icache | u_dat_way0/u_prim/mem_q_reg | 32 x 128(READ_FIRST)   | W |   | 32 x 128(WRITE_FIRST)  |   | R | Port A and B     | 0      | 2      | 
+|Core_cpui_0/u_ifu_subsys/u_icache | u_dat_way1/u_prim/mem_q_reg | 32 x 128(READ_FIRST)   | W |   | 32 x 128(WRITE_FIRST)  |   | R | Port A and B     | 0      | 2      | 
++----------------------------------+-----------------------------+------------------------+---+---+------------------------+---+---+------------------+--------+--------+
+
+
+Distributed RAM: Final Mapping Report
++-----------------------------------------+-----------------------------+----------------+----------------------+----------------+
+|Module Name                              | RTL Object                  | Inference      | Size (Depth x Width) | Primitives     | 
++-----------------------------------------+-----------------------------+----------------+----------------------+----------------+
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | g_tab[2].tg_u_reg           | User Attribute | 64 x 7               | RAM64M x 6     | 
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | g_tab[1].tg_u_reg           | User Attribute | 64 x 7               | RAM64M x 6     | 
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | g_tab[1].pv_u_reg           | User Attribute | 64 x 24              | RAM64M x 16    | 
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | g_tab[3].pv_u_reg           | User Attribute | 64 x 24              | RAM64M x 16    | 
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | g_tab[0].tg_u_reg           | User Attribute | 64 x 7               | RAM64M x 6     | 
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | g_tab[3].tg_u_reg           | User Attribute | 64 x 7               | RAM64M x 6     | 
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | g_tab[0].pv_u_reg           | User Attribute | 64 x 24              | RAM64M x 16    | 
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | g_tab[2].pv_u_reg           | User Attribute | 64 x 24              | RAM64M x 16    | 
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | t0_u_reg                    | User Attribute | 64 x 8               | RAM64M x 6     | 
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | g_tab[1].tg_p_reg           | User Attribute | 64 x 7               | RAM64M x 6     | 
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | g_tab[1].pv_p_reg           | User Attribute | 64 x 24              | RAM64M x 16    | 
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | g_tab[0].tg_p_reg           | User Attribute | 64 x 7               | RAM64M x 6     | 
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | g_tab[0].pv_p_reg           | User Attribute | 64 x 24              | RAM64M x 16    | 
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | g_tab[2].tg_p_reg           | User Attribute | 64 x 7               | RAM64M x 6     | 
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | g_tab[2].pv_p_reg           | User Attribute | 64 x 24              | RAM64M x 16    | 
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | g_tab[3].tg_p_reg           | User Attribute | 64 x 7               | RAM64M x 6     | 
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | g_tab[3].pv_p_reg           | User Attribute | 64 x 24              | RAM64M x 16    | 
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | t0_p_reg                    | User Attribute | 64 x 8               | RAM64M x 6     | 
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | use_sel_q_reg               | Implied        | 64 x 4               | RAM64M x 4     | 
+|Core_cpui_0/u_ifu_subsys/\g_tage.u_tage  | usel_sgn_p_reg              | Implied        | 64 x 1               | RAM64M x 2     | 
+|Core_cpui_0/u_ifu_subsys/u_icache        | u_tag_way0/u_prim/mem_q_reg | Implied        | 32 x 24              | RAM32M x 4     | 
+|Core_cpui_0/u_ifu_subsys/u_icache        | u_tag_way1/u_prim/mem_q_reg | Implied        | 32 x 24              | RAM32M x 4     | 
+|Core_cpui_0/u_ifu_subsys/u_btb           | tag_q_reg                   | Implied        | 64 x 7               | RAM64M x 6     | 
+|Core_cpui_0/u_ifu_subsys/u_btb           | dat_q_reg                   | Implied        | 64 x 64              | RAM64X1D x 64  | 
++-----------------------------------------+-----------------------------+----------------+----------------------+----------------+
+
+---------------------------------------------------------------------------------
+Finished ROM, RAM, DSP, Shift Register and Retiming Reporting
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Start Technology Mapping
+---------------------------------------------------------------------------------
+INFO: [Synth 8-7052] The timing for the instance u_soc/Mem_DRAM/u_prim/mem_reg_0 (implemented as a Block RAM) might be sub-optimal as no optional output register could be merged into the ram block. Providing additional output register may help in improving timing.
+INFO: [Synth 8-7052] The timing for the instance u_soc/Mem_DRAM/u_prim/mem_reg_1 (implemented as a Block RAM) might be sub-optimal as no optional output register could be merged into the ram block. Providing additional output register may help in improving timing.
+INFO: [Synth 8-7052] The timing for the instance u_soc/Mem_DRAM/u_prim/mem_reg_2 (implemented as a Block RAM) might be sub-optimal as no optional output register could be merged into the ram block. Providing additional output register may help in improving timing.
+INFO: [Synth 8-7052] The timing for the instance u_soc/Mem_DRAM/u_prim/mem_reg_3 (implemented as a Block RAM) might be sub-optimal as no optional output register could be merged into the ram block. Providing additional output register may help in improving timing.
+INFO: [Synth 8-7052] The timing for the instance u_soc/Mem_DRAM/u_prim/mem_reg_4 (implemented as a Block RAM) might be sub-optimal as no optional output register could be merged into the ram block. Providing additional output register may help in improving timing.
+INFO: [Synth 8-7052] The timing for the instance u_soc/Mem_DRAM/u_prim/mem_reg_5 (implemented as a Block RAM) might be sub-optimal as no optional output register could be merged into the ram block. Providing additional output register may help in improving timing.
+INFO: [Synth 8-7052] The timing for the instance u_soc/Mem_DRAM/u_prim/mem_reg_6 (implemented as a Block RAM) might be sub-optimal as no optional output register could be merged into the ram block. Providing additional output register may help in improving timing.
+INFO: [Synth 8-7052] The timing for the instance u_soc/Mem_DRAM/u_prim/mem_reg_7 (implemented as a Block RAM) might be sub-optimal as no optional output register could be merged into the ram block. Providing additional output register may help in improving timing.
+INFO: [Synth 8-7052] The timing for the instance u_soc/Mem_DRAM/u_prim/mem_reg_8 (implemented as a Block RAM) might be sub-optimal as no optional output register could be merged into the ram block. Providing additional output register may help in improving timing.
+INFO: [Synth 8-7052] The timing for the instance u_soc/Mem_DRAM/u_prim/mem_reg_9 (implemented as a Block RAM) might be sub-optimal as no optional output register could be merged into the ram block. Providing additional output register may help in improving timing.
+INFO: [Synth 8-7052] The timing for the instance u_soc/Mem_DRAM/u_prim/mem_reg_10 (implemented as a Block RAM) might be sub-optimal as no optional output register could be merged into the ram block. Providing additional output register may help in improving timing.
+INFO: [Synth 8-7052] The timing for the instance u_soc/Mem_DRAM/u_prim/mem_reg_11 (implemented as a Block RAM) might be sub-optimal as no optional output register could be merged into the ram block. Providing additional output register may help in improving timing.
+INFO: [Synth 8-7052] The timing for the instance u_soc/Mem_DRAM/u_prim/mem_reg_12 (implemented as a Block RAM) might be sub-optimal as no optional output register could be merged into the ram block. Providing additional output register may help in improving timing.
+INFO: [Synth 8-7052] The timing for the instance u_soc/Mem_DRAM/u_prim/mem_reg_13 (implemented as a Block RAM) might be sub-optimal as no optional output register could be merged into the ram block. Providing additional output register may help in improving timing.
+INFO: [Synth 8-7052] The timing for the instance u_soc/Mem_DRAM/u_prim/mem_reg_14 (implemented as a Block RAM) might be sub-optimal as no optional output register could be merged into the ram block. Providing additional output register may help in improving timing.
+INFO: [Synth 8-7052] The timing for the instance u_soc/Mem_DRAM/u_prim/mem_reg_15 (implemented as a Block RAM) might be sub-optimal as no optional output register could be merged into the ram block. Providing additional output register may help in improving timing.
+INFO: [Synth 8-7052] The timing for the instance u_soc/Core_cpu/u_ifu_subsys/u_icache/u_dat_way0/u_prim/mem_q_reg_0 (implemented as a Block RAM) might be sub-optimal as no optional output register could be merged into the ram block. Providing additional output register may help in improving timing.
+INFO: [Synth 8-7052] The timing for the instance u_soc/Core_cpu/u_ifu_subsys/u_icache/u_dat_way0/u_prim/mem_q_reg_1 (implemented as a Block RAM) might be sub-optimal as no optional output register could be merged into the ram block. Providing additional output register may help in improving timing.
+INFO: [Synth 8-7052] The timing for the instance u_soc/Core_cpu/u_ifu_subsys/u_icache/u_dat_way1/u_prim/mem_q_reg_0 (implemented as a Block RAM) might be sub-optimal as no optional output register could be merged into the ram block. Providing additional output register may help in improving timing.
+INFO: [Synth 8-7052] The timing for the instance u_soc/Core_cpu/u_ifu_subsys/u_icache/u_dat_way1/u_prim/mem_q_reg_1 (implemented as a Block RAM) might be sub-optimal as no optional output register could be merged into the ram block. Providing additional output register may help in improving timing.
+INFO: [Synth 8-7052] The timing for the instance u_soc/Core_cpu/u_ifu_biu_mem/u_rom/u_prim/rd_q_reg_0 (implemented as a Block RAM) might be sub-optimal as no optional output register could be merged into the ram block. Providing additional output register may help in improving timing.
+INFO: [Synth 8-7052] The timing for the instance u_soc/Core_cpu/u_ifu_biu_mem/u_rom/u_prim/rd_q_reg_1 (implemented as a Block RAM) might be sub-optimal as no optional output register could be merged into the ram block. Providing additional output register may help in improving timing.
+INFO: [Synth 8-7052] The timing for the instance u_soc/Core_cpu/u_ifu_biu_mem/u_rom/u_prim/rd_q_reg_2 (implemented as a Block RAM) might be sub-optimal as no optional output register could be merged into the ram block. Providing additional output register may help in improving timing.
+INFO: [Synth 8-7052] The timing for the instance u_soc/Core_cpu/u_ifu_biu_mem/u_rom/u_prim/rd_q_reg_3 (implemented as a Block RAM) might be sub-optimal as no optional output register could be merged into the ram block. Providing additional output register may help in improving timing.
+INFO: [Synth 8-7052] The timing for the instance u_soc/Core_cpu/u_ifu_biu_mem/u_rom/u_prim/rd_q_reg_4 (implemented as a Block RAM) might be sub-optimal as no optional output register could be merged into the ram block. Providing additional output register may help in improving timing.
+INFO: [Synth 8-7052] The timing for the instance u_soc/Core_cpu/u_ifu_biu_mem/u_rom/u_prim/rd_q_reg_5 (implemented as a Block RAM) might be sub-optimal as no optional output register could be merged into the ram block. Providing additional output register may help in improving timing.
+INFO: [Synth 8-7052] The timing for the instance u_soc/Core_cpu/u_ifu_biu_mem/u_rom/u_prim/rd_q_reg_6 (implemented as a Block RAM) might be sub-optimal as no optional output register could be merged into the ram block. Providing additional output register may help in improving timing.
+INFO: [Synth 8-7052] The timing for the instance u_soc/Core_cpu/u_ifu_biu_mem/u_rom/u_prim/rd_q_reg_7 (implemented as a Block RAM) might be sub-optimal as no optional output register could be merged into the ram block. Providing additional output register may help in improving timing.
+INFO: [Synth 8-7052] The timing for the instance u_soc/Core_cpu/u_ifu_biu_mem/u_rom/u_prim/rd_q_reg_8 (implemented as a Block RAM) might be sub-optimal as no optional output register could be merged into the ram block. Providing additional output register may help in improving timing.
+INFO: [Synth 8-7052] The timing for the instance u_soc/Core_cpu/u_ifu_biu_mem/u_rom/u_prim/rd_q_reg_9 (implemented as a Block RAM) might be sub-optimal as no optional output register could be merged into the ram block. Providing additional output register may help in improving timing.
+INFO: [Synth 8-7052] The timing for the instance u_soc/Core_cpu/u_ifu_biu_mem/u_rom/u_prim/rd_q_reg_10 (implemented as a Block RAM) might be sub-optimal as no optional output register could be merged into the ram block. Providing additional output register may help in improving timing.
+INFO: [Synth 8-7052] The timing for the instance u_soc/Core_cpu/u_ifu_biu_mem/u_rom/u_prim/rd_q_reg_11 (implemented as a Block RAM) might be sub-optimal as no optional output register could be merged into the ram block. Providing additional output register may help in improving timing.
+INFO: [Synth 8-7052] The timing for the instance u_soc/Core_cpu/u_ifu_biu_mem/u_rom/u_prim/rd_q_reg_12 (implemented as a Block RAM) might be sub-optimal as no optional output register could be merged into the ram block. Providing additional output register may help in improving timing.
+INFO: [Synth 8-7052] The timing for the instance u_soc/Core_cpu/u_ifu_biu_mem/u_rom/u_prim/rd_q_reg_13 (implemented as a Block RAM) might be sub-optimal as no optional output register could be merged into the ram block. Providing additional output register may help in improving timing.
+INFO: [Synth 8-7052] The timing for the instance u_soc/Core_cpu/u_ifu_biu_mem/u_rom/u_prim/rd_q_reg_14 (implemented as a Block RAM) might be sub-optimal as no optional output register could be merged into the ram block. Providing additional output register may help in improving timing.
+---------------------------------------------------------------------------------
+Finished Technology Mapping : Time (s): cpu = 00:02:14 ; elapsed = 00:02:15 . Memory (MB): peak = 2949.434 ; gain = 1148.191 ; free physical = 92689 ; free virtual = 953043
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Start IO Insertion
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Start Flattening Before IO Insertion
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Finished Flattening Before IO Insertion
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Start Final Netlist Cleanup
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Finished Final Netlist Cleanup
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Finished IO Insertion : Time (s): cpu = 00:02:18 ; elapsed = 00:02:19 . Memory (MB): peak = 2949.434 ; gain = 1148.191 ; free physical = 92689 ; free virtual = 953042
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Start Renaming Generated Instances
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Finished Renaming Generated Instances : Time (s): cpu = 00:02:18 ; elapsed = 00:02:19 . Memory (MB): peak = 2949.434 ; gain = 1148.191 ; free physical = 92690 ; free virtual = 953043
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Start Rebuilding User Hierarchy
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Finished Rebuilding User Hierarchy : Time (s): cpu = 00:02:19 ; elapsed = 00:02:21 . Memory (MB): peak = 2949.434 ; gain = 1148.191 ; free physical = 92690 ; free virtual = 953043
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Start Renaming Generated Ports
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Finished Renaming Generated Ports : Time (s): cpu = 00:02:19 ; elapsed = 00:02:21 . Memory (MB): peak = 2949.434 ; gain = 1148.191 ; free physical = 92690 ; free virtual = 953043
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Start Handling Custom Attributes
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Finished Handling Custom Attributes : Time (s): cpu = 00:02:20 ; elapsed = 00:02:21 . Memory (MB): peak = 2949.434 ; gain = 1148.191 ; free physical = 92691 ; free virtual = 953044
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Start Renaming Generated Nets
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Finished Renaming Generated Nets : Time (s): cpu = 00:02:20 ; elapsed = 00:02:21 . Memory (MB): peak = 2949.434 ; gain = 1148.191 ; free physical = 92691 ; free virtual = 953044
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+Start Writing Synthesis Report
+---------------------------------------------------------------------------------
+
+Report BlackBoxes: 
++-+--------------+----------+
+| |BlackBox name |Instances |
++-+--------------+----------+
++-+--------------+----------+
+
+Report Cell Usage: 
++------+---------+------+
+|      |Cell     |Count |
++------+---------+------+
+|1     |BUFG     |     4|
+|2     |CARRY4   |   261|
+|3     |LUT1     |   129|
+|4     |LUT2     |   840|
+|5     |LUT3     |   905|
+|6     |LUT4     |   962|
+|7     |LUT5     |  2546|
+|8     |LUT6     |  6020|
+|9     |MUXF7    |   600|
+|10    |MUXF8    |   128|
+|11    |RAM32M   |     8|
+|12    |RAM64M   |   183|
+|13    |RAM64X1D |    76|
+|14    |RAMB18E1 |     1|
+|15    |RAMB36E1 |    34|
+|46    |FDCE     |  1831|
+|47    |FDPE     |    20|
+|48    |FDRE     |  2778|
+|49    |FDSE     |     3|
+|50    |LD       |   112|
+|51    |IBUF     |     2|
+|52    |OBUF     |    71|
++------+---------+------+
+---------------------------------------------------------------------------------
+Finished Writing Synthesis Report : Time (s): cpu = 00:02:20 ; elapsed = 00:02:21 . Memory (MB): peak = 2949.434 ; gain = 1148.191 ; free physical = 92691 ; free virtual = 953044
+---------------------------------------------------------------------------------
+Synthesis finished with 0 errors, 0 critical warnings and 11 warnings.
+Synthesis Optimization Runtime : Time (s): cpu = 00:02:15 ; elapsed = 00:02:18 . Memory (MB): peak = 2949.434 ; gain = 969.785 ; free physical = 93021 ; free virtual = 953374
+Synthesis Optimization Complete : Time (s): cpu = 00:02:20 ; elapsed = 00:02:21 . Memory (MB): peak = 2949.438 ; gain = 1148.191 ; free physical = 93021 ; free virtual = 953374
+INFO: [Project 1-571] Translating synthesized netlist
+Netlist sorting complete. Time (s): cpu = 00:00:00.1 ; elapsed = 00:00:00.09 . Memory (MB): peak = 2949.438 ; gain = 0.000 ; free physical = 93298 ; free virtual = 953651
+INFO: [Netlist 29-17] Analyzing 1403 Unisim elements for replacement
+INFO: [Netlist 29-28] Unisim Transformation completed in 0 CPU seconds
+INFO: [Project 1-570] Preparing netlist for logic optimization
+INFO: [Opt 31-138] Pushed 0 inverter(s) to 0 load pin(s).
+Netlist sorting complete. Time (s): cpu = 00:00:00 ; elapsed = 00:00:00 . Memory (MB): peak = 3010.484 ; gain = 0.000 ; free physical = 93905 ; free virtual = 954258
+INFO: [Project 1-111] Unisim Transformation Summary:
+  A total of 379 instances were transformed.
+  LD => LDCE: 112 instances
+  RAM32M => RAM32M (RAMD32(x6), RAMS32(x2)): 8 instances
+  RAM64M => RAM64M (RAMD64E(x4)): 183 instances
+  RAM64X1D => RAM64X1D (RAMD64E(x2)): 76 instances
+
+Synth Design complete | Checksum: fa1a394a
+INFO: [Common 17-83] Releasing license: Synthesis
+142 Infos, 122 Warnings, 0 Critical Warnings and 0 Errors encountered.
+synth_design completed successfully
+synth_design: Time (s): cpu = 00:02:28 ; elapsed = 00:02:27 . Memory (MB): peak = 3010.484 ; gain = 1518.527 ; free physical = 93891 ; free virtual = 954257
+INFO: [Common 17-2834] synth_design peak Physical Memory [PSS] (MB): overall = 2188.223; main = 1905.145; forked = 291.474
+INFO: [Common 17-2834] synth_design peak Virtual Memory [VSS] (MB): overall = 4265.578; main = 3010.488; forked = 1316.145
+Write ShapeDB Complete: Time (s): cpu = 00:00:00.04 ; elapsed = 00:00:00.01 . Memory (MB): peak = 3047.117 ; gain = 0.000 ; free physical = 93886 ; free virtual = 954257
+INFO: [Common 17-1381] The checkpoint '/home/st-wangjun/project/RISCV_A910/synth/vivado/fmax_impl_8.0ns/fmax_impl_8.0ns.runs/synth_1/top_fmax.dcp' has been generated.
+INFO: [runtcl-4] Executing : report_utilization -file top_fmax_utilization_synth.rpt -pb top_fmax_utilization_synth.pb
+INFO: [Common 17-206] Exiting Vivado at Mon Sep 28 20:01:47 2026...
+[Mon Sep 28 20:01:57 2026] synth_1 finished
+wait_on_runs: Time (s): cpu = 00:02:40 ; elapsed = 00:02:48 . Memory (MB): peak = 1506.543 ; gain = 0.000 ; free physical = 97764 ; free virtual = 958031
+# if {[get_property PROGRESS [get_runs synth_1]] ne "100%"} {
+#     error "synth_1 FAILED: [get_property STATUS [get_runs synth_1]]"
+# }
+# if {$MODE eq "impl"} {
+#     launch_runs impl_1 -to_step route_design -jobs 8
+#     wait_on_run impl_1
+#     if {[get_property PROGRESS [get_runs impl_1]] ne "100%"} {
+#         error "impl_1 FAILED: [get_property STATUS [get_runs impl_1]]"
+#     }
+#     open_run impl_1
+# } else {
+#     open_run synth_1
+# }
+[Mon Sep 28 20:01:57 2026] Launched impl_1...
+Run output will be captured here: /home/st-wangjun/project/RISCV_A910/synth/vivado/fmax_impl_8.0ns/fmax_impl_8.0ns.runs/impl_1/runme.log
+[Mon Sep 28 20:01:57 2026] Waiting for impl_1 to finish...
+
+*** Running vivado
+    with args -log top_fmax.vdi -applog -m64 -product Vivado -messageDb vivado.pb -mode batch -source top_fmax.tcl -notrace
+
+
+****** Vivado v2023.2 (64-bit)
+  **** SW Build 4029153 on Fri Oct 13 20:13:54 MDT 2023
+  **** IP Build 4028589 on Sat Oct 14 00:45:43 MDT 2023
+  **** SharedData Build 4025554 on Tue Oct 10 17:18:54 MDT 2023
+    ** Copyright 1986-2022 Xilinx, Inc. All Rights Reserved.
+    ** Copyright 2022-2023 Advanced Micro Devices, Inc. All Rights Reserved.
+
+source top_fmax.tcl -notrace
+Command: link_design -top top_fmax -part xc7k325tffg900-2
+Design is defaulting to srcset: sources_1
+Design is defaulting to constrset: constrs_1
+INFO: [Device 21-403] Loading part xc7k325tffg900-2
+Netlist sorting complete. Time (s): cpu = 00:00:00.05 ; elapsed = 00:00:00.06 . Memory (MB): peak = 1794.176 ; gain = 0.000 ; free physical = 98734 ; free virtual = 959002
+INFO: [Netlist 29-17] Analyzing 1291 Unisim elements for replacement
+INFO: [Netlist 29-28] Unisim Transformation completed in 0 CPU seconds
+INFO: [Project 1-479] Netlist was created with Vivado 2023.2
+INFO: [Project 1-570] Preparing netlist for logic optimization
+Parsing XDC File [/home/st-wangjun/project/RISCV_A910/synth/vivado/fmax_impl_8.0ns/fmax_gen.xdc]
+Finished Parsing XDC File [/home/st-wangjun/project/RISCV_A910/synth/vivado/fmax_impl_8.0ns/fmax_gen.xdc]
+INFO: [Opt 31-138] Pushed 0 inverter(s) to 0 load pin(s).
+Netlist sorting complete. Time (s): cpu = 00:00:00 ; elapsed = 00:00:00.01 . Memory (MB): peak = 2009.930 ; gain = 0.000 ; free physical = 98096 ; free virtual = 958364
+INFO: [Project 1-111] Unisim Transformation Summary:
+  A total of 267 instances were transformed.
+  RAM32M => RAM32M (RAMD32(x6), RAMS32(x2)): 8 instances
+  RAM64M => RAM64M (RAMD64E(x4)): 183 instances
+  RAM64X1D => RAM64X1D (RAMD64E(x2)): 76 instances
+
+7 Infos, 0 Warnings, 0 Critical Warnings and 0 Errors encountered.
+link_design completed successfully
+link_design: Time (s): cpu = 00:00:06 ; elapsed = 00:00:06 . Memory (MB): peak = 2009.930 ; gain = 587.547 ; free physical = 98089 ; free virtual = 958357
+Command: opt_design
+Attempting to get a license for feature 'Implementation' and/or device 'xc7k325t'
+INFO: [Common 17-349] Got license for feature 'Implementation' and/or device 'xc7k325t'
+Running DRC as a precondition to command opt_design
+
+Starting DRC Task
+INFO: [DRC 23-27] Running DRC with 8 threads
+INFO: [Project 1-461] DRC finished with 0 Errors
+INFO: [Project 1-462] Please refer to the DRC report (report_drc) for more information.
+
+Time (s): cpu = 00:00:01 ; elapsed = 00:00:00.57 . Memory (MB): peak = 2136.672 ; gain = 114.531 ; free physical = 97925 ; free virtual = 958193
+
+Starting Cache Timing Information Task
+INFO: [Timing 38-35] Done setting XDC timing constraints.
+Ending Cache Timing Information Task | Checksum: 15519996f
+
+Time (s): cpu = 00:00:08 ; elapsed = 00:00:07 . Memory (MB): peak = 2686.652 ; gain = 549.980 ; free physical = 96811 ; free virtual = 957079
+
+Starting Logic Optimization Task
+
+Phase 1 Initialization
+
+Phase 1.1 Core Generation And Design Setup
+Phase 1.1 Core Generation And Design Setup | Checksum: 15519996f
+
+Time (s): cpu = 00:00:00 ; elapsed = 00:00:00 . Memory (MB): peak = 2992.457 ; gain = 0.004 ; free physical = 95348 ; free virtual = 955615
+
+Phase 1.2 Setup Constraints And Sort Netlist
+Phase 1.2 Setup Constraints And Sort Netlist | Checksum: 15519996f
+
+Time (s): cpu = 00:00:00 ; elapsed = 00:00:00.01 . Memory (MB): peak = 2992.457 ; gain = 0.004 ; free physical = 95346 ; free virtual = 955614
+Phase 1 Initialization | Checksum: 15519996f
+
+Time (s): cpu = 00:00:00.01 ; elapsed = 00:00:00.01 . Memory (MB): peak = 2992.457 ; gain = 0.004 ; free physical = 95345 ; free virtual = 955613
+
+Phase 2 Timer Update And Timing Data Collection
+
+Phase 2.1 Timer Update
+Phase 2.1 Timer Update | Checksum: 15519996f
+
+Time (s): cpu = 00:00:00.82 ; elapsed = 00:00:00.18 . Memory (MB): peak = 2992.457 ; gain = 0.004 ; free physical = 95271 ; free virtual = 955539
+
+Phase 2.2 Timing Data Collection
+Phase 2.2 Timing Data Collection | Checksum: 15519996f
+
+Time (s): cpu = 00:00:00.84 ; elapsed = 00:00:00.19 . Memory (MB): peak = 2992.457 ; gain = 0.004 ; free physical = 95266 ; free virtual = 955534
+Phase 2 Timer Update And Timing Data Collection | Checksum: 15519996f
+
+Time (s): cpu = 00:00:00.84 ; elapsed = 00:00:00.19 . Memory (MB): peak = 2992.457 ; gain = 0.004 ; free physical = 95266 ; free virtual = 955534
+
+Phase 3 Retarget
+INFO: [Opt 31-1566] Pulled 4 inverters resulting in an inversion of 426 pins
+INFO: [Opt 31-138] Pushed 0 inverter(s) to 0 load pin(s).
+INFO: [Opt 31-49] Retargeted 0 cell(s).
+Phase 3 Retarget | Checksum: 739f6ef1
+
+Time (s): cpu = 00:00:01 ; elapsed = 00:00:00.35 . Memory (MB): peak = 2992.457 ; gain = 0.004 ; free physical = 95218 ; free virtual = 955486
+Retarget | Checksum: 739f6ef1
+INFO: [Opt 31-389] Phase Retarget created 8 cells and removed 13 cells
+
+Phase 4 Constant propagation
+INFO: [Opt 31-138] Pushed 0 inverter(s) to 0 load pin(s).
+Phase 4 Constant propagation | Checksum: 1226f327b
+
+Time (s): cpu = 00:00:01 ; elapsed = 00:00:00.43 . Memory (MB): peak = 2992.457 ; gain = 0.004 ; free physical = 95187 ; free virtual = 955455
+Constant propagation | Checksum: 1226f327b
+INFO: [Opt 31-389] Phase Constant propagation created 0 cells and removed 0 cells
+
+Phase 5 Sweep
+Phase 5 Sweep | Checksum: 9ffc16df
+
+Time (s): cpu = 00:00:01 ; elapsed = 00:00:00.54 . Memory (MB): peak = 2992.457 ; gain = 0.004 ; free physical = 95158 ; free virtual = 955426
+Sweep | Checksum: 9ffc16df
+INFO: [Opt 31-389] Phase Sweep created 37 cells and removed 0 cells
+
+Phase 6 BUFG optimization
+Phase 6 BUFG optimization | Checksum: 9ffc16df
+
+Time (s): cpu = 00:00:01 ; elapsed = 00:00:00.61 . Memory (MB): peak = 3041.297 ; gain = 48.844 ; free physical = 95138 ; free virtual = 955406
+BUFG optimization | Checksum: 9ffc16df
+INFO: [Opt 31-662] Phase BUFG optimization created 0 cells of which 0 are BUFGs and removed 0 cells.
+
+Phase 7 Shift Register Optimization
+INFO: [Opt 31-1064] SRL Remap converted 0 SRLs to 0 registers and converted 0 registers of register chains to 0 SRLs
+Phase 7 Shift Register Optimization | Checksum: 9ffc16df
+
+Time (s): cpu = 00:00:01 ; elapsed = 00:00:00.62 . Memory (MB): peak = 3041.297 ; gain = 48.844 ; free physical = 95132 ; free virtual = 955400
+Shift Register Optimization | Checksum: 9ffc16df
+INFO: [Opt 31-389] Phase Shift Register Optimization created 0 cells and removed 0 cells
+
+Phase 8 Post Processing Netlist
+Phase 8 Post Processing Netlist | Checksum: be5876e7
+
+Time (s): cpu = 00:00:01 ; elapsed = 00:00:00.64 . Memory (MB): peak = 3041.297 ; gain = 48.844 ; free physical = 95125 ; free virtual = 955393
+Post Processing Netlist | Checksum: be5876e7
+INFO: [Opt 31-389] Phase Post Processing Netlist created 0 cells and removed 0 cells
+
+Phase 9 Finalization
+
+Phase 9.1 Finalizing Design Cores and Updating Shapes
+Phase 9.1 Finalizing Design Cores and Updating Shapes | Checksum: 13d0024f4
+
+Time (s): cpu = 00:00:02 ; elapsed = 00:00:00.73 . Memory (MB): peak = 3041.297 ; gain = 48.844 ; free physical = 95102 ; free virtual = 955369
+
+Phase 9.2 Verifying Netlist Connectivity
+
+Starting Connectivity Check Task
+
+Time (s): cpu = 00:00:00.02 ; elapsed = 00:00:00.02 . Memory (MB): peak = 3041.297 ; gain = 0.000 ; free physical = 95093 ; free virtual = 955361
+Phase 9.2 Verifying Netlist Connectivity | Checksum: 13d0024f4
+
+Time (s): cpu = 00:00:02 ; elapsed = 00:00:00.75 . Memory (MB): peak = 3041.297 ; gain = 48.844 ; free physical = 95093 ; free virtual = 955361
+Phase 9 Finalization | Checksum: 13d0024f4
+
+Time (s): cpu = 00:00:02 ; elapsed = 00:00:00.75 . Memory (MB): peak = 3041.297 ; gain = 48.844 ; free physical = 95093 ; free virtual = 955361
+Opt_design Change Summary
+=========================
+
+
+-------------------------------------------------------------------------------------------------------------------------
+|  Phase                        |  #Cells created  |  #Cells Removed  |  #Constrained objects preventing optimizations  |
+-------------------------------------------------------------------------------------------------------------------------
+|  Retarget                     |               8  |              13  |                                              0  |
+|  Constant propagation         |               0  |               0  |                                              0  |
+|  Sweep                        |              37  |               0  |                                              0  |
+|  BUFG optimization            |               0  |               0  |                                              0  |
+|  Shift Register Optimization  |               0  |               0  |                                              0  |
+|  Post Processing Netlist      |               0  |               0  |                                              0  |
+-------------------------------------------------------------------------------------------------------------------------
+
+
+Ending Logic Optimization Task | Checksum: 13d0024f4
+
+Time (s): cpu = 00:00:02 ; elapsed = 00:00:00.75 . Memory (MB): peak = 3041.297 ; gain = 48.844 ; free physical = 95092 ; free virtual = 955360
+INFO: [Constraints 18-11670] Building netlist checker database with flags, 0x8
+Done building netlist checker database: Time (s): cpu = 00:00:00 ; elapsed = 00:00:00 . Memory (MB): peak = 3041.297 ; gain = 0.000 ; free physical = 95088 ; free virtual = 955356
+
+Starting Power Optimization Task
+INFO: [Pwropt 34-132] Skipping clock gating for clocks with a period < 2.00 ns.
+INFO: [Timing 38-35] Done setting XDC timing constraints.
+Running Vector-less Activity Propagation...
+INFO: [Pwropt 34-9] Applying IDT optimizations ...
+
+Finished Running Vector-less Activity Propagation
+INFO: [Pwropt 34-10] Applying ODC optimizations ...
+
+
+Starting PowerOpt Patch Enables Task
+INFO: [Pwropt 34-162] WRITE_MODE attribute of 0 BRAM(s) out of a total of 35 has been updated to save power. Run report_power_opt to get a complete listing of the BRAMs updated.
+INFO: [Pwropt 34-201] Structural ODC has moved 0 WE to EN ports
+Number of BRAM Ports augmented: 0 newly gated: 0 Total Ports: 70
+Ending PowerOpt Patch Enables Task | Checksum: 13d0024f4
+
+Time (s): cpu = 00:00:00.11 ; elapsed = 00:00:00.12 . Memory (MB): peak = 3451.406 ; gain = 0.000 ; free physical = 94108 ; free virtual = 954376
+Ending Power Optimization Task | Checksum: 13d0024f4
+
+Time (s): cpu = 00:00:06 ; elapsed = 00:00:03 . Memory (MB): peak = 3451.406 ; gain = 410.109 ; free physical = 94107 ; free virtual = 954375
+
+Starting Final Cleanup Task
+Ending Final Cleanup Task | Checksum: 13d0024f4
+
+Time (s): cpu = 00:00:00 ; elapsed = 00:00:00 . Memory (MB): peak = 3451.406 ; gain = 0.000 ; free physical = 94107 ; free virtual = 954375
+
+Starting Netlist Obfuscation Task
+Netlist sorting complete. Time (s): cpu = 00:00:00 ; elapsed = 00:00:00 . Memory (MB): peak = 3451.406 ; gain = 0.000 ; free physical = 94104 ; free virtual = 954372
+Ending Netlist Obfuscation Task | Checksum: 13d0024f4
+
+Time (s): cpu = 00:00:00 ; elapsed = 00:00:00 . Memory (MB): peak = 3451.406 ; gain = 0.000 ; free physical = 94096 ; free virtual = 954364
+INFO: [Common 17-83] Releasing license: Implementation
+31 Infos, 0 Warnings, 0 Critical Warnings and 0 Errors encountered.
+opt_design completed successfully
+opt_design: Time (s): cpu = 00:00:18 ; elapsed = 00:00:12 . Memory (MB): peak = 3451.406 ; gain = 1441.477 ; free physical = 94071 ; free virtual = 954339
+INFO: [runtcl-4] Executing : report_drc -file top_fmax_drc_opted.rpt -pb top_fmax_drc_opted.pb -rpx top_fmax_drc_opted.rpx
+Command: report_drc -file top_fmax_drc_opted.rpt -pb top_fmax_drc_opted.pb -rpx top_fmax_drc_opted.rpx
+INFO: [IP_Flow 19-234] Refreshing IP repositories
+INFO: [IP_Flow 19-1704] No user IP repositories specified
+INFO: [IP_Flow 19-2313] Loaded Vivado IP repository '/home/st-wangjun/hv/tools/Xilinx/Vivado/2023.2/data/ip'.
+INFO: [DRC 23-27] Running DRC with 8 threads
+WARNING: [DRC 23-804] Only the first 20 REQP-1839 messages were issued by report_drc. An additional 1 messages have not been issued. Use 'set_property MAX_MESSAGES <number> [get_drc_check REQP-1839]' to change the number of messages that should be reported.
+INFO: [Vivado_Tcl 2-168] The results of DRC are in file /home/st-wangjun/project/RISCV_A910/synth/vivado/fmax_impl_8.0ns/fmax_impl_8.0ns.runs/impl_1/top_fmax_drc_opted.rpt.
+report_drc completed successfully
+INFO: [Timing 38-480] Writing timing data to binary archive.
+Write ShapeDB Complete: Time (s): cpu = 00:00:00.06 ; elapsed = 00:00:00.02 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93968 ; free virtual = 954242
+INFO: [Common 17-1381] The checkpoint '/home/st-wangjun/project/RISCV_A910/synth/vivado/fmax_impl_8.0ns/fmax_impl_8.0ns.runs/impl_1/top_fmax_opt.dcp' has been generated.
+Command: place_design
+Attempting to get a license for feature 'Implementation' and/or device 'xc7k325t'
+INFO: [Common 17-349] Got license for feature 'Implementation' and/or device 'xc7k325t'
+INFO: [Common 17-83] Releasing license: Implementation
+INFO: [DRC 23-27] Running DRC with 8 threads
+INFO: [Vivado_Tcl 4-198] DRC finished with 0 Errors
+INFO: [Vivado_Tcl 4-199] Please refer to the DRC report (report_drc) for more information.
+Running DRC as a precondition to command place_design
+INFO: [DRC 23-27] Running DRC with 8 threads
+INFO: [Vivado_Tcl 4-198] DRC finished with 0 Errors, 21 Warnings
+INFO: [Vivado_Tcl 4-199] Please refer to the DRC report (report_drc) for more information.
+INFO: [Place 30-611] Multithreading enabled for place_design using a maximum of 8 CPUs
+
+Starting Placer Task
+
+Phase 1 Placer Initialization
+
+Phase 1.1 Placer Initialization Netlist Sorting
+Netlist sorting complete. Time (s): cpu = 00:00:00 ; elapsed = 00:00:00 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93925 ; free virtual = 954199
+Phase 1.1 Placer Initialization Netlist Sorting | Checksum: ebd526d9
+
+Time (s): cpu = 00:00:00.01 ; elapsed = 00:00:00.01 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93925 ; free virtual = 954199
+Netlist sorting complete. Time (s): cpu = 00:00:00 ; elapsed = 00:00:00 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93925 ; free virtual = 954199
+
+Phase 1.2 IO Placement/ Clock Placement/ Build Placer Device
+INFO: [Timing 38-35] Done setting XDC timing constraints.
+Phase 1.2 IO Placement/ Clock Placement/ Build Placer Device | Checksum: c0bd00db
+
+Time (s): cpu = 00:00:04 ; elapsed = 00:00:02 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93913 ; free virtual = 954191
+
+Phase 1.3 Build Placer Netlist Model
+Phase 1.3 Build Placer Netlist Model | Checksum: 18824350c
+
+Time (s): cpu = 00:00:08 ; elapsed = 00:00:03 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93872 ; free virtual = 954150
+
+Phase 1.4 Constrain Clocks/Macros
+Phase 1.4 Constrain Clocks/Macros | Checksum: 18824350c
+
+Time (s): cpu = 00:00:08 ; elapsed = 00:00:03 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93866 ; free virtual = 954145
+Phase 1 Placer Initialization | Checksum: 18824350c
+
+Time (s): cpu = 00:00:08 ; elapsed = 00:00:03 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93877 ; free virtual = 954155
+
+Phase 2 Global Placement
+
+Phase 2.1 Floorplanning
+Phase 2.1 Floorplanning | Checksum: 19881f6ec
+
+Time (s): cpu = 00:00:10 ; elapsed = 00:00:04 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93866 ; free virtual = 954145
+
+Phase 2.2 Update Timing before SLR Path Opt
+Phase 2.2 Update Timing before SLR Path Opt | Checksum: fe06660e
+
+Time (s): cpu = 00:00:11 ; elapsed = 00:00:05 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93859 ; free virtual = 954137
+
+Phase 2.3 Post-Processing in Floorplanning
+Phase 2.3 Post-Processing in Floorplanning | Checksum: fe06660e
+
+Time (s): cpu = 00:00:11 ; elapsed = 00:00:05 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93863 ; free virtual = 954142
+
+Phase 2.4 Global Placement Core
+
+Phase 2.4.1 UpdateTiming Before Physical Synthesis
+Phase 2.4.1 UpdateTiming Before Physical Synthesis | Checksum: 178b273ff
+
+Time (s): cpu = 00:00:36 ; elapsed = 00:00:13 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93769 ; free virtual = 954048
+
+Phase 2.4.2 Physical Synthesis In Placer
+INFO: [Physopt 32-1035] Found 37 LUTNM shape to break, 696 LUT instances to create LUTNM shape
+INFO: [Physopt 32-1044] Break lutnm for timing: one critical 26, two critical 11, total 37, new lutff created 0
+INFO: [Physopt 32-1138] End 1 Pass. Optimized 352 nets or LUTs. Breaked 37 LUTs, combined 315 existing LUTs and moved 0 existing LUT
+INFO: [Physopt 32-65] No nets found for high-fanout optimization.
+INFO: [Physopt 32-232] Optimized 0 net. Created 0 new instance.
+INFO: [Physopt 32-775] End 1 Pass. Optimized 0 net or cell. Created 0 new cell, deleted 0 existing cell and moved 0 existing cell
+INFO: [Physopt 32-456] No candidate cells for DSP register optimization found in the design.
+INFO: [Physopt 32-775] End 2 Pass. Optimized 0 net or cell. Created 0 new cell, deleted 0 existing cell and moved 0 existing cell
+INFO: [Physopt 32-1123] No candidate cells found for Shift Register to Pipeline optimization
+INFO: [Physopt 32-775] End 2 Pass. Optimized 0 net or cell. Created 0 new cell, deleted 0 existing cell and moved 0 existing cell
+INFO: [Physopt 32-1401] No candidate cells found for Shift Register optimization.
+INFO: [Physopt 32-677] No candidate cells for Shift Register optimization found in the design
+INFO: [Physopt 32-775] End 1 Pass. Optimized 0 net or cell. Created 0 new cell, deleted 0 existing cell and moved 0 existing cell
+INFO: [Physopt 32-526] No candidate cells for BRAM register optimization found in the design
+INFO: [Physopt 32-775] End 1 Pass. Optimized 0 net or cell. Created 0 new cell, deleted 0 existing cell and moved 0 existing cell
+INFO: [Physopt 32-846] No candidate cells for URAM register optimization found in the design
+INFO: [Physopt 32-775] End 1 Pass. Optimized 0 net or cell. Created 0 new cell, deleted 0 existing cell and moved 0 existing cell
+INFO: [Physopt 32-846] No candidate cells for URAM register optimization found in the design
+INFO: [Physopt 32-775] End 1 Pass. Optimized 0 net or cell. Created 0 new cell, deleted 0 existing cell and moved 0 existing cell
+INFO: [Physopt 32-949] No candidate nets found for dynamic/static region interface net replication
+INFO: [Physopt 32-775] End 1 Pass. Optimized 0 net or cell. Created 0 new cell, deleted 0 existing cell and moved 0 existing cell
+Netlist sorting complete. Time (s): cpu = 00:00:00 ; elapsed = 00:00:00 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93763 ; free virtual = 954042
+
+Summary of Physical Synthesis Optimizations
+============================================
+
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------
+|  Optimization                                     |  Added Cells  |  Removed Cells  |  Optimized Cells/Nets  |  Dont Touch  |  Iterations  |  Elapsed   |
+-----------------------------------------------------------------------------------------------------------------------------------------------------------
+|  LUT Combining                                    |           37  |            315  |                   352  |           0  |           1  |  00:00:00  |
+|  Retime                                           |            0  |              0  |                     0  |           0  |           1  |  00:00:00  |
+|  Very High Fanout                                 |            0  |              0  |                     0  |           0  |           1  |  00:00:00  |
+|  DSP Register                                     |            0  |              0  |                     0  |           0  |           1  |  00:00:00  |
+|  Shift Register to Pipeline                       |            0  |              0  |                     0  |           0  |           1  |  00:00:00  |
+|  Shift Register                                   |            0  |              0  |                     0  |           0  |           1  |  00:00:00  |
+|  BRAM Register                                    |            0  |              0  |                     0  |           0  |           1  |  00:00:00  |
+|  URAM Register                                    |            0  |              0  |                     0  |           0  |           1  |  00:00:00  |
+|  Dynamic/Static Region Interface Net Replication  |            0  |              0  |                     0  |           0  |           1  |  00:00:00  |
+|  Total                                            |           37  |            315  |                   352  |           0  |           9  |  00:00:01  |
+-----------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+Phase 2.4.2 Physical Synthesis In Placer | Checksum: 147600249
+
+Time (s): cpu = 00:00:38 ; elapsed = 00:00:14 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93768 ; free virtual = 954047
+Phase 2.4 Global Placement Core | Checksum: 20fdd5076
+
+Time (s): cpu = 00:00:40 ; elapsed = 00:00:15 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93769 ; free virtual = 954047
+Phase 2 Global Placement | Checksum: 20fdd5076
+
+Time (s): cpu = 00:00:40 ; elapsed = 00:00:15 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93769 ; free virtual = 954047
+
+Phase 3 Detail Placement
+
+Phase 3.1 Commit Multi Column Macros
+Phase 3.1 Commit Multi Column Macros | Checksum: 1efe12620
+
+Time (s): cpu = 00:00:41 ; elapsed = 00:00:15 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93767 ; free virtual = 954046
+
+Phase 3.2 Commit Most Macros & LUTRAMs
+Phase 3.2 Commit Most Macros & LUTRAMs | Checksum: a545ddf2
+
+Time (s): cpu = 00:00:44 ; elapsed = 00:00:17 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93770 ; free virtual = 954049
+
+Phase 3.3 Area Swap Optimization
+Phase 3.3 Area Swap Optimization | Checksum: deed13e7
+
+Time (s): cpu = 00:00:45 ; elapsed = 00:00:17 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93770 ; free virtual = 954049
+
+Phase 3.4 Pipeline Register Optimization
+Phase 3.4 Pipeline Register Optimization | Checksum: f36ee16d
+
+Time (s): cpu = 00:00:45 ; elapsed = 00:00:17 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93770 ; free virtual = 954049
+
+Phase 3.5 Fast Optimization
+Phase 3.5 Fast Optimization | Checksum: 16a41fe56
+
+Time (s): cpu = 00:00:51 ; elapsed = 00:00:21 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93761 ; free virtual = 954039
+
+Phase 3.6 Small Shape Detail Placement
+Phase 3.6 Small Shape Detail Placement | Checksum: 13b97a58c
+
+Time (s): cpu = 00:00:56 ; elapsed = 00:00:25 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93740 ; free virtual = 954038
+
+Phase 3.7 Re-assign LUT pins
+Phase 3.7 Re-assign LUT pins | Checksum: e46502f5
+
+Time (s): cpu = 00:00:56 ; elapsed = 00:00:26 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93732 ; free virtual = 954035
+
+Phase 3.8 Pipeline Register Optimization
+Phase 3.8 Pipeline Register Optimization | Checksum: 12c4452b1
+
+Time (s): cpu = 00:00:56 ; elapsed = 00:00:26 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93732 ; free virtual = 954036
+
+Phase 3.9 Fast Optimization
+Phase 3.9 Fast Optimization | Checksum: b2406770
+
+Time (s): cpu = 00:01:06 ; elapsed = 00:00:32 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93749 ; free virtual = 954038
+Phase 3 Detail Placement | Checksum: b2406770
+
+Time (s): cpu = 00:01:06 ; elapsed = 00:00:32 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93749 ; free virtual = 954038
+
+Phase 4 Post Placement Optimization and Clean-Up
+
+Phase 4.1 Post Commit Optimization
+INFO: [Timing 38-35] Done setting XDC timing constraints.
+
+Phase 4.1.1 Post Placement Optimization
+Post Placement Optimization Initialization | Checksum: 198973f2d
+
+Phase 4.1.1.1 BUFG Insertion
+
+Starting Physical Synthesis Task
+
+Phase 1 Physical Synthesis Initialization
+INFO: [Physopt 32-721] Multithreading enabled for phys_opt_design using a maximum of 8 CPUs
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-1.890 | TNS=-1293.960 |
+Phase 1 Physical Synthesis Initialization | Checksum: 162233cf0
+
+Time (s): cpu = 00:00:01 ; elapsed = 00:00:00.36 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93610 ; free virtual = 953899
+INFO: [Place 46-56] BUFG insertion identified 0 candidate nets. Inserted BUFG: 0, Replicated BUFG Driver: 0, Skipped due to Placement/Routing Conflicts: 0, Skipped due to Timing Degradation: 0, Skipped due to netlist editing failed: 0.
+Ending Physical Synthesis Task | Checksum: 162233cf0
+
+Time (s): cpu = 00:00:01 ; elapsed = 00:00:00.52 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93606 ; free virtual = 953895
+Phase 4.1.1.1 BUFG Insertion | Checksum: 198973f2d
+
+Time (s): cpu = 00:01:12 ; elapsed = 00:00:34 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93605 ; free virtual = 953894
+
+Phase 4.1.1.2 Post Placement Timing Optimization
+INFO: [Place 30-746] Post Placement Timing Summary WNS=-0.940. For the most accurate timing information please run report_timing.
+Phase 4.1.1.2 Post Placement Timing Optimization | Checksum: 2073f6fcf
+
+Time (s): cpu = 00:01:32 ; elapsed = 00:00:49 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93403 ; free virtual = 953705
+
+Time (s): cpu = 00:01:32 ; elapsed = 00:00:49 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93404 ; free virtual = 953706
+Phase 4.1 Post Commit Optimization | Checksum: 2073f6fcf
+
+Time (s): cpu = 00:01:32 ; elapsed = 00:00:49 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93399 ; free virtual = 953704
+
+Phase 4.2 Post Placement Cleanup
+Phase 4.2 Post Placement Cleanup | Checksum: 2073f6fcf
+
+Time (s): cpu = 00:01:33 ; elapsed = 00:00:49 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93396 ; free virtual = 953704
+
+Phase 4.3 Placer Reporting
+
+Phase 4.3.1 Print Estimated Congestion
+INFO: [Place 30-612] Post-Placement Estimated Congestion 
+ ____________________________________________________
+|           | Global Congestion | Short Congestion  |
+| Direction | Region Size       | Region Size       |
+|___________|___________________|___________________|
+|      North|                1x1|                2x2|
+|___________|___________________|___________________|
+|      South|                1x1|                2x2|
+|___________|___________________|___________________|
+|       East|                4x4|                4x4|
+|___________|___________________|___________________|
+|       West|                1x1|                1x1|
+|___________|___________________|___________________|
+
+Phase 4.3.1 Print Estimated Congestion | Checksum: 2073f6fcf
+
+Time (s): cpu = 00:01:33 ; elapsed = 00:00:49 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93395 ; free virtual = 953704
+Phase 4.3 Placer Reporting | Checksum: 2073f6fcf
+
+Time (s): cpu = 00:01:33 ; elapsed = 00:00:49 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93393 ; free virtual = 953703
+
+Phase 4.4 Final Placement Cleanup
+Netlist sorting complete. Time (s): cpu = 00:00:00 ; elapsed = 00:00:00 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93393 ; free virtual = 953703
+
+Time (s): cpu = 00:01:33 ; elapsed = 00:00:49 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93393 ; free virtual = 953703
+Phase 4 Post Placement Optimization and Clean-Up | Checksum: 1d7695009
+
+Time (s): cpu = 00:01:33 ; elapsed = 00:00:49 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93392 ; free virtual = 953703
+Ending Placer Task | Checksum: d7ec68c6
+
+Time (s): cpu = 00:01:33 ; elapsed = 00:00:49 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93390 ; free virtual = 953703
+76 Infos, 1 Warnings, 0 Critical Warnings and 0 Errors encountered.
+place_design completed successfully
+place_design: Time (s): cpu = 00:01:34 ; elapsed = 00:00:50 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93389 ; free virtual = 953702
+INFO: [runtcl-4] Executing : report_io -file top_fmax_io_placed.rpt
+report_io: Time (s): cpu = 00:00:00.17 ; elapsed = 00:00:00.22 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93384 ; free virtual = 953703
+INFO: [runtcl-4] Executing : report_utilization -file top_fmax_utilization_placed.rpt -pb top_fmax_utilization_placed.pb
+INFO: [runtcl-4] Executing : report_control_sets -verbose -file top_fmax_control_sets_placed.rpt
+report_control_sets: Time (s): cpu = 00:00:00.06 ; elapsed = 00:00:00.1 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93273 ; free virtual = 953592
+INFO: [Timing 38-480] Writing timing data to binary archive.
+Write ShapeDB Complete: Time (s): cpu = 00:00:00.11 ; elapsed = 00:00:00.03 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93270 ; free virtual = 953590
+Wrote PlaceDB: Time (s): cpu = 00:00:02 ; elapsed = 00:00:00.69 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93225 ; free virtual = 953569
+Wrote PulsedLatchDB: Time (s): cpu = 00:00:00 ; elapsed = 00:00:00 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93225 ; free virtual = 953569
+Writing XDEF routing.
+Writing XDEF routing logical nets.
+Writing XDEF routing special nets.
+Wrote RouteStorage: Time (s): cpu = 00:00:00.02 ; elapsed = 00:00:00.02 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93225 ; free virtual = 953569
+Wrote Netlist Cache: Time (s): cpu = 00:00:00.02 ; elapsed = 00:00:00.02 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93223 ; free virtual = 953569
+Wrote Device Cache: Time (s): cpu = 00:00:00 ; elapsed = 00:00:00 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93226 ; free virtual = 953568
+Write Physdb Complete: Time (s): cpu = 00:00:02 ; elapsed = 00:00:00.74 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93243 ; free virtual = 953567
+INFO: [Common 17-1381] The checkpoint '/home/st-wangjun/project/RISCV_A910/synth/vivado/fmax_impl_8.0ns/fmax_impl_8.0ns.runs/impl_1/top_fmax_placed.dcp' has been generated.
+Command: phys_opt_design
+Attempting to get a license for feature 'Implementation' and/or device 'xc7k325t'
+INFO: [Common 17-349] Got license for feature 'Implementation' and/or device 'xc7k325t'
+
+Starting Initial Update Timing Task
+
+Time (s): cpu = 00:00:04 ; elapsed = 00:00:01 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93226 ; free virtual = 953536
+INFO: [Vivado_Tcl 4-1435] PhysOpt_Tcl_Interface Runtime Before Starting Physical Synthesis Task | CPU: 4.31s |  WALL: 1.18s
+Netlist sorting complete. Time (s): cpu = 00:00:00 ; elapsed = 00:00:00.01 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93226 ; free virtual = 953536
+
+Starting Physical Synthesis Task
+
+Phase 1 Physical Synthesis Initialization
+INFO: [Physopt 32-721] Multithreading enabled for phys_opt_design using a maximum of 8 CPUs
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.940 | TNS=-645.688 |
+Phase 1 Physical Synthesis Initialization | Checksum: a13f5ea3
+
+Time (s): cpu = 00:00:02 ; elapsed = 00:00:01 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93188 ; free virtual = 953497
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.940 | TNS=-645.688 |
+
+Phase 2 DSP Register Optimization
+INFO: [Physopt 32-456] No candidate cells for DSP register optimization found in the design.
+INFO: [Physopt 32-775] End 2 Pass. Optimized 0 net or cell. Created 0 new cell, deleted 0 existing cell and moved 0 existing cell
+Phase 2 DSP Register Optimization | Checksum: a13f5ea3
+
+Time (s): cpu = 00:00:02 ; elapsed = 00:00:01 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93187 ; free virtual = 953496
+
+Phase 3 Critical Path Optimization
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.940 | TNS=-645.688 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/g_tage.u_tage/q_row_tag_reg[3]_16[3]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-663] Processed net u_soc/Core_cpu/U_ID_EX/ex_csr_addr[3].  Re-placed instance u_soc/Core_cpu/U_ID_EX/ex_csr_addr_reg[3]
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_ID_EX/ex_csr_addr[3]. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.887 | TNS=-587.115 |
+INFO: [Physopt 32-663] Processed net u_soc/Core_cpu/U_ID_EX/ex_csr_addr[9].  Re-placed instance u_soc/Core_cpu/U_ID_EX/ex_csr_addr_reg[9]
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_ID_EX/ex_csr_addr[9]. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.838 | TNS=-552.219 |
+INFO: [Physopt 32-81] Processed net u_soc/Core_cpu/U_ID_EX/ex_csr_addr_reg[11]_1[4]. Replicated 1 times.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_ID_EX/ex_csr_addr_reg[11]_1[4]. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.831 | TNS=-546.637 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q_reg[0]_25[17]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-663] Processed net u_soc/Core_cpu/U_ID_EX/ex_csr_addr[8].  Re-placed instance u_soc/Core_cpu/U_ID_EX/ex_csr_addr_reg[8]
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_ID_EX/ex_csr_addr[8]. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.830 | TNS=-542.555 |
+INFO: [Physopt 32-663] Processed net u_soc/Core_cpu/U_ID_EX/ex_csr_addr[4].  Re-placed instance u_soc/Core_cpu/U_ID_EX/ex_csr_addr_reg[4]
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_ID_EX/ex_csr_addr[4]. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.822 | TNS=-526.012 |
+INFO: [Physopt 32-663] Processed net u_soc/Core_cpu/U_ID_EX/ex_csr_addr[10].  Re-placed instance u_soc/Core_cpu/U_ID_EX/ex_csr_addr_reg[10]
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_ID_EX/ex_csr_addr[10]. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.804 | TNS=-511.230 |
+INFO: [Physopt 32-81] Processed net u_soc/Core_cpu/U_ID_EX/ex_csr_addr_reg[11]_1[0]. Replicated 3 times.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_ID_EX/ex_csr_addr_reg[11]_1[0]. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.796 | TNS=-497.300 |
+INFO: [Physopt 32-663] Processed net u_soc/Core_cpu/U_CSR/mtval_reg[1]_0[1].  Re-placed instance u_soc/Core_cpu/U_CSR/mtval_reg[1]
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_CSR/mtval_reg[1]_0[1]. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.771 | TNS=-477.767 |
+INFO: [Physopt 32-81] Processed net u_soc/Core_cpu/U_ID_EX/ex_csr_addr[0]. Replicated 1 times.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_ID_EX/ex_csr_addr[0]. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.767 | TNS=-474.481 |
+INFO: [Physopt 32-663] Processed net u_soc/Core_cpu/U_CSR/mcycle_reg_n_2_[15].  Re-placed instance u_soc/Core_cpu/U_CSR/mcycle_reg[15]
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_CSR/mcycle_reg_n_2_[15]. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.763 | TNS=-470.476 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/ex_csr_addr[0]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-710] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[0][17]_i_1_n_2. Critical path length was reduced through logic transformation on cell u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[0][17]_i_1_comp.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[6][17]_i_3_n_2. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.761 | TNS=-470.380 |
+INFO: [Physopt 32-663] Processed net u_soc/Core_cpu/U_CSR/mcycle_reg_n_2_[0].  Re-placed instance u_soc/Core_cpu/U_CSR/mcycle_reg[0]
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_CSR/mcycle_reg_n_2_[0]. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.760 | TNS=-464.429 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q_reg[2]_23[17]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-710] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[2][17]_i_1_n_2. Critical path length was reduced through logic transformation on cell u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[2][17]_i_1_comp.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[6][17]_i_3_n_2. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.759 | TNS=-464.214 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q_reg[3]_22[33]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-710] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[3][33]_i_1_n_2. Critical path length was reduced through logic transformation on cell u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[3][33]_i_1_comp.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[3][33]_i_2_n_2. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.755 | TNS=-464.072 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q_reg[6]_19[32]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-710] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/p_1_in[32]. Critical path length was reduced through logic transformation on cell u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[6][32]_i_1_comp.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[6][32]_i_2_n_2. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.752 | TNS=-463.763 |
+INFO: [Physopt 32-663] Processed net u_soc/Core_cpu/U_CSR/mcause_reg_n_2_[1].  Re-placed instance u_soc/Core_cpu/U_CSR/mcause_reg[1]
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_CSR/mcause_reg_n_2_[1]. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.748 | TNS=-460.474 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q_reg[4]_21[129]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-710] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[4][129]_i_1_n_2. Critical path length was reduced through logic transformation on cell u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[4][129]_i_1_comp.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[4][129]_i_2_n_2. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.747 | TNS=-460.181 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/q_row_idx_reg[3][0]_i_2_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-608] Optimized 1 net.  Swapped 21 pins.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ghr_q_reg[5]. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.743 | TNS=-460.170 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q_reg[3]_22[17]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[6][17]_i_3_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-710] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[6][17]_i_3_n_2. Critical path length was reduced through logic transformation on cell u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[6][17]_i_3_comp_4.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/p_0_in__0[17]. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.742 | TNS=-459.299 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q_reg[1]_24[132]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-710] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[1][132]_i_1_n_2. Critical path length was reduced through logic transformation on cell u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[1][132]_i_1_comp.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[1][132]_i_2_n_2. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.738 | TNS=-459.025 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q_reg[6]_19[17]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-663] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[6][17]_i_4_n_2.  Re-placed instance u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[6][17]_i_4
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[6][17]_i_4_n_2. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.736 | TNS=-459.017 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ghr_q_reg[5]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/q_row_idx[3][1]_i_5_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/p_3_in. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ib_push_acc[1]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-710] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ib_push_acc[1]. Critical path length was reduced through logic transformation on cell u_soc/Core_cpu/u_ifu_subsys/u_ibuf/cnt_q[2]_i_2_comp.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/u_ifu_subsys/u_btb/cnt_q_reg[3]. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.721 | TNS=-443.463 |
+INFO: [Physopt 32-710] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ib_push_acc[1]. Critical path length was reduced through logic transformation on cell u_soc/Core_cpu/u_ifu_subsys/u_ibuf/cnt_q[2]_i_2_comp_1.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/u_ifu_subsys/u_btb/push_num[1]. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.695 | TNS=-398.364 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ib_push_acc[0]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-710] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ib_push_acc[0]. Critical path length was reduced through logic transformation on cell u_soc/Core_cpu/u_ifu_subsys/u_ibuf/cnt_q[1]_i_2_comp.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/u_ifu_subsys/u_btb/push_num[0]. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.691 | TNS=-400.757 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/g_tage.u_tage/q_row_tag_reg[2]_15[2]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/q_row_idx_reg[2][0]_i_2_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ghr_q_reg[3]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-663] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/q_row_idx[2][1]_i_6_n_2.  Re-placed instance u_soc/Core_cpu/u_ifu_subsys/u_ibuf/q_row_idx[2][1]_i_6
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/q_row_idx[2][1]_i_6_n_2. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.690 | TNS=-400.674 |
+INFO: [Physopt 32-608] Optimized 1 net.  Swapped 20 pins.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/q_pc_q_reg[2]_rep__1. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.681 | TNS=-399.833 |
+INFO: [Physopt 32-608] Optimized 1 net.  Swapped 24 pins.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[6][17]_i_4_n_2. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.678 | TNS=-399.723 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q_reg[3]_22[74]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-663] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[3][74]_i_2_n_2.  Re-placed instance u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[3][74]_i_2
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[3][74]_i_2_n_2. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.677 | TNS=-399.669 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_icache/u_dat_way1/u_prim/rd_q[68]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-608] Optimized 1 net.  Swapped 20 pins.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/u_ifu_subsys/u_btb/reached_taken. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.671 | TNS=-397.269 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q_reg[5]_20[20]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-663] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[5][20]_i_2_n_2.  Re-placed instance u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[5][20]_i_2
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[5][20]_i_2_n_2. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.671 | TNS=-397.198 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_icache/q_pc_q_reg[8]_0[7]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_icache/u_tag_way0/u_prim/CO[0]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-608] Optimized 1 net.  Swapped 18 pins.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/S[0]. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.659 | TNS=-394.714 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q_reg[5]_20[74]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[5][74]_i_2_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-710] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[5][74]_i_2_n_2. Critical path length was reduced through logic transformation on cell u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[5][74]_i_2_comp.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/p_0_in__0[74]. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.659 | TNS=-394.635 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q_reg[4]_21[20]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-663] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[4][20]_i_2_n_2.  Re-placed instance u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[4][20]_i_2
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[4][20]_i_2_n_2. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.655 | TNS=-394.546 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q_reg[4]_21[74]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-710] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[4][74]_i_1_n_2. Critical path length was reduced through logic transformation on cell u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[4][74]_i_1_comp.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[6][74]_i_3_n_2. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.654 | TNS=-394.505 |
+INFO: [Physopt 32-608] Optimized 1 net.  Swapped 22 pins.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/q_pc_q_reg[2]_rep__1_0[0]. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.654 | TNS=-393.922 |
+INFO: [Physopt 32-608] Optimized 1 net.  Swapped 23 pins.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/q_row_idx[2][1]_i_6_n_2. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.649 | TNS=-393.887 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q_reg[7]_26[20]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[7][20]_i_2_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-663] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/p_0_in__0[20].  Re-placed instance u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[6][20]_i_9
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/p_0_in__0[20]. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.647 | TNS=-393.953 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/q_row_idx[2][1]_i_6_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/q_pc_q_reg[2]_rep__1. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-710] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/q_pc_q_reg[2]_rep__1. Critical path length was reduced through logic transformation on cell u_soc/Core_cpu/u_ifu_subsys/u_ibuf/q_row_idx[1][2]_i_11_comp.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ib_push_acc[2]. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.644 | TNS=-393.198 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q_reg[4]_21[8]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-710] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[4][8]_i_1_n_2. Critical path length was reduced through logic transformation on cell u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[4][8]_i_1_comp.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[6][8]_i_3_n_2. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.640 | TNS=-393.151 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q_reg[3]_22[8]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-710] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[3][8]_i_1_n_2. Critical path length was reduced through logic transformation on cell u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[3][8]_i_1_comp.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[6][8]_i_3_n_2. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.631 | TNS=-393.076 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q_reg[5]_20[8]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-710] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[5][8]_i_1_n_2. Critical path length was reduced through logic transformation on cell u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[5][8]_i_1_comp.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[6][8]_i_3_n_2. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.627 | TNS=-393.011 |
+INFO: [Physopt 32-710] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/p_3_in. Critical path length was reduced through logic transformation on cell u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ghr_q[3]_i_2_comp.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ib_push_acc[2]. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.625 | TNS=-392.783 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/S[1]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-134] Processed net u_soc/Core_cpu/u_ifu_subsys/u_btb/cnt_q_reg[3]. Rewiring did not optimize the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_btb/cnt_q_reg[3]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/push_num1. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-663] Processed net u_soc/Core_cpu/U_ID_EX/cnt_q[4]_i_11_n_2.  Re-placed instance u_soc/Core_cpu/U_ID_EX/cnt_q[4]_i_11
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_ID_EX/cnt_q[4]_i_11_n_2. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.600 | TNS=-367.069 |
+INFO: [Physopt 32-710] Processed net u_soc/Core_cpu/U_ID_EX/push_num1. Critical path length was reduced through logic transformation on cell u_soc/Core_cpu/U_ID_EX/cnt_q[4]_i_6_comp.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_ID_EX/cnt_q[4]_i_11_n_2. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.436 | TNS=-205.554 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/mispredict0. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/id_pc_reg[31]_i_8_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/id_pc_reg[31]_i_14_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/id_pc[31]_i_22_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/actual_npc[0]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-710] Processed net u_soc/Core_cpu/U_ID_EX/actual_npc[0]. Critical path length was reduced through logic transformation on cell u_soc/Core_cpu/U_ID_EX/q_pc_q[1]_i_3_comp.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_ID_EX/q_row_idx[1][2]_i_13_n_2. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.344 | TNS=-125.795 |
+INFO: [Physopt 32-608] Optimized 1 net.  Swapped 26 pins.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_ID_EX/id_pc[31]_i_17_n_2. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.338 | TNS=-121.076 |
+INFO: [Physopt 32-608] Optimized 1 net.  Swapped 26 pins.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_ID_EX/id_pc[31]_i_19_n_2. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.324 | TNS=-110.389 |
+INFO: [Physopt 32-710] Processed net u_soc/Core_cpu/U_ID_EX/actual_npc[0]. Critical path length was reduced through logic transformation on cell u_soc/Core_cpu/U_ID_EX/q_pc_q[1]_i_3_comp_1.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_ID_EX/mem_exc_tval[31]_i_8_n_2. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.312 | TNS=-101.509 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/id_pc[31]_i_21_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/ex_npc_op_reg[1]_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/dat_q_reg_0_63_2_2_i_6_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/u1_taken_i_2_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/U_ALU/data0. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/u1_taken_reg_i_7_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-608] Optimized 1 net.  Swapped 26 pins.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_ID_EX/u1_taken_i_29_n_2. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.289 | TNS=-85.668 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/u1_taken_i_29_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/ex_A_final[15]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-608] Optimized 1 net.  Swapped 23 pins.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_CSR/csr_rdata[11]. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.263 | TNS=-69.321 |
+INFO: [Physopt 32-81] Processed net u_soc/Core_cpu/U_ID_EX/ex_csr_addr_reg[11]_1[1]. Replicated 1 times.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_ID_EX/ex_csr_addr_reg[11]_1[1]. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.243 | TNS=-55.052 |
+INFO: [Physopt 32-663] Processed net u_soc/Core_cpu/U_CSR/mcycle_reg_n_2_[16].  Re-placed instance u_soc/Core_cpu/U_CSR/mcycle_reg[16]
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_CSR/mcycle_reg_n_2_[16]. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.233 | TNS=-52.689 |
+INFO: [Physopt 32-81] Processed net u_soc/Core_cpu/U_ID_EX/ex_csr_addr_reg[11]_1[1]_repN. Replicated 2 times.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_ID_EX/ex_csr_addr_reg[11]_1[1]_repN. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.214 | TNS=-43.342 |
+INFO: [Physopt 32-608] Optimized 1 net.  Swapped 26 pins.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_ID_EX/u1_taken_i_27_n_2. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.212 | TNS=-42.409 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/ex_csr_addr_reg[11]_1[1]_repN_1. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/u1_taken_reg_i_26_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/u1_taken_i_52_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-710] Processed net u_soc/Core_cpu/U_ID_EX/u1_taken_i_52_n_2. Critical path length was reduced through logic transformation on cell u_soc/Core_cpu/U_ID_EX/u1_taken_i_52_comp.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_ID_EX/ex_A_final[0]. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.209 | TNS=-41.027 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/U_ALU/data8. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/u1_taken_reg_i_11_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/u1_taken_reg_i_31_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/u1_taken_reg_i_53_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/alu_c_reg[0]_i_36_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-710] Processed net u_soc/Core_cpu/U_ID_EX/alu_c_reg[0]_i_36_n_2. Critical path length was reduced through logic transformation on cell u_soc/Core_cpu/U_ID_EX/alu_c_reg[0]_i_36_comp.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_ID_EX/ex_A_final[7]. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.209 | TNS=-41.027 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_CSR/csr_rdata[11]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/ex_csr_addr_reg[11]_0. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-608] Optimized 1 net.  Swapped 24 pins.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_ID_EX/mtvec[31]_i_6_n_2. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.207 | TNS=-40.123 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/u1_taken_i_3_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/U_ALU/data9. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/alu_c_reg[0]_i_6_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/alu_c_reg[0]_i_17_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/alu_c_reg[0]_i_27_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-663] Processed net u_soc/Core_cpu/U_ID_EX/alu_c_reg[0]_i_39_n_2.  Re-placed instance u_soc/Core_cpu/U_ID_EX/alu_c_reg[0]_i_39
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_ID_EX/alu_c_reg[0]_i_39_n_2. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.201 | TNS=-37.480 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/alu_c_reg[3]_i_18_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/csr_rdata[1]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-710] Processed net u_soc/Core_cpu/U_ID_EX/csr_rdata[1]. Critical path length was reduced through logic transformation on cell u_soc/Core_cpu/U_ID_EX/mscratch[1]_i_2_comp.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_ID_EX/ex_csr_addr_reg[0]_0. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.200 | TNS=-37.048 |
+INFO: [Physopt 32-608] Optimized 1 net.  Swapped 22 pins.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_ID_EX/alu_c_reg[0]_i_39_n_2. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.196 | TNS=-35.352 |
+INFO: [Physopt 32-663] Processed net u_soc/Core_cpu/U_ID_EX/ex_csr_addr[5].  Re-placed instance u_soc/Core_cpu/U_ID_EX/ex_csr_addr_reg[5]
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_ID_EX/ex_csr_addr[5]. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.191 | TNS=-32.044 |
+INFO: [Physopt 32-663] Processed net u_soc/Core_cpu/U_CSR/mcycle_reg_n_2_[3].  Re-placed instance u_soc/Core_cpu/U_CSR/mcycle_reg[3]
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_CSR/mcycle_reg_n_2_[3]. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.186 | TNS=-31.270 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/ex_csr_addr_reg[0]_0. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/mtvec[31]_i_12_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-242] Processed net u_soc/Core_cpu/U_ID_EX/mcause[31]_i_5_n_2. Rewired (signal push) u_soc/Core_cpu/U_ID_EX/ex_csr_addr_reg[11]_1[1]_repN_1 to 2 loads. Replicated 1 times.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_ID_EX/mcause[31]_i_5_n_2. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.185 | TNS=-30.877 |
+INFO: [Physopt 32-81] Processed net u_soc/Core_cpu/U_ID_EX/ex_csr_addr_reg[11]_1[2]. Replicated 4 times.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_ID_EX/ex_csr_addr_reg[11]_1[2]. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.176 | TNS=-24.439 |
+INFO: [Physopt 32-663] Processed net u_soc/Core_cpu/U_CSR/mcause_reg_n_2_[2].  Re-placed instance u_soc/Core_cpu/U_CSR/mcause_reg[2]
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_CSR/mcause_reg_n_2_[2]. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.174 | TNS=-24.163 |
+INFO: [Physopt 32-663] Processed net u_soc/Core_cpu/U_CSR/minstret_reg[39]_0[0].  Re-placed instance u_soc/Core_cpu/U_CSR/minstret_reg[35]
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_CSR/minstret_reg[39]_0[0]. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.170 | TNS=-23.618 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_CSR/mtval_reg[1]_0[1]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/alu_c_reg[0]_i_39_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-710] Processed net u_soc/Core_cpu/U_ID_EX/alu_c_reg[0]_i_39_n_2. Critical path length was reduced through logic transformation on cell u_soc/Core_cpu/U_ID_EX/alu_c_reg[0]_i_39_comp.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_ID_EX/ex_A_final[1]. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.168 | TNS=-23.348 |
+INFO: [Physopt 32-608] Optimized 1 net.  Swapped 21 pins.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_ID_EX/mscratch[1]_i_4_n_2. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.167 | TNS=-23.214 |
+INFO: [Physopt 32-663] Processed net u_soc/Core_cpu/U_CSR/mtval_reg_n_2_[14].  Re-placed instance u_soc/Core_cpu/U_CSR/mtval_reg[14]
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_CSR/mtval_reg_n_2_[14]. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.162 | TNS=-22.558 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/ex_csr_addr[3]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/u1_taken_i_51_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/ex_A_final[3]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/csr_rdata[3]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-134] Processed net u_soc/Core_cpu/U_ID_EX/mtvec[7]_i_3_n_2. Rewiring did not optimize the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/mtvec[7]_i_3_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/mstatus_mie_i_4_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_btb/rst_cpu_reg_rep__14[1]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net clk_IBUF. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net clk. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_icache/u_dat_way1/u_prim/rd_q[68]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/ex_csr_addr[3]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_icache/q_pc_q_reg[8]_0[7]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/S[1]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_btb/cnt_q_reg[3]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/push_num1. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/mispredict0. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/id_pc[31]_i_21_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/ex_npc_op_reg[1]_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/dat_q_reg_0_63_2_2_i_6_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/u1_taken_i_2_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/U_ALU/data0. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/u1_taken_i_51_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/ex_A_final[3]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/csr_rdata[3]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/mtvec[7]_i_3_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/mstatus_mie_i_4_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_btb/rst_cpu_reg_rep__14[1]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net clk_IBUF. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net clk. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.162 | TNS=-22.558 |
+Netlist sorting complete. Time (s): cpu = 00:00:00.03 ; elapsed = 00:00:00.03 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 95105 ; free virtual = 955433
+Phase 3 Critical Path Optimization | Checksum: a13f5ea3
+
+Time (s): cpu = 00:02:15 ; elapsed = 00:00:40 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 95104 ; free virtual = 955432
+
+Phase 4 Critical Path Optimization
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.162 | TNS=-22.558 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_icache/u_dat_way1/u_prim/rd_q[68]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/ex_csr_addr[3]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_icache/q_pc_q_reg[8]_0[7]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_icache/u_tag_way0/u_prim/CO[0]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/S[1]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-134] Processed net u_soc/Core_cpu/u_ifu_subsys/u_btb/cnt_q_reg[3]. Rewiring did not optimize the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_btb/cnt_q_reg[3]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-710] Processed net u_soc/Core_cpu/u_ifu_subsys/u_btb/cnt_q_reg[3]. Critical path length was reduced through logic transformation on cell u_soc/Core_cpu/u_ifu_subsys/u_btb/cnt_q[2]_i_6_comp_1.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/U_ID_EX/push_num1. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.158 | TNS=-21.334 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q_reg[7]_26[8]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[7][8]_i_2_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-710] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[7][8]_i_2_n_2. Critical path length was reduced through logic transformation on cell u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[7][8]_i_2_comp.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/p_0_in__0[8]. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.157 | TNS=-21.202 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q_reg[7]_26[74]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[6][74]_i_3_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-710] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[6][74]_i_3_n_2. Critical path length was reduced through logic transformation on cell u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[6][74]_i_3_comp_2.
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/p_0_in__0[74]. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.155 | TNS=-20.800 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q_reg[4]_21[20]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-663] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[4][20]_i_2_n_2.  Re-placed instance u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[4][20]_i_2
+INFO: [Physopt 32-735] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[4][20]_i_2_n_2. Optimization improves timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.155 | TNS=-20.785 |
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_btb/reached_taken. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ib_push_acc[2]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-134] Processed net u_soc/Core_cpu/u_ifu_subsys/u_btb/push_num[2]. Rewiring did not optimize the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_btb/push_num[2]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/push_num1. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/mispredict0. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/id_pc_reg[31]_i_8_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/id_pc_reg[31]_i_14_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/id_pc[31]_i_21_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/ex_npc_op_reg[1]_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/dat_q_reg_0_63_2_2_i_6_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/u1_taken_i_2_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/U_ALU/data0. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/u1_taken_reg_i_7_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/u1_taken_reg_i_26_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/u1_taken_i_51_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/ex_A_final[3]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/csr_rdata[3]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-134] Processed net u_soc/Core_cpu/U_ID_EX/mtvec[7]_i_3_n_2. Rewiring did not optimize the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/mtvec[7]_i_3_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/mstatus_mie_i_4_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_btb/rst_cpu_reg_rep__14_0[1]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net clk_IBUF. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net clk. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_icache/u_dat_way1/u_prim/rd_q[68]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/ex_csr_addr[3]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_btb/reached_taken. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ib_push_acc[2]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_btb/push_num[2]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/push_num1. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/mispredict0. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/id_pc[31]_i_21_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/ex_npc_op_reg[1]_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/dat_q_reg_0_63_2_2_i_6_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/u1_taken_i_2_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/U_ALU/data0. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/u1_taken_i_51_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/ex_A_final[3]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/csr_rdata[3]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/mtvec[7]_i_3_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/U_ID_EX/mstatus_mie_i_4_n_2. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net u_soc/Core_cpu/u_ifu_subsys/u_btb/rst_cpu_reg_rep__14_0[1]. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net clk_IBUF. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-702] Processed net clk. Optimizations did not improve timing on the net.
+INFO: [Physopt 32-619] Estimated Timing Summary | WNS=-0.155 | TNS=-20.785 |
+Netlist sorting complete. Time (s): cpu = 00:00:00.03 ; elapsed = 00:00:00.03 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93944 ; free virtual = 954302
+Phase 4 Critical Path Optimization | Checksum: a13f5ea3
+
+Time (s): cpu = 00:03:02 ; elapsed = 00:00:52 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93944 ; free virtual = 954302
+Netlist sorting complete. Time (s): cpu = 00:00:00 ; elapsed = 00:00:00 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93944 ; free virtual = 954302
+INFO: [Physopt 32-603] Post Physical Optimization Timing Summary | WNS=-0.155 | TNS=-20.785 |
+
+Summary of Physical Synthesis Optimizations
+============================================
+
+
+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+|  Optimization   |  WNS Gain (ns)  |  TNS Gain (ns)  |  Added Cells  |  Removed Cells  |  Optimized Cells/Nets  |  Dont Touch  |  Iterations  |  Elapsed   |
+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+|  DSP Register   |          0.000  |          0.000  |            0  |              0  |                     0  |           0  |           1  |  00:00:00  |
+|  Critical Path  |          0.786  |        624.903  |           13  |              0  |                    73  |           0  |           2  |  00:00:51  |
+|  Total          |          0.786  |        624.903  |           13  |              0  |                    73  |           0  |           3  |  00:00:51  |
+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+Netlist sorting complete. Time (s): cpu = 00:00:00 ; elapsed = 00:00:00.01 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93943 ; free virtual = 954302
+Ending Physical Synthesis Task | Checksum: cb54d4ad
+
+Time (s): cpu = 00:03:03 ; elapsed = 00:00:52 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93938 ; free virtual = 954299
+INFO: [Common 17-83] Releasing license: Implementation
+473 Infos, 1 Warnings, 0 Critical Warnings and 0 Errors encountered.
+phys_opt_design completed successfully
+phys_opt_design: Time (s): cpu = 00:03:07 ; elapsed = 00:00:53 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93937 ; free virtual = 954299
+INFO: [Timing 38-480] Writing timing data to binary archive.
+Write ShapeDB Complete: Time (s): cpu = 00:00:00.09 ; elapsed = 00:00:00.02 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93933 ; free virtual = 954297
+Wrote PlaceDB: Time (s): cpu = 00:00:02 ; elapsed = 00:00:00.66 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93933 ; free virtual = 954292
+Wrote PulsedLatchDB: Time (s): cpu = 00:00:00 ; elapsed = 00:00:00 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93933 ; free virtual = 954292
+Writing XDEF routing.
+Writing XDEF routing logical nets.
+Writing XDEF routing special nets.
+Wrote RouteStorage: Time (s): cpu = 00:00:00.03 ; elapsed = 00:00:00.03 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93933 ; free virtual = 954292
+Wrote Netlist Cache: Time (s): cpu = 00:00:00.01 ; elapsed = 00:00:00.01 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93932 ; free virtual = 954291
+Wrote Device Cache: Time (s): cpu = 00:00:00 ; elapsed = 00:00:00.01 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93931 ; free virtual = 954291
+Write Physdb Complete: Time (s): cpu = 00:00:02 ; elapsed = 00:00:00.71 . Memory (MB): peak = 3512.461 ; gain = 0.000 ; free physical = 93931 ; free virtual = 954291
+INFO: [Common 17-1381] The checkpoint '/home/st-wangjun/project/RISCV_A910/synth/vivado/fmax_impl_8.0ns/fmax_impl_8.0ns.runs/impl_1/top_fmax_physopt.dcp' has been generated.
+Command: route_design
+Attempting to get a license for feature 'Implementation' and/or device 'xc7k325t'
+INFO: [Common 17-349] Got license for feature 'Implementation' and/or device 'xc7k325t'
+INFO: [DRC 23-27] Running DRC with 8 threads
+INFO: [Vivado_Tcl 4-198] DRC finished with 0 Errors
+INFO: [Vivado_Tcl 4-199] Please refer to the DRC report (report_drc) for more information.
+Running DRC as a precondition to command route_design
+INFO: [DRC 23-27] Running DRC with 8 threads
+INFO: [Vivado_Tcl 4-198] DRC finished with 0 Errors
+INFO: [Vivado_Tcl 4-199] Please refer to the DRC report (report_drc) for more information.
+
+
+Starting Routing Task
+INFO: [Route 35-254] Multithreading enabled for route_design using a maximum of 8 CPUs
+
+Phase 1 Build RT Design
+Checksum: PlaceDB: 2f525c8f ConstDB: 0 ShapeSum: 9912ceed RouteDB: 0
+Post Restoration Checksum: NetGraph: 195dd67d | NumContArr: 78337712 | Constraints: c2a8fa9d | Timing: c2a8fa9d
+Phase 1 Build RT Design | Checksum: 216e342c9
+
+Time (s): cpu = 00:00:31 ; elapsed = 00:00:19 . Memory (MB): peak = 3665.367 ; gain = 152.906 ; free physical = 96893 ; free virtual = 957244
+
+Phase 2 Router Initialization
+
+Phase 2.1 Fix Topology Constraints
+Phase 2.1 Fix Topology Constraints | Checksum: 216e342c9
+
+Time (s): cpu = 00:00:31 ; elapsed = 00:00:19 . Memory (MB): peak = 3665.367 ; gain = 152.906 ; free physical = 96894 ; free virtual = 957244
+
+Phase 2.2 Pre Route Cleanup
+Phase 2.2 Pre Route Cleanup | Checksum: 216e342c9
+
+Time (s): cpu = 00:00:31 ; elapsed = 00:00:19 . Memory (MB): peak = 3665.367 ; gain = 152.906 ; free physical = 96894 ; free virtual = 957244
+ Number of Nodes with overlaps = 0
+
+Phase 2.3 Update Timing
+Phase 2.3 Update Timing | Checksum: 344fe96d8
+
+Time (s): cpu = 00:00:39 ; elapsed = 00:00:22 . Memory (MB): peak = 3750.102 ; gain = 237.641 ; free physical = 96304 ; free virtual = 956654
+INFO: [Route 35-416] Intermediate Timing Summary | WNS=0.182  | TNS=0.000  | WHS=-0.160 | THS=-134.243|
+
+
+Router Utilization Summary
+  Global Vertical Routing Utilization    = 0.0161878 %
+  Global Horizontal Routing Utilization  = 0.011811 %
+  Routable Net Status*
+  *Does not include unroutable nets such as driverless and loadless.
+  Run report_route_status for detailed report.
+  Number of Failed Nets               = 14239
+    (Failed Nets is the sum of unrouted and partially routed nets)
+  Number of Unrouted Nets             = 14222
+  Number of Partially Routed Nets     = 17
+  Number of Node Overlaps             = 31
+
+Phase 2 Router Initialization | Checksum: 32b639298
+
+Time (s): cpu = 00:00:43 ; elapsed = 00:00:24 . Memory (MB): peak = 3759.352 ; gain = 246.891 ; free physical = 96249 ; free virtual = 956599
+
+Phase 3 Initial Routing
+
+Phase 3.1 Global Routing
+Phase 3.1 Global Routing | Checksum: 32b639298
+
+Time (s): cpu = 00:00:43 ; elapsed = 00:00:24 . Memory (MB): peak = 3759.352 ; gain = 246.891 ; free physical = 96249 ; free virtual = 956599
+
+Phase 3.2 Initial Net Routing
+Phase 3.2 Initial Net Routing | Checksum: 272d897a2
+
+Time (s): cpu = 00:00:49 ; elapsed = 00:00:25 . Memory (MB): peak = 3759.352 ; gain = 246.891 ; free physical = 96242 ; free virtual = 956598
+Phase 3 Initial Routing | Checksum: 272d897a2
+
+Time (s): cpu = 00:00:49 ; elapsed = 00:00:25 . Memory (MB): peak = 3759.352 ; gain = 246.891 ; free physical = 96242 ; free virtual = 956598
+
+Phase 4 Rip-up And Reroute
+
+Phase 4.1 Global Iteration 0
+ Number of Nodes with overlaps = 4892
+ Number of Nodes with overlaps = 1029
+ Number of Nodes with overlaps = 237
+ Number of Nodes with overlaps = 71
+ Number of Nodes with overlaps = 39
+ Number of Nodes with overlaps = 7
+ Number of Nodes with overlaps = 2
+ Number of Nodes with overlaps = 0
+INFO: [Route 35-416] Intermediate Timing Summary | WNS=-0.809 | TNS=-393.313| WHS=N/A    | THS=N/A    |
+
+Phase 4.1 Global Iteration 0 | Checksum: 2127fd580
+
+Time (s): cpu = 00:01:13 ; elapsed = 00:00:40 . Memory (MB): peak = 3759.352 ; gain = 246.891 ; free physical = 97765 ; free virtual = 958133
+
+Phase 4.2 Global Iteration 1
+ Number of Nodes with overlaps = 1504
+ Number of Nodes with overlaps = 261
+ Number of Nodes with overlaps = 87
+ Number of Nodes with overlaps = 38
+ Number of Nodes with overlaps = 12
+ Number of Nodes with overlaps = 3
+ Number of Nodes with overlaps = 4
+ Number of Nodes with overlaps = 3
+ Number of Nodes with overlaps = 4
+ Number of Nodes with overlaps = 3
+ Number of Nodes with overlaps = 1
+ Number of Nodes with overlaps = 0
+INFO: [Route 35-416] Intermediate Timing Summary | WNS=-0.798 | TNS=-345.470| WHS=N/A    | THS=N/A    |
+
+Phase 4.2 Global Iteration 1 | Checksum: 273c52c02
+
+Time (s): cpu = 00:01:25 ; elapsed = 00:00:47 . Memory (MB): peak = 3759.352 ; gain = 246.891 ; free physical = 97769 ; free virtual = 958138
+Phase 4 Rip-up And Reroute | Checksum: 273c52c02
+
+Time (s): cpu = 00:01:25 ; elapsed = 00:00:47 . Memory (MB): peak = 3759.352 ; gain = 246.891 ; free physical = 97769 ; free virtual = 958138
+
+Phase 5 Delay and Skew Optimization
+
+Phase 5.1 Delay CleanUp
+
+Phase 5.1.1 Update Timing
+Phase 5.1.1 Update Timing | Checksum: 23a0283b4
+
+Time (s): cpu = 00:01:27 ; elapsed = 00:00:48 . Memory (MB): peak = 3759.352 ; gain = 246.891 ; free physical = 97769 ; free virtual = 958137
+INFO: [Route 35-416] Intermediate Timing Summary | WNS=-0.711 | TNS=-287.214| WHS=N/A    | THS=N/A    |
+
+ Number of Nodes with overlaps = 0
+Phase 5.1 Delay CleanUp | Checksum: 20e5208b3
+
+Time (s): cpu = 00:01:27 ; elapsed = 00:00:48 . Memory (MB): peak = 3759.352 ; gain = 246.891 ; free physical = 97769 ; free virtual = 958137
+
+Phase 5.2 Clock Skew Optimization
+Phase 5.2 Clock Skew Optimization | Checksum: 20e5208b3
+
+Time (s): cpu = 00:01:27 ; elapsed = 00:00:48 . Memory (MB): peak = 3759.352 ; gain = 246.891 ; free physical = 97769 ; free virtual = 958137
+Phase 5 Delay and Skew Optimization | Checksum: 20e5208b3
+
+Time (s): cpu = 00:01:27 ; elapsed = 00:00:48 . Memory (MB): peak = 3759.352 ; gain = 246.891 ; free physical = 97769 ; free virtual = 958137
+
+Phase 6 Post Hold Fix
+
+Phase 6.1 Hold Fix Iter
+
+Phase 6.1.1 Update Timing
+Phase 6.1.1 Update Timing | Checksum: 1f8243af8
+
+Time (s): cpu = 00:01:29 ; elapsed = 00:00:49 . Memory (MB): peak = 3759.352 ; gain = 246.891 ; free physical = 97770 ; free virtual = 958138
+INFO: [Route 35-416] Intermediate Timing Summary | WNS=-0.697 | TNS=-279.433| WHS=-0.996 | THS=-2.862 |
+
+Phase 6.1 Hold Fix Iter | Checksum: 1c8290c0d
+
+Time (s): cpu = 00:01:29 ; elapsed = 00:00:49 . Memory (MB): peak = 3759.352 ; gain = 246.891 ; free physical = 97770 ; free virtual = 958138
+
+Phase 6.2 Non Free Resource Hold Fix Iter
+Phase 6.2 Non Free Resource Hold Fix Iter | Checksum: 226028d98
+
+Time (s): cpu = 00:01:29 ; elapsed = 00:00:49 . Memory (MB): peak = 3759.352 ; gain = 246.891 ; free physical = 97770 ; free virtual = 958138
+Phase 6 Post Hold Fix | Checksum: 226028d98
+
+Time (s): cpu = 00:01:29 ; elapsed = 00:00:49 . Memory (MB): peak = 3759.352 ; gain = 246.891 ; free physical = 97770 ; free virtual = 958138
+
+Phase 7 Route finalize
+
+Router Utilization Summary
+  Global Vertical Routing Utilization    = 1.69369 %
+  Global Horizontal Routing Utilization  = 2.14182 %
+  Routable Net Status*
+  *Does not include unroutable nets such as driverless and loadless.
+  Run report_route_status for detailed report.
+  Number of Failed Nets               = 0
+    (Failed Nets is the sum of unrouted and partially routed nets)
+  Number of Unrouted Nets             = 0
+  Number of Partially Routed Nets     = 0
+  Number of Node Overlaps             = 0
+
+
+--GLOBAL Congestion:
+Utilization threshold used for congestion level computation: 0.85
+Congestion Report
+North Dir 1x1 Area, Max Cong = 76.5766%, No Congested Regions.
+South Dir 1x1 Area, Max Cong = 77.4775%, No Congested Regions.
+East Dir 1x1 Area, Max Cong = 92.6471%, Congestion bounded by tiles (Lower Left Tile -> Upper Right Tile):
+   INT_R_X41Y116 -> INT_R_X41Y116
+   INT_L_X48Y115 -> INT_L_X48Y115
+   INT_L_X38Y106 -> INT_L_X38Y106
+   INT_R_X41Y106 -> INT_R_X41Y106
+   INT_R_X45Y105 -> INT_R_X45Y105
+West Dir 1x1 Area, Max Cong = 86.7647%, Congestion bounded by tiles (Lower Left Tile -> Upper Right Tile):
+   INT_R_X43Y101 -> INT_R_X43Y101
+
+------------------------------
+Reporting congestion hotspots
+------------------------------
+Direction: North
+----------------
+Congested clusters found at Level 0
+Effective congestion level: 0 Aspect Ratio: 1 Sparse Ratio: 0
+Direction: South
+----------------
+Congested clusters found at Level 0
+Effective congestion level: 0 Aspect Ratio: 1 Sparse Ratio: 0
+Direction: East
+----------------
+Congested clusters found at Level 0
+Effective congestion level: 1 Aspect Ratio: 0.333333 Sparse Ratio: 0.75
+Direction: West
+----------------
+Congested clusters found at Level 0
+Effective congestion level: 0 Aspect Ratio: 1 Sparse Ratio: 1
+
+Phase 7 Route finalize | Checksum: 226028d98
+
+Time (s): cpu = 00:01:30 ; elapsed = 00:00:49 . Memory (MB): peak = 3759.352 ; gain = 246.891 ; free physical = 97770 ; free virtual = 958139
+
+Phase 8 Verifying routed nets
+
+ Verification completed successfully
+Phase 8 Verifying routed nets | Checksum: 226028d98
+
+Time (s): cpu = 00:01:30 ; elapsed = 00:00:49 . Memory (MB): peak = 3759.352 ; gain = 246.891 ; free physical = 97770 ; free virtual = 958138
+
+Phase 9 Depositing Routes
+Phase 9 Depositing Routes | Checksum: 2641f807e
+
+Time (s): cpu = 00:01:31 ; elapsed = 00:00:50 . Memory (MB): peak = 3759.352 ; gain = 246.891 ; free physical = 100018 ; free virtual = 960386
+
+Phase 10 Post Router Timing
+
+Phase 10.1 Update Timing
+Phase 10.1 Update Timing | Checksum: 28b3e714f
+
+Time (s): cpu = 00:01:33 ; elapsed = 00:00:50 . Memory (MB): peak = 3759.352 ; gain = 246.891 ; free physical = 99980 ; free virtual = 960349
+INFO: [Route 35-57] Estimated Timing Summary | WNS=-0.697 | TNS=-279.433| WHS=0.083  | THS=0.000  |
+
+WARNING: [Route 35-328] Router estimated timing not met.
+Resolution: For a complete and accurate timing signoff, report_timing_summary must be run after route_design. Alternatively, route_design can be run with the -timing_summary option to enable a complete timing signoff at the end of route_design.
+Phase 10 Post Router Timing | Checksum: 28b3e714f
+
+Time (s): cpu = 00:01:33 ; elapsed = 00:00:50 . Memory (MB): peak = 3759.352 ; gain = 246.891 ; free physical = 99980 ; free virtual = 960348
+INFO: [Route 35-16] Router Completed Successfully
+
+Phase 11 Post-Route Event Processing
+Phase 11 Post-Route Event Processing | Checksum: 1492b9a7c
+
+Time (s): cpu = 00:01:33 ; elapsed = 00:00:51 . Memory (MB): peak = 3759.352 ; gain = 246.891 ; free physical = 99957 ; free virtual = 960325
+Ending Routing Task | Checksum: 1492b9a7c
+
+Time (s): cpu = 00:01:33 ; elapsed = 00:00:51 . Memory (MB): peak = 3759.352 ; gain = 246.891 ; free physical = 99942 ; free virtual = 960310
+
+Routing Is Done.
+INFO: [Common 17-83] Releasing license: Implementation
+491 Infos, 2 Warnings, 0 Critical Warnings and 0 Errors encountered.
+route_design completed successfully
+route_design: Time (s): cpu = 00:01:36 ; elapsed = 00:00:52 . Memory (MB): peak = 3778.340 ; gain = 265.879 ; free physical = 99930 ; free virtual = 960298
+INFO: [runtcl-4] Executing : report_drc -file top_fmax_drc_routed.rpt -pb top_fmax_drc_routed.pb -rpx top_fmax_drc_routed.rpx
+Command: report_drc -file top_fmax_drc_routed.rpt -pb top_fmax_drc_routed.pb -rpx top_fmax_drc_routed.rpx
+INFO: [IP_Flow 19-1839] IP Catalog is up to date.
+INFO: [DRC 23-27] Running DRC with 8 threads
+INFO: [Vivado_Tcl 2-168] The results of DRC are in file /home/st-wangjun/project/RISCV_A910/synth/vivado/fmax_impl_8.0ns/fmax_impl_8.0ns.runs/impl_1/top_fmax_drc_routed.rpt.
+report_drc completed successfully
+INFO: [runtcl-4] Executing : report_methodology -file top_fmax_methodology_drc_routed.rpt -pb top_fmax_methodology_drc_routed.pb -rpx top_fmax_methodology_drc_routed.rpx
+Command: report_methodology -file top_fmax_methodology_drc_routed.rpt -pb top_fmax_methodology_drc_routed.pb -rpx top_fmax_methodology_drc_routed.rpx
+INFO: [Timing 38-35] Done setting XDC timing constraints.
+INFO: [DRC 23-133] Running Methodology with 8 threads
+INFO: [Vivado_Tcl 2-1520] The results of Report Methodology are in file /home/st-wangjun/project/RISCV_A910/synth/vivado/fmax_impl_8.0ns/fmax_impl_8.0ns.runs/impl_1/top_fmax_methodology_drc_routed.rpt.
+report_methodology completed successfully
+INFO: [runtcl-4] Executing : report_power -file top_fmax_power_routed.rpt -pb top_fmax_power_summary_routed.pb -rpx top_fmax_power_routed.rpx
+Command: report_power -file top_fmax_power_routed.rpt -pb top_fmax_power_summary_routed.pb -rpx top_fmax_power_routed.rpx
+INFO: [Timing 38-35] Done setting XDC timing constraints.
+Running Vector-less Activity Propagation...
+
+Finished Running Vector-less Activity Propagation
+501 Infos, 2 Warnings, 0 Critical Warnings and 0 Errors encountered.
+report_power completed successfully
+INFO: [runtcl-4] Executing : report_route_status -file top_fmax_route_status.rpt -pb top_fmax_route_status.pb
+INFO: [runtcl-4] Executing : report_timing_summary -max_paths 10 -report_unconstrained -file top_fmax_timing_summary_routed.rpt -pb top_fmax_timing_summary_routed.pb -rpx top_fmax_timing_summary_routed.rpx -warn_on_violation 
+INFO: [Timing 38-91] UpdateTimingParams: Speed grade: -2, Delay Type: min_max.
+INFO: [Timing 38-191] Multithreading enabled for timing update using a maximum of 8 CPUs
+CRITICAL WARNING: [Timing 38-282] The design failed to meet the timing requirements. Please see the timing summary report for details on the timing violations.
+INFO: [runtcl-4] Executing : report_incremental_reuse -file top_fmax_incremental_reuse_routed.rpt
+INFO: [Vivado_Tcl 4-1062] Incremental flow is disabled. No incremental reuse Info to report.
+INFO: [runtcl-4] Executing : report_clock_utilization -file top_fmax_clock_utilization_routed.rpt
+INFO: [runtcl-4] Executing : report_bus_skew -warn_on_violation -file top_fmax_bus_skew_routed.rpt -pb top_fmax_bus_skew_routed.pb -rpx top_fmax_bus_skew_routed.rpx
+INFO: [Timing 38-91] UpdateTimingParams: Speed grade: -2, Delay Type: min_max.
+INFO: [Timing 38-191] Multithreading enabled for timing update using a maximum of 8 CPUs
+INFO: [Timing 38-480] Writing timing data to binary archive.
+Write ShapeDB Complete: Time (s): cpu = 00:00:00.11 ; elapsed = 00:00:00.03 . Memory (MB): peak = 3924.750 ; gain = 0.000 ; free physical = 99481 ; free virtual = 959857
+Wrote PlaceDB: Time (s): cpu = 00:00:02 ; elapsed = 00:00:00.67 . Memory (MB): peak = 3924.750 ; gain = 0.000 ; free physical = 99463 ; free virtual = 959857
+Wrote PulsedLatchDB: Time (s): cpu = 00:00:00 ; elapsed = 00:00:00 . Memory (MB): peak = 3924.750 ; gain = 0.000 ; free physical = 99463 ; free virtual = 959857
+Writing XDEF routing.
+Writing XDEF routing logical nets.
+Writing XDEF routing special nets.
+Wrote RouteStorage: Time (s): cpu = 00:00:00.14 ; elapsed = 00:00:00.13 . Memory (MB): peak = 3924.750 ; gain = 0.000 ; free physical = 99459 ; free virtual = 959855
+Wrote Netlist Cache: Time (s): cpu = 00:00:00.01 ; elapsed = 00:00:00.02 . Memory (MB): peak = 3924.750 ; gain = 0.000 ; free physical = 99458 ; free virtual = 959856
+Wrote Device Cache: Time (s): cpu = 00:00:00 ; elapsed = 00:00:00 . Memory (MB): peak = 3924.750 ; gain = 0.000 ; free physical = 99457 ; free virtual = 959856
+Write Physdb Complete: Time (s): cpu = 00:00:02 ; elapsed = 00:00:00.83 . Memory (MB): peak = 3924.750 ; gain = 0.000 ; free physical = 99457 ; free virtual = 959856
+INFO: [Common 17-1381] The checkpoint '/home/st-wangjun/project/RISCV_A910/synth/vivado/fmax_impl_8.0ns/fmax_impl_8.0ns.runs/impl_1/top_fmax_routed.dcp' has been generated.
+INFO: [Common 17-206] Exiting Vivado at Mon Sep 28 20:05:15 2026...
+[Mon Sep 28 20:05:26 2026] impl_1 finished
+wait_on_runs: Time (s): cpu = 00:00:01 ; elapsed = 00:03:28 . Memory (MB): peak = 1506.543 ; gain = 0.000 ; free physical = 101207 ; free virtual = 961593
+INFO: [Device 21-403] Loading part xc7k325tffg900-2
+Netlist sorting complete. Time (s): cpu = 00:00:00.06 ; elapsed = 00:00:00.06 . Memory (MB): peak = 1814.395 ; gain = 0.000 ; free physical = 100864 ; free virtual = 961250
+INFO: [Netlist 29-17] Analyzing 1291 Unisim elements for replacement
+INFO: [Netlist 29-28] Unisim Transformation completed in 0 CPU seconds
+INFO: [Project 1-479] Netlist was created with Vivado 2023.2
+INFO: [Project 1-570] Preparing netlist for logic optimization
+Read ShapeDB Complete: Time (s): cpu = 00:00:00.03 ; elapsed = 00:00:00.03 . Memory (MB): peak = 1907.988 ; gain = 3.004 ; free physical = 102283 ; free virtual = 962669
+INFO: [Timing 38-478] Restoring timing data from binary archive.
+INFO: [Timing 38-479] Binary timing data restore complete.
+INFO: [Project 1-856] Restoring constraints from binary archive.
+INFO: [Project 1-853] Binary constraint restore complete.
+INFO: [Designutils 20-5722] Start Reading Physical Databases.
+Reading placement.
+Read Netlist Cache: Time (s): cpu = 00:00:00.02 ; elapsed = 00:00:00.02 . Memory (MB): peak = 2609.340 ; gain = 0.000 ; free physical = 101721 ; free virtual = 962107
+Reading placer database...
+Read Device Cache: Time (s): cpu = 00:00:00.01 ; elapsed = 00:00:00.01 . Memory (MB): peak = 2609.340 ; gain = 0.000 ; free physical = 101719 ; free virtual = 962105
+Read PlaceDB: Time (s): cpu = 00:00:00.59 ; elapsed = 00:00:00.6 . Memory (MB): peak = 2609.340 ; gain = 0.000 ; free physical = 101706 ; free virtual = 962092
+Read PulsedLatchDB: Time (s): cpu = 00:00:00 ; elapsed = 00:00:00 . Memory (MB): peak = 2609.340 ; gain = 0.000 ; free physical = 101706 ; free virtual = 962092
+Reading routing.
+Read RouteStorage: Time (s): cpu = 00:00:00.27 ; elapsed = 00:00:00.27 . Memory (MB): peak = 2611.340 ; gain = 2.000 ; free physical = 101703 ; free virtual = 962089
+Read Physdb Files: Time (s): cpu = 00:00:00.89 ; elapsed = 00:00:00.91 . Memory (MB): peak = 2611.340 ; gain = 2.004 ; free physical = 101703 ; free virtual = 962089
+Restored from archive | CPU: 0.940000 secs | Memory: 23.193321 MB |
+Finished XDEF File Restore: Time (s): cpu = 00:00:00.92 ; elapsed = 00:00:00.94 . Memory (MB): peak = 2611.340 ; gain = 7.938 ; free physical = 101703 ; free virtual = 962089
+Netlist sorting complete. Time (s): cpu = 00:00:00 ; elapsed = 00:00:00 . Memory (MB): peak = 2611.340 ; gain = 0.000 ; free physical = 101703 ; free virtual = 962089
+INFO: [Project 1-111] Unisim Transformation Summary:
+  A total of 267 instances were transformed.
+  RAM32M => RAM32M (RAMD32(x6), RAMS32(x2)): 8 instances
+  RAM64M => RAM64M (RAMD64E(x4)): 183 instances
+  RAM64X1D => RAM64X1D (RAMD64E(x2)): 76 instances
+
+open_run: Time (s): cpu = 00:00:13 ; elapsed = 00:00:14 . Memory (MB): peak = 2611.340 ; gain = 1104.797 ; free physical = 101703 ; free virtual = 962089
+# report_timing_summary -delay_type max -max_paths 20 -file [file join $PROJ_DIR timing_summary.rpt]
+INFO: [Timing 38-91] UpdateTimingParams: Speed grade: -2, Delay Type: max.
+INFO: [Timing 38-191] Multithreading enabled for timing update using a maximum of 8 CPUs
+# report_utilization -file [file join $PROJ_DIR utilization.rpt]
+# report_timing -delay_type max -max_paths 500 -file [file join $PROJ_DIR timing_paths500.rpt]
+INFO: [Timing 38-91] UpdateTimingParams: Speed grade: -2, Delay Type: max.
+INFO: [Timing 38-191] Multithreading enabled for timing update using a maximum of 8 CPUs
+INFO: [Timing 38-78] ReportTimingParams: -max_paths 500 -nworst 1 -delay_type max -sort_by slack.
+# set wns  [get_property SLACK [get_timing_paths -delay_type max -max_paths 1]]
+# set fmax [expr {1000.0 / ($PERIOD - $wns)}]
+# puts "================================================================"
+================================================================
+# puts "TIMING PATHS (top 8):"
+TIMING PATHS (top 8):
+# set i 0
+# foreach p [get_timing_paths -delay_type max -max_paths 8] {
+#     incr i
+#     puts [format "  %d) %8.3f ns  %s -> %s" \
+#         $i [get_property SLACK $p] \
+#         [get_property STARTPOINT_PIN $p] [get_property ENDPOINT_PIN $p]]
+# }
+  1)   -0.696 ns  u_soc/Core_cpu/U_ID_EX/ex_csr_addr_reg[4]/C -> u_soc/Core_cpu/u_ifu_subsys/g_tage.u_tage/q_row_tag_reg[3][4]/D
+  2)   -0.658 ns  u_soc/Core_cpu/U_ID_EX/ex_csr_addr_reg[4]/C -> u_soc/Core_cpu/u_ifu_subsys/g_tage.u_tage/q_row_tag_reg[3][3]/D
+  3)   -0.653 ns  u_soc/Core_cpu/U_ID_EX/ex_csr_addr_reg[4]/C -> u_soc/Core_cpu/u_ifu_subsys/g_tage.u_tage/q_row_tag_reg[2][2]/D
+  4)   -0.630 ns  u_soc/Core_cpu/U_ID_EX/ex_csr_addr_reg[4]/C -> u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q_reg[4][33]/D
+  5)   -0.619 ns  u_soc/Core_cpu/U_ID_EX/ex_csr_addr_reg[4]/C -> u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q_reg[5][76]/D
+  6)   -0.618 ns  u_soc/Core_cpu/U_ID_EX/ex_csr_addr_reg[4]/C -> u_soc/Core_cpu/u_ifu_subsys/u_icache/u_dat_way1/u_prim/mem_q_reg_0/ADDRARDADDR[8]
+  7)   -0.616 ns  u_soc/Core_cpu/U_ID_EX/ex_csr_addr_reg[4]/C -> u_soc/Core_cpu/u_ifu_subsys/u_icache/u_dat_way0/u_prim/mem_q_reg_1/ADDRARDADDR[8]
+  8)   -0.603 ns  u_soc/Core_cpu/U_ID_EX/ex_csr_addr_reg[4]/C -> u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q_reg[5][10]/D
+# set ncrit 0
+# foreach p [get_timing_paths -delay_type max -max_paths 200 -slack_lesser_than 0] { incr ncrit }
+# puts "VIOLATING PATHS (slack<0, up to 200): $ncrit"
+VIOLATING PATHS (slack<0, up to 200): 200
+# puts [format "FMAX_SUMMARY period=%s mode=%s wns=%.4f fmax_mhz=%.2f" \
+#       $PERIOD $MODE $wns $fmax]
+FMAX_SUMMARY period=8.0 mode=impl wns=-0.6960 fmax_mhz=115.00
+# puts "================================================================"
+================================================================
+INFO: [Common 17-206] Exiting Vivado at Mon Sep 28 20:05:41 2026...

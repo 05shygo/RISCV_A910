@@ -14,7 +14,8 @@ meminit128.hex
 # Vivado 综合报告/工程 (fmax 时序收敛用, 由用户从另一台机器拷进来, 165 MB, 不入库)
 fmax_impl_beh_*/
 
-# synth/ 下的 Vivado 测量产物 (脚本与顶层 top_fmax.v 可入库, 工程目录不进)
+# synth/ 下的 Vivado 测量产物: 脚本、顶层 top_fmax.v 与 synth/reports/ 下的
+# 报告/log 副本入库; 原始工程目录 (dcp/日志等 246MB) 不进
 synth/vivado/
 synth/*.log
 synth/*.jou
