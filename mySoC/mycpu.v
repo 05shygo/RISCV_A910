@@ -177,6 +177,7 @@ wire        id_exc_valid;
 // ID_EX 锁存出来的 EX 级 CSR / 异常信号
 wire [2:0]  ex_csr_op;
 wire [11:0] ex_csr_addr;
+wire [31:0] ex_csr_rdata;              // ID 级读出、随 ID_EX 锁进来的 CSR 旧值
 wire        ex_csr_we, ex_is_mret, ex_csr_imm;
 wire [31:0] ex_rD1;
 wire        ex_exc_valid;
@@ -488,6 +489,15 @@ wire [31:0] id_inst;
 wire [24:0] id_bht_chk;
 wire        id_bht_pred;
 
+// CSR 读地址: 就是本条指令的 inst[31:20]。
+// ⚠️ 必须声明在 id_inst **之后** —— 本工程反复踩过"用在声明之前 ⇒ 隐式 1 位线网"
+//    那个坑 (见 rv32ifu2_top.v 里 chk0_f 的注释)。原来这条表达式是内联写在
+//    U_Control 和 U_ID_EX 的连接上的, 现在提出来给 CSR 文件当读地址。
+wire [11:0] id_csr_addr  = id_inst[31:20];
+// ID 级读出的 CSR 值 (含 EX→ID 旁路)。这里只**声明**; 赋值放在 ex_csr_wdata
+// 之后 —— 旁路要用到它。反过来会变成隐式线网。
+wire [31:0] id_csr_rdata;
+
 IF_ID U_IF_ID(
     .clk      (cpu_clk),
     .rst      (cpu_rst),
@@ -524,7 +534,7 @@ Control U_Control(
     .funct3(id_inst[14:12]),
     .funct7(id_inst[31:25]),
     .rs1_addr(id_inst[19:15]),
-    .csr_addr(id_inst[31:20]),
+    .csr_addr(id_csr_addr),
     .sext_op(id_sext_op),
     .npc_op(id_npc_op),
     .alu_op(id_alu_op),
@@ -622,7 +632,8 @@ ID_EX U_ID_EX(
     .id_wR         (id_inst[11:7]),
     .id_is_muldiv  (id_is_muldiv ),
     .id_csr_op     (id_csr_op    ),
-    .id_csr_addr   (id_inst[31:20]),
+    .id_csr_addr   (id_csr_addr  ),
+    .id_csr_rdata  (id_csr_rdata ),
     .id_csr_we     (id_csr_we    ),
     .id_is_mret    (id_is_mret   ),
     .id_exc_valid  (id_exc_valid ),
@@ -652,6 +663,7 @@ ID_EX U_ID_EX(
     .ex_is_muldiv  (ex_is_muldiv ),
     .ex_csr_op     (ex_csr_op    ),
     .ex_csr_addr   (ex_csr_addr  ),
+    .ex_csr_rdata  (ex_csr_rdata ),
     .ex_csr_we     (ex_csr_we    ),
     .ex_is_mret    (ex_is_mret   ),
     .ex_exc_valid  (ex_exc_valid ),
@@ -667,12 +679,19 @@ ID_EX U_ID_EX(
     .have_inst_o (have_inst_EX  )
 );
 
-// CSR 指令的 A 口在【EX 级】直接取 CSR 旧值.
-// 不能走 ID 级的 ALU_input_MUX: CSR 读地址 ex_csr_addr 是 EX 级的锁存值,
-// 在 ID 级读会读到"当时 EX 里那条指令的地址"对应的值 —— 而 A 口是在
-// ID→EX 边沿锁存的, 等真正到 EX 用的时候, 地址已经变成本条指令的了,
-// 数据却是上一条的. (实测表现: csrw 后紧跟 csrr 读到的是旧值.)
-wire [31:0] ex_A_final = (ex_csr_op != `CSR_OP_NONE) ? csr_rdata : ex_A;
+// CSR 指令的 A 口取 CSR 旧值 —— 但取的是**随 ID_EX 锁进来的那一份**
+// (ex_csr_rdata, 在 ID 级用本条指令自己的 id_csr_addr 读出来的)。
+//
+// ⚠️ 这里不能用 ID 级的 ALU_input_MUX 承载: A 口是**转发通路** (Forward_A_en 会把
+//    ID_EX.v 里的 ex_A/ex_rD1 一起覆盖成 A_forward), CSR 值塞进去会被冲掉。
+//    所以单独走一个 ex_csr_rdata 字段。
+//
+// 历史: 2026-09-28 之前这里是 `? csr_rdata : ex_A`, 即**在 EX 级组合读**。
+// 那条 16:1 mux (4 级 LUT) 挂在 ALU 的 A 口上, 是 FPGA 关键路径的链头 ——
+// 8 个综合 run 的最差 500 条路径全部从 ex_csr_addr_reg 出发。而且它还有一条
+// 反向长链: csr_rdata → ex_A_final → ALU → EX_wD_MUX1 → A_forward → ID_EX.ex_A。
+// 读搬到 ID 之后两条都断了。
+wire [31:0] ex_A_final = (ex_csr_op != `CSR_OP_NONE) ? ex_csr_rdata : ex_A;
 
 ALU U_ALU(
     .A(ex_A_final),
@@ -878,15 +897,39 @@ wire ex_irq_safe = ~ex_ram_we & ~ex_csr_we;
 //     csrrw/rs/rc = rs1, 而且是【转发后】的 rs1 (ex_rD1).
 // 注意不能用 rs2: 对 csrr* 来说 inst[24:20] 属于 csr 域, 不是寄存器号.
 wire [31:0] ex_csr_src   = ex_csr_imm ? ex_sext : ex_rD1;
+// RS/RC 的"旧值"用的也是锁进来的那一份 (与 A 口同源, 保证 csrrw 后紧跟 csrrs 时
+// 置位/清位是相对**新值**做的)。
 wire [31:0] ex_csr_wdata = (ex_csr_op == `CSR_OP_RW) ? ex_csr_src
-                         : (ex_csr_op == `CSR_OP_RS) ? (csr_rdata |  ex_csr_src)
-                         : (ex_csr_op == `CSR_OP_RC) ? (csr_rdata & ~ex_csr_src)
+                         : (ex_csr_op == `CSR_OP_RS) ? (ex_csr_rdata |  ex_csr_src)
+                         : (ex_csr_op == `CSR_OP_RC) ? (ex_csr_rdata & ~ex_csr_src)
                          : 32'b0;
+
+// ---------------------------------------------------------------------------
+// ID 级 CSR 读 + EX→ID 旁路 (2026-09-28)
+//
+// 读地址用 id_csr_addr (本条指令自己的 inst[31:20]), 结果随 ID_EX 锁一拍再进 EX。
+// 于是 CSR 的 16:1 读 mux 整条离开 EX 的组合路径。
+//
+// ⚠️ 旁路是必需的, 而且必须带 `~redirect`:
+//   * 不带旁路: 指令 N (csrrw) 在 EX 写 CSR 的同拍, N+1 正在 ID 读 —— 读到的是
+//     **写之前**的旧值, 而架构要求 N+1 看到新值;
+//   * 不带 ~redirect: CSR 实例的写使能就是 `ex_csr_we & ~redirect`。重定向那拍
+//     这条更年轻的 CSR 指令会被 flush、写不进去, 旁路却把它的值转发出去 ——
+//     下游会读到"其实从没被写过"的值。
+//   * 只旁路 EX 一级就够: MEM/WB 级那些写是在它们自己的 EX 拍落的盘, 早已生效。
+//
+// 已知的行为偏移: 计数器类 (mcycle/minstret/cycle/instret) 与 mip 的读**早一拍**。
+// difftest 不比较 mcycle/minstret (golden_model/include/cpu.h 明确排除); CoreMark
+// 的 Total ticks 是首尾两次 rdcycle 相减, 两次同时早一拍 ⇒ 差值不变。
+// ---------------------------------------------------------------------------
+assign id_csr_rdata = (ex_csr_we & ~redirect & (ex_csr_addr == id_csr_addr))
+                    ? ex_csr_wdata : csr_rdata;
 
 CSR U_CSR(
     .clk            (cpu_clk),
     .rst            (cpu_rst),
-    .raddr_i        (ex_csr_addr),
+    // 读地址来自 **ID** (见上); 读写口仍然在 EX, 语义不变。
+    .raddr_i        (id_csr_addr),
     .rdata_o        (csr_rdata),
     // 重定向当拍必须掐掉 EX 级这条【更年轻的】CSR 指令的写: 它会被 flush,
     // 但它的写是在这个边沿生效的, 不掐就会漏进 CSR 文件.

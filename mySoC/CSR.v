@@ -19,7 +19,9 @@ module CSR(
     input  wire        clk,
     input  wire        rst,
 
-    // 读口: 组合读, 地址来自 EX 级锁存的 csr_addr
+    // 读口: 组合读, 地址来自 **ID 级** (本条指令自己的 inst[31:20]),
+    // 结果由 mycpu.v 随 ID_EX 锁一拍再进 EX —— 这条 mux 以前挂在 EX 的 ALU
+    // 操作数上, 是 FPGA 关键路径的链头 (2026-09-28)。
     input  wire [11:0] raddr_i,
     output reg  [31:0] rdata_o,
 

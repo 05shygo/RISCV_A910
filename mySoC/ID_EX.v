@@ -47,6 +47,10 @@ module ID_EX(
     // ---- 系统指令 / CSR / 陷阱 ----
     input [2:0]                         id_csr_op    ,
     input [11:0]                        id_csr_addr  ,
+    // CSR 读数据在 **ID 级**读出来 (地址用 id_csr_addr, 带 EX→ID 旁路),
+    // 随流水锁进来。以前它是在 EX 级用锁存的 ex_csr_addr 组合读的 ——
+    // 那条 16:1 mux 挂在 ALU 的 A 口上, 是 FPGA 关键路径的链头。见 mycpu.v。
+    input [31:0]                        id_csr_rdata ,
     input                               id_csr_we    ,
     input                               id_is_mret   ,
     input                               id_exc_valid ,
@@ -79,6 +83,7 @@ module ID_EX(
     // ---- 系统指令 / CSR / 陷阱 ----
     output reg [2:0]                    ex_csr_op    ,
     output reg [11:0]                   ex_csr_addr  ,
+    output reg [31:0]                   ex_csr_rdata ,
     output reg                          ex_csr_we    ,
     output reg                          ex_is_mret   ,
     output reg                          ex_exc_valid ,
@@ -141,6 +146,7 @@ always @(posedge clk or posedge rst) begin
         ex_npc_op   <= 0;
         ex_csr_op   <= `CSR_OP_NONE;
         ex_csr_addr <= 0;
+        ex_csr_rdata<= 0;
         ex_csr_we   <= 0;
         ex_csr_imm  <= 0;
         ex_is_mret  <= 0;
@@ -163,6 +169,7 @@ always @(posedge clk or posedge rst) begin
         ex_npc_op   <= 0;
         ex_csr_op   <= `CSR_OP_NONE;
         ex_csr_addr <= 0;
+        ex_csr_rdata<= 0;
         ex_csr_we   <= 0;
         ex_csr_imm  <= 0;
         ex_is_mret  <= 0;
@@ -191,6 +198,7 @@ always @(posedge clk or posedge rst) begin
         ex_npc_op   <= id_npc_op  ;
         ex_csr_op   <= id_csr_op  ;
         ex_csr_addr <= id_csr_addr;
+        ex_csr_rdata<= id_csr_rdata;
         ex_csr_we   <= id_csr_we  ;
         ex_csr_imm  <= id_csr_imm ;
         ex_is_mret  <= id_is_mret ;

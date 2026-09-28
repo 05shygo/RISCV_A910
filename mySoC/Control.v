@@ -394,8 +394,17 @@ always @(*) begin
             alu_op    = `ALU_ADD;
             // A 口在 EX 级被 mycpu.v 换成 CSR 旧值(见 ex_A_final), B 口给 0,
             // 于是 ALU 结果就是 CSR 旧值, 原样写回 rd.
-            // 这里【不能】把 CSR 读数据走 ID 级的 A 通路: CSR 的读地址是
-            // EX 级的锁存值, 在 ID 级读会拿到"上一拍那条指令的地址"对应的值.
+            //
+            // 历史 (2026-09-28 更正): 这里原先写着"【不能】把 CSR 读数据走 ID 级
+            // 的 A 通路, 因为在 ID 级读会拿到上一拍那条指令的地址对应的值"。
+            // 那句话说的是**用 EX 锁存的地址去 ID 级读**, 确实不行; 而现在
+            // mycpu.v 是用**本条指令自己的** id_csr_addr 在 ID 级读, 再随 ID_EX
+            // 锁一拍 —— 地址是对的, 只是读的时机提前了一拍 (FPGA 关键路径的链头
+            // 就是那条 16:1 读 mux, 见 mycpu.v 的 ex_A_final 注释)。
+            // 真正**不能**做的是把 CSR 值塞进 ID 级的 A 通路: A 口是转发通路,
+            // Forward_A_en 会把 ex_A/ex_rD1 一起覆盖掉。所以走独立的
+            // ex_csr_rdata 字段。
+            //
             // CSR 的源操作数也不是 rs2: 对 csrrw/rs/rc 它是 rs1(inst[19:15]),
             // 而 inst[24:20] 属于 csr 域 —— 源统一在 mycpu.v 用
             // ex_rD1(已转发)/ex_sext(uimm5) 选取.
