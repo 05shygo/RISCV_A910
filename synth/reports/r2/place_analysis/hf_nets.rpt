@@ -1,0 +1,36 @@
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2023 Advanced Micro Devices, Inc. All Rights Reserved.
+---------------------------------------------------------------------------------------------------------------------------------------------
+| Tool Version : Vivado v.2023.2 (lin64) Build 4029153 Fri Oct 13 20:13:54 MDT 2023
+| Date         : Mon Sep 28 23:42:33 2026
+| Host         : edaserver08 running 64-bit NAME="Red Hat Enterprise Linux Server"
+| Command      : report_high_fanout_nets -max_nets 15 -timing -file /tmp/hf_nets.rpt
+| Design       : top_fmax
+| Device       : xc7k325t
+---------------------------------------------------------------------------------------------------------------------------------------------
+
+High Fan-out Nets Information
+
+1. Summary
+----------
+
++---------------------------------------------------------------------------------+--------+-------------+-----------------+-----------------+
+| Net Name                                                                        | Fanout | Driver Type | Worst Slack(ns) | Worst Delay(ns) |
++---------------------------------------------------------------------------------+--------+-------------+-----------------+-----------------+
+| u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[6][150]_i_1_n_0                        |    888 | LUT3        |           1.547 |           2.262 |
+| u_soc/Core_cpu/u_ifu_subsys/g_tage.u_tage/g_tab[2].tg_u_reg_r1_0_63_0_2_i_4_n_0 |    736 | LUT1        |           1.930 |           3.705 |
+| u_soc/Core_cpu/U_MEM_WB/wb_is_mret_reg_0                                        |    613 | LUT4        |           1.547 |           1.276 |
+| u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[6][150]_i_11_n_0                       |    470 | LUT2        |           1.267 |           1.494 |
+| u_soc/Core_cpu/u_ifu_subsys/g_tage.u_tage/E[0]                                  |    348 | FDSE        |           0.907 |           3.120 |
+| u_soc/Core_cpu/U_IF_ID/Q[15]                                                    |    263 | FDCE        |           1.232 |           3.127 |
+| u_soc/Core_cpu/U_IF_ID/Q[16]                                                    |    263 | FDCE        |           0.859 |           3.173 |
+| u_soc/Core_cpu/U_ID_EX/ex_alu_op[3]_i_1_n_0                                     |    250 | LUT5        |           0.314 |           0.929 |
+| rst_IBUF                                                                        |    241 | IBUF        |           3.077 |           5.622 |
+| u_soc/Core_cpu/u_ifu_subsys/u_ibuf/sel0[1]                                      |    233 | LUT4        |           1.077 |           1.424 |
+| u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[6][150]_i_16_n_0                       |    231 | LUT4        |           1.361 |           1.421 |
+| u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[0][150]_i_2_n_0                        |    222 | LUT3        |           1.916 |           1.975 |
+| u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[1][150]_i_2_n_0                        |    222 | LUT3        |           1.431 |           2.633 |
+| u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[2][150]_i_2_n_0                        |    222 | LUT3        |           1.726 |           1.934 |
+| u_soc/Core_cpu/u_ifu_subsys/u_ibuf/ent_q[4][150]_i_2_n_0                        |    222 | LUT3        |           1.467 |           2.194 |
++---------------------------------------------------------------------------------+--------+-------------+-----------------+-----------------+
+
+

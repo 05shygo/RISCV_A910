@@ -13,7 +13,7 @@
 
 > 📌 本节与 §1 是**第一轮**（TAGE 阵列重排 + 存储器换 BRAM 之后）的扫频结论，
 > 那一版 RTL 的天花板 ≈ 115 MHz。**第二轮按 §1 的归因做了重构，见 §2** ——
-> 那一轮之后的新 Fmax 还没测（要重跑综合）。
+> 那一轮之后的新 Fmax 已实测：**147.4 MHz**（6.9ns 收敛，见 §2.1）。
 
 **当前 RTL 的天花板 ≈ 115 MHz**：9.0ns 约束收敛（+0.323ns 余量）；8.5ns 及以下直接垮掉。
 
@@ -80,15 +80,53 @@ CSR 读数据 → EX ALU（7×CARRY4 串行，28 位量级）→ u1_taken 分支
 顺带记一笔被实测否掉的猜想：把 `refill_req` 也改成跟**当拍**的 `iu_chgflw_vld`
 （想省掉一次错误路径的 icache 回填）反而更慢 —— CoreMark 11,208,658 → 11,213,090。
 
-**这一步之后 Fmax 是多少，要等新一轮综合。** 预期瓶颈会从 EX 段移到**前端 F1 那一拍**
-（icache tag 比较 + BTB 行匹配 + TAGE 读/优先/use_sel + taken 选择 + next_pc）——
-而那一拍**到现在都没有测量数据**：`report_timing -max_paths 500` 的默认 `-nworst 1`
-每终点只报最差一条，500 条全被 EX 起点占满了。`synth/build_fmax.tcl` 已经补了三样
+预期瓶颈会从 EX 段移到**前端 F1 那一拍**（icache tag 比较 + BTB 行匹配 + TAGE 读/优先/use_sel
++ taken 选择 + next_pc），而 `report_timing -max_paths 500` 的默认 `-nworst 1` 每终点只报
+最差一条，500 条会被 EX 起点占满、看不到它。`synth/build_fmax.tcl` 为此补了三样
 （`-nworst 8` 的同终点多起点报告、`-from q_pc_q_reg` 的定向报告、log 里的
-`WORST_NON_EX` 一行），下一轮综合就能看到 F1 到底多长。
+`WORST_NON_EX` 一行）—— 实测证明瓶颈确实搬到了 F1，见下节。
 
 拿到那个数字之后才好定：缩 TAGE 几何 / 换 gshare（它在 CoreMark 上只值 −0.71% 周期，
 但组合链比 TAGE 短 6~9 级）/ 重做 IBUF 的 1224 个触发器。
+
+---
+
+### 2.1 实测：Fmax 115.3 → 147.4 MHz（2026-09-28 第二轮扫频）
+
+| period | WNS | 违例终点 | 判定 |
+|---|---|---|---|
+| 8.0 ns | +0.273 | 0 | 过 |
+| 7.5 ns | +0.278 | 0 | 过 |
+| 7.0 ns | +0.180 | 0 | 过 |
+| **6.9 ns** | **+0.114** | **0** | **过（最紧）⇒ 147.4 MHz** |
+| 6.8 ns | −0.305 | 215 | 垮 |
+| 6.7 ns | −0.413 | 385 | 垮 |
+| 6.5 ns | −0.473 | 872 | 垮 |
+| 6.0 ns | −0.929 | 1715 | 垮 |
+| 5.5 ns | −1.600 | 2336 | 垮 |
+
+实现延迟 8.68 → 6.79ns；违例规模随周期收紧**渐变**（215→2336 个终点），
+不再是第一轮那种一次掉 980 个的悬崖。面积：LUT 11008→11867 (+7.8%)，FF 持平。
+
+**瓶颈已在 F1**：6.9ns 的 500 条最差路径 463 条起自 `TAGE/q_row_idx_reg[1]`
+（终点 ibuf/ent_q 与 TAGE row_tag/idx）；7.0ns 的最差一条展开为
+`q_row_idx_reg[1][1] → 表 LUTRAM 读 → BTB 匹配 → dir_pred → icache any_taken → ibuf push → ent_q`，
+6.845ns 里**逻辑只有 0.825ns（14 级），走线 6.02ns（88%）**。
+
+但 88% 走线不是"逻辑太深"，是物理问题（证据在 `synth/reports/r2/place_analysis/`）：
+
+1. **布局摊开**：各模块占位 ibuf X0..49、TAGE X22..85、icache X1..84、ID_EX X2..81 ——
+   1.2 万 LUT 的设计（利用率 5.8%）铺满整个器件。第一轮的关键路径落在 15 列内，
+   这轮横跨 40 列；两轮之间 ibuf 从 X51..105 漂到 X0..49，而 TAGE 几乎没动。
+   布局没有约束时，关键路径的长短靠运气。
+2. **超扇出网没被复制**：`report_high_fanout_nets` 抓到 888 / 736 / 613 / 470 / 348 / 263 / 241
+   负载的网，单网延迟 1.3~3.7ns（ibuf 写控制 2.26ns、TAGE 表更新 3.71ns、rst 直扇 241 脚 5.62ns）。
+   综合 `fanout_limit` 默认等于不限，phys_opt 只在违例路径上做复制。
+
+下一步杠杆按性价比：① `synth_design -fanout_limit`（或 `MAX_FANOUT`）复制胖线；
+② `phys_opt_design AggressiveExplore` + `place_design ExtraTimingOpt`；③ IFU 簇 pblock。
+（TAGE 换 BRAM 不在其列：表读出本身只有 0.043ns，BRAM 是同步读（CLK→DO 1.5~2.5ns）
+且预测要 +1 拍；它的价值只在面积与 SLICEM 散布——整个 TAGE 阵列 ≈ 0.5 个 BRAM36。）
 
 ---
 
@@ -97,6 +135,9 @@ CSR 读数据 → EX ALU（7×CARRY4 串行，28 位量级）→ u1_taken 分支
 | 路径 | 内容 |
 |---|---|
 | `synth/build_fmax.tcl` / `synth/top_fmax.v` | 测量脚手架与综合顶层（沿 85e55ed；第二轮补了 F1 定向报告） |
-| `synth/reports/fmax_impl_<period>ns/` | 7 个 impl run：timing_summary / timing_paths500 / utilization |
+| `synth/reports/fmax_impl_<period>ns/` | **第一轮** impl run：timing_summary / timing_paths500 / utilization |
 | `synth/reports/fmax_synth_12.0ns/` | 早期仅综合 run（未布线，仅作参照） |
-| `synth/reports/logs/fmax_<period>.log` | 各 run 完整 stdout（含 `FMAX_SUMMARY` 行） |
+| `synth/reports/logs/fmax_<period>.log` | 第一轮各 run 完整 stdout（含 `FMAX_SUMMARY` 行） |
+| `synth/reports/r2/fmax_impl_<period>ns/` | **第二轮** 9 个 run：+ timing_paths_f1 / timing_from_qpc |
+| `synth/reports/r2/logs/fmax_r2_<period>.log` | 第二轮 stdout（含 `FMAX_SUMMARY` / `WORST_NON_EX`） |
+| `synth/reports/r2/place_analysis/` | 布局/扇出诊断证据：high-fanout 报告、IO 落位、模块 span 数据 |

@@ -1,0 +1,41 @@
+模块版图落位 (SLICE_X..Y 范围) —— 结论: "布局摊大饼", 模块之间没有局部性
+查询方法: vivado -mode batch -source query_span.tcl (open_checkpoint <run>/top_fmax_placed.dcp,
+          按层次名过滤 IS_PRIMITIVE, 取 LOC 的 min/max); 脚本同目录.
+
+=== 第二轮 @7.0ns (fmax_impl_7.0ns, 新 RTL) ===
+ibuf(全部)          n=4859  X=0..49   Y=40..86
+ibuf ent_q 寄存器    n=998   X=0..48
+ibuf 写锥 LUT        n=3245  X=0..49
+tage(全部)          n=2427  X=22..85  Y=51..83
+tage 表(LUTRAM)      n=1117  X=22..79
+tage q_row_idx       n=17    X=34..43
+tage q_row_tag       n=19    X=33..40
+btb                 n=461   X=9..59
+icache              n=1268  X=1..84
+IF_ID               n=709   X=25..77  Y=78..102
+ID_EX               n=3108  X=2..81
+EX_MEM              n=375   X=9..81
+MEM_WB              n=368   X=31..81
+CSR                 n=405   X=62..77
+o_dbg_* 输出 OBUF   在 IOB_X0Y0/38-50 (西边缘), rst/clk 也在西边缘
+
+=== 第一轮 @9.0ns (fmax_impl_9.0ns, 旧 RTL) 对照 ===
+ibuf(全部)          n=4169  X=51..105 Y=21..50
+tage(全部)          n=2467  X=52..88  Y=3..42
+btb                 n=459   X=38..90
+icache              n=1285  X=2..90
+IF_ID               n=607   X=38..79
+ID_EX               n=3070  X=19..88  Y=20..193   <- Y 跨 173 行
+CSR                 n=445   X=52..69
+
+两轮对比: 布局都摊开 (12k LUT 占满整片器件), 但模块相对位置在两次 run 之间发生大漂移
+(ibuf: X51..105 -> X0..49, TAGE 几乎没动) —— 关键路径的物理跨度因此从 ~15 列 (第一轮
+落在 X57..72) 变成 ~40 列 (第二轮 X2..42), 这是 88% 走线占比的直接来源.
+
+=== 超扇出网 (report_high_fanout_nets, 7.0ns run, 见 hf_nets.rpt) ===
+888 负载: u_ibuf/ent_q[6][150]_i_1_n_0         单网延迟 2.262 ns
+736 负载: tage g_tab[2].tg_u_reg_r1_0_63_..i_4  单网延迟 3.705 ns
+613 负载: U_MEM_WB/wb_is_mret_reg_0            单网延迟 1.276 ns
+470/348/263x2/241(rst)/233/231/222x4 ...      1.3~5.6 ns
+对照: 健康单网延迟 ~0.15-0.25ns; 综合 fanout_limit 默认=10000(不限),
+      phys_opt 只在违例路径上复制 -> 这些网在正 slack 时完全不复制.
