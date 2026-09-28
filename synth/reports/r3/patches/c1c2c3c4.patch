@@ -1,0 +1,145 @@
+--- a/mySoC/ifu2/rtl/rv32ifu2_tage.v
++++ b/mySoC/ifu2/rtl/rv32ifu2_tage.v
+@@ -761,7 +761,10 @@
+                 wire [SLOT_W-1:0] pv = tb_row_rd[gi][gs*SLOT_W +: SLOT_W];
+ 
+                 // slot 有效位是必需的, 见头注释
+-                assign tb_hit [gi*SLOTS + gs] = tag_row[TAG_W] & tag_match
++                // [C4] init_done 提前与进 hit (init_done 是寄存器, 这一级不在关键路径上),
++                // 路径末尾的 slot_pred 门控随即可去 —— 等价性: 扫描期 hit 全 0 ⇒ anyhit=0
++                // ⇒ fpred_raw 取 t0_pred, 而 t0_pred 已同样被门控 (见下)。
++                assign tb_hit [gi*SLOTS + gs] = init_done & tag_row[TAG_W] & tag_match
+                                               & pv[SLOT_VLD_POS];
+                 assign tb_pred[gi*SLOTS + gs] = pv[SLOT_PRED_TAKEN];
+                 assign tb_weak[gi*SLOTS + gs] = is_weak(pv[SLOT_PRED_POS +: SLOT_PRED_W]);
+@@ -790,7 +793,8 @@
+   endgenerate
+ 
+   assign t0_pred = { t0_s[3][T0_TAKEN_POS], t0_s[2][T0_TAKEN_POS],
+-                     t0_s[1][T0_TAKEN_POS], t0_s[0][T0_TAKEN_POS] };
++                     t0_s[1][T0_TAKEN_POS], t0_s[0][T0_TAKEN_POS] }
++                   & {SLOTS{init_done}};                    // [C4] 见 tb_hit 处注释
+ 
+   // ---------------------------------------------------------------------------
+   //  F1: provider / alternate 选择 (逐 slot)
+@@ -815,34 +819,45 @@
+   generate
+     for (gs = 0; gs < SLOTS; gs = gs + 1)
+       begin : g_fpred
+-        wire [2:0] ps = prov_sel[gs];
+-        wire [2:0] as = alt_sel[gs];
++        // [C1] 原实现: 3 位优先编码 (prov_sel/alt_sel) → (ps-1) 解码 → 逐 slot 4:1 mux,
++        //      编码与解码是一个来回; 这里改成**逐级 one-hot 优先选择**, 逻辑逐位等价
++        //      (优先级 h4>h3>h2>h1, 无命中回 T0), 读阵列后少 2 级 LUT。
++        wire h4 = (NTAB >= 4) ? tb_hit[3*SLOTS + gs] : 1'b0;
++        wire h3 = (NTAB >= 3) ? tb_hit[2*SLOTS + gs] : 1'b0;
++        wire h2 = (NTAB >= 2) ? tb_hit[1*SLOTS + gs] : 1'b0;
++        wire h1 = (NTAB >= 1) ? tb_hit[0*SLOTS + gs] : 1'b0;
++
++        wire p1 = tb_pred[0*SLOTS + gs], p2 = tb_pred[1*SLOTS + gs];
++        wire p3 = tb_pred[2*SLOTS + gs], p4 = tb_pred[3*SLOTS + gs];
++        wire q1 = tb_weak[0*SLOTS + gs], q2 = tb_weak[1*SLOTS + gs];
++        wire q3 = tb_weak[2*SLOTS + gs], q4 = tb_weak[3*SLOTS + gs];
++
++        wire anyhit = h4 | h3 | h2 | h1;
++        // provider = 最高命中的表; 无命中时取 T0 的 pred/weak
++        wire pp = h4 ? p4 : h3 ? p3 : h2 ? p2 : h1 ? p1 : t0_pred[gs];
++        wire pw = h4 ? q4 : h3 ? q3 : h2 ? q2 : h1 ? q1 : 1'b0;
++        // altpred = 次高命中的表; 没有次命中 (或无命中) 时是 T0
++        wire ap = h4 ? (h3 ? p3 : h2 ? p2 : h1 ? p1 : t0_pred[gs])
++                : h3 ? (h2 ? p2 : h1 ? p1 : t0_pred[gs])
++                : h2 ? (h1 ? p1 : t0_pred[gs])
++                : t0_pred[gs];
++
++        assign prov_pred[gs] = pp;
++        assign prov_weak[gs] = pw;
++        assign alt_pred [gs] = ap;
+ 
+-        assign prov_pred[gs] = (ps == 3'd0) ? t0_pred[gs] : tb_pred[(ps-1)*SLOTS + gs];
+-        assign prov_weak[gs] = (ps == 3'd0) ? 1'b0        : tb_weak[(ps-1)*SLOTS + gs];
+-        assign alt_pred [gs] = (as == 3'd0) ? t0_pred[gs] : tb_pred[(as-1)*SLOTS + gs];
+-
+-        // 只有 T0 命中时 ps==0 ⇒ 直接用 T0, 且此时 as 也必为 0 ⇒ altpred == fpred
+-        // ⇒ u 的更新条件恒不成立 (与规格"若仅命中 T0, 则 T0 也是 altpred"一致)
+-        //
+-        // 动态策略: USE_SEL 只在 provider 弱信心那一档起作用 ——
+-        //   !weak || use_sel_neg ⇒ provider, 否则 altpred。
+-        // 强信心恒赢, 所以 USE_SEL 不会推翻一个饱和的 provider。
+-        // USEL_EN=0 时退回静态 (与加 USE_SEL 之前逐位相同)。
+         if (USEL_EN)
+-          assign fpred_raw[gs] = (ps == 3'd0) ? t0_pred[gs]
+-                               : ((!prov_weak[gs] || use_sel_neg) ? prov_pred[gs]
+-                                                                  : alt_pred[gs]);
++          assign fpred_raw[gs] = anyhit ? ((!pw || use_sel_neg) ? pp : ap) : t0_pred[gs];
+         else
+-          assign fpred_raw[gs] = (ps == 3'd0) ? t0_pred[gs]
+-                               : (prov_weak[gs] ? alt_pred[gs] : prov_pred[gs]);
++          assign fpred_raw[gs] = anyhit ? (pw ? ap : pp) : t0_pred[gs];
+       end
+   endgenerate
+ 
+   // ⚠️ 初始化扫描期间阵列还是 X, 而 `valid & (tag == …)` 在 valid 为 X 时是
+   //    **X 不是 0**, 会一路传到 next_pc。用 AND 门控, **不能**用三元
+   //    (X ? a : b 是逐位合并, 不是干净的 0)。
+-  assign slot_pred = fpred_raw & {SLOTS{init_done}};
++  // [C4] 门控已提前到 tb_hit / t0_pred 两处 (都只剩 1 级且不在关键路径上), 这里直接出。
++  assign slot_pred = fpred_raw;
+ 
+   // ---------------------------------------------------------------------------
+   //  训练路径: 用 (upd_pc, upd_ghr) 重算一切
+--- a/mySoC/ifu2/rtl/rv32ifu2_top.v
++++ b/mySoC/ifu2/rtl/rv32ifu2_top.v
+@@ -459,7 +459,12 @@
+ 
+ // 想推几条: 到 taken 那条为止(含); 没有 taken 就推满本块剩余; 再受 3 发射限制。
+ wire [ 2:0] want_to_taken = {1'b0, taken_slot} - {1'b0, pc_ofs} + 3'd1;
+-wire [ 2:0] want_cnt_raw  = any_taken ? want_to_taken : blk_left;
++// [C3] 等价化简: 截断位置 +1 = t0?1 : t1?2 : t2?3 : 4。
++// 三个都没命中时 taken_slot 默认 3 ⇒ 原式 want_to_taken 恰好退化成 4-pc_ofs = blk_left,
++// 所以不必再按 any_taken 分两路取 mux —— 直接 "截断点+1 − pc_ofs" 即可, 少 2 级。
++// (t0 要求 pc_ofs==0、t1 要求 ≤1、t2 要求 ≤2 ⇒ cut_plus1 ≥ pc_ofs+1, 结果天然落在 [1,4]。)
++wire [ 2:0] cut_plus1    = btb_t0 ? 3'd1 : btb_t1 ? 3'd2 : btb_t2 ? 3'd3 : 3'd4;
++wire [ 2:0] want_cnt_raw = cut_plus1 - {1'b0, pc_ofs};
+ // want_cnt_raw 天然落在 [1,4] (blk_left = 4-pc_ofs, want_to_taken = taken_slot-pc_ofs+1),
+ // 所以这里只是"再受发射宽度限制", MAX_ISSUE=4 时恒等。
+ wire [ 2:0] want_push     = (want_cnt_raw > MAX_ISSUE) ? MAX_ISSUE : want_cnt_raw;
+--- a/mySoC/ifu2/rtl/rv32ifu2_ibuf.v
++++ b/mySoC/ifu2/rtl/rv32ifu2_ibuf.v
+@@ -91,9 +91,19 @@
+ assign out_data1 = empty ? push_data1 : ent_q[idx1];
+ assign out_data2 = empty ? push_data2 : ent_q[idx2];
+ 
+-assign out_vld[0] = empty ? (acc_push >= 3'd1) : 1'b1;
+-assign out_vld[1] = empty ? (acc_push >= 3'd2) : (cnt_q >= 2);
+-assign out_vld[2] = empty ? (acc_push >= 3'd3) : (cnt_q >= 3);
++// [C2] acc_push = min(push_num, space) ⇒ (acc_push >= k) ≡ (push_num >= k) & (space >= k)。
++// space 只依赖寄存器 cnt_q, 与预测链无关 ⇒ 这一半在路径外提前算好, 关键路径上
++// 只剩 push_num 侧的 1 级比较 + AND。逐位等价 (min 的整数性质)。
++wire sp_ge1 = (space >= 1), sp_ge2 = (space >= 2);
++wire sp_ge3 = (space >= 3), sp_ge4 = (space >= 4);
++wire lane_en1 = (push_num >= 3'd1) & sp_ge1;
++wire lane_en2 = (push_num >= 3'd2) & sp_ge2;
++wire lane_en3 = (push_num >= 3'd3) & sp_ge3;
++wire lane_en4 = (push_num >= 3'd4) & sp_ge4;
++
++assign out_vld[0] = empty ? lane_en1 : 1'b1;
++assign out_vld[1] = empty ? lane_en2 : (cnt_q >= 2);
++assign out_vld[2] = empty ? lane_en3 : (cnt_q >= 3);
+ 
+ assign count = cnt_q;                  // 直接给全宽: 截位会让"满队列=8"读成 0
+ assign full  = (space == 0);
+@@ -111,10 +121,10 @@
+         head_q <= {AW{1'b0}};
+         cnt_q  <= {(AW+2){1'b0}};
+     end else begin
+-        if (acc_push >= 3'd1) ent_q[w0] <= push_data0;
+-        if (acc_push >= 3'd2) ent_q[w1] <= push_data1;
+-        if (acc_push >= 3'd3) ent_q[w2] <= push_data2;
+-        if (acc_push >= 3'd4) ent_q[w3] <= push_data3;
++        if (lane_en1) ent_q[w0] <= push_data0;
++        if (lane_en2) ent_q[w1] <= push_data1;
++        if (lane_en3) ent_q[w2] <= push_data2;
++        if (lane_en4) ent_q[w3] <= push_data3;
+         head_q <= head_q + pop_num;
+         cnt_q  <= cnt_q + acc_push - pop_num;
+     end
