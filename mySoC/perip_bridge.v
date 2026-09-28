@@ -86,7 +86,7 @@ module perip_bridge(
     assign seg_value = dig_reg;
 
     // ---------------- TIMER ----------------
-    // 照搬参考实现 cpu/src/timer.v 的寄存器约定:
+    // 寄存器约定:
     //   +0x00 mtime[31:0]     只读
     //   +0x04 mtime[63:32]    只读
     //   +0x08 mtimecmp[31:0]  读写
