@@ -273,12 +273,41 @@ localparam [2:0]  MAX_ISSUE   = 3'd4;          // 一拍最多交付 4 条 = 整
 // RTU (WB 提交点) 优先于 IU (EX 推测点): 后者可能本身就来自错误路径。
 // 两者都是 1 拍脉冲且当拍组合有效, 直接用来选 pc_q 的下一值
 // ⇒ 重定向进 PC 是 0 拍代价 (与 C910 版"IU redirect 走 pc_bus 快速路径"等价)。
+//
+// ---------------------------------------------------------------------------
+// ⚠️ REDIRECT_PIPE (默认为 1): **IU (EX) 那条重定向打一拍再进前端**。
+//
+// 为什么: FPGA 综合报告里, 8 个 run 的最差 500 条路径**全部**是
+//   EX 段 (CSR 读 → ALU → 分支判决 → actual_npc) → next_pc mux → 前端数组地址
+// 这一条单周期长链 (25~28 级, 78% 是走线)。重定向是这条链的末端, 而前端数组
+// (icache BRAM 地址 / TAGE 索引 / IBUF 写口) 是它的终点。打一拍就把这条链从中间
+// 切断: 上半段 "EX 云 → 寄存器"、下半段 "寄存器 → next_pc mux → 数组"。
+//
+// 代价: **每次重定向 (误预测 + 陷阱/mret) 多 1 拍**。CoreMark 上实测见提交信息。
+//
+// 只打 IU 这一条: rtu (WB 的陷阱/mret) 不打 —— 它是提交点来的, 路径本来就短,
+// 而且 mycpu.v 里 `iu_ifu_chgflw_vld = mispredict & ~redirect`, 两者不会同拍。
+//
+// 打拍只影响**前端**: mycpu.v 那边的 branched/flush_if_id/flush_id_ex/EX_MEM.flush
+// 仍然当拍生效 (那是核内冲刷, 不是前端重定向)。所以重定向那一拍 核不接收指令、
+// 前端照常取一拍错误路径, 下一拍前端被 flush + 转向目标 —— 净效果就是 +1 拍。
+//
+// 三样东西要一起打拍, 少一样就会用错拍的数据:
+//   pc   —— next_pc 的目标;
+//   ghr  —— 误预测时的历史恢复值, 它由 iu_btb_chk/is_cond/taken 现算 (那些是
+//           **训练**信号, 当拍就要用, 不能延迟) ⇒ 必须把算好的结果存下来;
+//   ras  —— RAS 的快照指针, 同理来自当拍的 chk。
 // ---------------------------------------------------------------------------
 wire        redirect;
 wire [31:0] redirect_pc;
 
-assign redirect    = rtu_chgflw_vld | rtu_flush | iu_chgflw_vld;
-assign redirect_pc = (rtu_chgflw_vld | rtu_flush) ? rtu_chgflw_pc : iu_chgflw_pc;
+wire             iu_red_vld;
+wire [31:0]      iu_red_pc;
+wire [GHR_W-1:0] iu_red_ghr;
+wire [RAS_AW:0]  iu_red_ras;
+
+assign redirect    = rtu_chgflw_vld | rtu_flush | iu_red_vld;
+assign redirect_pc = (rtu_chgflw_vld | rtu_flush) ? rtu_chgflw_pc : iu_red_pc;
 
 assign idu_flush   = redirect;
 
@@ -439,6 +468,12 @@ wire        can_push  = q_hit & init_all;
 
 // 回填请求: 需要一条指令但缓存里没有, 且当前没有事务在途。
 // init_done 显式挡住扫描期, 不依赖 X 的取值 (X 在 Verilog 里 `& 0` 是 0, 但别赌)。
+//
+// ⚠️ 这里跟的是**打拍后的** `redirect`, 不是当拍的 iu_chgflw_vld。
+//    试过改成当拍的 (`& ~(rtu_* | iu_chgflw_vld)`, 想省掉一次错误路径的回填),
+//    实测反而更慢: CoreMark 11,208,658 → 11,213,090 (+0.04%)。
+//    原因是把回填推迟反而让目标那条的 miss 起始得更晚 —— "省一次回填"并不成立。
+//    结论: 保持跟延迟版 redirect。
 assign refill_req = ~q_hit & ~refill_busy & init_all & ~redirect;
 
 // ⚠️ 位宽必须 >= want_push 的位宽。这里曾经还是 [1:0], 而 want_push 已经是 [2:0]:
@@ -649,10 +684,49 @@ wire [GHR_W-1:0] ghr_restore = iu_btb_is_cond
                              ? {iu_btb_chk[GHR_W-2:0], iu_btb_taken}
                              :  iu_btb_chk[GHR_W-1:0];
 
+// ---------------------------------------------------------------------------
+// IU 重定向打拍 (REDIRECT_PIPE, 见文件上半部分"重定向"那段的说明)
+//
+// ⚠️ ghr_restore 必须**在这里**取样打拍: 它由 iu_btb_is_cond / iu_btb_chk /
+//    iu_btb_taken 现算, 而那三个是**训练**用的当拍信号 (TAGE/BTB 在这一拍就要
+//    它们), 不能整体延迟。所以存的是"算好的恢复值"。
+// ⚠️ 同理 ras 存的是当拍的 chk 里的快照指针。
+// ---------------------------------------------------------------------------
+`ifdef REDIRECT_PIPE
+reg              iu_red_vld_q;
+reg [31:0]       iu_red_pc_q;
+reg [GHR_W-1:0]  iu_red_ghr_q;
+reg [RAS_AW:0]   iu_red_ras_q;
+
+always @(posedge clk) begin
+    if (rst) begin
+        iu_red_vld_q <= 1'b0;
+        iu_red_pc_q  <= 32'b0;
+        iu_red_ghr_q <= {GHR_W{1'b0}};
+        iu_red_ras_q <= {(RAS_AW+1){1'b0}};
+    end else begin
+        iu_red_vld_q <= iu_chgflw_vld;
+        iu_red_pc_q  <= iu_chgflw_pc;
+        iu_red_ghr_q <= ghr_restore;
+        iu_red_ras_q <= iu_btb_chk[RAS_CHK_MSB:RAS_CHK_LSB];
+    end
+end
+
+assign iu_red_vld = iu_red_vld_q;
+assign iu_red_pc  = iu_red_pc_q;
+assign iu_red_ghr = iu_red_ghr_q;
+assign iu_red_ras = iu_red_ras_q;
+`else
+assign iu_red_vld = iu_chgflw_vld;
+assign iu_red_pc  = iu_chgflw_pc;
+assign iu_red_ghr = ghr_restore;
+assign iu_red_ras = iu_btb_chk[RAS_CHK_MSB:RAS_CHK_LSB];
+`endif
+
 // 本拍结束时 GHR 的值。它同时就是"下一个取指地址"查表该用的历史 ——
 // 阵列地址与 GHR 索引在同一拍形成, 结果同一拍到达 F1, 正好对齐。
 wire [GHR_W-1:0] ghr_after = (rtu_chgflw_vld | rtu_flush) ? {GHR_W{1'b0}}
-                           : iu_chgflw_vld                ? ghr_restore
+                           : iu_red_vld                   ? iu_red_ghr
                            :                                ghr_next;
 
 always @(posedge clk) begin
@@ -753,7 +827,10 @@ rv32ifu2_ras #(
     .pop_num(ras_pop_num),
     .top(ras_top), .top_vld(ras_top_vld_raw), .ptr_out(ras_ptr),
     .restore_vld(redirect),
-    .restore_ptr(iu_btb_chk[RAS_CHK_MSB:RAS_CHK_LSB])
+    // rtu 那条**不打拍** (它当拍就有), 用的还是当拍的 chk —— 与打拍前逐位一致;
+    // IU 那条用打拍存下来的快照 (REDIRECT_PIPE=0 时两者相等)。
+    .restore_ptr((rtu_chgflw_vld | rtu_flush) ? iu_btb_chk[RAS_CHK_MSB:RAS_CHK_LSB]
+                                              : iu_red_ras)
 );
 
 // 方向表二选一。两者端口一一对应 (rd_pc/rd_ghr → 逐 slot 方向 + init_done,

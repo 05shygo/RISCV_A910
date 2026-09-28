@@ -132,6 +132,7 @@ set DEFS [list \
     USE_IFU_ANY \
     BP_PRED=1 \
     BP_GHR_W=16 \
+    REDIRECT_PIPE \
     ICACHE_BYTES=1024 \
     ICACHE_LINE_BYTES=16 \
     ICACHE_LINE_16B \

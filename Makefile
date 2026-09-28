@@ -221,6 +221,19 @@ BP_L0_ENTRIES ?= 16
 # 回旧基线: make ... BP_PRED=0
 # ---------------------------------------------------------------------------
 BP_PRED      ?= 1
+# ---------------------------------------------------------------------------
+# REDIRECT_PIPE : EX(IU) 那条重定向打一拍再进前端 (只对 IFU=2 有意义)
+#   1 = 打拍 (**默认**, 2026-09-28 起) —— 为 FPGA 时序
+#   0 = 不打拍, 逐位回到打拍前 (重定向 0 拍代价, 但 EX↔前端是一条单周期长链)
+#
+# 为什么: FPGA 综合报告里 8 个 run 的最差 500 条路径**全部**是
+#   EX 段 (CSR 读 → ALU → 分支判决 → actual_npc) → next_pc mux → 前端数组地址
+# 这一条 25~28 级、78% 走线的单周期链。打一拍把它从中间切断。
+# 代价: 每次重定向 (误预测 + 陷阱/mret) 多 1 拍 —— 实测数字见 rv32ifu2_top.v
+#       的 REDIRECT_PIPE 注释与提交信息。
+# 回旧基线: make ... REDIRECT_PIPE=0
+# ---------------------------------------------------------------------------
+REDIRECT_PIPE ?= 1
 # TAGE 几何。空 = 用 RTL 里的默认值 (T0_AW=6/ROW=6/N=4/TAG=6/L=2:5:9:14, 8,464 bit)。
 # 这个默认点是 RTL 侧扫出来的: CoreMark 最快的配置是 128 行 × 4 表 (15,890 bit,
 # -0.88%), 但多花 7,426 bit 只换 0.21% —— 按 doc §4 那张"每比特收益表"的口径
@@ -271,6 +284,7 @@ BP_DEFS := $(if $(filter 16,$(ICACHE_LINE_BYTES)),+define+ICACHE_LINE_16B) \
            $(if $(BP_GHR_W),+define+BP_GHR_W=$(BP_GHR_W)) \
            $(if $(BP_RAS),+define+BP_RAS=$(BP_RAS)) \
            $(if $(filter-out 0,$(BP_PRED)),+define+BP_PRED=$(BP_PRED)) \
+           $(if $(filter-out 0,$(REDIRECT_PIPE)),+define+REDIRECT_PIPE) \
            $(if $(BP_T0_AW),+define+BP_T0_AW=$(BP_T0_AW)) \
            $(if $(BP_T0_HIST),+define+BP_TAGE_T0H=$(BP_T0_HIST)) \
            $(if $(BP_TAGE_AW),+define+BP_TAGE_AW=$(BP_TAGE_AW)) \
@@ -289,7 +303,7 @@ BP_DEFS := $(if $(filter 16,$(ICACHE_LINE_BYTES)),+define+ICACHE_LINE_16B) \
            $(if $(BP_TAGE_RA4),+define+BP_TAGE_RA4=$(BP_TAGE_RA4))
 
 BP_CFG := $(BUILD_DIR)/.bp_cfg
-BP_SIG := $(BP_PRE_FOLD)-$(BP_PRE_AW)-$(BP_SEL_AW)-$(BP_BTB_ROW_W)-$(BP_L0_ENTRIES)-$(BP_IND_AW)-$(ICACHE_BYTES)-$(ICACHE_LINE_BYTES)-$(BP_BTB_ROW_AW)-$(BP_BHT_ROW_AW)-$(BP_GHR_W)-$(BP_RAS)\
+BP_SIG := $(BP_PRE_FOLD)-$(BP_PRE_AW)-$(BP_SEL_AW)-$(BP_BTB_ROW_W)-$(BP_L0_ENTRIES)-$(BP_IND_AW)-$(ICACHE_BYTES)-$(ICACHE_LINE_BYTES)-$(BP_BTB_ROW_AW)-$(BP_BHT_ROW_AW)-$(BP_GHR_W)-$(BP_RAS)-$(REDIRECT_PIPE)\
           -$(BP_PRED)-$(BP_T0_AW)-$(BP_T0_HIST)-$(BP_TAGE_AW)-$(BP_TAGE_N)-$(BP_TAGE_TAG_W)-$(BP_TAGE_L1)-$(BP_TAGE_L2)-$(BP_TAGE_L3)-$(BP_TAGE_L4)\
           -$(BP_TAGE_USEL_AW)-$(BP_TAGE_USEL_W)-$(BP_TAGE_USEL_GATE)\
           -$(BP_TAGE_RA1)-$(BP_TAGE_RA2)-$(BP_TAGE_RA3)-$(BP_TAGE_RA4)
