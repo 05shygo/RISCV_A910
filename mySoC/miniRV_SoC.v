@@ -103,6 +103,7 @@ module miniRV_SoC (
       logic [31:0] Bus_rdata;      // ????
       logic        Bus_wen;
       logic [31:0] Bus_wdata;      // ????
+      logic [13:0] Bus_raddr;      // 数据存储读地址 (EX 级, 比 Bus_addr 早一拍)
 
       // ????????????????????????
       // logic        debug_wb_have_i;
@@ -122,6 +123,7 @@ module miniRV_SoC (
           .Bus_rdata          (Bus_rdata),
           .Bus_wen            (Bus_wen),
           .Bus_wdata          (Bus_wdata),
+          .Bus_raddr          (Bus_raddr),
           // 定时器中断请求: 由 perip_bridge 的 timer_int_flag 驱动(mtime>=mtimecmp).
           // CPU 内部会再打一拍后使用, 与 TB 推给 golden model 的信号同源同级.
           // (timer_int_flag 在本文件后面才声明, Verilog 里先后顺序无所谓)
@@ -164,12 +166,29 @@ module miniRV_SoC (
           .timer_int_flag (timer_int_flag)
       );
 
-      DRAM Mem_DRAM (
-          .clk        (cpu_clk),
-          .a          (dram_word_addr),
-          .spo        (dram_rdata),
-          .we         (dram_we),
-          .d         (dram_wdata)
+      // -----------------------------------------------------------------------
+      // 数据存储: 同步 1R1W (可综合, 落块 RAM)
+      //
+      // 换掉原来 vsrc/ram.v 的 `DRAM` 模型 (`assign spo = mem[a]` —— 异步读)。
+      // 异步读的阵列在 FPGA 上只能落分布式 LUTRAM: 实测 16K×32 摊成 8160 个
+      // RAMS64E (占全设计 LUT 的 13%), 地址线从 CPU 铺到八千多个站点, 那条路
+      // **0 级逻辑、98% 布线** —— 延迟就是物理距离。
+      //
+      // 读地址走 Bus_raddr (EX 级), 比写地址 (dram_word_addr, MEM 级) 早一拍;
+      // 同步 RAM 的读延迟正好一拍 ⇒ 数据仍在 MEM 级到齐, **周期数逐位不变**。
+      // store→load / store→store 的同址竞争由 sync_ram_1r1w 内部的写穿透 mux
+      // 兑现 (契约 2), 与异步阵列逐位相同。
+      // -----------------------------------------------------------------------
+      sync_ram_1r1w #(
+          .ADDR_W (14),              // 16K 字 = 64 KB, 与 `ADDR_IN_MAP 一致
+          .DATA_W (32)
+      ) Mem_DRAM (
+          .clk     (cpu_clk),
+          .rd_addr (Bus_raddr),
+          .rd_data (dram_rdata),
+          .wr_en   (dram_we),
+          .wr_addr (dram_word_addr[13:0]),
+          .wr_data (dram_wdata)
       );
 
   endmodule

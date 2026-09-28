@@ -15,6 +15,15 @@ COREMARK_MAX_CYCLES ?= 15000000
 BUILD_DIR := $(PWD)/obj_vcs
 SIMV := $(BUILD_DIR)/simv
 TESTFILE := $(PWD)/meminit.bin
+# 十六进制镜像: $readmemh 用 (可综合的存储原语 mySoC/sync_mem.v 读它)。
+# 两种宽度, 都是每用例从 bin/%.bin 现生成:
+#   meminit.hex     每行一个 32 位字      → 数据 RAM (16K 字)
+#   meminit128.hex  每行一个 128 位取指块 → 取指 ROM (4096 块, 行内 w3..w0 降序)
+TESTHEX    := $(PWD)/meminit.hex
+TESTHEX128 := $(PWD)/meminit128.hex
+# 镜像按 16K 字摊平。$readmemh **不会**把镜像没覆盖到的位置清零 (留 X), 而黄金
+# 模型是零初始化的 —— 0 扩散进寄存器会让 difftest 出现莫名其妙的失配, 所以补零。
+HEX_ROWS ?= 16384
 
 RAM ?= ram.v
 # 取指级三选一:
@@ -44,7 +53,7 @@ SVSRC := $(wildcard $(PWD)/tb/*.sv)
 DPIC := $(wildcard $(PWD)/dpi/*.c)
 CSRC_GM := $(wildcard $(PWD)/golden_model/*.c) $(wildcard $(PWD)/golden_model/stage/*.c) $(wildcard $(PWD)/golden_model/peripheral/*.c)
 INC  := +incdir+$(PWD)/mySoC +incdir+$(PWD)/vsrc
-DEFINES := +define+PATH=$(TESTFILE)
+DEFINES := +define+PATH=$(TESTFILE) +define+PATHHEX=$(TESTHEX) +define+PATH128=$(TESTHEX128)
 ifeq ($(IFU),1)
 DEFINES += +define+USE_IFU
 endif
@@ -109,6 +118,29 @@ $(PWD)/bin/%.bin: $(PWD)/asm/%.S
 	@$(TOOLCHAIN)/$(CROSS)objdump -D $(PWD)/asm/$*.elf > $(PWD)/asm/$*.dump
 	@$(TOOLCHAIN)/$(CROSS)objcopy -O binary $(PWD)/asm/$*.elf $@
 	@echo "Built bin/$*.bin"
+
+# ---------------------------------------------------------------------------
+# 十六进制镜像 (给可综合的存储原语 mySoC/sync_mem.v 的 $readmemh 用)
+#
+# od -An -tx4 在 x86 上按小端解释 4 字节组, 正好得到 RV32 的字值
+# (已与 objdump 逐字核对)。128 位那一路把行内四字**降序**输出: $readmemh 把一行
+# 当一个大端值、首 token 落在最高位, 降序之后正好等于取指侧要的 {w3,w2,w1,w0}。
+#
+# ⚠️ 补零那一段不能省: $readmemh 不会把镜像没覆盖到的位置清零 (留 X), 而黄金模型
+#    是零初始化的 —— X 扩散进寄存器会让 difftest 出现难定位的失配。
+# ---------------------------------------------------------------------------
+HEX_PAD32 := awk -v n=$(HEX_ROWS) '{if (NR<=n) print} END{for(i=NR;i<n;i++) print "00000000"}'
+HEX_PAD128 := awk -v n=$$(( $(HEX_ROWS) / 4 )) \
+              '{if (NR<=n) print} END{for(i=NR;i<n;i++) print "00000000000000000000000000000000"}'
+
+$(PWD)/bin/%.hex: $(PWD)/bin/%.bin
+	@od -An -tx4 -v $< | awk '{for (i=1;i<=NF;i++) print $$i}' | $(HEX_PAD32) > $@
+
+$(PWD)/bin/%.hex128: $(PWD)/bin/%.bin
+	@od -An -tx4 -v -w16 $< \
+	  | awk '{printf "%s%s%s%s\n", ($$4==""?"00000000":$$4), ($$3==""?"00000000":$$3), \
+	                                    ($$2==""?"00000000":$$2), $$1}' \
+	  | $(HEX_PAD128) > $@
 
 all: run
 
@@ -278,8 +310,10 @@ $(SIMV): $(VSRC) $(SVSRC) $(DPIC) $(CSRC_GM) $(IFU_CFG) $(LBUF_CFG) $(BP_CFG) $(
 	  -Mdir=$(BUILD_DIR)/csrc -l $(BUILD_DIR)/compile.log \
 	  $(VSRC) $(SVSRC) $(DPIC) $(CSRC_GM)
 
-run: build
+run: build $(PWD)/bin/$(TEST).hex $(PWD)/bin/$(TEST).hex128
 	@ln -sf $(PWD)/bin/$(TEST).bin $(TESTFILE)
+	@ln -sf $(PWD)/bin/$(TEST).hex $(TESTHEX)
+	@ln -sf $(PWD)/bin/$(TEST).hex128 $(TESTHEX128)
 	@mkdir -p waveform
 	$(SIMV) +vcs+lic+wait $(SIM_ARGS) -l $(BUILD_DIR)/sim.log
 

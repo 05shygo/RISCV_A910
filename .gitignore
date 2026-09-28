@@ -4,6 +4,16 @@ mycpu/*
 meminit.bin
 obj_nofsdb/
 
+# 十六进制镜像 (2026-09-28): 由 bin/%.bin 派生, $readmemh 用。
+# 上游产物 bin/*.bin 是**入库**的 (48 个用例镜像), 派生出来的 hex 不入库。
+bin/*.hex
+bin/*.hex128
+meminit.hex
+meminit128.hex
+
+# Vivado 综合报告/工程 (fmax 时序收敛用, 由用户从另一台机器拷进来, 不入库)
+fmax_impl_beh_*.ns/
+
 # VCS/Verdi 构建产物（2026-09-25: 此前误提交进仓库, 600 个文件已从索引移除;
 # 下面的 obj_*/novas* 用通配符覆盖, 上面的单项是历史条目）
 obj_*/

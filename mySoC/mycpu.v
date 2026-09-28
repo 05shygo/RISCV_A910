@@ -25,6 +25,16 @@ module myCPU (
     input  wire [31:0]  Bus_rdata,
     output wire         Bus_wen,
     output wire [31:0]  Bus_wdata,
+    // 数据存储的**读**地址 (字地址, 14 位 = 64 KB)。
+    //
+    // 与 Bus_addr 的关系是"早一拍": 访存地址在 **EX** 级就算出来了 (ex_alu_c_final),
+    // 而同步 RAM 的读延迟正好一拍 ⇒ 数据在 **MEM** 级到齐, 与旧的异步读模型**同拍**,
+    // 一拍都不多花。见 mySoC/sync_mem.v 的读口语义契约。
+    //
+    // ⚠️ 这一路只在 DRAM 是同步 RAM 时才有意义。它与写地址 (Bus_addr, MEM 级) 的
+    //    关系是"同一个指令的同一个地址, 只是早一拍给出" —— EX_MEM 永不保持
+    //    (只有 div_stall 会把它冲成气泡), 所以地址与数据天然对齐。
+    output wire [13:0]  Bus_raddr,
 
     // 定时器中断请求 (来自 perip_bridge 的 timer_int_flag, 电平有效).
     // 在本模块内过一级寄存器后使用, 与 TB 推给 golden model 的是同一级延迟.
@@ -718,6 +728,12 @@ assign div_stall = ex_is_div & ~(md_resp_vld & md_resp_is_div);
 // 于是它照常沿 EX→MEM→WB 退休, 提交点/精确异常全都不用改。
 // 乘法的结果不在这一拍 —— 见下面的 wb_wD_eff。
 wire [31:0] ex_alu_c_final = ex_is_div ? md_resp_data : ex_alu_c;
+
+// 数据存储的读地址: 送给同步 DRAM 的读口, 下一拍数据正好在 MEM 级被用掉。
+// 越界/非访存指令的地址无所谓 —— 读是**无副作用**的, 而 MEM 级那一路读 mux 由
+// `ADDR_IN_MAP 与对外设的解码门控 (perip_bridge), 越界读出来的东西没人要。
+// (地址高 16 位在上面的宏里本来就要求是 0, 这里截断到字地址即可。)
+assign Bus_raddr = ex_alu_c_final[15:2];
 
 EX_wD_MUX1 U_EX_wD_MUX1(
     .rf_wsel (ex_rf_wsel),
