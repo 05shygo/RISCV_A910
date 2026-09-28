@@ -14,6 +14,13 @@ meminit128.hex
 # Vivado 综合报告/工程 (fmax 时序收敛用, 由用户从另一台机器拷进来, 165 MB, 不入库)
 fmax_impl_beh_*/
 
+# synth/ 下的 Vivado 测量产物 (脚本与顶层 top_fmax.v 可入库, 工程目录不进)
+synth/vivado/
+synth/*.log
+synth/*.jou
+synth/*.str
+synth/.Xil/
+
 # tb/branch_predictor_championship 是**自带 .git 的嵌套仓库** (16 MB, C++ 选型模型)。
 # 直接 git add 会变成 gitlink, 但没有 .gitmodules ⇒ 别人 clone 下来是个空目录。
 # 要正式纳入请二选一: 加 .gitmodules 走 submodule, 或者删掉它的 .git 再整目录入库。
