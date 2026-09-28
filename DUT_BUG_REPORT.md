@@ -482,6 +482,9 @@ CoreMark 规定有效跑分必须持续 ≥10 秒 → `time_in_secs = 478133/1e6
    但 `rf_wsel` 在**分支/存储**分支里是不赋值的（它们不写寄存器），会 latch 住上一条的值——
    紧跟 `lw` 之后的 `bne` 带着 `rf_wsel=DRAM`，被误判成非对齐 load 并报陷阱。
    改用 `rf_we & (rf_wsel == DRAM)`：`rf_we`/`ram_we` 在**每一个** opcode 分支里都赋了值。
+   > ⚠️ **2026-09-28 更正**：那个 latch 已经修掉了（`Control.v` 的 case 前加了无条件默认值，
+   > 全设计 112 个推断 latch 归零）。但 `rf_we & (...)` 这层门控**保留**——它是对的，
+   > 而且 latch 消失不代表"这个信号在这条指令上有意义"这件事变成真。
 2. **CSR 的源操作数是 rs1，不是 rs2**。对 `csrrw/rs/rc` 来说 `inst[24:20]` 属于 **csr 域**，
    不是寄存器号。起初走了 B 口的 RD2 通路，`csrw mtvec, t5` 实际读的是 `t0`(=0)。
    改为在 `ID_EX` 里单独锁存一份"已转发的 rs1"（`ex_rD1`）。
@@ -489,6 +492,13 @@ CoreMark 规定有效跑分必须持续 ≥10 秒 → `time_in_secs = 478133/1e6
    在 ID 级读会读到"当时 EX 里那条指令的地址"对应的值，而 A 口是在 ID→EX 边沿锁存的——
    等真正到 EX 用时地址已经变成本条指令的，数据却是上一条的。
    实测表现就是 `csrw` 后紧跟 `csrr` 读到旧值。改为在 EX 级用 `ex_A_final` 直接取。
+   > ⚠️ **2026-09-28 改回去了，但换了做法**：为了 FPGA 时序（那条 16:1 读 mux 是
+   > 关键路径的链头），CSR 读搬回 ID 级 —— 但用的是**本条指令自己的** `id_csr_addr`
+   > (`inst[31:20]`)，不是 EX 锁存的那个；结果随新增的 `ID_EX.id_csr_rdata → ex_csr_rdata`
+   > 锁一拍进 EX，并配一条 `ex_csr_we & ~redirect & (ex_csr_addr == id_csr_addr)` 的
+   > EX→ID 旁路。上面这条 bug 的教训仍然成立：**别用 EX 锁存的地址去 ID 级读**；
+   > 另外 CSR 值仍然**不能**塞进 ID 级的 A 通路（A 口是转发通路，`Forward_A_en`
+   > 会把它覆盖掉），所以走的是独立的 `ex_csr_rdata` 字段。
 4. **`CSRRWI`(funct3=101) 漏了映射**，落进内层 `case` 的 `default:` 被当成 `CSRRC`（清位）。
 5. **`mret` 的 rs1 域是 0**，那个 `010` 在 **rs2 域**（`inst[24:20]`）里。
    按 `rs1 == 2` 判会把 `mret` 误判成非法指令（表现为 mret 自己陷入）。

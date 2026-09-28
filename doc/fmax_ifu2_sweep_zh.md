@@ -11,6 +11,10 @@
 
 ## 0. 结论摘要
 
+> 📌 本节与 §1 是**第一轮**（TAGE 阵列重排 + 存储器换 BRAM 之后）的扫频结论，
+> 那一版 RTL 的天花板 ≈ 115 MHz。**第二轮按 §1 的归因做了重构，见 §2** ——
+> 那一轮之后的新 Fmax 还没测（要重跑综合）。
+
 **当前 RTL 的天花板 ≈ 115 MHz**：9.0ns 约束收敛（+0.323ns 余量）；8.5ns 及以下直接垮掉。
 
 | period | WNS | 违例终点 | TNS | 判定 | 反推 Fmax |
@@ -56,13 +60,35 @@ CSR 读数据 → EX ALU（7×CARRY4 串行，28 位量级）→ u1_taken 分支
 
 ---
 
-## 2. 下一步候选（未实施）
+## 2. 第二轮：按这条链做重构（2026-09-28，已实施）
 
-1. EX→前端之间切一刀：NPC 选完先寄存一拍再进 icache/TAGE/ibuf（代价：重定向 +1 拍）；
-2. 或只给 TAGE 更新口（row idx/tag）打拍；
-3. 削弱判决段进位链（28 位 carry 串行是链上最贵的一段）。
+上面 §1 归因出的三个结构性原因，逐条改掉。**前四步要求周期逐位不变**（不等就是错），
+第五步是唯一花周期的一刀，代价逐条实测。
 
-第 1 条预计一刀消掉 ~86% 的违例终点（ibuf 是大头）。
+| 步 | 改什么 | 提交 | VCS 实测（IFU=2） |
+|---|---|---|---|
+| 1 | 修掉 **112 个推断 latch**（`Control.v` 6 处、`ALU.v` 的 `alu_c`、`MEM.v` 的 `rdo`+`wdata_out`）—— 它们原先被报成 `TIMING-20 Non-clocked latch`，**根本不进时序分析** | `d0b6cee` | 逐位不变 |
+| 2 | 把 `redirect` 从 push 计数链摘下来（`push_num` 去掉 `& ~redirect`）—— 它原先一路穿透到 `acc_push → pushed_m → ghr_next`、`pc_adv/reached_taken → next_pc`、以及 `ent_q` 的写数据锥，而这条 gating 语义上是冗余的（IBUF 的 `flush=redirect` 分支根本不写 `ent_q`） | `4cfc39d` | 逐位不变 |
+| 3 | CSR 读搬到 **ID 级** + EX→ID 旁路 —— 那条 16:1 读 mux 原先挂在 ALU 的 A 口上（还有一条反向长链经 `A_forward` 回到 `ID_EX.ex_A`） | `34ba0fc` | 逐位不变 |
+| 4 | 分支目标改 **三个并行加法器**（`npc_pc4`/`npc_imm`/`npc_jalr`），`actual_npc` 不再串在 ALU 进位链后面 | `5aa66f2` | 逐位不变 |
+| 5 | **EX 重定向打一拍进前端**（`REDIRECT_PIPE`，默认开）—— 把这条单周期长链从中间切断 | `378385d` | branch_bench 159,717→163,743 (+2.52%)；CoreMark 10,963,525→11,208,658 (+2.24%)，Score 2.736→2.676 |
+
+第 5 步的代价恰好是**每次重定向 1.0002 拍**（branch_bench 那次 4,027 次重定向、多 4,026 拍），
+方向准确率五类逐项不变 —— 打拍只改恢复延迟，不改预测质量。
+`REDIRECT_PIPE=0` 逐位回到 159,717，开关可信。
+
+顺带记一笔被实测否掉的猜想：把 `refill_req` 也改成跟**当拍**的 `iu_chgflw_vld`
+（想省掉一次错误路径的 icache 回填）反而更慢 —— CoreMark 11,208,658 → 11,213,090。
+
+**这一步之后 Fmax 是多少，要等新一轮综合。** 预期瓶颈会从 EX 段移到**前端 F1 那一拍**
+（icache tag 比较 + BTB 行匹配 + TAGE 读/优先/use_sel + taken 选择 + next_pc）——
+而那一拍**到现在都没有测量数据**：`report_timing -max_paths 500` 的默认 `-nworst 1`
+每终点只报最差一条，500 条全被 EX 起点占满了。`synth/build_fmax.tcl` 已经补了三样
+（`-nworst 8` 的同终点多起点报告、`-from q_pc_q_reg` 的定向报告、log 里的
+`WORST_NON_EX` 一行），下一轮综合就能看到 F1 到底多长。
+
+拿到那个数字之后才好定：缩 TAGE 几何 / 换 gshare（它在 CoreMark 上只值 −0.71% 周期，
+但组合链比 TAGE 短 6~9 级）/ 重做 IBUF 的 1224 个触发器。
 
 ---
 
@@ -70,7 +96,7 @@ CSR 读数据 → EX ALU（7×CARRY4 串行，28 位量级）→ u1_taken 分支
 
 | 路径 | 内容 |
 |---|---|
-| `synth/build_fmax.tcl` / `synth/top_fmax.v` | 测量脚手架与综合顶层（沿 85e55ed） |
+| `synth/build_fmax.tcl` / `synth/top_fmax.v` | 测量脚手架与综合顶层（沿 85e55ed；第二轮补了 F1 定向报告） |
 | `synth/reports/fmax_impl_<period>ns/` | 7 个 impl run：timing_summary / timing_paths500 / utilization |
 | `synth/reports/fmax_synth_12.0ns/` | 早期仅综合 run（未布线，仅作参照） |
 | `synth/reports/logs/fmax_<period>.log` | 各 run 完整 stdout（含 `FMAX_SUMMARY` 行） |
