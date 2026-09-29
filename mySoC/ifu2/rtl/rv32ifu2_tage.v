@@ -339,9 +339,7 @@ module rv32ifu2_tage
   wire [NTABMAX*SLOTS-1:0]   tb_weak;
   wire [NTABMAX*SLOTS*2-1:0] tb_u;
 
-  // F1: provider / alternate (逐 slot, 0 = T0, 1..NTAB = 表编号)
-  wire [2:0] prov_sel [0:SLOTS-1];
-  wire [2:0] alt_sel  [0:SLOTS-1];
+  // F1: provider / alternate (逐 slot)
   wire [SLOTS-1:0] t0_pred;
   wire [SLOTS-1:0] prov_pred, prov_weak, alt_pred, fpred_raw;
 
@@ -761,8 +759,11 @@ module rv32ifu2_tage
                 wire [SLOT_W-1:0] pv = tb_row_rd[gi][gs*SLOT_W +: SLOT_W];
 
                 // slot 有效位是必需的, 见头注释
+                // [C4] init_done 门控提前到这里 (原来在路径末尾 AND 一次):
+                // 命中位与 t0_pred 都被门住之后, 末尾那次 AND 就是冗余的 ——
+                // 扫描期 h 全 0 ⇒ fpred = t0_pred = 0, 一样是干净的 0 不是 X。
                 assign tb_hit [gi*SLOTS + gs] = tag_row[TAG_W] & tag_match
-                                              & pv[SLOT_VLD_POS];
+                                              & pv[SLOT_VLD_POS] & init_done;
                 assign tb_pred[gi*SLOTS + gs] = pv[SLOT_PRED_TAKEN];
                 assign tb_weak[gi*SLOTS + gs] = is_weak(pv[SLOT_PRED_POS +: SLOT_PRED_W]);
                 assign tb_u[(gi*SLOTS + gs)*2 +: 2] = pv[SLOT_U_POS +: SLOT_U_W];
@@ -789,60 +790,66 @@ module rv32ifu2_tage
       end
   endgenerate
 
+  // [C4] 同样提前门控 (扫面期 t0_s 是 X, 三元合并会漏出去)
   assign t0_pred = { t0_s[3][T0_TAKEN_POS], t0_s[2][T0_TAKEN_POS],
-                     t0_s[1][T0_TAKEN_POS], t0_s[0][T0_TAKEN_POS] };
+                     t0_s[1][T0_TAKEN_POS], t0_s[0][T0_TAKEN_POS] }
+                 & {SLOTS{init_done}};
 
   // ---------------------------------------------------------------------------
-  //  F1: provider / alternate 选择 (逐 slot)
-  //  高位 = 历史更长的表。
+  //  F1: provider / alternate 选择 (逐 slot) —— 高位 = 历史更长的表
+  //  [W2.1] 原来这里的"优先编码 prov_sel/alt_sel → (ps-1) 解码 → mux"整段删掉了:
+  //  直接按命中位选方向值, 少一次编码/解码往返 (见下面 g_fpred 的说明)。
   // ---------------------------------------------------------------------------
+
   generate
     for (gs = 0; gs < SLOTS; gs = gs + 1)
-      begin : g_sel
+      begin : g_fpred
+        // -------------------------------------------------------------------
+        // [W2.1] 双优先并行改写 (逐位等价)
+        //
+        // 原式串了两段: "优先编码 ps → (ps-1) 解码 → mux" 取 provider,
+        // 再让 altpred 走另一条嵌套优先链, 最后 2:1 mux —— 关键路径上约 8~10 级。
+        // 这里把"命中表里最高的那张"和"次高的那张"**同时**算出来:
+        //   P1/W1 = 最高命中的 (方向, 弱信心);  P2 = 次高命中的方向
+        //   fpred = (!W1 || use_sel_neg) ? P1 : P2
+        // 语义与原式逐条对齐:
+        //   * 无 tagged 表命中 (ps==0): W1=0 ⇒ 选 P1 = t0_pred ⇒ 原式的 t0 分支 ✓
+        //   * 有命中: P1/W1 = provider 的, P2 = altpred 的 ⇒ 动态策略式不变 ✓
+        //   * "仅 T0 命中时 altpred == fpred" 同样成立 (W1=0) ⇒ u 的更新条件不变 ✓
+        // -------------------------------------------------------------------
         wire h4 = (NTAB >= 4) ? tb_hit[3*SLOTS + gs] : 1'b0;
         wire h3 = (NTAB >= 3) ? tb_hit[2*SLOTS + gs] : 1'b0;
         wire h2 = (NTAB >= 2) ? tb_hit[1*SLOTS + gs] : 1'b0;
         wire h1 = (NTAB >= 1) ? tb_hit[0*SLOTS + gs] : 1'b0;
 
-        assign prov_sel[gs] = h4 ? 3'd4 : h3 ? 3'd3 : h2 ? 3'd2 : h1 ? 3'd1 : 3'd0;
-        assign alt_sel [gs] = h4 ? (h3 ? 3'd3 : h2 ? 3'd2 : h1 ? 3'd1 : 3'd0)
-                            : h3 ? (h2 ? 3'd2 : h1 ? 3'd1 : 3'd0)
-                            : h2 ? (h1 ? 3'd1 : 3'd0)
-                            : 3'd0;
-      end
-  endgenerate
+        wire p4 = tb_pred[3*SLOTS + gs], w4 = tb_weak[3*SLOTS + gs];
+        wire p3 = tb_pred[2*SLOTS + gs], w3 = tb_weak[2*SLOTS + gs];
+        wire p2 = tb_pred[1*SLOTS + gs], w2 = tb_weak[1*SLOTS + gs];
+        wire p1 = tb_pred[0*SLOTS + gs], w1 = tb_weak[0*SLOTS + gs];
 
-  generate
-    for (gs = 0; gs < SLOTS; gs = gs + 1)
-      begin : g_fpred
-        wire [2:0] ps = prov_sel[gs];
-        wire [2:0] as = alt_sel[gs];
+        // 最高命中 (含 T0 兜底): 一层优先 mux, 与编码/解码往返无关
+        assign prov_pred[gs] = h4 ? p4 : h3 ? p3 : h2 ? p2 : h1 ? p1 : t0_pred[gs];
+        assign prov_weak[gs] = h4 ? w4 : h3 ? w3 : h2 ? w2 : h1 ? w1 : 1'b0;
 
-        assign prov_pred[gs] = (ps == 3'd0) ? t0_pred[gs] : tb_pred[(ps-1)*SLOTS + gs];
-        assign prov_weak[gs] = (ps == 3'd0) ? 1'b0        : tb_weak[(ps-1)*SLOTS + gs];
-        assign alt_pred [gs] = (as == 3'd0) ? t0_pred[gs] : tb_pred[(as-1)*SLOTS + gs];
+        // 次高命中 (最高那档以下再挑一次): 与上面**并行**, 不再绕"编号→解码→mux"
+        assign alt_pred[gs] = h4 ? (h3 ? p3 : h2 ? p2 : h1 ? p1 : t0_pred[gs])
+                            : h3 ? (h2 ? p2 : h1 ? p1 : t0_pred[gs])
+                            : h2 ? (h1 ? p1 : t0_pred[gs])
+                            :              t0_pred[gs];
 
-        // 只有 T0 命中时 ps==0 ⇒ 直接用 T0, 且此时 as 也必为 0 ⇒ altpred == fpred
-        // ⇒ u 的更新条件恒不成立 (与规格"若仅命中 T0, 则 T0 也是 altpred"一致)
-        //
-        // 动态策略: USE_SEL 只在 provider 弱信心那一档起作用 ——
-        //   !weak || use_sel_neg ⇒ provider, 否则 altpred。
-        // 强信心恒赢, 所以 USE_SEL 不会推翻一个饱和的 provider。
-        // USEL_EN=0 时退回静态 (与加 USE_SEL 之前逐位相同)。
         if (USEL_EN)
-          assign fpred_raw[gs] = (ps == 3'd0) ? t0_pred[gs]
-                               : ((!prov_weak[gs] || use_sel_neg) ? prov_pred[gs]
-                                                                  : alt_pred[gs]);
+          assign fpred_raw[gs] = (!prov_weak[gs] || use_sel_neg) ? prov_pred[gs]
+                                                                : alt_pred[gs];
         else
-          assign fpred_raw[gs] = (ps == 3'd0) ? t0_pred[gs]
-                               : (prov_weak[gs] ? alt_pred[gs] : prov_pred[gs]);
+          assign fpred_raw[gs] = prov_weak[gs] ? alt_pred[gs] : prov_pred[gs];
       end
   endgenerate
 
   // ⚠️ 初始化扫描期间阵列还是 X, 而 `valid & (tag == …)` 在 valid 为 X 时是
   //    **X 不是 0**, 会一路传到 next_pc。用 AND 门控, **不能**用三元
   //    (X ? a : b 是逐位合并, 不是干净的 0)。
-  assign slot_pred = fpred_raw & {SLOTS{init_done}};
+  //    [C4] 门控已经提前到 tb_hit / t0_pred, 这里不再重复 AND (少一级)。
+  assign slot_pred = fpred_raw;
 
   // ---------------------------------------------------------------------------
   //  训练路径: 用 (upd_pc, upd_ghr) 重算一切

@@ -277,8 +277,11 @@ wire [TAG_BITS-1:0] q_tag = q_pc_q[31:TAG_LSB];
 wire q_v0 = tag_q0[ROW_VLD];
 wire q_v1 = tag_q1[ROW_VLD];
 
-assign q_hit0 = q_v0 & (tag_q0[TAG_BITS-1:0] == q_tag);
-assign q_hit1 = q_v1 & (tag_q1[TAG_BITS-1:0] == q_tag);
+// [W2.5] 相等比较写成 |(a^b) 的显式 OR 树: 23 位 `==` 会被综合器实现成减法
+// 的借用链 (实测报告里 icache tag 那条路径上出现过 2 级 CARRY4)。语义逐位不变,
+// 只是不给它这个机会。q_hit 在关键路径上 (→ can_push → push_mask → ent_q)。
+assign q_hit0 = q_v0 & ~|(tag_q0[TAG_BITS-1:0] ^ q_tag);
+assign q_hit1 = q_v1 & ~|(tag_q1[TAG_BITS-1:0] ^ q_tag);
 
 assign ram_hit = q_hit0 | q_hit1;
 
@@ -306,7 +309,8 @@ end
 //   rf_match   在**写的那一拍**交付 (写还没落到阵列里);
 //   写穿透     在写之后的**下一拍**交付 (阵列此时已经更新)。
 //   删掉 rf_match 每次 miss 多一拍; 删掉写穿透会退化成交付错指令。
-wire rf_match = refill_en & (refill_pc[31:LINE_BITS] == q_pc_q[31:LINE_BITS]);
+// [W2.5] 28 位比较同样改成显式 XOR 归约 (它和 q_hit 一起进 q_hit 的顶层 OR)
+wire rf_match = refill_en & ~|(refill_pc[31:LINE_BITS] ^ q_pc_q[31:LINE_BITS]);
 
 // ---------------------------------------------------------------------------
 // 数据选择

@@ -793,43 +793,60 @@ wire ex_store_oob = have_inst_EX & ex_is_store & ~`ADDR_IN_MAP(ex_alu_c);
 
 // 跳转/分支目标非对齐. 目标 = pc_EX + sext (JAL/分支), 或 jalr 的 ALU 结果.
 // 分支只有【真的跳】才算 (不跳时目标无意义).
-wire ex_br_taken = (ex_npc_op == `NPC_SEL_BRANCH) && ex_alu_f;
 wire ex_is_jump  = (ex_npc_op == `NPC_SEL_JAL);
 wire ex_is_jalr  = (ex_npc_op == `NPC_SEL_ALU);
 
 // ---------------------------------------------------------------------------
-// 三个后继 PC 候选值**从寄存器直算**, 不再串在 ALU 后面 (2026-09-28)
+// 分支执行单元 (BEU, 见 BEU.v 头注释) —— 条件/目标/误预测判决全在这里
 //
-// 原来 actual_npc 取的是 ex_alu_c (分支/JAL 走 pc_EX+sext, jalr 走 ALU 的 A+B)。
-// 那条路是 ex_A_final → ALU 32 位进位链 (5 级) → 目标 → mux, 而 FPGA 的关键路径
-// 恰好就是 "EX 重定向 → 前端数组地址" —— ALU 进位链白占 5 级。
+// ⚠️ actual_npc 必须先声明再用 (下面的例化端口): 隐式线网是 1 位 —— 本工程
+//    已经在这类坑上栽过两次 (见 rv32ifu2_top.v 的 chk 位宽注释)。
 //
-// jalr 的目标 = ALU 的 A+B, 而 jalr 的 alua_sel=ALUA_SEL_RD1 / alub_sel=ALUB_SEL_SEXT
-// (Control.v 的 SYSTEM 臂), 且 jalr 的 ex_csr_op 恒为 NONE ⇒ ex_A_final == ex_A。
-// 所以 npc_jalr = ex_A + ex_B 与原来的 ex_alu_c **逐位相同**, 只是把加法器搬到
-// 并行位置、从寄存器直接起算。5% 利用率下多两个 32 位加法器是免费的。
+// 改动前: ex_br_taken = (npc_op==BRANCH) && ex_alu_f, 而 ex_alu_f 来自共享 ALU,
+// 它的 A 口前面还挂着 `ex_csr_op ? ex_csr_rdata : ex_A` 的 mux 和 32 位比较的
+// 进位链 —— FPGA 报告里 EX 族 132/500 条路径的起点就是 ex_csr_op_reg。
+// 现在条件直接从 ex_A/ex_B 判, 目标三个候选并行算, 每个候选的
+// {失配, 非对齐} 也提前并行算好, 只留一层浅 select。
 // ---------------------------------------------------------------------------
-wire [31:0] npc_pc4  = pc_EX + 32'd4;       // 顺序后继
-wire [31:0] npc_imm  = pc_EX + ex_sext;     // 分支 / JAL 目标
-wire [31:0] npc_jalr = ex_A + ex_B;         // jalr 目标 (= ALU 的 A+B)
+wire        ex_br_taken;
+wire [31:0] ex_target;
+wire [31:0] actual_npc;
+wire        ex_npc_mismatch;
+wire        ex_tgt_misalign;
 
-wire [31:0] ex_target = ex_is_jalr ? npc_jalr : npc_imm;
+BEU U_BEU(
+    .A           (ex_A),
+    .B           (ex_B),
+    .pc          (pc_EX),
+    .sext        (ex_sext),
+    .pc4         (ex_pc4),
+    .pred_npc    (ex_pred_npc),
+    .alu_op      (ex_alu_op),
+    .is_branch   (ex_npc_op == `NPC_SEL_BRANCH),
+    .is_jal      (ex_npc_op == `NPC_SEL_JAL),
+    .is_jalr     (ex_npc_op == `NPC_SEL_ALU),
+    .br_taken    (ex_br_taken),
+    .actual_npc  (actual_npc),
+    .target      (ex_target),
+    .mis_align   (ex_tgt_misalign),
+    .npc_mismatch(ex_npc_mismatch)
+);
+
+// ---------------------------------------------------------------------------
+// 误预测检测 (候选并行算, 见 BEU.v)
+//
+// 三个后继 PC 候选 (pc4 / pc+sext / A+B) 与**每个候选各自的**
+// {与 pred_npc 的失配, 目标非对齐} 都在 BEU 里从寄存器直算, 这里只剩门控:
+//   * 非对齐目标不重定向: IFU 对非对齐目标只会预测 pc+4, 必然判"误预测",
+//     但把非对齐 PC 发给 IFU 只会让它报取指故障并停住 (fault_stop_q 要等
+//     重定向才清) —— 交给 ex_inst_misaligned 异常在 WB 处理。
+// ---------------------------------------------------------------------------
 wire ex_inst_misaligned = have_inst_EX & (ex_br_taken | ex_is_jump | ex_is_jalr)
-                        & (ex_target[1:0] != 2'b00);
+                        & ex_tgt_misalign;
 
 `ifdef USE_IFU_ANY
 // ===================== 误预测检测与前端重定向 =====================
-// 真实后继 PC。与旧 NPC.v 不同, 这里直接用 pc_EX 作基准, 不再依赖
-// "if_pc == pc_EX + 8" 那个关系 (旧 NPC 里 PC + offset - 8 的 -8 就是
-// 为这个关系打的补丁)。
-// 三个候选值都已在上面并行算好, 这里只剩一层 3 路 mux。
-wire [31:0] actual_npc = ex_is_jalr ? npc_jalr
-                       : (ex_br_taken | ex_is_jump) ? npc_imm
-                       : npc_pc4;
-// 非对齐目标不重定向: IFU 对非对齐目标只会预测 pc+4, 必然判"误预测",
-// 但把非对齐 PC 发给 IFU 只会让它报取指故障并停住 (fault_stop_q 要等
-// 重定向才清) —— 交给 ex_inst_misaligned 异常在 WB 处理。
-wire mispredict = have_inst_EX & ~ex_inst_misaligned & (actual_npc != ex_pred_npc);
+wire mispredict = have_inst_EX & ~ex_inst_misaligned & ex_npc_mismatch;
 
 // Hazard_Detection 的 branched 冲刷源换成 mispredict: 预测正确时零气泡,
 // 预测错了才像旧设计那样冲 IF/ID。
@@ -850,7 +867,7 @@ assign iu_ifu_chgflw_pc  = actual_npc;
 assign iu_bht_check_vld    = have_inst_EX & (ex_npc_op == `NPC_SEL_BRANCH) &
                              ~stall & ~redirect;
 assign iu_cur_pc           = pc_EX;
-assign iu_bht_condbr_taken = ex_alu_f;
+assign iu_bht_condbr_taken = ex_br_taken;
 assign iu_bht_pred         = ex_bht_pred;
 assign iu_chk_idx          = ex_bht_chk;
 
@@ -868,7 +885,7 @@ assign iu_btb_update_vld = have_inst_EX
                             (ex_npc_op == `NPC_SEL_ALU))
                          & ~stall & ~redirect;
 assign iu_btb_cur_pc = pc_EX;
-assign iu_btb_taken  = (ex_npc_op == `NPC_SEL_BRANCH) ? ex_alu_f : 1'b1;
+assign iu_btb_taken  = (ex_npc_op == `NPC_SEL_BRANCH) ? ex_br_taken : 1'b1;
 assign iu_btb_target = actual_npc;
 assign iu_btb_is_cond = (ex_npc_op == `NPC_SEL_BRANCH);
 assign iu_btb_is_jal  = ex_is_jump;

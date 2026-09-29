@@ -31,14 +31,17 @@ module rv32ifu2_ibuf #(
     //    一个 16 B 块正好 4 条指令, 只有把宽度做到 4 才能"一块一拍推完"。
     //    否则 fetch 侧被 3 卡住: 4 条要推两拍 (3+1), 直线代码封顶 2 IPC ——
     //    这条顶压在目标 3 发射之下。出队侧保持 3 是核心自己的消费上限。
-    input  wire [  2:0] push_num,      // 本拍想推进几条 (0..4)
+    // [W2.3] 推进掩码: 取指侧已经把"本块剩余 / taken 截断 / 队列空位"三条
+    // 前缀条件交好了 (见 rv32ifu2_top.v 的同名注释), 这里不再做 min/mux ——
+    // 掩码天然是前缀, 直接当写使能用, popcount 就是 acc_push。
+    input  wire [  3:0] push_mask,
     input  wire [W-1:0] push_data0,
     input  wire [W-1:0] push_data1,
     input  wire [W-1:0] push_data2,
     input  wire [W-1:0] push_data3,
 
-    // 实际收下了几条。取指侧必须**按它**推进 PC —— 按 push_num 推进会跳过
-    // 队列没装下的那几条, 那是静默丢指令, difftest 会抓但很难查。
+    // 实际收下了几条 = 掩码的 popcount。取指侧必须**按它**推进 PC —— 按想推的
+    // 条数推进会跳过队列没装下的那几条, 那是静默丢指令, difftest 会抓但很难查。
     output wire [  2:0] push_accept,
 
     // ---- 出队 (到 IDU), 逐 lane 有效 ----
@@ -61,20 +64,18 @@ reg [AW-1:0] head_q;
 reg [AW+1:0] cnt_q;                    // 0..DEPTH, 要比索引宽
 
 // ---------------------------------------------------------------------------
-// 空位与本次实际能收几条
+// 空位
 //
 // ⚠️ 这里刻意**不**把本拍的 pop_num 算进空位: 算了的话 acc_push 会依赖
 // pop_num, 而 pop_num 来自核心的 if_accept, if_accept 又依赖 out_vld,
 // out_vld 在空队列时依赖 acc_push —— 一条完整的组合环。少算这一格只是让
 // 队列实际可用深度少 1, DEPTH=8 且一拍最多推 3 条, 完全不心疼。
+// (空位截断现在由取指侧的 push_mask 做, 这里只把它读出来给 full/掩码用。)
 // ---------------------------------------------------------------------------
 wire [AW+1:0] space = DEPTH[AW+1:0] - cnt_q;
 
-wire [2:0] acc_push = (space == 0) ? 3'd0 :
-                      (space == 1) ? ((push_num >= 3'd1) ? 3'd1 : 3'd0) :
-                      (space == 2) ? ((push_num >= 3'd2) ? 3'd2 : push_num) :
-                      (space == 3) ? ((push_num >= 3'd3) ? 3'd3 : push_num) :
-                                     push_num;
+wire [2:0] acc_push = {1'b0, push_mask[0]} + {1'b0, push_mask[1]}
+                    + {1'b0, push_mask[2]} + {1'b0, push_mask[3]};
 
 assign push_accept = acc_push;
 
@@ -91,9 +92,9 @@ assign out_data0 = empty ? push_data0 : ent_q[idx0];
 assign out_data1 = empty ? push_data1 : ent_q[idx1];
 assign out_data2 = empty ? push_data2 : ent_q[idx2];
 
-assign out_vld[0] = empty ? (acc_push >= 3'd1) : 1'b1;
-assign out_vld[1] = empty ? (acc_push >= 3'd2) : (cnt_q >= 2);
-assign out_vld[2] = empty ? (acc_push >= 3'd3) : (cnt_q >= 3);
+assign out_vld[0] = empty ? push_mask[0] : 1'b1;
+assign out_vld[1] = empty ? push_mask[1] : (cnt_q >= 2);
+assign out_vld[2] = empty ? push_mask[2] : (cnt_q >= 3);
 
 assign count = cnt_q;                  // 直接给全宽: 截位会让"满队列=8"读成 0
 assign full  = (space == 0);
@@ -111,10 +112,10 @@ always @(posedge clk) begin
         head_q <= {AW{1'b0}};
         cnt_q  <= {(AW+2){1'b0}};
     end else begin
-        if (acc_push >= 3'd1) ent_q[w0] <= push_data0;
-        if (acc_push >= 3'd2) ent_q[w1] <= push_data1;
-        if (acc_push >= 3'd3) ent_q[w2] <= push_data2;
-        if (acc_push >= 3'd4) ent_q[w3] <= push_data3;
+        if (push_mask[0]) ent_q[w0] <= push_data0;
+        if (push_mask[1]) ent_q[w1] <= push_data1;
+        if (push_mask[2]) ent_q[w2] <= push_data2;
+        if (push_mask[3]) ent_q[w3] <= push_data3;
         head_q <= head_q + pop_num;
         cnt_q  <= cnt_q + acc_push - pop_num;
     end

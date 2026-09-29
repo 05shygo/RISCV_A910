@@ -457,13 +457,18 @@ wire [31:0] btb_tgt_raw = btb_t0 ? btb_target[0*32 +: 32]
                         : btb_t2 ? btb_target[2*32 +: 32]
                         :          btb_target[3*32 +: 32];
 
-// 想推几条: 到 taken 那条为止(含); 没有 taken 就推满本块剩余; 再受 3 发射限制。
-wire [ 2:0] want_to_taken = {1'b0, taken_slot} - {1'b0, pc_ofs} + 3'd1;
-wire [ 2:0] want_cnt_raw  = any_taken ? want_to_taken : blk_left;
-// want_cnt_raw 天然落在 [1,4] (blk_left = 4-pc_ofs, want_to_taken = taken_slot-pc_ofs+1),
-// 所以这里只是"再受发射宽度限制", MAX_ISSUE=4 时恒等。
-wire [ 2:0] want_push     = (want_cnt_raw > MAX_ISSUE) ? MAX_ISSUE : want_cnt_raw;
-
+// ---------------------------------------------------------------------------
+// [W2.3] 压包改**逐 lane 掩码**, 不再走"计数 → 取 min → 再比较"三跳算术
+//
+// 原式: want_cnt_raw = any_taken ? taken_slot-pc_ofs+1 : blk_left
+//       → push_num → IBUF 侧 acc_push = min(push_num, space) → 写使能 = (acc_push >= k)。
+// 这里改成三条**前缀条件**的交集, 全部从寄存器量起算:
+//     lane k 在本块内:      k < blk_left     (blk_left = 4 - pc_ofs, q_pc 直出)
+//     预测 taken 时截断:    k <= taken_lane  (taken_lane = taken_slot - pc_ofs)
+//     队列有空位:           k < space        (space = 8 - ib_cnt, ib_cnt 是 IBUF 寄存器)
+// 交集天然是前缀 ⇒ 与原来"按计数写"逐位相同 (acc_push 就是掩码的 popcount)。
+// 细节: 移位量取 4 时 `4'hF << 4` = 0 ⇒ 全 1, 正好是"不截断"; space>=4 时同理。
+// ---------------------------------------------------------------------------
 wire        can_push  = q_hit & init_all;
 
 // 回填请求: 需要一条指令但缓存里没有, 且当前没有事务在途。
@@ -476,10 +481,9 @@ wire        can_push  = q_hit & init_all;
 //    结论: 保持跟延迟版 redirect。
 assign refill_req = ~q_hit & ~refill_busy & init_all & ~redirect;
 
-// ⚠️ 位宽必须 >= want_push 的位宽。这里曾经还是 [1:0], 而 want_push 已经是 [2:0]:
-//    want_push=4 (3'b100) 截成 2'b00 = 0 ⇒ **一条都推不进去**, next_pc 原地不动,
-//    BIU 只发 1 次事务然后整条流水线空转 (实测 retired=0, fetch bubble≈满拍)。
-//    正是本工程反复踩的"隐式截断"那一族 —— 改宽度时把**所有**同族声明一起改。
+// (原 want_push 的宽度陷阱记录: 它曾经是 [1:0] 而 want_push 已是 [2:0],
+//  want_push=4 截成 0 ⇒ 一条都推不进去、BIU 只发 1 次事务然后空转。
+//  [W2.3] 之后推进口是 4 位掩码, 整个量都是"每 lane 一位", 不再有取位宽这一步。)
 //
 // ---------------------------------------------------------------------------
 // 这里原先还有 `& ~redirect` ("重定向当拍不推进, 此时 q_pc 还是旧路径的 PC")。
@@ -502,7 +506,8 @@ assign refill_req = ~q_hit & ~refill_busy & init_all & ~redirect;
 // 去掉之后 redirect 只剩三个终点, 全是"最后一层 mux 的选通": next_pc 的顶层
 // select、ghr_after 的 select、IBUF 的 flush。实测周期数逐位不变。
 // ---------------------------------------------------------------------------
-wire [ 2:0] push_num = can_push ? want_push : 3'd0;
+// 逐 lane 推进掩码 (声明在前, 赋值在 IBUF 例化之后 —— 它要用 ib_cnt)
+wire [ 3:0] push_mask;
 
 // ---------------------------------------------------------------------------
 // IDU 包拼装
@@ -608,7 +613,7 @@ rv32ifu2_ibuf #(
     .clk       (clk),
     .rst       (rst),
     .flush     (redirect),
-    .push_num  (push_num),
+    .push_mask (push_mask),
     .push_data0(ib_push0),
     .push_data1(ib_push1),
     .push_data2(ib_push2),
@@ -622,6 +627,18 @@ rv32ifu2_ibuf #(
     .count     (ib_cnt),
     .full      (ib_full)
 );
+
+// ---------------------------------------------------------------------------
+// [W2.3] 推进掩码 (三条前缀条件的交集) —— 见上面 want_cnt_raw 删除处的说明
+//   IBUF 侧只需按掩码写、把 acc_push 当 popcount 用, 不再做 min/mux 那一跳。
+// ---------------------------------------------------------------------------
+wire [ 3:0] ib_space    = 4'd8 - ib_cnt;
+wire [ 3:0] lane_in_blk = ~(4'hF << blk_left);                    // k < blk_left
+wire [ 3:0] lane_has_sp = ~(4'hF << ib_space);                    // k < space
+wire [ 3:0] lane_to_tk  = ~(4'hF << ({1'b0, taken_lane} + 3'd1)); // k <= taken_lane
+assign push_mask = can_push
+                 ? (lane_in_blk & lane_has_sp & (any_taken ? lane_to_tk : 4'hF))
+                 : 4'h0;
 
 // ---------------------------------------------------------------------------
 // GHR (推测全局历史) 与 gshare 方向表
@@ -723,8 +740,11 @@ assign iu_red_ghr = ghr_restore;
 assign iu_red_ras = iu_btb_chk[RAS_CHK_MSB:RAS_CHK_LSB];
 `endif
 
-// 本拍结束时 GHR 的值。它同时就是"下一个取指地址"查表该用的历史 ——
-// 阵列地址与 GHR 索引在同一拍形成, 结果同一拍到达 F1, 正好对齐。
+// 本拍结束时 GHR 的值。
+// [W2.4] 它**不再**直接喂查表 (原来 rd_ghr = ghr_after): 那一项要把本块预测出的
+// 分支压进移位寄存器 (ghr_pack/ghr_cnt → 4 路桶形移位), 4~5 级逻辑, 而且整条挂在
+// F1 的自环里 —— "q_row_idx → 表读 → dir_pred → 下一块索引 → q_row_idx"。
+// 现在查表用寄存的 ghr_q (见下面例化处的注释), ghr_after 只喂 ghr_q 自己。
 wire [GHR_W-1:0] ghr_after = (rtu_chgflw_vld | rtu_flush) ? {GHR_W{1'b0}}
                            : iu_red_vld                   ? iu_red_ghr
                            :                                ghr_next;
@@ -732,6 +752,15 @@ wire [GHR_W-1:0] ghr_after = (rtu_chgflw_vld | rtu_flush) ? {GHR_W{1'b0}}
 always @(posedge clk) begin
     if (rst) ghr_q <= {GHR_W{1'b0}};
     else     ghr_q <= ghr_after;
+end
+
+// 上一拍的 ghr_q。[W2.4] 与索引配套的快照寄存器: 查表用 ghr_q, 那么随指令走的
+// 快照也必须用**同一份** GHR, 训练重算索引才会落到同一行 (这条"读写索引一致"是
+// 硬约束, 见下面 chk_snap 的注释)。
+reg [GHR_W-1:0] ghr_q_d1;
+always @(posedge clk) begin
+    if (rst) ghr_q_d1 <= {GHR_W{1'b0}};
+    else     ghr_q_d1 <= ghr_q;
 end
 
 // ---------------------------------------------------------------------------
@@ -745,16 +774,21 @@ end
 //
 // ghr_q 就是块首 GHR: 本块的分支要到本拍末尾才推进它, 而块是本拍才被交付的。
 // ---------------------------------------------------------------------------
-// ⚠️ 这份 GHR 快照与上面 `rd_ghr(ghr_after)` 的索引是**一对**: 读索引用的是
-// "下一拍的 ghr_q", 而这里存的就是下一拍的 ghr_q。谁要单独改一边 —— 比如照
+// ⚠️ 这份 GHR 快照与查表索引是**一对**, 必须同源。谁要单独改一边 —— 比如照
 // 文档 §4 规则 2 把它换成"块首 GHR"却不改 F0 的 rd_ghr —— 立刻重现原设计那个
 // "读写索引不一致 ⇒ 一整类分支收到 0 次写"的病 (memory bp-class3-root-cause)。
 // (顺带更正: 文档说必须是"块首 GHR、三条 lane 相同", 实际做到的是"每条 lane
 //  推进时自己的 GHR"。SPEC 上实测后者**更好** 0.58pp, 所以别去"修"它。)
+//
+// [W2.4] 索引侧的 rd_ghr 从 ghr_after 改成 ghr_q 之后, 快照必须跟着换成
+// **上一拍的 ghr_q** (= ghr_q_d1): 索引寄存器 q_row_idx 是在第 j 拍用
+// (next_pc, ghr_q) 打进去的, 到第 j+1 拍才被读; 而第 j+1 拍存快照时 ghr_q
+// 已经是"推进过第 j 块"的下一版了 —— 直接用就会读写错行。
+//
 // 高位补零的个数**钳到 0**: 不让 GHR_W 过大时变成负复制数而在 elaborate 期
 // 报一个看不懂的错 —— 那种配置由下面的 initial 显式 $fatal 拦。
 localparam CHK_PAD = (CHK_W > RAS_CHK_MSB + 1) ? (CHK_W - RAS_CHK_MSB - 1) : 0;
-wire [CHK_W-1:0] chk_snap = {{CHK_PAD{1'b0}}, ras_ptr, ghr_q[GHR_W-1:0]};
+wire [CHK_W-1:0] chk_snap = {{CHK_PAD{1'b0}}, ras_ptr, ghr_q_d1[GHR_W-1:0]};
 
 // 再带两个**逐 lane** 的预测元信息, 只供 TB 归因用, 不参与任何逻辑:
 //   CHK_BTBHIT: 预测时这一 slot 在 BTB 里有没有条目 (没有 ⇒ 只能猜"不跳")
@@ -858,7 +892,7 @@ if (BP_PRED_MODE == 0) begin : g_gshare
         .clk       (clk),
         .rst       (rst),
         .rd_pc     (next_pc),
-        .rd_ghr    (ghr_after),
+        .rd_ghr    (ghr_q),          // [W2.4] 寄存的 GHR, 不再用当拍推进的 ghr_after
         .slot_ctr  (bht_ctr),
         .init_done (bht_init_done),
         .upd_vld   (iu_bht_check_vld),
@@ -898,7 +932,7 @@ end else begin : g_tage
         .clk       (clk),
         .rst       (rst),
         .rd_pc     (next_pc),
-        .rd_ghr    (ghr_after),
+        .rd_ghr    (ghr_q),          // [W2.4] 寄存的 GHR, 不再用当拍推进的 ghr_after
         .slot_pred (tage_pred),
         .init_done (tage_init_done),
         .upd_vld   (iu_bht_check_vld),
@@ -932,18 +966,33 @@ assign idu_inst2_chk  = ib_out2[152:128];
 // 重定向优先: 目标地址当拍就进阵列, 下一拍 q_pc 即是目标, 所以重定向进 PC
 // 是**零气泡**(只要命中), 与 C910 版"IU redirect 走 pc_bus 快速路径"等价。
 // ---------------------------------------------------------------------------
-// 推进量 = 实际收下的条数 × 4 (最大 4 条 = 16 B, 正好一个块)
-wire [31:0] pc_adv = {27'd0, ib_push_acc, 2'b00};
+// [W2.2] 推进量与 taken 判决: 少走"want_cnt 加减 → IBUF 取 min → 与计数比较"三跳。
+//
+// 等价改写: acc_push == want_cnt_raw ⟺ space >= want_cnt_raw
+//           ⟺ space + pc_ofs > taken_slot   (want_cnt_raw = taken_slot-pc_ofs+1)
+// space/pc_ofs 都是寄存器量, 加法可以提前做, 于是 next_pc 的 select 直接从
+// 寄存器起算。
+//
+// ⚠️ 两条都不能少:
+//   * `can_push` 必须并进 reached_taken —— 取指 miss (!q_hit) 或初始化未完成时
+//     一条也推不进去, 这时候 any_taken 仍可能为 1 (BTB 行是上一拍的数据)。
+//     漏掉它 PC 会跳到 taken 目标, 那几条指令就丢了。
+//   * 推进量必须取**实际收下的条数** (= 掩码 popcount) 而不是想推的条数:
+//     miss 时推进量是 0, PC 冻在缺行上等回填。改成"按空位推进"会让 PC 在
+//     miss 期间一路前进、每行都 miss —— 实测就是 retired=0 / BIU 一事务每 3 拍
+//     的活锁。
+wire [ 3:0] spc   = ib_space + {2'b0, pc_ofs};               // ∈ [0,11]
+wire [ 3:0] adv_n = {1'b0, push_mask[0]} + {1'b0, push_mask[1]}
+                  + {1'b0, push_mask[2]} + {1'b0, push_mask[3]};
 
-// 只有"想推的条数全部推进去了"才算真的走到了那条 taken 分支, 这时 PC 才去目标。
-// 队列空间不够时只推进了一部分, 分支还没进去, PC 必须按顺序继续 —— 否则会跳过
-// 分支之前那些还没交付的指令。
-wire reached_taken = any_taken & (ib_push_acc == want_cnt_raw);
+// 只有 taken 那条真的进了 IBUF 才算走到它, PC 才去目标; 空位不够时只推进了
+// 一部分, 分支还没进去, PC 必须按顺序继续 —— 否则会跳过分支之前那些还没交付的指令。
+wire reached_taken = can_push & any_taken & (spc > {1'b0, taken_slot});
 
 assign next_pc = rst            ? RESET_PC
                : redirect       ? redirect_pc
                : reached_taken  ? taken_tgt
-               :                  (q_pc + pc_adv);
+               :                  (q_pc + {26'd0, adv_n, 2'b00});
 
 // ---------------------------------------------------------------------------
 // 状态
