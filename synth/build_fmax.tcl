@@ -9,8 +9,9 @@
 #   bin路径    : 可选, $readmemh 镜像的来源 (默认 bin/coremark.bin)。
 #                ⚠️ 镜像内容不影响时序, 只影响 $readmemh 能不能读到数。
 #
-# 配置口径 = Makefile IFU=2 的默认值 (BP_PRED=1 TAGE / icache 1024B 16B 行 /
-# GHR=16, TAGE 几何吃 RTL 默认), 即 `make run IFU=2` 那条线。
+# 配置口径 = Makefile IFU=2 的默认值 (BP_PRED=0 gshare / icache 1024B 16B 行 /
+# GHR=8, 与 Makefile 的 BP_GHR_W 派生规则一致), 即 `make run IFU=2 BP_PRED=0`
+# 那条线。[2026-09-29: 默认方向预测器由 TAGE 换回 gshare —— Fmax 161.9 → 183.9 MHz]
 #
 # 2026-09-28 更新: 存储器已换成 mySoC/sync_mem.v (同步 1R1W + 写穿透, 落块 RAM),
 # 初值走 $readmemh + PATHHEX/PATH128 两个宏 —— 本脚本自己按 Makefile 的
@@ -130,8 +131,8 @@ set_property file_type SystemVerilog [get_files -of [get_filesets sources_1] *.v
 set DEFS [list \
     USE_IFU2 \
     USE_IFU_ANY \
-    BP_PRED=1 \
-    BP_GHR_W=16 \
+    BP_PRED=0 \
+    BP_GHR_W=8 \
     REDIRECT_PIPE \
     ICACHE_BYTES=1024 \
     ICACHE_LINE_BYTES=16 \
