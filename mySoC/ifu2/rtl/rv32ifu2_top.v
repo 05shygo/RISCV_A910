@@ -451,11 +451,28 @@ wire btb_t2 = (pc_ofs <= 2'd2) & sl_vld[2] & sl_taken[2];
 wire btb_t3 =                    sl_vld[3] & sl_taken[3];
 
 wire        any_taken   = btb_t0 | btb_t1 | btb_t2 | btb_t3;
-wire [ 1:0] taken_slot  = btb_t0 ? 2'd0 : btb_t1 ? 2'd1 : btb_t2 ? 2'd2 : 2'd3;
-wire [31:0] btb_tgt_raw = btb_t0 ? btb_target[0*32 +: 32]
-                        : btb_t1 ? btb_target[1*32 +: 32]
-                        : btb_t2 ? btb_target[2*32 +: 32]
-                        :          btb_target[3*32 +: 32];
+//wire [ 1:0] taken_slot  = btb_t0 ? 2'd0 : btb_t1 ? 2'd1 : btb_t2 ? 2'd2 : 2'd3;
+
+wire [1:0] taken_slot_low  = btb_t0 ? 2'd0 : 2'd1;
+wire [1:0] taken_slot_high = btb_t2 ? 2'd2 : 2'd3;
+
+wire       sel_low_slot   = btb_t0 | btb_t1;
+wire [1:0] taken_slot      = sel_low_slot ? taken_slot_low 
+                                          : taken_slot_high;
+
+wire [31:0] btb_low_tgt_raw  = btb_t0 ? btb_target[0*32 +: 32]
+                                      : btb_target[1*32 +: 32];
+
+wire [31:0] btb_high_tgt_raw = btb_t2 ? btb_target[2*32 +: 32]
+                                      : btb_target[3*32 +: 32];
+
+wire [31:0] btb_tgt_raw = sel_low_slot ? btb_low_tgt_raw 
+                                       : btb_high_tgt_raw;
+
+//wire [31:0] btb_tgt_raw = btb_t0 ? btb_target[0*32 +: 32]
+//                        : btb_t1 ? btb_target[1*32 +: 32]
+//                        : btb_t2 ? btb_target[2*32 +: 32]
+//                        :          btb_target[3*32 +: 32];
 
 // ---------------------------------------------------------------------------
 // [W2.3] 压包改**逐 lane 掩码**, 不再走"计数 → 取 min → 再比较"三跳算术
@@ -568,9 +585,22 @@ wire [31:0] pc3 = q_pc + 32'd12;
 
 // taken_lane = taken_slot - pc_ofs, 落在 [0,3] (两者都在 0..3 且 taken_slot >= pc_ofs)
 wire [1:0]  taken_lane = taken_slot - pc_ofs;
-wire [31:0] taken_inst = (taken_lane == 2'd0) ? inst0
-                       : (taken_lane == 2'd1) ? inst1
-                       : (taken_lane == 2'd2) ? inst2 : inst3;
+
+wire taken_sel_low = ((taken_lane == 2'd0) | (taken_lane == 2'd1));
+
+wire [31:0] taken_inst_low = (taken_lane == 2'd0) ? inst0 
+                                                  : inst1;
+
+wire [31:0] taken_inst_high = (taken_lane == 2'd2) ? inst2 
+                                                   : inst3;
+
+wire [31:0] taken_inst = taken_sel_low ? taken_inst_low
+                                       : taken_inst_high;
+
+//wire [31:0] taken_inst = (taken_lane == 2'd0) ? inst0
+//                       : (taken_lane == 2'd1) ? inst1
+ //                      : (taken_lane == 2'd2) ? inst2 : inst3;
+
 wire        t_is_jalr  = (taken_inst[6:0] == 7'b1100_111);
 wire        t_is_ret   = t_is_jalr & ((taken_inst[19:15] == 5'd1) | (taken_inst[19:15] == 5'd5))
                                   & (taken_inst[11:7]  == 5'd0);
