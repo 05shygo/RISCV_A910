@@ -76,7 +76,9 @@ wire [31:0] id_sext;
 wire [31:0] ex_sext;
 wire [31:0] mem_sext;
 wire [31:0] wb_sext;
-wire [`Sext_OP_WDITH-1:0] id_sext_op;
+// id_sext_op / id_alua_sel / id_alub_sel / id_is_illegal / id_is_ecall / id_is_ebreak
+// 已经从本模块删除 —— 它们只在 ID 级内部用 (Control -> SEXT / ALU_input_MUX /
+// 异常检出), 现在都是 mySoC/IDU.v 的内部线网。
 wire ex_alu_f;
 wire [31:0] ex_alu_c;
 wire [31:0] mem_alu_c;
@@ -85,8 +87,6 @@ wire [`NPC_SEL_WIDTH-1:0] id_npc_op;
 wire [`NPC_SEL_WIDTH-1:0] ex_npc_op;
 wire [`ALU_OP_WIDTH-1:0] id_alu_op;
 wire [`ALU_OP_WIDTH-1:0] ex_alu_op;
-wire [`ALUA_SEL_WIDTH-1:0] id_alua_sel;
-wire [`ALUB_SEL_WIDTH-1:0] id_alub_sel;
 wire [`RF_WSEL_WIDTH-1:0] id_rf_wsel;
 wire [`RF_WSEL_WIDTH-1:0] ex_rf_wsel;
 wire [`RF_WSEL_WIDTH-1:0] mem_rf_wsel;
@@ -167,7 +167,7 @@ wire        div_stall;                // 除法占住 EX
 
 // ===================== 系统指令 / CSR / 陷阱 =====================
 // ID 级 (Control 译码)
-wire        id_is_illegal, id_is_ecall, id_is_ebreak, id_is_mret;
+wire        id_is_mret;
 wire [2:0]  id_csr_op;
 wire        id_csr_imm, id_csr_we;
 wire [31:0] id_exc_tval;
@@ -490,10 +490,12 @@ wire [24:0] id_bht_chk;
 wire        id_bht_pred;
 
 // CSR 读地址: 就是本条指令的 inst[31:20]。
-// ⚠️ 必须声明在 id_inst **之后** —— 本工程反复踩过"用在声明之前 ⇒ 隐式 1 位线网"
-//    那个坑 (见 rv32ifu2_top.v 里 chk0_f 的注释)。原来这条表达式是内联写在
-//    U_Control 和 U_ID_EX 的连接上的, 现在提出来给 CSR 文件当读地址。
-wire [11:0] id_csr_addr  = id_inst[31:20];
+// ⚠️ 这条**必须显式声明**在 U_IDU 例化之前 —— 只留例化口、把声明删掉的话它会
+//    变成**隐式 1 位线网** (本工程反复踩过这个坑, 见 rv32ifu2_top.v 里 chk0_f 的
+//    注释)。VCS 对这种情形只报 PCWM-W 警告、不报错, 而后果是
+//    ID_EX.ex_csr_addr 与 U_CSR.raddr_i 都只剩 1 位 ⇒ **所有 CSR 访问都会读写到
+//    错的寄存器**。译码本身已经搬进 mySoC/IDU.v (idu_csr_addr_o)。
+wire [11:0] id_csr_addr;
 // ID 级读出的 CSR 值 (含 EX→ID 旁路)。这里只**声明**; 赋值放在 ex_csr_wdata
 // 之后 —— 旁路要用到它。反过来会变成隐式线网。
 wire [31:0] id_csr_rdata;
@@ -523,87 +525,62 @@ IF_ID U_IF_ID(
     .id_have_inst (have_inst_ID)
 );
     
-SEXT U_SEXT(
-    .din(id_inst[31:7]),
-    .sext_op(id_sext_op),
-    .sext(id_sext)
-);
-
-Control U_Control(
-    .opcode(id_inst[6:0]),
-    .funct3(id_inst[14:12]),
-    .funct7(id_inst[31:25]),
-    .rs1_addr(id_inst[19:15]),
-    .csr_addr(id_csr_addr),
-    .sext_op(id_sext_op),
-    .npc_op(id_npc_op),
-    .alu_op(id_alu_op),
-    .alua_sel(id_alua_sel),
-    .alub_sel(id_alub_sel),
-    .rf_wsel(id_rf_wsel),
-    .dram_sel(id_dram_sel),
-    .rf_we(id_rf_we),
-    .ram_we(id_ram_we),
-    .is_muldiv(id_is_muldiv),
-    .id_rf1_used(id_rf1_used),
-    .id_rf2_used(id_rf2_used),
-
-    .is_illegal(id_is_illegal),
-    .is_ecall  (id_is_ecall  ),
-    .is_ebreak (id_is_ebreak ),
-    .is_mret   (id_is_mret   ),
-    .csr_op    (id_csr_op    ),
-    .csr_imm   (id_csr_imm   ),
-    .csr_we    (id_csr_we    )
-);
-
-// ID 级异常: 取指越界 / 非法指令 / ecall / ebreak.
-// 必须用 have_inst_ID 门控: 流水线气泡的 id_inst 是全零, 而全零正好是
-// "非法指令", 不门控的话每个气泡都会当成陷阱.
+// ---------------------------------------------------------------------------
+// ID 级数据通路 —— 整块封装在 mySoC/IDU.v 里。
 //
-// 取指越界(instruction access fault, cause 1)优先级最高: IROM 只有 64KB,
-// PC 跑到更外面时 inst_addr = if_pc[15:2] 会回绕, 取回来的是别的地址上的
-// 指令字 —— 那是垃圾, 不能再按它译码, 只能报异常.
-wire id_inst_oob = have_inst_ID & ~`INST_ADDR_OK(id_pc);
-
-// IFU 的取指故障包: 故障包被消费后 IFU 会停取指, 直到重定向才恢复,
-// 所以这里必须立刻生成异常。id_inst_oob 保留作兜底 (pc>=64KB 时两条
-// 判据完全一致; 故障包是"非对齐取指"cause 0 的唯一来源)。
-wire id_ifu_fault = have_inst_ID & id_fault;
-
-assign id_exc_valid = have_inst_ID & (id_ifu_fault | id_inst_oob | id_is_illegal | id_is_ecall | id_is_ebreak);
-assign id_exc_cause = id_ifu_fault  ? (id_cause == 4'd0 ? `EXC_INST_MISALIGNED : `EXC_INST_ACCESS)
-                    : id_inst_oob   ? `EXC_INST_ACCESS
-                    : id_is_illegal ? `EXC_ILLEGAL_INST
-                    : id_is_ecall   ? `EXC_ECALL_M
-                    : id_is_ebreak  ? `EXC_BREAKPOINT
-                    : 4'd0;
-// 非法指令的 mtval 记指令本身, ecall/ebreak 记 0,
-// 取指故障/越界记那个取不到的地址 (规范)
-assign id_exc_tval  = (id_ifu_fault | id_inst_oob) ? id_pc
-                    : id_is_illegal ? id_inst : 32'b0;
-
-RegFile U_RegFile(
-    .rst(cpu_rst),
-    .clk(cpu_clk),
-    .rR1(id_inst[19:15]),
-    .rR2(id_inst[24:20]),
-    .wR(wb_wR),
-    .we(wb_rf_we_eff),
-    .wD(wb_wD_eff),
-    .rD1(id_rD1),
-    .rD2(id_rD2)
-);
-
-ALU_input_MUX U_ALU_input_MUX(
-    .rD1(id_rD1),
-    .rD2(id_rD2),
-    .pc(id_pc),
-    .sext(id_sext),
-    .alua_sel(id_alua_sel),
-    .alub_sel(id_alub_sel),
-    .A(id_A),
-    .B(id_B)
+// 搬进去的: Control(主译码) / SEXT(立即数) / ID 级异常检出 / RegFile /
+//           ALU_input_MUX(操作数选择)。
+// 留在外面的理由:
+//   * IF_ID / ID_EX 是 IF|ID 与 ID|EX 的**边界寄存器**, 不属于 ID 级本体;
+//   * Hazard_Detection 要看 EX/MEM/WB 三级, 是跨级单元;
+//   * CSR 读数据的 EX→ID 旁路 (下面的 id_csr_rdata) 选择子全在 EX 级, 而且
+//     ex_csr_wdata 在本文件里声明得比这里晚 400 行, 搬进去会变成隐式线网。
+//
+// ⚠️ 右边这些 id_* 网名**一个都不能改**: tb/tb_miniRV_dpi.sv 用
+//    dut.Core_cpu.<net> 一级层次探针直接抓它们
+//    (id_inst/have_inst_ID, id_pc, id_pred_npc, stall/flush_if_id/flush_id_ex,
+//     id_exc_valid/cause/tval)。带 idu_ 前缀的只有 IDU 自己的端口。
+// ---------------------------------------------------------------------------
+IDU U_IDU(
+    .clk                (cpu_clk),
+    .rst                (cpu_rst),
+    // ---- 来自 IF_ID 的指令包 ----
+    .idu_inst_data_i    (id_inst),
+    .idu_have_inst_i    (have_inst_ID),
+    .idu_pc_i           (id_pc),
+    .idu_ifu_fault_i    (id_fault),
+    .idu_ifu_cause_i    (id_cause),
+    // ---- 来自 WB 的寄存器堆写口 ----
+    .idu_wb_wR_i        (wb_wR),
+    .idu_wb_we_i        (wb_rf_we_eff),
+    .idu_wb_wD_i        (wb_wD_eff),
+    // ---- 译码结果: 控制信号 ----
+    .idu_npc_op_o       (id_npc_op),
+    .idu_alu_op_o       (id_alu_op),
+    .idu_rf_wsel_o      (id_rf_wsel),
+    .idu_dram_sel_o     (id_dram_sel),
+    .idu_rf_we_o        (id_rf_we),
+    .idu_ram_we_o       (id_ram_we),
+    .idu_is_muldiv_o    (id_is_muldiv),
+    .idu_is_mret_o      (id_is_mret),
+    // ---- 译码结果: CSR ----
+    .idu_csr_op_o       (id_csr_op),
+    .idu_csr_imm_o      (id_csr_imm),
+    .idu_csr_we_o       (id_csr_we),
+    .idu_csr_addr_o     (id_csr_addr),
+    // ---- 译码结果: 源寄存器使用标志 (给 Hazard_Detection) ----
+    .idu_rf1_used_o     (id_rf1_used),
+    .idu_rf2_used_o     (id_rf2_used),
+    // ---- ID 级数据通路 ----
+    .idu_sext_o         (id_sext),
+    .idu_rD1_o          (id_rD1),
+    .idu_rD2_o          (id_rD2),
+    .idu_A_o            (id_A),
+    .idu_B_o            (id_B),
+    // ---- ID 级异常 ----
+    .idu_exc_vld_o      (id_exc_valid),
+    .idu_exc_cause_o    (id_exc_cause),
+    .idu_exc_tval_o     (id_exc_tval)
 );
 
 wire [31:0] A_forward;

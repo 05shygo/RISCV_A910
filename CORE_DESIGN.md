@@ -13,7 +13,7 @@
 
 | 能力 | 状态 | 落点 |
 |---|---|---|
-| RV32I 基础指令 | ✅ | `Control.v` |
+| RV32I 基础指令 | ✅ | `IDU.v` → `Control.v` |
 | RV32M 乘除法（3 级流水乘法 + 32 拍恢复余数除法） | ✅ | `MUL_DIV.v` |
 | 五级流水 / 前递 / load-use 停顿 / 分支冲刷 | ✅ | `Hazard_Detection.v` |
 | MMIO：MONITOR / DIG / TIMER | ✅ | `perip_bridge.v` |
@@ -39,6 +39,16 @@
  │                 │ 越界/非法/ecall)                  │                 │
 ```
 
+**ID 级是一个模块：`IDU.v`。** 上表里的"译码 + 寄存器堆 + 立即数 + 异常检出"
+整块封装在 `mySoC/IDU.v` 里，它内部例化 `Control.v`（主译码）/ `SEXT.v`（立即数）/
+`RegFile.v` / `ALU_input_MUX.v`（操作数选择）四个文件，另含 ID 级异常检出的
+优先级 mux。`IF_ID` / `ID_EX` 是 IF|ID 与 ID|EX 的**边界寄存器**，留在 `mycpu.v`；
+`Hazard_Detection` 要看 EX/MEM/WB 三级，是跨级单元，也留在 `mycpu.v`。
+IDU 的端口用 `idu_*_i` / `idu_*_o`（与 IFU 侧 `idu_inst0_*` 同风格），但
+`mycpu.v` 顶层的**网名仍是 `id_*`** —— TB 用 `dut.Core_cpu.<net>` 一级层次探针
+直接抓 `id_inst` / `id_pc` / `have_inst_ID` / `id_exc_valid/cause/tval` 等，
+改网名会让 TB 在编译期就挂掉。
+
 **关键事实（后面所有设计都建立在这上面）**
 
 1. **提交点是 WB**：`have_inst_WB` 的脉冲就是"退休了一条指令"，
@@ -51,7 +61,7 @@
 
 ---
 
-## 3. 控制信号一览（`Control.v`）
+## 3. 控制信号一览（`Control.v`，例化于 `IDU.v` 内）
 
 主译码是一个 `case (opcode)`，每个分支给全套控制信号。**坑见 §8.1。**
 
@@ -388,3 +398,92 @@ handler 里"同步异常一律 `mepc+=4`"的惯例对取指越界**不成立**�
 - [ ] 这个功能会影响 difftest 的**提交脉冲**吗？会影响 golden model 的镜像吗？
 - [ ] 有没有对应的 `asm/` 用例？**把关键门控拿掉，测试真的会失败吗？**
       （反向验证——本项目已经抓到过一次"改坏了也不报错"的假覆盖）
+
+---
+
+## 10. ID 级封装成 `IDU.v`（纯层次重构）
+
+### 10.1 做了什么
+
+对外可见的行为**一位没变**。把原先散在 `mycpu.v` 里、横跨约 200 行的 ID 级胶水
+收进一个新的 `mySoC/IDU.v`：
+
+| 搬进 IDU 的 | 原先在哪 |
+|---|---|
+| `Control`（主译码） | `mycpu.v` 里裸例化 |
+| `SEXT`（立即数） | 同上 |
+| ID 级异常检出（越界/故障/非法/ecall/ebreak 的优先级 mux） | `mycpu.v` 内联 `assign` |
+| `RegFile` | `mycpu.v` 里裸例化 |
+| `ALU_input_MUX`（ALU 操作数选择） | 同上 |
+
+`mycpu.v` 的 ID 段现在缩成一个 `IDU U_IDU(...)` 例化。IDU 端口用
+`idu_*_i` / `idu_*_o`（对齐 IFU 侧已有的 `idu_inst0_vld` / `idu_inst0_data` /
+`idu_accept_num` 命名），内部仍用原来的 `id_*` 名字。
+
+### 10.2 设计取舍
+
+- **边界画在"整个 ID 级数据通路"**，`IF_ID` / `ID_EX` 不进 IDU —— 它们是
+  IF|ID 与 ID|EX 的**边界寄存器**，不属于 ID 级本体。`Hazard_Detection` 要看
+  EX/MEM/WB 三级，是跨级单元，也不进。
+- **四个子模块文件零改动，IDU 只做例化与连线。** 没有把 `Control.v` 的
+  `case(opcode)` 抄进 `IDU.v`：那些中文注释（latch 默认值、`dram_sel` 缺省取 LB、
+  `Sext_Z` 的 `din[12:8]`）是"为什么这么写"的唯一载体，搬一次就多一次改错的机会。
+- **CSR 读数据的 EX→ID 旁路 mux 留在 `mycpu.v`**，IDU 只产出
+  `idu_csr_addr_o`。那条 mux 的选择子（`ex_csr_we` / `ex_csr_addr` /
+  `ex_csr_wdata` / `redirect`）全在 EX 级，而且 `ex_csr_wdata` 在本文件里比 ID
+  段晚 400 行声明 —— 搬进 IDU 会踩 §8.1 那个隐式线网坑，还要动 EX 段代码。
+- **IDU 里不放任何 `always` 块**，全部输出是 `output wire`，由子模块实例或
+  `assign` 驱动。这样结构上就推不出 latch。
+
+### 10.3 动了哪些文件 / 新增哪些信号
+
+- 新增 `mySoC/IDU.v`（212 行）。
+- `mySoC/mycpu.v`：删 8 个只活在本级内部的网线，ID 段换成 `IDU U_IDU(...)`；
+  `id_csr_addr` **保留声明但去掉初始化器**（改由 `idu_csr_addr_o` 驱动）。
+- `Control.v` / `SEXT.v` / `RegFile.v` / `ALU_input_MUX.v`：**零改动**。
+- 构建/综合**无需注册文件列表** —— `Makefile:47-50`、`Makefile.verilator:1`、
+  `synth/build_fmax.tcl:113` 全是 `wildcard mySoC/*.v`。
+
+删除的 8 个顶层网线（经 grep 确认除 `mycpu.v` 外无文件引用）：
+`id_sext_op`、`id_alua_sel`、`id_alub_sel`、`id_is_illegal`、`id_is_ecall`、
+`id_is_ebreak`、`id_inst_oob`、`id_ifu_fault`。
+`id_is_mret` / `id_csr_addr` / `id_sext` / `id_rD1` / `id_rD2` / `id_A` / `id_B`
+**必须保留为顶层网线**（`ID_EX.v` 的端口和 TB 探针在用）。
+
+### 10.4 踩过的坑
+
+1. **`id_csr_addr` 声明不能随手删。** 只留 IDU 的例化口而删掉
+   `wire [11:0] id_csr_addr;`，它会变成**隐式 1 位线网**；`ID_EX.ex_csr_addr`
+   与 `U_CSR.raddr_i` 都只剩 1 位 ⇒ 所有 CSR 访问读写到错的寄存器，而 VCS
+   只报 `PCWM-W` **警告**、不报错。自检：
+   `grep -c '^wire \[11:0\] id_csr_addr;' mySoC/mycpu.v` 必须为 1。
+2. **顶层网名一个都不能改成 `idu_*`。** TB 用 `dut.Core_cpu.<net>` 一级层次探针
+   抓 `id_inst` / `id_pc` / `have_inst_ID` / `id_exc_valid/cause/tval` /
+   `stall` / `flush_if_id` / `flush_id_ex`，改名会让 TB **在编译期**就挂。
+   带 `idu_` 前缀的只有 IDU 自己的端口。
+3. **验证 CoreMark 时必须让 `make run` 去链三个镜像。** `meminit.bin`（golden
+   model 的 `PATH`）、`meminit.hex`（数据 RAM）、`meminit128.hex`（取指 ROM）
+   是三个独立软链。只链 `meminit.bin` 再直接调 simv（`scripts/ifu2_cm_sweep.sh`
+   就是这么写的）会让 **DUT 跑上一个用例的程序、golden model 跑 coremark** ——
+   实测表现为"cycle 274 处 reg=a0 值 3 失配"，看起来像 RTL 坏了，其实是镜像错位。
+
+### 10.5 验证方式
+
+判据是**改前改后逐位相等**，不是某个历史分数：
+
+| 门 | 命令 | 判据 |
+|---|---|---|
+| 编译 | `make IFU=0/1/2 BUILD_DIR=obj_idun$f build` | 0 error；警告直方图与基线 **diff 为空**（专门抓隐式线网引入的 `PCWM-W`） |
+| CoreMark | `make IFU=2 TEST=coremark MAX_CYCLES=15000000 run` | `Test Point Pass!` + `cycles` / `retired inst` / `fetch bubble` 逐位相同 |
+| 全用例 | `make IFU=1 run-all` | 48/48 通过，`SUMMARY` 与基线 diff 为空 |
+
+实测结果（2026-09-30，HEAD `5f62684` + 本次改动）：
+
+```
+cycles = 11137603   retired inst = 9440679   fetch bubble = 355302   ← 与改动前逐位相同
+Passed Tests: 48/48   Failed Tests: (none)                            ← 与改动前相同
+```
+
+跑 CoreMark 的三条纪律见 `scripts/ifu2_cm_sweep.sh` 头注释：不给 `SIM_ARGS=`
+（会吃掉 `-exitstatus`，卡死报成 PASS）、`env -u VERDI_HOME -u NOVAS_HOME`
+（否则写共享 FSDB）、`meminit.bin` 是共享软链不能并发跑两个用例。
