@@ -399,6 +399,12 @@ handler 里"同步异常一律 `mepc+=4`"的惯例对取指越界**不成立**�
 - [ ] 有没有对应的 `asm/` 用例？**把关键门控拿掉，测试真的会失败吗？**
       （反向验证——本项目已经抓到过一次"改坏了也不报错"的假覆盖）
 
+> **这条现在有工具了。** `scripts/rev_check.py` + `scripts/rev_mutations.txt`：
+> 按清单逐条故意注入错误 → 重编译 → 断言指定用例**必须失败** → 自动还原。
+> 清单现已覆盖 7 个手写 asm 用例的承重门控（25 条）。改了 RTL 之后先跑
+> `python3 scripts/rev_check.py --validate` 看清单有没有过期。
+> 实测结果与四条幸存变异的归因见 `doc/rev_check_zh.md`。
+
 ---
 
 ## 10. ID 级封装成 `IDU.v`（纯层次重构）
@@ -487,3 +493,12 @@ Passed Tests: 48/48   Failed Tests: (none)                            ← 与改
 跑 CoreMark 的三条纪律见 `scripts/ifu2_cm_sweep.sh` 头注释：不给 `SIM_ARGS=`
 （会吃掉 `-exitstatus`，卡死报成 PASS）、`env -u VERDI_HOME -u NOVAS_HOME`
 （否则写共享 FSDB）、`meminit.bin` 是共享软链不能并发跑两个用例。
+
+**反向验证（补做，2026-10-01）**：逐位相等只证明"没改坏"，不证明"改坏了会被抓到"。
+IDU 的几条承重门控已进 `scripts/rev_mutations.txt`（M01~M04 守
+`have_inst` 门控 / 异常 cause 与 tval 的 mux / `INST_ADDR_OK`；M15 守
+`ALUB_SEL_ZERO`；M05~M11 守 `Control.v` 的 CSR 白名单与 `csr_we`、两个 `id_rf*_used`、
+两个 `dram_sel` 缺省），跑 `python3 scripts/rev_check.py` 复现。
+结论：`have_inst` 那位门控与 `id_inst_oob` 兜底都**被下游二次门控遮蔽**
+（复合变异实验证明：拆掉下游那道才会暴露），两个 `dram_sel` 缺省是**等价变异**。
+详见 `doc/rev_check_zh.md`。

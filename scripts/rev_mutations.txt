@@ -1,0 +1,387 @@
+# ===========================================================================
+# 反向验证 (变异测试) 清单
+#
+# 用法: python3 scripts/rev_check.py [ID ...]
+#
+# 每条 = 一个"故意注入的错误"。驱动会: 精确替换 → 重新编译 → 跑指定用例 →
+# 断言**必须失败** → 还原。抓不到的叫"幸存", 要么是真假覆盖 (要补用例),
+# 要么是纵深防御 (要在报告里如实写明它不独立承重)。
+#
+# 格式 (严格):
+#   ### <ID> <名字>
+#   file:  <相对仓库根的路径>
+#   tests: <空格分隔的用例名>        (branch_bench / c3_only 走指标判据)
+#   note:  <这条守的是什么, 为什么承重>
+#   <<<BEFORE
+#   <原文, 必须与该文件里**恰好一处**逐字节相同>
+#   BEFORE
+#   <<<AFTER
+#   <注入后的文本>
+#   AFTER
+#
+# ⚠️ BEFORE 一旦匹配不上 (改了 RTL 或改错一个字), 驱动会响亮地失败并拒绝跑 ——
+#    这是有意的: 静默跳过一条已经过期的变异, 等于假装验证过了。
+# ===========================================================================
+
+
+# ---------------------------------------------------------------------------
+# A. 译码 / IDU (mySoC/IDU.v)
+# ---------------------------------------------------------------------------
+
+### M01 idu_have_inst_gate_off
+file:  mySoC/IDU.v
+tests: mul trap
+note:  ID 级异常的 have_inst 门控。气泡的 inst 是全零, 而全零正好是"非法指令" ——
+       去掉这个门控, 每一个气泡都会被当成陷阱。这是 IDU 里最承重的一位。
+<<<BEFORE
+assign idu_exc_vld_o   = idu_have_inst_i & (id_ifu_fault | id_inst_oob | id_is_illegal | id_is_ecall | id_is_ebreak);
+BEFORE
+<<<AFTER
+assign idu_exc_vld_o   = (id_ifu_fault | id_inst_oob | id_is_illegal | id_is_ecall | id_is_ebreak);
+AFTER
+
+### M02 exc_cause_illegal_becomes_breakpoint
+file:  mySoC/IDU.v
+tests: trap
+note:  异常优先级 mux 里"非法指令"那一臂的 cause 码 —— 改成 breakpoint(3)。
+       trap.S 对 .word 0xffffffff 断言 mcause==2, 应当抓到。
+<<<BEFORE
+                       : id_is_illegal ? `EXC_ILLEGAL_INST
+BEFORE
+<<<AFTER
+                       : id_is_illegal ? `EXC_BREAKPOINT
+AFTER
+
+### M03 exc_tval_illegal_zero
+file:  mySoC/IDU.v
+tests: trap
+note:  mtval 的取值臂。非法指令的 mtval 按规范要记**指令本身**, 改成记 0。
+       trap.S 检查 mtval == 那条非法指令字, 应当抓到。
+<<<BEFORE
+                       : id_is_illegal ? idu_inst_data_i : 32'b0;
+BEFORE
+<<<AFTER
+                       : id_is_illegal ? 32'b0 : 32'b0;
+AFTER
+
+### M04 inst_addr_ok_unbounded
+file:  mySoC/defines.vh
+tests: trap
+note:  取指越界判据 INST_ADDR_OK 的上界 (IROM 只有 64KB)。放到 4GB ——
+       越界取指不再报 cause 1。trap.S 用 jalr x0,0x20000 专门测这条。
+<<<BEFORE
+`define INST_ADDR_OK(a)  ((a) <= 32'h0000_FFFF)
+BEFORE
+<<<AFTER
+`define INST_ADDR_OK(a)  ((a) <= 32'hFFFF_FFFF)
+AFTER
+
+
+# ---------------------------------------------------------------------------
+# B. 主译码 (mySoC/Control.v)
+# ---------------------------------------------------------------------------
+
+### M05 csr_mscratch_unknown
+file:  mySoC/Control.v
+tests: trap
+note:  已实现 CSR 地址表白名单。把 mscratch 从表里摘掉 —— 它变成"未实现地址",
+       凡访问它都是非法指令。trap.S 的 CSR 旧值语义一节全在用 mscratch。
+<<<BEFORE
+                       || (csr_addr == `CSR_MTVEC)    || (csr_addr == `CSR_MSCRATCH)
+BEFORE
+<<<AFTER
+                       || (csr_addr == `CSR_MTVEC)
+AFTER
+
+### M06 csr_we_always
+file:  mySoC/Control.v
+tests: trap
+note:  CSR 写使能的判据 (csrrw 总是写; csrrs/csrrc 只要 rs1!=x0 才写)。
+       改成恒 1 —— 于是对**只读** CSR 的纯读会被判非法指令。
+       ⚠️ 第一轮跑是**幸存**的: 原来那条 `csrrs x25, mscratch, x0` 里的
+       mscratch **可写**, 恒写也只是把旧值写回去, 语义上没差别。
+       已在 asm/trap.S 补 "反向验证补丁 2" (对 mcycle 的纯读, rd 写 x0),
+       补完即可抓。
+<<<BEFORE
+                        csr_we  = (csr_op == `CSR_OP_RW) || (rs1_addr != 5'b0);
+BEFORE
+<<<AFTER
+                        csr_we  = 1'b1;
+AFTER
+
+### M07 mret_rs1_field_wrong
+file:  mySoC/Control.v
+tests: trap
+note:  mret 的 rs1 域判据。mret 编码里那个 "010" 在 **rs2** 域, rs1 域是 0 ——
+       按 rs1==2 判会把它当成非法指令 (这是 Control.v:93-97 记录的坑)。
+       改成 5'd2 正好复现那个 bug。
+<<<BEFORE
+                        else if (csr_addr == 12'h302 && rs1_addr == 5'd0) is_mret   = 1'b1;
+BEFORE
+<<<AFTER
+                        else if (csr_addr == 12'h302 && rs1_addr == 5'd2) is_mret   = 1'b1;
+AFTER
+
+### M08 rf1_used_off
+file:  mySoC/Control.v
+tests: trap muldiv_edge
+note:  rs1 使用标志 (驱动 Hazard_Detection 的转发通路)。恒 0 ⇒ 用到 rs1 的
+       指令不再转发, 读到旧值。muldiv_edge 有全部依赖距离 0/1/2/3 的用例。
+<<<BEFORE
+assign id_rf1_used = ~((opcode == `OPCODE_LUI) || (opcode == `OPCODE_JAL));
+BEFORE
+<<<AFTER
+assign id_rf1_used = 1'b0;
+AFTER
+
+### M09 rf2_used_off
+file:  mySoC/Control.v
+tests: trap peri
+note:  rs2 使用标志。恒 0 ⇒ store 的写数据 / 分支的比较数不再转发。
+       peri.S 全是 bne 自检, 应当立刻失步。
+<<<BEFORE
+assign id_rf2_used = ((opcode == `OPCODE_R) || (opcode == `OPCODE_S) || (opcode == `OPCODE_B));
+BEFORE
+<<<AFTER
+assign id_rf2_used = 1'b0;
+AFTER
+
+### M10 dram_sel_default_lb_to_sw
+file:  mySoC/Control.v
+tests: muldiv_edge trap
+note:  case 之前的 dram_sel 无条件默认值。LB 让 ex_wsize_word/half 都是 0,
+       于是 ex_addr_bad 对非访存指令根本不看地址; 改成 SW 之后**每条**指令都
+       按"字访问"去查对齐, ALU 结果是奇数的 addi/mul 会被误报非对齐。
+       (Control.v:155-157 专门写了"不要改成 SW/SH"。)
+       ⚠️ 预期**幸存**: 这个默认值其实**已经是 don't-care** ——
+       ex_addr_bad 只被 ex_load_misaligned / ex_store_misaligned 消费
+       (mycpu.v:762-763), 而那两个信号由 ex_is_load(rf_we & rf_wsel==DRAM) /
+       ex_is_store(ram_we) 门控, **根本不看 dram_sel**(这正是 §8.1 那条
+       "判 load 不能只看 dram_sel" 的规矩被落实的结果)。
+       ⇒ 等价变异, 与 M11 同类。
+<<<BEFORE
+    dram_sel = `DRAM_SEL_LB;
+BEFORE
+<<<AFTER
+    dram_sel = `DRAM_SEL_SW;
+AFTER
+
+### M11 store_funct3_default_lw
+file:  mySoC/Control.v
+tests: mul div muldiv_edge
+note:  非法 store funct3 的兜底臂。原为 DRAM_SEL_SW, 改回历史写法 `0`(=LW)。
+       配上 ram_we=1, 非法 funct3 的 store 会按"读选择子"去取写数据 ——
+       Control.v:319-324 记录的是一笔历史相关的垃圾数据。
+       ⚠️ 预期**幸存**, 而且是**等价变异**: MEM.v:46 的 case 之前无条件给了
+       `wdata_out = wdin`, 而 LW 那一臂只赋 rdo、不碰 wdata_out ⇒
+       DRAM_SEL_SW 与 DRAM_SEL_LW 对 store 的**行为逐位相同**;
+       ex_wsize_word 也把 LW/SW 同等看待 (mycpu.v:759)。
+       历史 (Control.v:319-324) 那个垃圾数据 bug 的成因是"MEM.v 的 wdata_out
+       **也是** latch"; MEM.v 修好之后这两个默认值就等价了 —— 加任何用例都
+       抓不到它。详见报告 §4。
+<<<BEFORE
+                default: dram_sel = `DRAM_SEL_SW;
+BEFORE
+<<<AFTER
+                default: dram_sel = `DRAM_SEL_LW;
+AFTER
+
+
+# ---------------------------------------------------------------------------
+# C. ID 级数据通路: SEXT / RegFile / ALU_input_MUX
+# ---------------------------------------------------------------------------
+
+### M12 sext_i_sign_bit
+file:  mySoC/SEXT.v
+tests: mul trap
+note:  I 型立即数的符号位扩展 (符号位取错一位) —— 负立即数全部算错。
+<<<BEFORE
+        `Sext_I: sext = {{20{din[24]}}, din[24:13]};
+BEFORE
+<<<AFTER
+        `Sext_I: sext = {{20{din[23]}}, din[24:13]};
+AFTER
+
+### M13 sext_z_wrong_field
+file:  mySoC/SEXT.v
+tests: trap
+note:  csrr*i 的 uimm5 在 rs1 域。din = inst[31:7], 所以 inst[19:15] = din[12:8]。
+       改成 din[7:3] 就取到 funct3/rd 去了。trap.S 有 csrrwi 用例。
+<<<BEFORE
+        `Sext_Z: sext = {{27{1'b0}}, din[12:8]};
+BEFORE
+<<<AFTER
+        `Sext_Z: sext = {{27{1'b0}}, din[7:3]};
+AFTER
+
+### M14 regfile_x0_writable
+file:  mySoC/RegFile.v
+tests: mul trap
+note:  x0 的硬连零。去掉之后 "写 x0" 真的会写进去。
+       注意 difftest 看不见"写 x0"(两边都把 rd==0 排除掉), 只有**后续读 x0**
+       才暴露 —— 所有用例都在读 x0。
+<<<BEFORE
+        if(wR==0) begin
+BEFORE
+<<<AFTER
+        if(1'b0) begin
+AFTER
+
+### M15 alub_zero_to_rd2
+file:  mySoC/ALU_input_MUX.v
+tests: trap
+note:  csrr* 的 B 口给 0, 让 A 口的 CSR 旧值原样穿过 ALU 写回 rd。
+       改成给 rD2 —— CSR 读回的是 "旧值 + 某个寄存器"。
+       ⚠️ 第一轮跑是**幸存**的, 原因不显然: rD2 = regs[inst[24:20]], 而
+       CSR 指令的 inst[24:20] 是 **csr 地址的低 5 位**。原来那些用例只用
+       mscratch(0x340)/mstatus(0x300), 低 5 位都是 0 ⇒ 索引到 x0 ⇒ 恒 0,
+       于是 "B 口给 0" 和 "B 口给 rD2" 完全分不出来。
+       已在 asm/trap.S 补 "反向验证补丁 1" (用 mtvec=0x305, 低 5 位=5 -> x5,
+       先把 x5 设成非 0 再读), 补完即可抓。
+<<<BEFORE
+        `ALUB_SEL_ZERO: B = 32'b0;   // csrr* 让 A 口原样穿过 ALU 写回 rd
+BEFORE
+<<<AFTER
+        `ALUB_SEL_ZERO: B = rD2;     // MUT
+AFTER
+
+
+# ---------------------------------------------------------------------------
+# D. 陷阱 / 提交点 (mySoC/mycpu.v)
+# ---------------------------------------------------------------------------
+
+### M16 redirect_mret_swap
+file:  mySoC/mycpu.v
+tests: trap
+note:  重定向目标: mret 回 mepc, 其他陷阱去 mtvec。对调之后 mret 跳到陷阱向量,
+       trap.S 的 handler 永远回不去。
+<<<BEFORE
+wire [31:0] redirect_pc = wb_mret ? csr_mepc : csr_trap_vector;
+BEFORE
+<<<AFTER
+wire [31:0] redirect_pc = wb_mret ? csr_trap_vector : csr_mepc;
+AFTER
+
+### M17 wb_rf_we_exc_gate_off
+file:  mySoC/mycpu.v
+tests: trap
+note:  提交点写回门控: 出异常的指令不许写寄存器。去掉 ~wb_exc 之后,
+       非对齐 load 照样把 rd 改掉。trap.S:134-142 专门回读 rd 确认没被改写。
+<<<BEFORE
+wire wb_rf_we_eff = wb_rf_we & ~wb_exc & ~irq_taken;
+BEFORE
+<<<AFTER
+wire wb_rf_we_eff = wb_rf_we & ~irq_taken;
+AFTER
+
+### M18 wb_wD_mul_bypass_off
+file:  mySoC/mycpu.v
+tests: mul div muldiv_edge
+note:  写回数据源: 乘法/除法的结果从自己的写回口出 (md_resp_data), 不是 ALU 的
+       ex_wD。去掉这个选择, 乘除法写回的是 ALU 对操作数算出的垃圾。
+<<<BEFORE
+wire [31:0] wb_wD_eff = wb_is_mul ? md_resp_data : wb_wD;
+BEFORE
+<<<AFTER
+wire [31:0] wb_wD_eff = wb_wD;
+AFTER
+
+
+# ---------------------------------------------------------------------------
+# E. 乘除法互锁 (mySoC/Hazard_Detection.v / MUL_DIV.v / div_pipe.v)
+# ---------------------------------------------------------------------------
+
+### M19 mul_stall_off
+file:  mySoC/Hazard_Detection.v
+tests: muldiv_edge
+note:  乘法互锁。关掉之后, 紧随乘法的消费者会在乘法还没写回时就去读 ——
+       而且更糟: 同一拍 ex_wD 里是 ALU 对 MUL 算子算出的垃圾, 会被前递出去。
+<<<BEFORE
+assign mul_stall = mul_raw1_e | mul_raw2_e | mul_raw1_m | mul_raw2_m;
+BEFORE
+<<<AFTER
+assign mul_stall = 1'b0;
+AFTER
+
+### M20 div_stall_no_stall
+file:  mySoC/Hazard_Detection.v
+tests: div muldiv_edge
+note:  除法占住 EX 期间的停顿。去掉之后除法还没算完, 消费者就往前走了。
+<<<BEFORE
+    if (load_use_exist || div_stall || mul_stall) stall = 1'b1;
+BEFORE
+<<<AFTER
+    if (load_use_exist || mul_stall) stall = 1'b1;
+AFTER
+
+### M21 muldiv_resp_always_div
+file:  mySoC/MUL_DIV.v
+tests: mul div
+note:  写回口仲裁: 按 mul_resp_vld 在乘/除两个结果里选。恒选除法那一路 ⇒
+       所有乘法写回的都是除法单元的输出。
+<<<BEFORE
+assign resp_data   = mul_resp_vld ? mul_resp_data : div_resp_data;
+BEFORE
+<<<AFTER
+assign resp_data   = div_resp_data;
+AFTER
+
+### M22 div_quot_rem_swap
+file:  mySoC/div_pipe.v
+tests: div muldiv_edge
+note:  商/余数的最终选择。对调之后 div 返回余数、rem 返回商。
+<<<BEFORE
+wire [31:0] norm  = is_rem ? rem_s : quo_s;
+BEFORE
+<<<AFTER
+wire [31:0] norm  = is_rem ? quo_s : rem_s;
+AFTER
+
+
+# ---------------------------------------------------------------------------
+# F. 外设桥 (mySoC/perip_bridge.v)
+# ---------------------------------------------------------------------------
+
+### M23 perip_sel_dram_always
+file:  mySoC/perip_bridge.v
+tests: peri
+note:  DRAM 选区的上界 (只有低 64KB 才是真的 DRAM)。去掉之后 MMIO 写也会
+       落到 DRAM 上 —— 地址 0x8000_0000 截断成 0, 污染 DRAM[0]。
+       peri.S 第 6 项就是回读 DRAM[0] 确认没被 MMIO 写污染。
+<<<BEFORE
+    wire sel_dram = (Bus_addr <= 32'h0000_FFFF);
+BEFORE
+<<<AFTER
+    wire sel_dram = 1'b1;
+AFTER
+
+
+# ---------------------------------------------------------------------------
+# G. 分支预测 (指标判据 —— 这两条用例**结构上**不可能靠返回码抓到预测错误)
+# ---------------------------------------------------------------------------
+
+### M24 l0_btb_never_arm
+file:  mySoC/ifu_rv32i/rtl/rv32_ifu_l0_btb.v
+tests: branch_bench
+note:  L0 BTB 的分配使能。恒 0 ⇒ L0 永远不装条目 (只剩 L1)。
+       判据是指标: branch_bench 的 +BENCH 逐类统计必须变化。
+<<<BEFORE
+  assign alloc_vld = update_en && !update_match && update_taken;
+BEFORE
+<<<AFTER
+  assign alloc_vld = 1'b0;
+AFTER
+
+### M25 bht_sel_index_drops_phase
+file:  mySoC/ifu_rv32i/rtl/rv32_ifu_bht.v
+tests: c3_only branch_bench
+note:  BHT 选择器阵列的写索引 = PC[9:3] (字索引, 含"相位"低 3 位里被用来
+       区分交替分支的那一位)。右移一位把相邻两条交替分支的选择器合并 ——
+       这正是 memory bp-class3-root-cause 记的"word 索引不随相位分开"。
+       c3_only 就是为这一条造的定向用例。
+<<<BEFORE
+  assign bht_wr_buf_sel_updt_index[6:0] = cur_cur_pc[9:3];
+BEFORE
+<<<AFTER
+  assign bht_wr_buf_sel_updt_index[6:0] = cur_cur_pc[9:4];
+AFTER

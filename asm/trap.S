@@ -95,6 +95,41 @@ reset_vector:
     csrrs x25, mscratch, x0
     bne  x25, x23, fail
 
+    # ---- 反向验证补丁 1: CSR 读的 B 口必须是 0 ----------------------------
+    # 守 ALU_input_MUX 的 `ALUB_SEL_ZERO: B = 32'b0`。改成 B=rD2 时,
+    # CSR 读回的就是 "旧值 + 某个寄存器", 下面这条会立刻不等。
+    #
+    # 选 CSR 有一条**不显然**的准则: 它的**低 5 位** (inst[24:20], 也就是
+    # ALU_input_MUX.rD2 取到的寄存器号) 索引到的那个寄存器**必须非 0**。
+    # 上面全部 CSR 用例只用了 mscratch(0x340) 和 mstatus(0x300) —— 两者低 5 位
+    # 都是 0, 索引到 x0, 而 x0 恒为 0, 于是 "B 口给 0" 和 "B 口给 rD2"
+    # **完全分不出来** (第一版反向验证就是在这里漏掉的)。
+    # mtvec = 0x305 -> 低 5 位 = 5 -> x5, 所以先把 x5 设成非 0 再读。
+    la   x28, trap_handler
+    csrw mtvec, x28
+    li   x5, 0xDEADBEEF          # 让 rD2 指向的 x5 非 0
+    csrr x29, mtvec
+    bne  x29, x28, fail          # 正确结果 = mtvec 本身, 不是 mtvec + x5
+    li   x5, 0
+
+    # ---- 反向验证补丁 2: 对**只读** CSR 的纯读必须合法 --------------------
+    # 守 Control.v 的 `csr_we = (csr_op == CSR_OP_RW) || (rs1_addr != 5'b0)`。
+    # 若 csr_we 被写成恒 1, `csrrs rd, <只读 CSR>, x0` 会撞上
+    # `is_illegal = csr_we && csr_addr_ro` 而被判非法 —— 但上面那条
+    # `csrrs x25, mscratch, x0` 的 mscratch **可写**, 恒写也只是把旧值写回去,
+    # 语义上没有差别, 所以它抓不到。
+    # 这里用 mcycle (只读): 拿 x5 当哨兵, 没陷入它就该保持 -1。
+    #
+    # ⚠️ rd **必须写 x0** (读出来丢掉)。写成 `csrrs x29, mcycle, x0` 会让
+    #    difftest 直接失配: DUT 的 mcycle 数真实周期, 参考模型是提交步进的、
+    #    只能按"每条指令 +1"计数 (DUT_BUG_REPORT 16.3), 两者本来就对不上 ——
+    #    计数器的值一旦落进 rd 就会被提交点比较。实测踩过 (第 1146 拍失配)。
+    #    这里只需要"有没有陷入"这一个信息, 值本身不要。
+    li   x5, -1
+    csrrs x0, mcycle, x0
+    li   x28, -1
+    bne  x5, x28, fail
+
     # ===================== 2. ecall -> mcause 11 =====================
     li   x10, 0
 test_ecall:

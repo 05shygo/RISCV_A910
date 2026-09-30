@@ -39,3 +39,7 @@ simv
 simv.daidir/
 *.vpd
 csrc/
+
+# python
+__pycache__/
+*.pyc
