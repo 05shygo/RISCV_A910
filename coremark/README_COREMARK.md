@@ -192,12 +192,31 @@ CoreMark 通过以下指标评估 CPU 性能：
 
 ## 🔗 工具链信息
 
+**2026-09-29 起统一用 GCC 14.2.0**（见顶层 `Makefile` 的 `TOOLCHAIN`/`CROSS`）。
+
 ```bash
-工具链路径: /x2025/GPrj1/IC1/riscv/RISCV_CPU/open_riscv_2035/tools/newlib/bin
-编译器: riscv64-unknown-elf-gcc (Xuantie-900 elf newlib gcc Toolchain V2.10.2)
-版本: 10.4.0
-目标: RV32I (-march=rv32i -mabi=ilp32)
+工具链路径: /x2025/GPrj1/IC1/riscv/RISCV_CPU/tools/riscv/bin
+编译器:     riscv32-unknown-elf-gcc  (binutils 2.43.1)
+版本:       14.2.0
+目标:       RV32IM (-march=rv32im -mabi=ilp32)
 ```
+
+为什么换：同一份源码、同一个核，**只换编译器 CoreMark 从 2.584 → 2.694（+4.25%）**。
+收益全部来自分支行为 —— 控制转移少 8.1%、**误预测砍 54%**（366,940 → 167,188），
+IPC 0.795 → 0.847。是编译器做 if-conversion + 更好布局的结果，与 RTL 无关，**零面积**。
+作为对比：上 TAGE 预测器只有 2.662 且要多 4,088 bit 面积。
+
+这个包原本在本机跑不起来（要 glibc ≥ 2.34，本机 CentOS 7 是 2.17），现在靠
+`tools/glibc234` 的移植 glibc + patchelf 打过的 RPATH 就地能跑，**不需要设任何环境变量**。
+
+临时回退到旧的 Xuantie GCC 10.4：
+```bash
+make coremark TOOLCHAIN=/x2025/GPrj1/IC1/riscv/RISCV_CPU/open_riscv_2035/tools/newlib/bin \
+              CROSS=riscv64-unknown-elf-
+```
+
+⚠️ 换成 GCC 14.2 后 `asm/*.S` 的 `-march` 必须带 `_zicsr`（`trap.S` 用了 `csrw`），
+binutils 2.43 会正确拒绝没有 zicsr 的 CSR 指令。
 
 ---
 

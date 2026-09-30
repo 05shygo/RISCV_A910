@@ -6,7 +6,7 @@ Disassembly of section .text:
 
 00000000 <_start>:
    0:	0080006f          	j	8 <reset_vector>
-   4:	0000                	unimp
+   4:	0000                	.insn	2, 0x
 	...
 
 00000008 <reset_vector>:
@@ -81,18 +81,25 @@ Disassembly of section .text:
 Disassembly of section .riscv.attributes:
 
 00000000 <.riscv.attributes>:
-   0:	1e41                	addi	t3,t3,-16
-   2:	0000                	unimp
-   4:	7200                	flw	fs0,32(a2)
-   6:	7369                	lui	t1,0xffffa
+   0:	3041                	.insn	2, 0x3041
+   2:	0000                	.insn	2, 0x
+   4:	7200                	.insn	2, 0x7200
+   6:	7369                	.insn	2, 0x7369
    8:	01007663          	bgeu	zero,a6,14 <reset_vector+0xc>
-   c:	0014                	0x14
-   e:	0000                	unimp
-  10:	7205                	lui	tp,0xfffe1
-  12:	3376                	fld	ft6,376(sp)
-  14:	6932                	flw	fs2,12(sp)
-  16:	7032                	flw	ft0,44(sp)
-  18:	5f30                	lw	a2,120(a4)
-  1a:	326d                	jal	fffff9c4 <__global_pointer$+0xffffdf5c>
-  1c:	3070                	fld	fa2,224(s0)
+   c:	0026                	.insn	2, 0x0026
+   e:	0000                	.insn	2, 0x
+  10:	7205                	.insn	2, 0x7205
+  12:	3376                	.insn	2, 0x3376
+  14:	6932                	.insn	2, 0x6932
+  16:	7032                	.insn	2, 0x7032
+  18:	5f31                	.insn	2, 0x5f31
+  1a:	326d                	.insn	2, 0x326d
+  1c:	3070                	.insn	2, 0x3070
+  1e:	7a5f 6369 7273      	.insn	6, 0x727363697a5f
+  24:	7032                	.insn	2, 0x7032
+  26:	5f30                	.insn	2, 0x5f30
+  28:	6d7a                	.insn	2, 0x6d7a
+  2a:	756d                	.insn	2, 0x756d
+  2c:	316c                	.insn	2, 0x316c
+  2e:	3070                	.insn	2, 0x3070
 	...

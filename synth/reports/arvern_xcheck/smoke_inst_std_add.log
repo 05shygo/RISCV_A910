@@ -1,0 +1,312 @@
+Instruction mode: STD_MODE (using -march=rv32im_zbb_zba_zbs_zbc_zicsr_zifencei)
+      $ riscv-none-elf-gcc -march=rv32im_zbb_zba_zbs_zbc_zicsr_zifencei -mabi=ilp32 -nostartfiles -Wall -Wextra -O0 -T pmem.ld pmem.s /x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/sim/rtl_sim/run/../src/random_irq_trap_handler.s -o pmem.elf
+      $ riscv-none-elf-objcopy -O ihex pmem.elf  pmem.ihex
+      $ riscv-none-elf-objdump -dSt    pmem.elf >pmem.lst
+      $ riscv-none-elf-size         pmem.elf >pmem.size
+      $ /x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/sim/rtl_sim/run/../bin/lst2checker.py pmem.lst checker_data.mem
+INFO: Parsing listing file: pmem.lst
+INFO: Generated checker memory file: checker_data.mem
+INFO: Total instructions: 115
+INFO: Checker data generation complete
+
+Binary size: 460B
+Running simulation with: vcs
+SIMULATION SEED: 1380747607
+                         Chronologic VCS (TM)
+          Version V-2023.12-SP2 -- Tue Sep 29 17:24:50 2026
+
+                    Copyright (c) 1991 - 2024 Synopsys, Inc.
+   This software and the associated documentation are proprietary to Synopsys,
+ Inc. This software may only be used in accordance with the terms and conditions
+ of a written license agreement with Synopsys, Inc. All other use, reproduction,
+   or distribution of this software is strictly prohibited.  Licensed Products
+     communicate with Synopsys servers for the purpose of providing software
+    updates, detecting software piracy and verifying that customers are using
+    Licensed Products in conformity with the applicable License Key for such
+  Licensed Products. Synopsys will use information gathered in connection with
+    this process to deliver software updates and pursue software pirates and
+                                   infringers.
+
+ Inclusivity & Diversity - Visit SolvNetPlus to read the "Synopsys Statement on
+            Inclusivity and Diversity" (Refer to article 000036315 at
+                        https://solvnetplus.synopsys.com)
+
+
+Warning-[LCA_FEATURES_ENABLED] Usage warning
+  LCA features enabled by '-lca' argument on the command line.  For more 
+  information regarding list of LCA features please refer to Chapter "LCA 
+  features" in the VCS Release Notes
+
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/ahb_bus_system.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/ahb_arbiter.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/ahb_decoder.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/ahb_waitstate_inserter.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/osc.v'
+Parsing included file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/timescale.v'.
+Back to file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/osc.v'.
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/rom.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/sram.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/probes_cpu.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/probes_mem.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/probes_instructions.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/monitor_exception.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/instruction_pc_checker.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/ahb_protocol_checker.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/tb_arvern.v'
+Parsing included file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/timescale.v'.
+Back to file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/tb_arvern.v'.
+Parsing included file 'arv_parameterization.v'.
+Back to file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/tb_arvern.v'.
+Parsing included file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/check_tasks.v'.
+Back to file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/tb_arvern.v'.
+Parsing included file 'stimulus.v'.
+Back to file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/tb_arvern.v'.
+Parsing included file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/random_irq_injector.v'.
+Back to file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/tb_arvern.v'.
+
+Warning-[IPDW] Identifier previously declared
+/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/tb_arvern.v, 378
+  Second declaration for identifier 'resetn_lf' ignored
+  Identifier 'resetn_lf' previously declared as wire. 
+  [/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/tb_arvern.v, 371]
+
+Parsing included file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/tb_irq_checkers.v'.
+Back to file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/tb_arvern.v'.
+Parsing design file './probes_variables.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/arv_common/rtl/verilog/arv_ipdff.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/arv_common/rtl/verilog/arv_synchronizer.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_rom_controller/rtl/verilog/ahb_rom_controller.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_sram_controller/rtl/verilog/ahb_sram_controller.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_periph_example/rtl/verilog/ahb_periph_example.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_interconnect/rtl/verilog/ahb_default_subordinate.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_interconnect/rtl/verilog/ahb_subordinate_mux.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_interconnect/rtl/verilog/ahb_manager_if.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_interconnect/rtl/verilog/ahb_manager_mux.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_interconnect/rtl/verilog/ahb_arbiter_2m.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_interconnect/rtl/verilog/ahb_fused_rom_ctrl.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_interconnect/rtl/verilog/ahb_fused_sram_ctrl.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_interconnect/rtl/verilog/ahb_interconnect_generic.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_interconnect/rtl/verilog/ahb_interconnect_hiperf.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_interconnect/rtl/verilog/ahb_interconnect_fused.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/arv_custom_csr/rtl/verilog/arv_ccsr_rdwr.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/arv_custom_csr/rtl/verilog/arv_ccsr_rdonly.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/arv_custom_csr/rtl/verilog/arv_custom_csr.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_plic/rtl/verilog/plic_priority.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_plic/rtl/verilog/plic_pending.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_plic/rtl/verilog/plic_enable.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_plic/rtl/verilog/plic_target.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_plic/rtl/verilog/ahb_plic.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_aclint/rtl/verilog/aclint_gray2bin.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_aclint/rtl/verilog/aclint_mtimer_count_lf.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_aclint/rtl/verilog/aclint_mtimer_gray_sync.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_aclint/rtl/verilog/aclint_mtimer_write_cdc.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_aclint/rtl/verilog/aclint_mtimer.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_aclint/rtl/verilog/aclint_mswi.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_aclint/rtl/verilog/aclint_sswi.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_aclint/rtl/verilog/ahb_aclint.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/rtl/verilog/arvern.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/rtl/verilog/arv_dff.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/rtl/verilog/arv_fetch.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/rtl/verilog/arv_decode.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/rtl/verilog/arv_uop_sequencer.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/rtl/verilog/arv_int_registers.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/rtl/verilog/arv_csr_top.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/rtl/verilog/arv_csr_cntr.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/rtl/verilog/arv_csr_hpm.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/rtl/verilog/arv_csr_ids.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/rtl/verilog/arv_csr_traps.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/rtl/verilog/arv_alu.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/rtl/verilog/arv_alu_muldiv.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/rtl/verilog/arv_load_store.v'
+Top Level Modules:
+       ahb_arbiter
+       tb_arvern
+       ahb_interconnect_generic
+       ahb_interconnect_fused
+TimeScale is 1 ns / 100 ps
+
+Warning-[TFIPC] Too few instance port connections
+/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/tb_arvern.v, 540
+tb_arvern, "arvern #(.RV32E_EN(RV32E_EN), .B_EXTENSION(B_EXTENSION), .C_EXTENSION(C_EXTENSION), .M_EXTENSION(M_EXTENSION), .MUL_TYPE(MUL_TYPE), .DIV_TYPE(DIV_TYPE), .CCSR_EN(CCSR_EN), .NMI_EN(NMI_EN), .SU_MODE_EN(SU_MODE_EN), .ZICNTR_EN(ZICNTR_EN), .ZIHPM_NR(ZIHPM_NR), .ASYNC_RST_EN(ASYNC_RST_EN), .SINGLE_CYCLE_BRANCH(SINGLE_CYCLE_BRANCH), .MVENDORID(MVENDORID)) dut( .hclk_i (dut_hclk),  .hresetn_i (hresetn),  .hclk_en_o (dut_hclk_en),  .inst_hrdata_i (inst_hrdata),  .inst_hready_i (inst_hready),  .inst_hresp_i (inst_hresp),  .inst_haddr_o (inst_haddr),  .inst_hburst_o (inst_hburst),  .inst_hmastlock_o (inst_hmastlock),  .inst_hprot_o (inst_hprot),  .inst_hsize_o (inst_hsize),  .inst_hsmode_o (inst_hsmode),  .inst_htrans_o (inst_htrans),  .inst_hwdata_o (inst_hwdat ... "
+  The above instance has fewer port connections than the module definition.
+  Please use '+lint=TFIPC-L' to print out detailed information of unconnected 
+  ports.
+
+
+Warning-[IWNF] Implicit wire has no fanin
+/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/tb_arvern.v, 371
+  Implicit wire 'resetn_lf' does not have any driver, please make sure this is
+  intended.
+
+Notice: Ports coerced to inout, use -notice for details
+Starting vcs inline pass...
+
+38 modules and 0 UDP read.
+recompiling module ahb_bus_system
+recompiling module ahb_arbiter
+recompiling module ahb_decoder
+recompiling module ahb_waitstate_inserter
+recompiling module rom
+recompiling module sram
+recompiling module probes_cpu
+recompiling module probes_cpu_alt
+recompiling module probes_rom
+recompiling module probes_sram
+recompiling module probes_instructions
+recompiling module monitor_exception
+recompiling module instruction_pc_checker
+recompiling module ahb_protocol_checker
+recompiling module tb_arvern
+recompiling module ahb_rom_controller
+recompiling module ahb_sram_controller
+recompiling module ahb_periph_example
+recompiling module ahb_default_subordinate
+recompiling module ahb_subordinate_mux
+recompiling module ahb_manager_if
+recompiling module ahb_manager_mux
+recompiling module ahb_interconnect_generic
+recompiling module ahb_interconnect_fused
+recompiling module arv_custom_csr
+recompiling module plic_enable
+recompiling module plic_target
+recompiling module ahb_plic
+recompiling module aclint_gray2bin
+recompiling module arvern
+recompiling module arv_uop_sequencer
+recompiling module arv_int_registers
+recompiling module arv_csr_top
+recompiling module arv_csr_cntr
+recompiling module arv_csr_hpm
+recompiling module arv_csr_ids
+recompiling module arv_alu
+recompiling module arv_load_store
+All of 38 modules done
+make: Warning: File `filelist.hsopt.llvm2_0.objs' has modification time 593 s in the future
+make: warning:  Clock skew detected.  Your build may be incomplete.
+make: Warning: File `filelist.cu' has modification time 559 s in the future
+make[1]: Warning: File `filelist.cu' has modification time 559 s in the future
+rm -f _cuarc*.so _csrc*.so pre_vcsobj_*.so share_vcsobj_*.so
+make[1]: warning:  Clock skew detected.  Your build may be incomplete.
+make[1]: Warning: File `filelist.cu' has modification time 559 s in the future
+make[1]: warning:  Clock skew detected.  Your build may be incomplete.
+if [ -x ../simv ]; then chmod a-x ../simv; fi
+g++  -o ../simv      -m32 -m32 -rdynamic  -Wl,-rpath='$ORIGIN'/simv.daidir -Wl,-rpath=./simv.daidir -Wl,-rpath=/mnt/tools/synopsys/vcs/V-2023.12-SP2/linux/lib -L/mnt/tools/synopsys/vcs/V-2023.12-SP2/linux/lib  -Wl,-rpath-link=./   objs/amcQw_d.o   _18385_archive_1.so   SIM_l.o       rmapats_mop.o rmapats.o rmar.o rmar_nd.o  rmar_llvm_0_1.o rmar_llvm_0_0.o            -lvirsim -lerrorinf -lsnpsmalloc -lvfs    -lvcsnew -lsimprofile -luclinative /mnt/tools/synopsys/vcs/V-2023.12-SP2/linux/lib/vcs_tls.o   -Wl,-whole-archive  -lvcsucli    -Wl,-no-whole-archive        _vcs_pli_stub_.o   /mnt/tools/synopsys/vcs/V-2023.12-SP2/linux/lib/vcs_save_restore_new.o /mnt/tools/synopsys/verdi/V-2023.12-SP2/share/PLI/VCS/LINUX/pli.a /mnt/tools/synopsys/vcs/V-2023.12-SP2/linux/lib/ctype-stubs_32.a -ldl  -lc -lm -lpthread -ldl 
+../simv up to date
+make: warning:  Clock skew detected.  Your build may be incomplete.
+Info: [VCS_SAVE_RESTORE_INFO] ASLR (Address Space Layout Randomization) is detected on the machine. To enable $save functionality, ASLR will be switched off and simv re-executed.
+Please use '-no_save' simv switch to avoid re-execution or '-suppress=ASLR_DETECTED_INFO' to suppress this message.
+
+Warning-[LCA_FEATURES_ENABLED] Usage warning
+  LCA features enabled by '-lca' argument on the command line.  For more 
+  information regarding list of LCA features please refer to Chapter "LCA 
+  features" in the VCS Release Notes
+
+Chronologic VCS simulator copyright 1991-2023
+Contains Synopsys proprietary information.
+Compiler version V-2023.12-SP2; Runtime version V-2023.12-SP2;  Sep 29 17:25 2026
+INFO-VERILOG: [Instruction/PC Checker] Loading checker data...
+INFO-VERILOG: [Instruction/PC Checker] Loaded 115 instruction entries
+VCD+ Writer V-2023.12-SP2 Copyright (c) 1991-2023 by Synopsys Inc.
+
+
+ ====================================================================
+|                 CHECK REGISTER VALUES BEFORE THE ADD               |
+ ====================================================================
+
+Waiting for the firmware...
+PASS:  CPU Register check -- x1  -- value: 0xffffffff   59501 ns ns
+PASS:  CPU Register check -- x2  -- value: 0xffffffff   59502 ns ns
+PASS:  CPU Register check -- x3  -- value: 0xffffffff   59503 ns ns
+PASS:  CPU Register check -- x4  -- value: 0xffffffff   59504 ns ns
+PASS:  CPU Register check -- x5  -- value: 0xffffffff   59505 ns ns
+PASS:  CPU Register check -- x6  -- value: 0xffffffff   59506 ns ns
+PASS:  CPU Register check -- x7  -- value: 0xffffffff   59507 ns ns
+PASS:  CPU Register check -- x8  -- value: 0xffffffff   59508 ns ns
+PASS:  CPU Register check -- x9  -- value: 0xffffffff   59509 ns ns
+PASS:  CPU Register check -- x10 -- value: 0xffffffff   59510 ns ns
+PASS:  CPU Register check -- x11 -- value: 0xffffffff   59511 ns ns
+PASS:  CPU Register check -- x12 -- value: 0xffffffff   59512 ns ns
+PASS:  CPU Register check -- x13 -- value: 0xffffffff   59513 ns ns
+PASS:  CPU Register check -- x14 -- value: 0xffffffff   59514 ns ns
+PASS:  CPU Register check -- x15 -- value: 0xffffffff   59515 ns ns
+PASS:  CPU Register check -- x16 -- value: 0xffffffff   59516 ns ns
+PASS:  CPU Register check -- x17 -- value: 0xffffffff   59517 ns ns
+PASS:  CPU Register check -- x18 -- value: 0xffffffff   59518 ns ns
+PASS:  CPU Register check -- x19 -- value: 0xffffffff   59519 ns ns
+PASS:  CPU Register check -- x20 -- value: 0xffffffff   59520 ns ns
+PASS:  CPU Register check -- x21 -- value: 0xffffffff   59521 ns ns
+PASS:  CPU Register check -- x22 -- value: 0xffffffff   59522 ns ns
+PASS:  CPU Register check -- x23 -- value: 0xffffffff   59523 ns ns
+PASS:  CPU Register check -- x24 -- value: 0xffffffff   59524 ns ns
+PASS:  CPU Register check -- x25 -- value: 0xffffffff   59525 ns ns
+PASS:  CPU Register check -- x26 -- value: 0xffffffff   59526 ns ns
+PASS:  CPU Register check -- x27 -- value: 0xffffffff   59527 ns ns
+PASS:  CPU Register check -- x28 -- value: 0xffffffff   59528 ns ns
+PASS:  CPU Register check -- x29 -- value: 0xffffffff   59529 ns ns
+PASS:  CPU Register check -- x30 -- value: 0xffffffff   59530 ns ns
+PASS:  CPU Register check -- x31 -- value: 0xffffffff   59531 ns ns
+
+
+ ====================================================================
+|                 CHECK REGISTER VALUES AFTER THE ADD                |
+ ====================================================================
+
+Waiting for the firmware...
+PASS:  CPU Register check -- x1  -- value: 0x0000000a   85501 ns ns
+PASS:  CPU Register check -- x2  -- value: 0x00000014   85502 ns ns
+PASS:  CPU Register check -- x3  -- value: 0x0000001e   85503 ns ns
+PASS:  CPU Register check -- x4  -- value: 0x000004d2   85504 ns ns
+PASS:  CPU Register check -- x5  -- value: 0xfffffb2e   85505 ns ns
+PASS:  CPU Register check -- x6  -- value: 0x00000000   85506 ns ns
+PASS:  CPU Register check -- x7  -- value: 0xffffff9c   85507 ns ns
+PASS:  CPU Register check -- x8  -- value: 0xffffff38   85508 ns ns
+PASS:  CPU Register check -- x9  -- value: 0xfffffed4   85509 ns ns
+PASS:  CPU Register check -- x10 -- value: 0x00000000   85510 ns ns
+PASS:  CPU Register check -- x11 -- value: 0xabcdef01   85511 ns ns
+PASS:  CPU Register check -- x12 -- value: 0xabcdef01   85512 ns ns
+PASS:  CPU Register check -- x13 -- value: 0xabcdef01   85513 ns ns
+PASS:  CPU Register check -- x14 -- value: 0x7fffffff   85514 ns ns
+PASS:  CPU Register check -- x15 -- value: 0x00000001   85515 ns ns
+PASS:  CPU Register check -- x16 -- value: 0x80000000   85516 ns ns
+PASS:  CPU Register check -- x17 -- value: 0x80000000   85517 ns ns
+PASS:  CPU Register check -- x18 -- value: 0xffffffff   85518 ns ns
+PASS:  CPU Register check -- x19 -- value: 0x7fffffff   85519 ns ns
+PASS:  CPU Register check -- x20 -- value: 0x00000064   85520 ns ns
+PASS:  CPU Register check -- x21 -- value: 0xffffffce   85521 ns ns
+PASS:  CPU Register check -- x22 -- value: 0x00000032   85522 ns ns
+PASS:  CPU Register check -- x23 -- value: 0xffffffff   85523 ns ns
+PASS:  CPU Register check -- x24 -- value: 0xffffffff   85524 ns ns
+PASS:  CPU Register check -- x25 -- value: 0xffffffff   85525 ns ns
+PASS:  CPU Register check -- x26 -- value: 0xffffffff   85526 ns ns
+PASS:  CPU Register check -- x27 -- value: 0xffffffff   85527 ns ns
+PASS:  CPU Register check -- x28 -- value: 0xffffffff   85528 ns ns
+PASS:  CPU Register check -- x29 -- value: 0xffffffff   85529 ns ns
+PASS:  CPU Register check -- x30 -- value: 0xffffffff   85530 ns ns
+PASS:  CPU Register check -- x31 -- value: 0xdeadbeef   85531 ns ns
+
+
+
+ ===============================================
+|               SIMULATION PASSED               |
+ ===============================================
+
+
+ ===============================================
+| [Instruction/PC Checker] Summary              |
+|   Total instruction/PC pairs checked: 99
+ ===============================================
+
+SIMULATION SEED:  1380747607
+
+$finish called from file "/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/tb_arvern.v", line 941.
+$finish at simulation time  105501 ns
+           V C S   S i m u l a t i o n   R e p o r t 
+Time: 105501000 ps
+CPU Time:      0.460 seconds;       Data structure size:   0.3Mb
+Tue Sep 29 17:25:33 2026
+CPU time: 2.097 seconds to compile + .580 seconds to elab + .270 seconds to link + .557 seconds in simulation
+Generated arv_parameterization.v from run_config.json defaults
+Generated march_config.sh: MARCH_STD=rv32im_zbb_zba_zbs_zbc_zicsr_zifencei, MARCH_COMP=rv32imc_zbb_zba_zbs_zbc_zcb_zcmp_zcmt_zicsr_zifencei, toolchain=xpacks, optimization=-O2
+
+To re-run this test:  > ./run inst_std_add  -seed 1380747607
+

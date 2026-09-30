@@ -97,13 +97,23 @@ SIM_ARGS += -exitstatus
 # ---------------------------------------------------------------------------
 # 汇编用例的构建规则.
 # 以前没有这条规则(asm/*.S 都是手敲命令建的), 加陷阱用例时补上.
-# 工具链必须用 open_riscv_2035 里的这套: ../tools/riscv/bin 下那套在本机
-# 因为 glibc 版本不匹配(缺 GLIBC_2.32/2.33/2.34)跑不起来.
+# 工具链统一用 GCC 14.2.0 (riscv-collab 官方 release 包)。
+# 为什么换: 同一份源码同一个核, 只换编译器 CoreMark 从 2.584 → 2.694 (+4.25%)。
+# 收益全部来自分支行为 —— 控制转移少 8.1%、误预测砍 54% (366,940 → 167,188),
+# IPC 0.795 → 0.847。是编译器做 if-conversion + 更好布局的结果, 与 RTL 无关,
+# 零面积。详见 memory gcc14-on-our-core。
+#
+# 这个包原本在本机跑不起来(要 glibc >= 2.34, 而本机是 CentOS 7 / glibc 2.17);
+# 现在靠 tools/glibc234 的移植 glibc + patchelf 打过的 RPATH 就地能跑,
+# **不需要设置任何 PATH 或环境变量**。详见 memory riscv32-gcc14-toolchain。
+# 想临时回退到旧的 Xuantie GCC 10.4:
+#   make ... TOOLCHAIN=/x2025/GPrj1/IC1/riscv/RISCV_CPU/open_riscv_2035/tools/newlib/bin CROSS=riscv64-unknown-elf-
+#
 # -Wl,-Ttext=0 让镜像从地址 0 开始(CPU 复位后从 PC=0 取指),
 # objcopy -O binary 生成扁平镜像给 IROM/DRAM 的 $fread 用.
 # ---------------------------------------------------------------------------
-TOOLCHAIN ?= /x2025/GPrj1/IC1/riscv/RISCV_CPU/open_riscv_2035/tools/newlib/bin
-CROSS     ?= riscv64-unknown-elf-
+TOOLCHAIN ?= /x2025/GPrj1/IC1/riscv/RISCV_CPU/tools/riscv/bin
+CROSS     ?= riscv32-unknown-elf-
 ASM_SRCS  := $(wildcard $(PWD)/asm/*.S)
 ASM_BINS  := $(patsubst $(PWD)/asm/%.S,$(PWD)/bin/%.bin,$(ASM_SRCS))
 
@@ -113,7 +123,9 @@ asm: $(ASM_BINS)
 
 $(PWD)/bin/%.bin: $(PWD)/asm/%.S
 	@mkdir -p $(PWD)/bin
-	@$(TOOLCHAIN)/$(CROSS)gcc -march=rv32im -mabi=ilp32 -nostdlib -nostartfiles \
+	# _zicsr 不能省: asm/trap.S 用了 csrw/csrr, 而 binutils 2.43 会正确拒绝
+	# 没有 zicsr 的 CSR 指令(旧的 Xuantie binutils 2.35 放过了, 所以以前没暴露)。
+	@$(TOOLCHAIN)/$(CROSS)gcc -march=rv32im_zicsr -mabi=ilp32 -nostdlib -nostartfiles \
 	    -Wl,-Ttext=0 $< -o $(PWD)/asm/$*.elf
 	@$(TOOLCHAIN)/$(CROSS)objdump -D $(PWD)/asm/$*.elf > $(PWD)/asm/$*.dump
 	@$(TOOLCHAIN)/$(CROSS)objcopy -O binary $(PWD)/asm/$*.elf $@
@@ -144,12 +156,25 @@ $(PWD)/bin/%.hex128: $(PWD)/bin/%.bin
 
 all: run
 
-# Build CoreMark for RV32I
+# Build CoreMark
+#
+# ITERATIONS=30 才是带完整校验、可以引用的跑分: CoreMark 规定必须跑满 10 秒,
+# 而本 port 里 1 拍 = 1 µs(按 1 MHz 归一, 这样分数就是 CoreMark/MHz),
+# 所以迭代数少于约 11 次会被 total_errors 判掉, 打印 "Errors detected"。
+# bin/coremark.bin 入库的就是 30 次那版, 所以这里默认也取 30 ——
+# 否则 `make coremark` 产出的二进制和入库的对不上。
+# 只要冒烟不要分数时: make coremark COREMARK_ITERATIONS=1 (快 30 倍)
+#
+# 必须先 clean: coremark/build/ 是入库的, 里面的 .o 比源码新, 不清的话 make
+# 判定无事可做 —— 换了工具链却静默沿用上一个编译器产出的 .o/.elf
+# (实测踩过: 改完 TOOLCHAIN 后 bin/coremark.bin 的 md5 纹丝不动)。
+COREMARK_ITERATIONS ?= 30
 coremark:
-	@echo "=== Building CoreMark for RV32I ==="
-	$(MAKE) -C coremark -f Makefile.coremark
+	@echo "=== Building CoreMark (GCC 14.2, ITERATIONS=$(COREMARK_ITERATIONS)) ==="
+	$(MAKE) -C coremark -f Makefile.coremark clean
+	$(MAKE) -C coremark -f Makefile.coremark ITERATIONS=$(COREMARK_ITERATIONS)
 	@echo "CoreMark binary ready at bin/coremark.bin"
-	@echo "Run with: make run TEST=coremark MAX_CYCLES=10000000"
+	@echo "Run with: make run TEST=coremark MAX_CYCLES=30000000"
 
 build: $(SIMV)
 

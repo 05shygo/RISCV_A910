@@ -10,6 +10,13 @@
 
 ## 1. 实测结果（同一二进制，逐拍 difftest 全过）
 
+> ⚠️ **2026-09-29：本节所有 CoreMark 数字都是旧工具链（Xuantie GCC 10.4.0）跑的。**
+> 现在构建系统已统一到 **GCC 14.2.0**，同一份源码同一个核 CoreMark 从
+> **2.584 → 2.694（+4.25%）**，收益全在分支行为上（误预测 366,940 → 167,188，砍 54%；
+> 控制转移少 8.1%；IPC 0.795 → 0.847）。**下面表里的绝对值要整体加约 4.25% 才是新基线。**
+> 相对结论（IFU=2 比 IFU=1 快多少）不受影响 —— 换编译器只减误预测，不改前端形态。
+> 详见 `coremark/README_COREMARK.md` 与 memory `gcc14-on-our-core`。
+
 ### CoreMark 正式跑分（ITERATIONS=30，`GM_MONITOR=1`，全部 "Correct operation validated"）
 
 score = ITERATIONS × 10⁶ / Total ticks（1 周期 = 1 µs，归一到 1 MHz ⇒ 与 CoreMark/MHz 同值）

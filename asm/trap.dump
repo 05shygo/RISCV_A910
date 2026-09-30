@@ -88,7 +88,8 @@ Disassembly of section .text:
  110:	20c29863          	bne	t0,a2,320 <fail>
 
 00000114 <test_illegal>:
- 114:	ffffffff          	0xffffffff
+ 114:	ffff                	.insn	2, 0xffff
+ 116:	ffff                	.insn	2, 0xffff
  118:	00000597          	auipc	a1,0x0
  11c:	ffc58593          	addi	a1,a1,-4 # 114 <test_illegal>
  120:	20b31063          	bne	t1,a1,320 <fail>
@@ -250,31 +251,38 @@ Disassembly of section .text:
 Disassembly of section .data:
 
 00001340 <__DATA_BEGIN__>:
-    1340:	f00d                	bnez	s0,1262 <fail+0xf42>
-    1342:	0bad                	addi	s7,s7,11
+    1340:	f00d                	.insn	2, 0xf00d
+    1342:	0bad                	.insn	2, 0x0bad
 
 00001344 <jalr_target>:
-    1344:	0000                	unimp
+    1344:	0000                	.insn	2, 0x
 	...
 
 Disassembly of section .riscv.attributes:
 
 00000000 <.riscv.attributes>:
-   0:	2241                	jal	180 <test_lh+0x2c>
-   2:	0000                	unimp
-   4:	7200                	flw	fs0,32(a2)
-   6:	7369                	lui	t1,0xffffa
+   0:	3441                	.insn	2, 0x3441
+   2:	0000                	.insn	2, 0x
+   4:	7200                	.insn	2, 0x7200
+   6:	7369                	.insn	2, 0x7369
    8:	01007663          	bgeu	zero,a6,14 <trap_handler+0x10>
-   c:	0018                	0x18
-   e:	0000                	unimp
-  10:	7205                	lui	tp,0xfffe1
-  12:	3376                	fld	ft6,376(sp)
-  14:	6932                	flw	fs2,12(sp)
-  16:	7032                	flw	ft0,44(sp)
-  18:	5f30                	lw	a2,120(a4)
-  1a:	326d                	jal	fffff9c4 <__global_pointer$+0xffffde84>
-  1c:	3070                	fld	fa2,224(s0)
-  1e:	0800                	addi	s0,sp,16
-  20:	0a01                	addi	s4,s4,0
-  22:	0b              	Address 0x0000000000000022 is out of bounds.
+   c:	002a                	.insn	2, 0x002a
+   e:	0000                	.insn	2, 0x
+  10:	7205                	.insn	2, 0x7205
+  12:	3376                	.insn	2, 0x3376
+  14:	6932                	.insn	2, 0x6932
+  16:	7032                	.insn	2, 0x7032
+  18:	5f31                	.insn	2, 0x5f31
+  1a:	326d                	.insn	2, 0x326d
+  1c:	3070                	.insn	2, 0x3070
+  1e:	7a5f 6369 7273      	.insn	6, 0x727363697a5f
+  24:	7032                	.insn	2, 0x7032
+  26:	5f30                	.insn	2, 0x5f30
+  28:	6d7a                	.insn	2, 0x6d7a
+  2a:	756d                	.insn	2, 0x756d
+  2c:	316c                	.insn	2, 0x316c
+  2e:	3070                	.insn	2, 0x3070
+  30:	0800                	.insn	2, 0x0800
+  32:	0a01                	.insn	2, 0x0a01
+  34:	Address 0x34 is out of bounds.
 

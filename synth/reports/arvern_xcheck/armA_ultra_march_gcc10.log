@@ -1,0 +1,694 @@
+Generated arv_parameterization.v from run_config.json defaults
+Generated march_config.sh: MARCH_STD=rv32im_zbb_zba_zbs_zbc_zicsr_zifencei, MARCH_COMP=rv32imc_zbb_zba_zbs_zbc_zcb_zcmp_zcmt_zicsr_zifencei, toolchain=xpacks, optimization=-O2
+Logging to: ./log/0/coremark-c.log
+Instruction mode: COMP_MODE (using -march=rv32ic)
+      Running: make clean && make in /x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/sim/rtl_sim/run/../src-c/coremark
+rm -f ./coremark.elf ./core_list_join.o ./core_main.o ./core_matrix.o ./core_state.o ./core_util.o ./*.log *.info ./index.html 
+make XCFLAGS=" -DPERFORMANCE_RUN=1" load run1.log
+make[1]: Entering directory `/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/sim/rtl_sim/src-c/coremark'
+make port_prebuild
+make[2]: Entering directory `/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/sim/rtl_sim/src-c/coremark'
+make[2]: Nothing to be done for `port_prebuild'.
+make[2]: Leaving directory `/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/sim/rtl_sim/src-c/coremark'
+make link
+make[2]: Entering directory `/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/sim/rtl_sim/src-c/coremark'
+make[2]: Warning: File `./' has modification time 593 s in the future
+riscv-none-elf-gcc -march=rv32imc_zbb_zba_zbs_zbc_zcb_zcmp_zcmt_zicsr_zifencei -mabi=ilp32 -O2 -g -nostartfiles -T arv/link_rodata_sram.ld arv/startup_rodata_sram.S  -Iarv -I. -DFLAGS_STR=\""-march=rv32imc_zbb_zba_zbs_zbc_zcb_zcmp_zcmt_zicsr_zifencei -mabi=ilp32 -O2 -g -nostartfiles -T arv/link_rodata_sram.ld arv/startup_rodata_sram.S  -DPERFORMANCE_RUN=1  "\" -DITERATIONS=3 -DPERFORMANCE_RUN=1 core_list_join.c core_main.c core_matrix.c core_state.c core_util.c arv/core_portme.c arv/ee_printf.c -o ./coremark.elf 
+Link performed along with compile
+make[2]: warning:  Clock skew detected.  Your build may be incomplete.
+make[2]: Leaving directory `/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/sim/rtl_sim/src-c/coremark'
+make port_postbuild
+make[2]: Entering directory `/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/sim/rtl_sim/src-c/coremark'
+riscv-none-elf-objcopy -O ihex coremark.elf    coremark.ihex
+riscv-none-elf-objdump -dSt    coremark.elf  > coremark.lst
+riscv-none-elf-size -A      coremark.elf  > coremark.size
+cat coremark.size
+coremark.elf  :
+section              size         addr
+.text                8904    536870912
+.rodata              2096   2164260864
+.data                  12   2164262960
+.sdata                 12   2164262972
+.bss                    0   2164262984
+.sbss                  20   2164262984
+.stack               8192   2164263004
+.riscv.attributes     117            0
+.comment               70            0
+.debug_line         27134            0
+.debug_info         14321            0
+.debug_abbrev        3825            0
+.debug_aranges        264            0
+.debug_str           2303            0
+.debug_loc          18844            0
+.debug_ranges        1576            0
+.debug_frame         1488            0
+Total               89178
+
+
+make[2]: Leaving directory `/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/sim/rtl_sim/src-c/coremark'
+make port_preload
+make[2]: Entering directory `/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/sim/rtl_sim/src-c/coremark'
+make[2]: Nothing to be done for `port_preload'.
+make[2]: Leaving directory `/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/sim/rtl_sim/src-c/coremark'
+echo "Please set LOAD to the process of loading the executable to the flash" ./coremark.elf
+Please set LOAD to the process of loading the executable to the flash ./coremark.elf
+make port_postload
+make[2]: Entering directory `/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/sim/rtl_sim/src-c/coremark'
+make[2]: Nothing to be done for `port_postload'.
+make[2]: Leaving directory `/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/sim/rtl_sim/src-c/coremark'
+make port_prerun
+make[2]: Entering directory `/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/sim/rtl_sim/src-c/coremark'
+make[2]: Nothing to be done for `port_prerun'.
+make[2]: Leaving directory `/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/sim/rtl_sim/src-c/coremark'
+echo "Please set LOAD to the process of running the executable (e.g. via jtag, or board reset)" ./coremark.elf  0x0 0x0 0x66 3 7 1 2000 > ./run1.log
+make port_postrun
+make[2]: Entering directory `/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/sim/rtl_sim/src-c/coremark'
+make[2]: Nothing to be done for `port_postrun'.
+make[2]: Leaving directory `/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/sim/rtl_sim/src-c/coremark'
+make[1]: Leaving directory `/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/sim/rtl_sim/src-c/coremark'
+make XCFLAGS=" -DVALIDATION_RUN=1" load run2.log
+make[1]: Entering directory `/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/sim/rtl_sim/src-c/coremark'
+make[1]: Warning: File `coremark.elf' has modification time 593 s in the future
+make port_preload
+make[2]: Entering directory `/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/sim/rtl_sim/src-c/coremark'
+make[2]: Nothing to be done for `port_preload'.
+make[2]: Leaving directory `/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/sim/rtl_sim/src-c/coremark'
+echo "Please set LOAD to the process of loading the executable to the flash" ./coremark.elf
+Please set LOAD to the process of loading the executable to the flash ./coremark.elf
+make port_postload
+make[2]: Entering directory `/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/sim/rtl_sim/src-c/coremark'
+make[2]: Nothing to be done for `port_postload'.
+make[2]: Leaving directory `/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/sim/rtl_sim/src-c/coremark'
+make port_prerun
+make[2]: Entering directory `/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/sim/rtl_sim/src-c/coremark'
+make[2]: Nothing to be done for `port_prerun'.
+make[2]: Leaving directory `/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/sim/rtl_sim/src-c/coremark'
+echo "Please set LOAD to the process of running the executable (e.g. via jtag, or board reset)" ./coremark.elf  0x3415 0x3415 0x66 3 7 1 2000  > ./run2.log
+make port_postrun
+make[2]: Entering directory `/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/sim/rtl_sim/src-c/coremark'
+make[2]: Nothing to be done for `port_postrun'.
+make[2]: Leaving directory `/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/sim/rtl_sim/src-c/coremark'
+make[1]: warning:  Clock skew detected.  Your build may be incomplete.
+make[1]: Leaving directory `/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/sim/rtl_sim/src-c/coremark'
+Check run1.log and run2.log for results.
+See README.md for run and reporting rules.
+      Generating checker data from coremark.lst
+INFO: Parsing listing file: coremark.lst
+INFO: Generated checker memory file: /x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/sim/rtl_sim/run/WORK/tmpj9yerydk/checker_data.mem
+INFO: Total instructions: 3103
+INFO: Checker data generation complete
+
+Binary size: 11024B
+Running simulation with: vcs
+SIMULATION SEED: 988803386
+                         Chronologic VCS (TM)
+          Version V-2023.12-SP2 -- Tue Sep 29 17:26:45 2026
+
+                    Copyright (c) 1991 - 2024 Synopsys, Inc.
+   This software and the associated documentation are proprietary to Synopsys,
+ Inc. This software may only be used in accordance with the terms and conditions
+ of a written license agreement with Synopsys, Inc. All other use, reproduction,
+   or distribution of this software is strictly prohibited.  Licensed Products
+     communicate with Synopsys servers for the purpose of providing software
+    updates, detecting software piracy and verifying that customers are using
+    Licensed Products in conformity with the applicable License Key for such
+  Licensed Products. Synopsys will use information gathered in connection with
+    this process to deliver software updates and pursue software pirates and
+                                   infringers.
+
+ Inclusivity & Diversity - Visit SolvNetPlus to read the "Synopsys Statement on
+            Inclusivity and Diversity" (Refer to article 000036315 at
+                        https://solvnetplus.synopsys.com)
+
+
+Warning-[LCA_FEATURES_ENABLED] Usage warning
+  LCA features enabled by '-lca' argument on the command line.  For more 
+  information regarding list of LCA features please refer to Chapter "LCA 
+  features" in the VCS Release Notes
+
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/ahb_bus_system.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/ahb_arbiter.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/ahb_decoder.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/ahb_waitstate_inserter.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/osc.v'
+Parsing included file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/timescale.v'.
+Back to file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/osc.v'.
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/rom.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/sram.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/probes_cpu.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/probes_mem.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/probes_instructions.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/monitor_exception.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/instruction_pc_checker.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/ahb_protocol_checker.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/tb_arvern.v'
+Parsing included file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/timescale.v'.
+Back to file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/tb_arvern.v'.
+Parsing included file 'arv_parameterization.v'.
+Back to file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/tb_arvern.v'.
+Parsing included file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/check_tasks.v'.
+Back to file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/tb_arvern.v'.
+Parsing included file 'stimulus.v'.
+Back to file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/tb_arvern.v'.
+Parsing included file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/random_irq_injector.v'.
+Back to file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/tb_arvern.v'.
+
+Warning-[IPDW] Identifier previously declared
+/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/tb_arvern.v, 378
+  Second declaration for identifier 'resetn_lf' ignored
+  Identifier 'resetn_lf' previously declared as wire. 
+  [/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/tb_arvern.v, 371]
+
+Parsing included file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/tb_irq_checkers.v'.
+Back to file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/tb_arvern.v'.
+Parsing design file './probes_variables.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/arv_common/rtl/verilog/arv_ipdff.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/arv_common/rtl/verilog/arv_synchronizer.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_rom_controller/rtl/verilog/ahb_rom_controller.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_sram_controller/rtl/verilog/ahb_sram_controller.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_periph_example/rtl/verilog/ahb_periph_example.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_interconnect/rtl/verilog/ahb_default_subordinate.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_interconnect/rtl/verilog/ahb_subordinate_mux.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_interconnect/rtl/verilog/ahb_manager_if.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_interconnect/rtl/verilog/ahb_manager_mux.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_interconnect/rtl/verilog/ahb_arbiter_2m.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_interconnect/rtl/verilog/ahb_fused_rom_ctrl.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_interconnect/rtl/verilog/ahb_fused_sram_ctrl.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_interconnect/rtl/verilog/ahb_interconnect_generic.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_interconnect/rtl/verilog/ahb_interconnect_hiperf.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_interconnect/rtl/verilog/ahb_interconnect_fused.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/arv_custom_csr/rtl/verilog/arv_ccsr_rdwr.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/arv_custom_csr/rtl/verilog/arv_ccsr_rdonly.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/arv_custom_csr/rtl/verilog/arv_custom_csr.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_plic/rtl/verilog/plic_priority.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_plic/rtl/verilog/plic_pending.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_plic/rtl/verilog/plic_enable.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_plic/rtl/verilog/plic_target.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_plic/rtl/verilog/ahb_plic.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_aclint/rtl/verilog/aclint_gray2bin.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_aclint/rtl/verilog/aclint_mtimer_count_lf.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_aclint/rtl/verilog/aclint_mtimer_gray_sync.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_aclint/rtl/verilog/aclint_mtimer_write_cdc.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_aclint/rtl/verilog/aclint_mtimer.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_aclint/rtl/verilog/aclint_mswi.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_aclint/rtl/verilog/aclint_sswi.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern-ips/ahb_aclint/rtl/verilog/ahb_aclint.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/rtl/verilog/arvern.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/rtl/verilog/arv_dff.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/rtl/verilog/arv_fetch.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/rtl/verilog/arv_decode.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/rtl/verilog/arv_uop_sequencer.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/rtl/verilog/arv_int_registers.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/rtl/verilog/arv_csr_top.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/rtl/verilog/arv_csr_cntr.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/rtl/verilog/arv_csr_hpm.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/rtl/verilog/arv_csr_ids.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/rtl/verilog/arv_csr_traps.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/rtl/verilog/arv_alu.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/rtl/verilog/arv_alu_muldiv.v'
+Parsing design file '/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/rtl/verilog/arv_load_store.v'
+Top Level Modules:
+       ahb_arbiter
+       tb_arvern
+       ahb_interconnect_generic
+       ahb_interconnect_fused
+TimeScale is 1 ns / 100 ps
+
+Warning-[TFIPC] Too few instance port connections
+/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/tb_arvern.v, 540
+tb_arvern, "arvern #(.RV32E_EN(RV32E_EN), .B_EXTENSION(B_EXTENSION), .C_EXTENSION(C_EXTENSION), .M_EXTENSION(M_EXTENSION), .MUL_TYPE(MUL_TYPE), .DIV_TYPE(DIV_TYPE), .CCSR_EN(CCSR_EN), .NMI_EN(NMI_EN), .SU_MODE_EN(SU_MODE_EN), .ZICNTR_EN(ZICNTR_EN), .ZIHPM_NR(ZIHPM_NR), .ASYNC_RST_EN(ASYNC_RST_EN), .SINGLE_CYCLE_BRANCH(SINGLE_CYCLE_BRANCH), .MVENDORID(MVENDORID)) dut( .hclk_i (dut_hclk),  .hresetn_i (hresetn),  .hclk_en_o (dut_hclk_en),  .inst_hrdata_i (inst_hrdata),  .inst_hready_i (inst_hready),  .inst_hresp_i (inst_hresp),  .inst_haddr_o (inst_haddr),  .inst_hburst_o (inst_hburst),  .inst_hmastlock_o (inst_hmastlock),  .inst_hprot_o (inst_hprot),  .inst_hsize_o (inst_hsize),  .inst_hsmode_o (inst_hsmode),  .inst_htrans_o (inst_htrans),  .inst_hwdata_o (inst_hwdat ... "
+  The above instance has fewer port connections than the module definition.
+  Please use '+lint=TFIPC-L' to print out detailed information of unconnected 
+  ports.
+
+
+Warning-[IWNF] Implicit wire has no fanin
+/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/tb_arvern.v, 371
+  Implicit wire 'resetn_lf' does not have any driver, please make sure this is
+  intended.
+
+Notice: Ports coerced to inout, use -notice for details
+Starting vcs inline pass...
+
+40 modules and 0 UDP read.
+recompiling module ahb_arbiter
+recompiling module ahb_decoder
+recompiling module ahb_waitstate_inserter
+recompiling module rom
+recompiling module sram
+recompiling module probes_cpu
+recompiling module probes_cpu_alt
+recompiling module probes_rom
+recompiling module probes_sram
+recompiling module probes_instructions
+recompiling module monitor_exception
+recompiling module instruction_pc_checker
+recompiling module ahb_protocol_checker
+recompiling module tb_arvern
+recompiling module probes_var
+recompiling module probes_stack
+recompiling module probes_stack_alt
+recompiling module ahb_rom_controller
+recompiling module ahb_sram_controller
+recompiling module ahb_periph_example
+recompiling module ahb_default_subordinate
+recompiling module ahb_subordinate_mux
+recompiling module ahb_manager_if
+recompiling module ahb_manager_mux
+recompiling module ahb_interconnect_generic
+recompiling module ahb_interconnect_fused
+recompiling module arv_custom_csr
+recompiling module plic_enable
+recompiling module plic_target
+recompiling module ahb_plic
+recompiling module aclint_gray2bin
+recompiling module arvern
+recompiling module arv_uop_sequencer
+recompiling module arv_int_registers
+recompiling module arv_csr_top
+recompiling module arv_csr_cntr
+recompiling module arv_csr_hpm
+recompiling module arv_csr_ids
+recompiling module arv_alu
+recompiling module arv_load_store
+All of 40 modules done
+make: Warning: File `filelist.hsopt.llvm2_0.objs' has modification time 593 s in the future
+make: warning:  Clock skew detected.  Your build may be incomplete.
+make: Warning: File `filelist.cu' has modification time 590 s in the future
+make[1]: Warning: File `filelist.cu' has modification time 590 s in the future
+rm -f _cuarc*.so _csrc*.so pre_vcsobj_*.so share_vcsobj_*.so
+make[1]: warning:  Clock skew detected.  Your build may be incomplete.
+make[1]: Warning: File `filelist.cu' has modification time 590 s in the future
+make[1]: warning:  Clock skew detected.  Your build may be incomplete.
+if [ -x ../simv ]; then chmod a-x ../simv; fi
+g++  -o ../simv      -m32 -m32 -rdynamic  -Wl,-rpath='$ORIGIN'/simv.daidir -Wl,-rpath=./simv.daidir -Wl,-rpath=/mnt/tools/synopsys/vcs/V-2023.12-SP2/linux/lib -L/mnt/tools/synopsys/vcs/V-2023.12-SP2/linux/lib  -Wl,-rpath-link=./   objs/amcQw_d.o   _21849_archive_1.so   SIM_l.o       rmapats_mop.o rmapats.o rmar.o rmar_nd.o  rmar_llvm_0_1.o rmar_llvm_0_0.o            -lvirsim -lerrorinf -lsnpsmalloc -lvfs    -lvcsnew -lsimprofile -luclinative /mnt/tools/synopsys/vcs/V-2023.12-SP2/linux/lib/vcs_tls.o   -Wl,-whole-archive  -lvcsucli    -Wl,-no-whole-archive        _vcs_pli_stub_.o   /mnt/tools/synopsys/vcs/V-2023.12-SP2/linux/lib/vcs_save_restore_new.o /mnt/tools/synopsys/verdi/V-2023.12-SP2/share/PLI/VCS/LINUX/pli.a /mnt/tools/synopsys/vcs/V-2023.12-SP2/linux/lib/ctype-stubs_32.a -ldl  -lc -lm -lpthread -ldl 
+../simv up to date
+make: warning:  Clock skew detected.  Your build may be incomplete.
+Info: [VCS_SAVE_RESTORE_INFO] ASLR (Address Space Layout Randomization) is detected on the machine. To enable $save functionality, ASLR will be switched off and simv re-executed.
+Please use '-no_save' simv switch to avoid re-execution or '-suppress=ASLR_DETECTED_INFO' to suppress this message.
+
+Warning-[LCA_FEATURES_ENABLED] Usage warning
+  LCA features enabled by '-lca' argument on the command line.  For more 
+  information regarding list of LCA features please refer to Chapter "LCA 
+  features" in the VCS Release Notes
+
+Chronologic VCS simulator copyright 1991-2023
+Contains Synopsys proprietary information.
+Compiler version V-2023.12-SP2; Runtime version V-2023.12-SP2;  Sep 29 17:26 2026
+INFO-VERILOG: [Instruction/PC Checker] Loading checker data...
+INFO-VERILOG: [Instruction/PC Checker] Loaded 3103 instruction entries
+ ===============================================
+|                 START SIMULATION              |
+ ===============================================
+VCD+ Writer V-2023.12-SP2 Copyright (c) 1991-2023 by Synopsys Inc.
+
+INFO-VERILOG: arvern System clock frequency 1.000000 MHz
+
+INFO-VERILOG: CoreMark is now running for           3 iterations
+INFO-VERILOG: CoreMark loop started at  17.119 ms 
+
+INFO-VERILOG: Be patient... there could be up to 1.5 seconds to simulate
+
+INFO-VERILOG: Simulated time  20.119 ms 
+INFO-VERILOG: Simulated time  23.119 ms 
+INFO-VERILOG: Simulated time  26.119 ms 
+INFO-VERILOG: Simulated time  29.119 ms 
+INFO-VERILOG: Simulated time  32.119 ms 
+INFO-VERILOG: Simulated time  35.119 ms 
+INFO-VERILOG: Simulated time  38.119 ms 
+INFO-VERILOG: Simulated time  41.119 ms 
+INFO-VERILOG: Simulated time  44.119 ms 
+INFO-VERILOG: Simulated time  47.119 ms 
+INFO-VERILOG: Simulated time  50.119 ms 
+INFO-VERILOG: Simulated time  53.119 ms 
+INFO-VERILOG: Simulated time  56.119 ms 
+INFO-VERILOG: Simulated time  59.119 ms 
+INFO-VERILOG: Simulated time  62.119 ms 
+INFO-VERILOG: Simulated time  65.120 ms 
+INFO-VERILOG: Simulated time  68.120 ms 
+INFO-VERILOG: Simulated time  71.120 ms 
+INFO-VERILOG: Simulated time  74.120 ms 
+INFO-VERILOG: Simulated time  77.120 ms 
+INFO-VERILOG: Simulated time  80.120 ms 
+INFO-VERILOG: Simulated time  83.120 ms 
+INFO-VERILOG: Simulated time  86.120 ms 
+INFO-VERILOG: Simulated time  89.120 ms 
+INFO-VERILOG: Simulated time  92.120 ms 
+INFO-VERILOG: Simulated time  95.120 ms 
+INFO-VERILOG: Simulated time  98.120 ms 
+INFO-VERILOG: Simulated time 101.120 ms 
+INFO-VERILOG: Simulated time 104.120 ms 
+INFO-VERILOG: Simulated time 107.120 ms 
+INFO-VERILOG: Simulated time 110.119 ms 
+INFO-VERILOG: Simulated time 113.119 ms 
+INFO-VERILOG: Simulated time 116.119 ms 
+INFO-VERILOG: Simulated time 119.119 ms 
+INFO-VERILOG: Simulated time 122.119 ms 
+INFO-VERILOG: Simulated time 125.119 ms 
+INFO-VERILOG: Simulated time 128.119 ms 
+INFO-VERILOG: Simulated time 131.119 ms 
+INFO-VERILOG: Simulated time 134.119 ms 
+INFO-VERILOG: Simulated time 137.119 ms 
+INFO-VERILOG: Simulated time 140.119 ms 
+INFO-VERILOG: Simulated time 143.119 ms 
+INFO-VERILOG: Simulated time 146.119 ms 
+INFO-VERILOG: Simulated time 149.119 ms 
+INFO-VERILOG: Simulated time 152.119 ms 
+INFO-VERILOG: Simulated time 155.119 ms 
+INFO-VERILOG: Simulated time 158.119 ms 
+INFO-VERILOG: Simulated time 161.119 ms 
+INFO-VERILOG: Simulated time 164.119 ms 
+INFO-VERILOG: Simulated time 167.119 ms 
+INFO-VERILOG: Simulated time 170.119 ms 
+INFO-VERILOG: Simulated time 173.119 ms 
+INFO-VERILOG: Simulated time 176.119 ms 
+INFO-VERILOG: Simulated time 179.119 ms 
+INFO-VERILOG: Simulated time 182.119 ms 
+INFO-VERILOG: Simulated time 185.119 ms 
+INFO-VERILOG: Simulated time 188.119 ms 
+INFO-VERILOG: Simulated time 191.119 ms 
+INFO-VERILOG: Simulated time 194.119 ms 
+INFO-VERILOG: Simulated time 197.119 ms 
+INFO-VERILOG: Simulated time 200.119 ms 
+INFO-VERILOG: Simulated time 203.119 ms 
+INFO-VERILOG: Simulated time 206.119 ms 
+INFO-VERILOG: Simulated time 209.119 ms 
+INFO-VERILOG: Simulated time 212.119 ms 
+INFO-VERILOG: Simulated time 215.119 ms 
+INFO-VERILOG: Simulated time 218.119 ms 
+INFO-VERILOG: Simulated time 221.119 ms 
+INFO-VERILOG: Simulated time 224.119 ms 
+INFO-VERILOG: Simulated time 227.119 ms 
+INFO-VERILOG: Simulated time 230.119 ms 
+INFO-VERILOG: Simulated time 233.119 ms 
+INFO-VERILOG: Simulated time 236.119 ms 
+INFO-VERILOG: Simulated time 239.119 ms 
+INFO-VERILOG: Simulated time 242.119 ms 
+INFO-VERILOG: Simulated time 245.119 ms 
+INFO-VERILOG: Simulated time 248.119 ms 
+INFO-VERILOG: Simulated time 251.119 ms 
+INFO-VERILOG: Simulated time 254.119 ms 
+INFO-VERILOG: Simulated time 257.120 ms 
+INFO-VERILOG: Simulated time 260.120 ms 
+INFO-VERILOG: Simulated time 263.120 ms 
+INFO-VERILOG: Simulated time 266.120 ms 
+INFO-VERILOG: Simulated time 269.119 ms 
+INFO-VERILOG: Simulated time 272.119 ms 
+INFO-VERILOG: Simulated time 275.119 ms 
+INFO-VERILOG: Simulated time 278.119 ms 
+INFO-VERILOG: Simulated time 281.119 ms 
+INFO-VERILOG: Simulated time 284.119 ms 
+INFO-VERILOG: Simulated time 287.119 ms 
+INFO-VERILOG: Simulated time 290.119 ms 
+INFO-VERILOG: Simulated time 293.119 ms 
+INFO-VERILOG: Simulated time 296.119 ms 
+INFO-VERILOG: Simulated time 299.119 ms 
+INFO-VERILOG: Simulated time 302.119 ms 
+INFO-VERILOG: Simulated time 305.119 ms 
+INFO-VERILOG: Simulated time 308.119 ms 
+INFO-VERILOG: Simulated time 311.119 ms 
+INFO-VERILOG: Simulated time 314.119 ms 
+INFO-VERILOG: Simulated time 317.119 ms 
+INFO-VERILOG: Simulated time 320.119 ms 
+INFO-VERILOG: Simulated time 323.119 ms 
+INFO-VERILOG: Simulated time 326.119 ms 
+INFO-VERILOG: Simulated time 329.119 ms 
+INFO-VERILOG: Simulated time 332.119 ms 
+INFO-VERILOG: Simulated time 335.119 ms 
+INFO-VERILOG: Simulated time 338.119 ms 
+INFO-VERILOG: Simulated time 341.119 ms 
+INFO-VERILOG: Simulated time 344.119 ms 
+INFO-VERILOG: Simulated time 347.119 ms 
+INFO-VERILOG: Simulated time 350.119 ms 
+INFO-VERILOG: Simulated time 353.119 ms 
+INFO-VERILOG: Simulated time 356.119 ms 
+INFO-VERILOG: Simulated time 359.119 ms 
+INFO-VERILOG: Simulated time 362.119 ms 
+INFO-VERILOG: Simulated time 365.119 ms 
+INFO-VERILOG: Simulated time 368.119 ms 
+INFO-VERILOG: Simulated time 371.119 ms 
+INFO-VERILOG: Simulated time 374.119 ms 
+INFO-VERILOG: Simulated time 377.119 ms 
+INFO-VERILOG: Simulated time 380.119 ms 
+INFO-VERILOG: Simulated time 383.119 ms 
+INFO-VERILOG: Simulated time 386.119 ms 
+INFO-VERILOG: Simulated time 389.119 ms 
+INFO-VERILOG: Simulated time 392.119 ms 
+INFO-VERILOG: Simulated time 395.119 ms 
+INFO-VERILOG: Simulated time 398.119 ms 
+INFO-VERILOG: Simulated time 401.119 ms 
+INFO-VERILOG: Simulated time 404.119 ms 
+INFO-VERILOG: Simulated time 407.119 ms 
+INFO-VERILOG: Simulated time 410.119 ms 
+INFO-VERILOG: Simulated time 413.119 ms 
+INFO-VERILOG: Simulated time 416.119 ms 
+INFO-VERILOG: Simulated time 419.119 ms 
+INFO-VERILOG: Simulated time 422.119 ms 
+INFO-VERILOG: Simulated time 425.119 ms 
+INFO-VERILOG: Simulated time 428.119 ms 
+INFO-VERILOG: Simulated time 431.119 ms 
+INFO-VERILOG: Simulated time 434.119 ms 
+INFO-VERILOG: Simulated time 437.119 ms 
+INFO-VERILOG: Simulated time 440.119 ms 
+INFO-VERILOG: Simulated time 443.119 ms 
+INFO-VERILOG: Simulated time 446.119 ms 
+INFO-VERILOG: Simulated time 449.119 ms 
+INFO-VERILOG: Simulated time 452.119 ms 
+INFO-VERILOG: Simulated time 455.119 ms 
+INFO-VERILOG: Simulated time 458.119 ms 
+INFO-VERILOG: Simulated time 461.119 ms 
+INFO-VERILOG: Simulated time 464.119 ms 
+INFO-VERILOG: Simulated time 467.119 ms 
+INFO-VERILOG: Simulated time 470.119 ms 
+INFO-VERILOG: Simulated time 473.119 ms 
+INFO-VERILOG: Simulated time 476.119 ms 
+INFO-VERILOG: Simulated time 479.119 ms 
+INFO-VERILOG: Simulated time 482.119 ms 
+INFO-VERILOG: Simulated time 485.119 ms 
+INFO-VERILOG: Simulated time 488.119 ms 
+INFO-VERILOG: Simulated time 491.119 ms 
+INFO-VERILOG: Simulated time 494.119 ms 
+INFO-VERILOG: Simulated time 497.119 ms 
+INFO-VERILOG: Simulated time 500.119 ms 
+INFO-VERILOG: Simulated time 503.119 ms 
+INFO-VERILOG: Simulated time 506.119 ms 
+INFO-VERILOG: Simulated time 509.119 ms 
+INFO-VERILOG: Simulated time 512.120 ms 
+INFO-VERILOG: Simulated time 515.120 ms 
+INFO-VERILOG: Simulated time 518.120 ms 
+INFO-VERILOG: Simulated time 521.120 ms 
+INFO-VERILOG: Simulated time 524.120 ms 
+INFO-VERILOG: Simulated time 527.120 ms 
+INFO-VERILOG: Simulated time 530.120 ms 
+INFO-VERILOG: Simulated time 533.120 ms 
+INFO-VERILOG: Simulated time 536.120 ms 
+INFO-VERILOG: Simulated time 539.120 ms 
+INFO-VERILOG: Simulated time 542.120 ms 
+INFO-VERILOG: Simulated time 545.120 ms 
+INFO-VERILOG: Simulated time 548.120 ms 
+INFO-VERILOG: Simulated time 551.120 ms 
+INFO-VERILOG: Simulated time 554.120 ms 
+INFO-VERILOG: Simulated time 557.120 ms 
+INFO-VERILOG: Simulated time 560.120 ms 
+INFO-VERILOG: Simulated time 563.120 ms 
+INFO-VERILOG: Simulated time 566.120 ms 
+INFO-VERILOG: Simulated time 569.120 ms 
+INFO-VERILOG: Simulated time 572.120 ms 
+INFO-VERILOG: Simulated time 575.120 ms 
+INFO-VERILOG: Simulated time 578.120 ms 
+INFO-VERILOG: Simulated time 581.120 ms 
+INFO-VERILOG: Simulated time 584.120 ms 
+INFO-VERILOG: Simulated time 587.120 ms 
+INFO-VERILOG: Simulated time 590.120 ms 
+INFO-VERILOG: Simulated time 593.120 ms 
+INFO-VERILOG: Simulated time 596.120 ms 
+INFO-VERILOG: Simulated time 599.120 ms 
+INFO-VERILOG: Simulated time 602.120 ms 
+INFO-VERILOG: Simulated time 605.120 ms 
+INFO-VERILOG: Simulated time 608.120 ms 
+INFO-VERILOG: Simulated time 611.120 ms 
+INFO-VERILOG: Simulated time 614.120 ms 
+INFO-VERILOG: Simulated time 617.120 ms 
+INFO-VERILOG: Simulated time 620.120 ms 
+INFO-VERILOG: Simulated time 623.120 ms 
+INFO-VERILOG: Simulated time 626.120 ms 
+INFO-VERILOG: Simulated time 629.120 ms 
+INFO-VERILOG: Simulated time 632.120 ms 
+INFO-VERILOG: Simulated time 635.120 ms 
+INFO-VERILOG: Simulated time 638.120 ms 
+INFO-VERILOG: Simulated time 641.120 ms 
+INFO-VERILOG: Simulated time 644.120 ms 
+INFO-VERILOG: Simulated time 647.120 ms 
+INFO-VERILOG: Simulated time 650.120 ms 
+INFO-VERILOG: Simulated time 653.120 ms 
+INFO-VERILOG: Simulated time 656.120 ms 
+INFO-VERILOG: Simulated time 659.120 ms 
+INFO-VERILOG: Simulated time 662.120 ms 
+INFO-VERILOG: Simulated time 665.120 ms 
+INFO-VERILOG: Simulated time 668.120 ms 
+INFO-VERILOG: Simulated time 671.120 ms 
+INFO-VERILOG: Simulated time 674.120 ms 
+INFO-VERILOG: Simulated time 677.120 ms 
+INFO-VERILOG: Simulated time 680.120 ms 
+INFO-VERILOG: Simulated time 683.120 ms 
+INFO-VERILOG: Simulated time 686.120 ms 
+INFO-VERILOG: Simulated time 689.120 ms 
+INFO-VERILOG: Simulated time 692.120 ms 
+INFO-VERILOG: Simulated time 695.120 ms 
+INFO-VERILOG: Simulated time 698.120 ms 
+INFO-VERILOG: Simulated time 701.120 ms 
+INFO-VERILOG: Simulated time 704.120 ms 
+INFO-VERILOG: Simulated time 707.120 ms 
+INFO-VERILOG: Simulated time 710.120 ms 
+INFO-VERILOG: Simulated time 713.120 ms 
+INFO-VERILOG: Simulated time 716.120 ms 
+INFO-VERILOG: Simulated time 719.120 ms 
+INFO-VERILOG: Simulated time 722.120 ms 
+INFO-VERILOG: Simulated time 725.120 ms 
+INFO-VERILOG: Simulated time 728.120 ms 
+INFO-VERILOG: Simulated time 731.120 ms 
+INFO-VERILOG: Simulated time 734.120 ms 
+INFO-VERILOG: Simulated time 737.120 ms 
+INFO-VERILOG: Simulated time 740.120 ms 
+INFO-VERILOG: Simulated time 743.120 ms 
+INFO-VERILOG: Simulated time 746.120 ms 
+INFO-VERILOG: Simulated time 749.120 ms 
+INFO-VERILOG: Simulated time 752.120 ms 
+INFO-VERILOG: Simulated time 755.120 ms 
+INFO-VERILOG: Simulated time 758.120 ms 
+INFO-VERILOG: Simulated time 761.120 ms 
+INFO-VERILOG: Simulated time 764.120 ms 
+INFO-VERILOG: Simulated time 767.120 ms 
+INFO-VERILOG: Simulated time 770.120 ms 
+INFO-VERILOG: Simulated time 773.120 ms 
+INFO-VERILOG: Simulated time 776.120 ms 
+INFO-VERILOG: Simulated time 779.120 ms 
+INFO-VERILOG: Simulated time 782.120 ms 
+INFO-VERILOG: Simulated time 785.120 ms 
+INFO-VERILOG: Simulated time 788.120 ms 
+INFO-VERILOG: Simulated time 791.120 ms 
+INFO-VERILOG: Simulated time 794.120 ms 
+INFO-VERILOG: Simulated time 797.120 ms 
+INFO-VERILOG: Simulated time 800.120 ms 
+INFO-VERILOG: Simulated time 803.120 ms 
+INFO-VERILOG: Simulated time 806.120 ms 
+INFO-VERILOG: Simulated time 809.120 ms 
+INFO-VERILOG: Simulated time 812.120 ms 
+INFO-VERILOG: Simulated time 815.120 ms 
+INFO-VERILOG: Simulated time 818.120 ms 
+INFO-VERILOG: Simulated time 821.120 ms 
+INFO-VERILOG: Simulated time 824.120 ms 
+INFO-VERILOG: Simulated time 827.120 ms 
+INFO-VERILOG: Simulated time 830.120 ms 
+INFO-VERILOG: Simulated time 833.120 ms 
+INFO-VERILOG: Simulated time 836.120 ms 
+INFO-VERILOG: Simulated time 839.120 ms 
+INFO-VERILOG: Simulated time 842.120 ms 
+INFO-VERILOG: Simulated time 845.120 ms 
+INFO-VERILOG: Simulated time 848.120 ms 
+INFO-VERILOG: Simulated time 851.120 ms 
+INFO-VERILOG: Simulated time 854.120 ms 
+INFO-VERILOG: Simulated time 857.120 ms 
+INFO-VERILOG: Simulated time 860.120 ms 
+INFO-VERILOG: Simulated time 863.120 ms 
+INFO-VERILOG: Simulated time 866.120 ms 
+INFO-VERILOG: Simulated time 869.120 ms 
+INFO-VERILOG: Simulated time 872.120 ms 
+INFO-VERILOG: Simulated time 875.120 ms 
+INFO-VERILOG: Simulated time 878.120 ms 
+INFO-VERILOG: Simulated time 881.120 ms 
+INFO-VERILOG: Simulated time 884.120 ms 
+INFO-VERILOG: Simulated time 887.120 ms 
+INFO-VERILOG: Simulated time 890.120 ms 
+INFO-VERILOG: Simulated time 893.120 ms 
+INFO-VERILOG: Simulated time 896.119 ms 
+INFO-VERILOG: Simulated time 899.119 ms 
+INFO-VERILOG: Simulated time 902.119 ms 
+INFO-VERILOG: Simulated time 905.119 ms 
+INFO-VERILOG: Simulated time 908.119 ms 
+INFO-VERILOG: Simulated time 911.119 ms 
+INFO-VERILOG: Simulated time 914.119 ms 
+INFO-VERILOG: Simulated time 917.119 ms 
+INFO-VERILOG: Simulated time 920.119 ms 
+INFO-VERILOG: Simulated time 923.119 ms 
+INFO-VERILOG: Simulated time 926.119 ms 
+INFO-VERILOG: Simulated time 929.119 ms 
+INFO-VERILOG: Simulated time 932.119 ms 
+INFO-VERILOG: Simulated time 935.119 ms 
+INFO-VERILOG: Simulated time 938.119 ms 
+INFO-VERILOG: Simulated time 941.119 ms 
+INFO-VERILOG: Simulated time 944.119 ms 
+INFO-VERILOG: Simulated time 947.119 ms 
+INFO-VERILOG: Simulated time 950.119 ms 
+INFO-VERILOG: Simulated time 953.119 ms 
+INFO-VERILOG: Simulated time 956.119 ms 
+INFO-VERILOG: Simulated time 959.119 ms 
+INFO-VERILOG: Simulated time 962.119 ms 
+INFO-VERILOG: Simulated time 965.119 ms 
+INFO-VERILOG: Simulated time 968.119 ms 
+INFO-VERILOG: Simulated time 971.119 ms 
+INFO-VERILOG: Simulated time 974.119 ms 
+INFO-VERILOG: Simulated time 977.119 ms 
+INFO-VERILOG: Simulated time 980.119 ms 
+INFO-VERILOG: Simulated time 983.119 ms 
+INFO-VERILOG: Simulated time 986.119 ms 
+INFO-VERILOG: Simulated time 989.119 ms 
+INFO-VERILOG: Simulated time 992.119 ms 
+INFO-VERILOG: Simulated time 995.119 ms 
+INFO-VERILOG: Simulated time 998.119 ms 
+INFO-VERILOG: Simulated time 1001.119 ms 
+INFO-VERILOG: Simulated time 1004.119 ms 
+INFO-VERILOG: Simulated time 1007.119 ms 
+INFO-VERILOG: Simulated time 1010.119 ms 
+INFO-VERILOG: Simulated time 1013.119 ms 
+INFO-VERILOG: Simulated time 1016.119 ms 
+INFO-VERILOG: Simulated time 1019.119 ms 
+INFO-VERILOG: Coremark loop ended at 1020.534 ms 
+INFO-VERILOG: CoreMark ticks      :    1003415
+INFO-VERILOG: CoreMark per second : 2.989790
+INFO-VERILOG: CoreMark per MHz    : 2.989790
+
+
+2K performance run parameters for coremark.
+CoreMark Size    : 666
+Total ticks      : 1003409
+Total time (secs): 0
+ERROR! Must execute for at least 10 secs for a valid result!
+Iterations       : 3
+Compiler version : GCC10.4.0
+Compiler flags   : -march=rv32imc_zbb_zba_zbs_zbc_zcb_zcmp_zcmt_zicsr_zifencei -mabi=ilp32 -O2 -g -nostartfiles -T arv/link_rodata_sram.ld arv/startup_rodata_sram.S  -DPERFORMANCE_RUN=1  
+Memory location  : STACK
+seedcrc          : 0xe9f5
+[0]crclist       : 0xe714
+[0]crcmatrix     : 0x1fd7
+[0]crcstate      : 0x8e3a
+[0]crcfinal      : 0x2e87
+Errors detected
+
+INFO-VERILOG: CoreMark is now done
+ ===============================================
+|               SIMULATION PASSED               |
+ ===============================================
+
+
+ ===============================================
+| [Instruction/PC Checker] Summary              |
+|   Total instruction/PC pairs checked: 927491
+ ===============================================
+
+SIMULATION SEED:   988803386
+
+$finish called from file "/x2025/GPrj1/IC1/riscv/RISCV_CPU/arvern/bench/verilog/tb_arvern.v", line 941.
+$finish at simulation time 1035058501.000 ns
+           V C S   S i m u l a t i o n   R e p o r t 
+Time: 1035058501000 ps
+CPU Time:     54.080 seconds;       Data structure size:   0.3Mb
+Tue Sep 29 17:27:55 2026
+CPU time: 2.090 seconds to compile + .547 seconds to elab + .283 seconds to link + 54.173 seconds in simulation
+
+#===================================================================#
+#                        BENCHMARK RESULTS                          #
+#===================================================================#
+
+[34mCoreMark/MHz:[0m [1m[32m2.99[0m
+

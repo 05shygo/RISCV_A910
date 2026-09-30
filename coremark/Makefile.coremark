@@ -1,8 +1,10 @@
 # CoreMark build for RV32I CPU
-TOOLCHAIN_PATH = /x2025/GPrj1/IC1/riscv/RISCV_CPU/open_riscv_2035/tools/newlib/bin
+# 工具链统一到 GCC 14.2.0 —— 和顶层 Makefile 是同一套, 原因见那里的注释
+# (CoreMark +4.25%, 收益全在分支行为上)。用 ?= 以便临时覆盖。
+TOOLCHAIN_PATH ?= /x2025/GPrj1/IC1/riscv/RISCV_CPU/tools/riscv/bin
 export PATH := $(TOOLCHAIN_PATH):$(PATH)
 
-CROSS_COMPILE = riscv64-unknown-elf-
+CROSS_COMPILE ?= riscv32-unknown-elf-
 CC = $(CROSS_COMPILE)gcc
 OBJCOPY = $(CROSS_COMPILE)objcopy
 OBJDUMP = $(CROSS_COMPILE)objdump

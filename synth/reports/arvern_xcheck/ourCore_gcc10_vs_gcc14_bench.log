@@ -1,0 +1,92 @@
+########## BENCH RUN gcc10 ##########
+[0m[IFU2-TOP] GHR_W=8 chk: GHR[7:0] ras[11:8] BTBHIT=12 PREDTK=13 FPRED=14
+[IFU2-ICACHE] BYTES=1024 LINE=16 WAYS=2 SETS=32 SET_BITS=5 TAG_BITS=23 ROW_W=24
+[IFU2-SPRAM] ADDR_W=5 DATA_W=24 (契约: 同步读 + 写穿透 + 无 rd_en + 无复位)
+[IFU2-SPRAM] ADDR_W=5 DATA_W=24 (契约: 同步读 + 写穿透 + 无 rd_en + 无复位)
+[IFU2-SPRAM] ADDR_W=5 DATA_W=128 (契约: 同步读 + 写穿透 + 无 rd_en + 无复位)
+[IFU2-SPRAM] ADDR_W=5 DATA_W=128 (契约: 同步读 + 写穿透 + 无 rd_en + 无复位)
+[mycpu] Reset done.
+[difftest] Test Start!
+[difftest] Test finished at cycle 11611077
+Test Point Pass!
+-------- IFU2 (2-stage front-end) --------
+  cycles          = 11611077
+  retired inst    = 9233680
+  IPC (x1000)     = 795
+  fetch bubble    = 772970
+  IFU init cycles = 65
+  BIU read txn    = 132801
+  --- 逐类方向准确率 (口径同 USE_IFU 的 report_bench_stats) ---
+    cls2 cond=360 mis=274 acc=23.88%
+    total cond=360 mis=274 acc=23.88%
+    jal/jalr=220849 mis=41187
+    mispred=366940 ctrl_total=2095059
+  ================ 取指气泡拆解 (口径同 USE_IFU) ================
+  总拍数                      : 11611077
+  核接受指令 (if_accept=1)    : 9599908 (82.68%)
+  不给指令 (if_accept=0)      : 2011169 (17.32%)
+    1. IFU 初始化未完成       : 65
+    2. 冲刷 (mispredict/陷阱) : 733880
+    3. 核内停顿               : 1238180
+    4. 核在等, IFU 没货       : 39025 (0.34%)
+       4a. cache 没有这一行   : 39025
+       4b. 有行但队列空       : 0
+       4c. 其它               : 0
+  核内停顿原始(div/mul/load-use): 766 / 563781 / 673633
+  误预测 366940 / 陷阱 0
+  冲刷后重填等待: 误预测路 24620 拍 (366940 次, 平均 0.06 拍), 陷阱路 0 拍
+  ==============================================================
+    BHT rows nonzero = 504 / 512
+$finish called from file "/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/tb/tb_miniRV_dpi.sv", line 640.
+$finish at simulation time         116110775000
+           V C S   S i m u l a t i o n   R e p o r t 
+Time: 116110775000 ps
+CPU Time:    321.110 seconds;       Data structure size:   0.3Mb
+Tue Sep 29 18:34:59 2026
+make: warning:  Clock skew detected.  Your build may be incomplete.
+########## BENCH RUN gcc14 ##########
+[IFU2-ICACHE] BYTES=1024 LINE=16 WAYS=2 SETS=32 SET_BITS=5 TAG_BITS=23 ROW_W=24
+[IFU2-SPRAM] ADDR_W=5 DATA_W=24 (契约: 同步读 + 写穿透 + 无 rd_en + 无复位)
+[IFU2-SPRAM] ADDR_W=5 DATA_W=24 (契约: 同步读 + 写穿透 + 无 rd_en + 无复位)
+[IFU2-SPRAM] ADDR_W=5 DATA_W=128 (契约: 同步读 + 写穿透 + 无 rd_en + 无复位)
+[IFU2-SPRAM] ADDR_W=5 DATA_W=128 (契约: 同步读 + 写穿透 + 无 rd_en + 无复位)
+[mycpu] Reset done.
+[difftest] Test Start!
+[difftest] Test finished at cycle 11137603
+Test Point Pass!
+-------- IFU2 (2-stage front-end) --------
+  cycles          = 11137603
+  retired inst    = 9440679
+  IPC (x1000)     = 847
+  fetch bubble    = 355302
+  IFU init cycles = 65
+  BIU read txn    = 58986
+  --- 逐类方向准确率 (口径同 USE_IFU 的 report_bench_stats) ---
+    cls1 cond=120 mis=119 acc=0.83%
+    cls2 cond=240 mis=149 acc=37.91%
+    total cond=360 mis=268 acc=25.55%
+    jal/jalr=185516 mis=17487
+    mispred=167188 ctrl_total=1926277
+  ================ 取指气泡拆解 (口径同 USE_IFU) ================
+  总拍数                      : 11137603
+  核接受指令 (if_accept=1)    : 9607610 (86.26%)
+  不给指令 (if_accept=0)      : 1529993 (13.74%)
+    1. IFU 初始化未完成       : 65
+    2. 冲刷 (mispredict/陷阱) : 334376
+    3. 核内停顿               : 1174672
+    4. 核在等, IFU 没货       : 20861 (0.19%)
+       4a. cache 没有这一行   : 20861
+       4b. 有行但队列空       : 0
+       4c. 其它               : 0
+  核内停顿原始(div/mul/load-use): 731 / 563790 / 610151
+  误预测 167188 / 陷阱 0
+  冲刷后重填等待: 误预测路 12282 拍 (167188 次, 平均 0.07 拍), 陷阱路 0 拍
+  ==============================================================
+    BHT rows nonzero = 500 / 512
+$finish called from file "/x2025/GPrj1/IC1/riscv/RISCV_CPU/cdp-tests/tb/tb_miniRV_dpi.sv", line 640.
+$finish at simulation time         111376035000
+           V C S   S i m u l a t i o n   R e p o r t 
+Time: 111376035000 ps
+CPU Time:    304.530 seconds;       Data structure size:   0.3Mb
+Tue Sep 29 18:38:07 2026
+make: warning:  Clock skew detected.  Your build may be incomplete.
