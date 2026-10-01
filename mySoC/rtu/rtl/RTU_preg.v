@@ -62,6 +62,12 @@ module RTU_preg (
 
     reg  [1:0]  st [0:95];
     reg  [1:0]  nst[0:95];
+    // WF_ALLOC 的"年龄": 刚发出去那一拍是 0, 再等一拍变 1。
+    // ⚠️ 放回自由池**要等两拍**, 不能刚发出去没派成下一拍就收 —— §6.0 的握手本来
+    //    只留了一拍窗口, 但那样对"发出者晚半拍/晚一拍"零容忍: 编号一旦被放回,
+    //    优先编码器立刻可能把它发给别人, 而前一条指令还拿着它 (单测台就是这么撞上的)。
+    //    多等一拍只让自由池少一个编号一拍, 没有任何正确性代价。
+    reg  [95:0] wf_age;
     reg  [6:0]  amt[0:31];
     reg  [6:0]  free_cnt_q;
 
@@ -195,8 +201,8 @@ module RTU_preg (
                 nst[i] = `RTU_P_FREE;
             end else if (is_wf[i] &&  hit_disp[i]) begin
                 nst[i] = `RTU_P_ALLOC;          // 本拍被派出去了
-            end else if (is_wf[i] && !hit_disp[i]) begin
-                nst[i] = `RTU_P_FREE;           // 没派成 -> 回自由池
+            end else if (is_wf[i] && !hit_disp[i] && wf_age[i]) begin
+                nst[i] = `RTU_P_FREE;           // 等满两拍都没派成 -> 回自由池
             end else if (sel_oh[i]) begin
                 nst[i] = `RTU_P_WFALLOC;
             end else begin
@@ -218,7 +224,8 @@ module RTU_preg (
     // -----------------------------------------------------------------------
     // 空闲计数 (加减计数器, 不让 popcount 上路径)
     // -----------------------------------------------------------------------
-    wire [1:0] n_cf = $countones(is_wf & ~hit_disp);      // 本拍放回自由池的个数 (0..3)
+    wire [95:0] do_free_wf = is_wf & ~hit_disp & wf_age;
+    wire [1:0] n_cf = $countones(do_free_wf);             // 本拍放回自由池的个数 (0..3)
     wire [2:0] n_freed = {2'b0, ret_free_vld[0]} + {2'b0, ret_free_vld[1]}
                        + {2'b0, ret_free_vld[2]} + {1'b0, n_cf};
     wire [2:0] n_alloc = {2'b0, rtu_preg_alloc_vld0} + {2'b0, rtu_preg_alloc_vld1}

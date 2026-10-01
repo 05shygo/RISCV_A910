@@ -192,6 +192,20 @@ module tb_rtu_rob;
         .dbg_commit_value0(cmval0), .dbg_commit_value1(cmval1), .dbg_commit_value2(cmval2)
     );
 
+    // [临时] 盯住 p94: 谁发了它、谁确认了它、谁又把它放回池子
+    logic [1:0] st94_prev = 2'd0;
+    always @(posedge clk) begin
+        if (dut.u_preg.st[94] !== st94_prev) begin
+            $display("  [P94] t=%0t st 变了: %0d -> %0d | 本拍 disp=%b dp=%0d,%0d,%0d iswf=%b hit=%b retfree=%b old0=%0d flushlvl=%b",
+                     $time, st94_prev, dut.u_preg.st[94], dut.u_rob.disp_acc,
+                     dut.disp0_dst_preg, dut.disp1_dst_preg, dut.disp2_dst_preg,
+                     dut.u_preg.is_wf[94], dut.u_preg.hit_disp[94],
+                     dut.u_preg.ret_free_vld, dut.u_preg.ret_old_preg0,
+                     dut.u_preg.flush_lvl);
+            st94_prev <= dut.u_preg.st[94];
+        end
+    end
+
     // =======================================================================
     // 参考模型
     // =======================================================================
@@ -503,9 +517,15 @@ module tb_rtu_rob;
                                 err($sformatf("指令 %0d 释放的编号不符: exp=%0d got=%0d",
                                               i, x_opr[i], fp_k));
                             if (fv_k && (fp_k < 7'd32)) err("释放了架构寄存器 p0..p31");
-                            if (fv_k)
-                                err($sformatf("释放了不在占用态的 p%0d (指令 %0d, trap=%b)",
-                                              fp_k, i, trap_this));
+                            if (fv_k) begin
+                                logic in_amt;
+                                in_amt = 1'b0;
+                                for (int l = 0; l < 32; l = l + 1)
+                                    if (ref_amt[l] == fp_k) in_amt = 1'b1;
+                                err($sformatf("释放了不在占用态的 p%0d (指令 %0d, trap=%b) | DUT st=%0d 在模型 AMT 里=%b ref_pend=%b 该指令 dpr=%0d old=%0d",
+                                              fp_k, i, trap_this, dut.u_preg.st[fp_k],
+                                              in_amt, ref_pend[fp_k], x_dpr[i], x_opr[i]));
+                            end
                         end
                     end
                 end
@@ -896,6 +916,28 @@ module tb_rtu_rob;
     task automatic check_after_retire;
         integer i;
         begin
+        // ---------- 0) 影子窗口的每个字段都必须等于参考流里对应的那条指令 ----------
+        // 这是"流有没有错位"最直接的判据: 位置对得上 (4b 已查), 字段也必须对得上。
+        for (int k = 0; k < 3; k = k + 1) begin
+            logic [`RTU_E_W-1:0] w;
+            integer ii;
+            if (k == 0) w = dut.u_rob.win_q0;
+            else if (k == 1) w = dut.u_rob.win_q1;
+            else w = dut.u_rob.win_q2;
+            ii = n_ret + k;
+            if (w[`RTU_E_VLD] && (ii < n_inst) && (fl_state == 0)) begin
+                if ((w[`RTU_E_DST_LREG] !== x_lreg[ii]) ||
+                    (w[`RTU_E_DST_PREG] !== x_dpr[ii]) ||
+                    (w[`RTU_E_OLD_PREG] !== x_opr[ii]) ||
+                    (w[`RTU_E_RF_WE]    !== x_rfwe[ii]) ||
+                    (w[`RTU_E_PC]       !== x_pc[ii]))
+                    err($sformatf("窗口[%0d] 与参考流 inst=%0d 不符: lreg %0d/%0d dpr %0d/%0d opr %0d/%0d rfwe %b/%b pc %08x/%08x",
+                                  k, ii,
+                                  w[`RTU_E_DST_LREG], x_lreg[ii], w[`RTU_E_DST_PREG], x_dpr[ii],
+                                  w[`RTU_E_OLD_PREG], x_opr[ii], w[`RTU_E_RF_WE], x_rfwe[ii],
+                                  w[`RTU_E_PC], x_pc[ii]));
+            end
+        end
         // ---------- 4a) DUT 的 rptr 每拍只能前进 pop_n (除冲刷复位之外不许跳) ----------
         // ⚠️ 用**锁存**的冲刷标志: 冲刷脉冲在 FLUSH_2 那拍, 指针复位就在同一个边沿 ——
         //    到了下一拍 negedge, 实时的 ren_flush 已经回 0, 但指针确实"跳"过,
