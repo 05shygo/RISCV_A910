@@ -34,6 +34,12 @@ module EX_MEM(
     input [3:0]                     ex_exc_cause ,
     input [31:0]                    ex_exc_tval  ,
     input                           ex_is_mret   ,
+    // 本条指令在 ROB 里的 iid (见 ID_EX.v): 完成/异常口要按它寻址 (§6.3 ⑪)
+    input [6:0]                     ex_iid       ,
+    // CSR 指令的**源操作数**(转发后的 rs1)。CSR 写搬到退休拍之后, RS/RC 的
+    // "旧值 | 源"要在退休那拍由 RTU 现算, 而退休那拍 EX 早换人了 —— 所以这个
+    // 操作数必须随指令走到 WB (阶段 1 的等价物: PRF 读口在阶段 2 才接)。
+    input [31:0]                    ex_csr_src   ,
     // 这条指令是不是 CSR 写. 一路带到 WB, 供 difftest 判断"CSR 文件是否静止":
     // DUT 在 EX 级就写了 CSR(比提交早 2 拍), 而 golden model 是在提交当拍才写,
     // 所以只有在【没有 CSR 写在任何一级在途】时, 两边的 CSR 才一定一致.
@@ -64,7 +70,9 @@ module EX_MEM(
     output reg [3:0]                mem_exc_cause,
     output reg [31:0]               mem_exc_tval ,
     output reg                      mem_is_mret ,
-    output reg                      mem_csr_we
+    output reg                      mem_csr_we  ,
+    output reg [6:0]                mem_iid     ,
+    output reg [31:0]               mem_csr_src
 
     //trace
     ,input  wire [31:0] pc_i       ,
@@ -90,6 +98,8 @@ always @(posedge clk or posedge rst) begin
         mem_exc_tval <= 0;
         mem_is_mret  <= 1'b0;
         mem_csr_we   <= 1'b0;
+        mem_iid      <= 7'd0;
+        mem_csr_src  <= 32'd0;
     end else if (stall || flush) begin
         // stall: muldiv 停顿 -> 向 MEM 级插入气泡, 让 MEM/WB 正常排空.
         //   这里不能"保持": MEM_WB 没有停顿端口, 会照常锁存, 于是被冻结的
@@ -113,6 +123,8 @@ always @(posedge clk or posedge rst) begin
         mem_exc_tval <= 0;
         mem_is_mret  <= 1'b0;
         mem_csr_we   <= 1'b0;
+        mem_iid      <= 7'd0;
+        mem_csr_src  <= 32'd0;
     end else begin
         mem_rf_we    <= ex_rf_we   ;
         mem_ram_we   <= ex_ram_we  ;
@@ -129,6 +141,8 @@ always @(posedge clk or posedge rst) begin
         mem_exc_tval <= ex_exc_tval;
         mem_is_mret  <= ex_is_mret ;
         mem_csr_we   <= ex_csr_we  ;
+        mem_iid      <= ex_iid     ;
+        mem_csr_src  <= ex_csr_src ;
     end
 end
 

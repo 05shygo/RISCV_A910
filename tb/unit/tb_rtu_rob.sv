@@ -709,6 +709,28 @@ module tb_rtu_rob;
                 end
             end
 
+            // ---------- 5b) 阵列 vld == "这一格装着在途指令" ----------
+            // 纯 DUT 侧不变量 (与参考流无关): 在途区间就是 [rptr, rptr+occ), 所以
+            // 阵列里**恰好**这一段 vld=1、其余全 0。冲出这一条, 说明"退休弹出一项"
+            // 没有把那一格清掉 —— 而阵列不随指针绕圈自动失效, 于是那一格会一直挂着
+            // 上一代 (甚至上上代) 的 vld=1/cmplt=1, 等 ROB 快排空、窗口的"补空"
+            // 路径去看 rptr+k 时, 就把旧表项当成在途项补进来 ⇒ 判退级联按它再发一次
+            // 交付脉冲, **同一条指令被退休两次**。
+            // ⚠️ 这条是 2026-10-01 在整核里撞出来之后补的 (阶段 1 接进 mycpu 时
+            //    trap.S 的 wait_loop 上重复提交): 原来的 TB 只在"窗口有效"时比
+            //    窗口与阵列, 两份都错就看不出来; 而它的激励又总让 ROB 保持半满
+            //    (rptr+k 永远落在在途区间内), 于是从没走到这个角落。**别删。**
+            if (!ren_flush) begin
+                for (int k = 0; k < 64; k = k + 1) begin
+                    logic occ_k;
+                    occ_k = (((k - dut.u_rob.rptr) & 6'h3f) < dut.u_rob.occ_q);
+                    if (occ_k !== (dut.u_rob.rob_q[k][`RTU_E_VLD] === 1'b1))
+                        err($sformatf("阵列[%0d] vld=%b 与在途区间不符 (rptr=%0d occ=%0d)",
+                                      k, dut.u_rob.rob_q[k][`RTU_E_VLD],
+                                      dut.u_rob.rptr, dut.u_rob.occ_q));
+                end
+            end
+
             // ---------- 6) 分配器 ----------
             // 纯 DUT 侧的不变量: 给出的编号自身必须是 FREE 态 (与模型无关)
             if (alloc_vld0 && (dut.u_preg.st[alloc0] !== 2'd0))
@@ -952,8 +974,20 @@ module tb_rtu_rob;
                     pl_val[k]   = {$urandom};
                     pl_s1[k]    = {$urandom} % 96;
                     pl_ca[k]    = {$urandom} % 4096;
-                    pl_cop[k]   = 3'b001 + ({$urandom} % 3);
-                    pl_cimm[k]  = {$urandom} % 32;
+                    // ⚠️ csr_op 按 §6.1 A6c 是 **funct3 原样**, 而合法取值有六个:
+                    //    001/010/011 (寄存器型) 与 101/110/111 (立即数型)。
+                    //    这里原来只生成前三个 ⇒ **立即数形式从没被激励过**,
+                    //    于是"喂两位 CSR_OP_* 码而不是 funct3"那种接线错
+                    //    (`csr_is_imm` 恒 0 ⇒ csrrwi 拿 rs1 垃圾当源) 在单测台
+                    //    里静默通过, 一直到整核接上 CSR 写口才炸。别改回去。
+                    case ({$urandom} % 4)
+                        0: pl_cop[k] = 3'b001;
+                        1: pl_cop[k] = 3'b010;
+                        2: pl_cop[k] = 3'b011;
+                        default: pl_cop[k] = 3'b101 + ({$urandom} % 3);
+                    endcase
+                    // uimm5 要走满 0 与非 0 两类: 0 决定 RS/RC 不写 (exp_csr_we 那一支)
+                    pl_cimm[k]  = ({$urandom} % 4 == 0) ? 5'd0 : {$urandom} % 32;
                     pl_sqi[k]   = {$urandom} % 8;
                 end else begin
                     pl_flg[k]=0; pl_lreg[k]=0; pl_rfwe[k]=0; pl_opreg[k]=0;

@@ -146,6 +146,15 @@ module RTU (
     output wire        rtu_ren_free_vld0,
     output wire        rtu_ren_free_vld1,
     output wire        rtu_ren_free_vld2,
+    // 派遣回执 (§6.2, 2026-10-01 新增): 本拍真进了 ROB 的车道拿到的 iid。
+    // 重命名级必须把它随指令带进流水线 —— cmplt_iid / resolve_iid 是按 iid 寻址的,
+    // 而 RTU 表项里只存回绕位, 编号只有分配者知道 (§6.3 ⑪)。
+    output wire        rtu_disp_vld0,
+    output wire        rtu_disp_vld1,
+    output wire        rtu_disp_vld2,
+    output wire [6:0]  rtu_disp_iid0,
+    output wire [6:0]  rtu_disp_iid1,
+    output wire [6:0]  rtu_disp_iid2,
 
     // ===================== §6.2 物理寄存器堆访问 (A1) =====================
     output wire [6:0]  rtu_preg_raddr0,      // = 退休槽 k 的 dst_preg
@@ -212,6 +221,7 @@ module RTU (
     wire [1:0]  pop_n;
     wire [2:0]  disp_acc;
     wire [2:0]  disp_wrap;
+    wire [5:0]  cptr_idx;                    // 创造指针的二进制下标 (派遣回执)
     wire [2:0]  disp_vld_raw;
     wire [`RTU_E_W-1:0] disp_data0;
     wire [`RTU_E_W-1:0] disp_data1;
@@ -307,8 +317,22 @@ module RTU (
         .win_q2             (win2),
         .occ                (rob_occ),
         .rob_full           (rob_full),
-        .disp_wrap          (disp_wrap)
+        .disp_wrap          (disp_wrap),
+        .cptr_idx           (cptr_idx)
     );
+
+    // =======================================================================
+    // 派遣回执: 本拍被接受的车道在 ROB 里的 iid (§6.2 / §6.3 ⑪)
+    //   车道 k 的 iid = {wrap_k, cptr_idx + k} —— 与表项里存的 (wrap, 固定下标)
+    //   是同一套算法 (disp_wrap 就是表项 WRAP 位的来源, 见上面的 disp_data*)。
+    //   ⚠️ 编号是给**下一拍**随指令走的, 与 §6.0 的两拍语义无关 (那条是 preg)。
+    // =======================================================================
+    assign rtu_disp_vld0 = disp_acc[0];
+    assign rtu_disp_vld1 = disp_acc[1];
+    assign rtu_disp_vld2 = disp_acc[2];
+    assign rtu_disp_iid0 = {disp_wrap[0], cptr_idx};
+    assign rtu_disp_iid1 = {disp_wrap[1], cptr_idx + 6'd1};
+    assign rtu_disp_iid2 = {disp_wrap[2], cptr_idx + 6'd2};
 
     // =======================================================================
     // 异常收集 (最旧者胜)

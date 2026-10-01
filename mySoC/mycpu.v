@@ -132,6 +132,48 @@ assign inst_addr = if_pc[15:2];
 wire stall;
 wire flush_if_id;
 wire flush_id_ex;
+wire hz_flush_id_ex;   // Hazard_Detection 出的那份 (与 RTU 的合并成 flush_id_ex)
+
+// ===================== 退休单元 (RTU) 接口 —— 阶段 1 (§7 读法 A) =====================
+// 这一组全部**先声明再赋值**: 本仓有过"先用后声明 ⇒ 1 位隐式线网、语义静默错"
+// 的前科 (见 rv32ifu2_top.v / cpu/sim/rtl_patch/README.md), 而这里全是窄位宽信号。
+wire        hz_stall;                  // Hazard_Detection 的原始停顿
+wire        rtu_disp_stall;            // RTU 的派遣停顿 (冲刷窗口 / ROB 满 / CSR 在途)
+wire        rtu_disp_vld0;             // 派遣回执: 车道 0 本拍真的进了 ROB
+wire [6:0]  rtu_disp_iid0;             // 回执里的编号 (随指令带进流水线)
+wire [6:0]  id_iid;                    // = rtu_disp_iid0 (ID 那拍取)
+wire [6:0]  ex_iid;                    // ID_EX 带下来的同一份
+wire [6:0]  mem_iid;                   // EX_MEM 带下来的同一份 (完成/异常口用它)
+wire        rtu_commit_vld0;           // 交付脉冲 (退休窗口槽 0)
+wire        rtu_commit_ena0;           // 写寄存器的使能 (陷阱那条为 0)
+wire [31:0] rtu_commit_pc0;
+wire [31:0] rtu_commit_value0;
+wire [4:0]  rtu_commit_reg0;
+wire        rtu_trap_vld;              // 同步异常 或 中断 (两者都写 mepc/mcause/mtval)
+wire        rtu_mret_vld;
+wire [31:0] rtu_trap_epc, rtu_trap_tval;
+wire [4:0]  rtu_trap_cause;
+wire        rtu_beu_flush_chgflw_mask;
+wire        rtu_cmplt_vld;             // 完成信号 (从 MEM 级报)
+wire        rtu_expt_vld;              // 异常收集口 (从 MEM 级报)
+wire        rtu_resolve_vld;           // 解析口 (BEU, EX 级)
+wire        rtu_resolve_taken;
+wire        rtu_resolve_mispred;
+wire [31:0] rtu_resolve_target;
+wire        rtu_int_pending;
+wire        rtu_ifu_flush;             // ← RTU 实例驱动 (陷阱/中断/mret/误预测退休)
+wire        rtu_ifu_chgflw_vld;
+wire [31:0] rtu_ifu_chgflw_pc;
+wire        wb_irq_safe;               // 给 difftest: 这一拍是不是"取中断的沿"
+wire        rtu_csr_we;                // 退休拍: CSR 写使能 (含"这条真要写"的口径)
+wire [11:0] rtu_csr_addr;              // 退休拍: CSR 地址 (读口 2 与写口共用)
+wire [31:0] rtu_csr_wdata;             // 退休拍: CSR 新值 (RTU 现算)
+wire [31:0] rtu_csr_rdata;             // 2 号读口的输出 (在途 CSR 指令的旧值)
+wire [1:0]  rtu_retire_cnt;            // 本拍退休条数 (0..3)
+wire        irq_taken;                 // = RTU 的 int_take (rtu_trap_vld 且无交付脉冲)
+                                       //   ⚠️ 必须在这里声明: 它在 U_CSR 的
+                                       //   trap_cause_i 里就被用了, 晚声明会造出
+                                       //   1 位隐式线网 (VCS 只报 IPDW 警告、不报错)。
 
 wire id_rf1_used;
 wire id_rf2_used;
@@ -193,7 +235,10 @@ wire [31:0] ex_local_exc_tval;
 wire        mem_irq_safe, mem_exc_valid, mem_is_mret, mem_csr_we;
 wire [3:0]  mem_exc_cause;
 wire [31:0] mem_exc_tval;
-wire        wb_irq_safe, wb_exc_valid, wb_is_mret, wb_csr_we;
+wire        wb_exc_valid, wb_is_mret, wb_csr_we;
+wire        wb_irq_safe_mm;   // MEM_WB 锁出来的那份 (只用于比对, 见下)
+wire [31:0] mem_csr_src;       // CSR 指令的源操作数, 随流水到 WB (退休拍现算新值用)
+wire [31:0] wb_csr_src;
 wire [3:0]  wb_exc_cause;
 wire [31:0] wb_exc_tval;
 
@@ -210,24 +255,30 @@ always @(posedge cpu_clk or posedge cpu_rst) begin
     else                       timer_irq_d1 <= timer_irq_in;
 end
 
-// WB(提交点)的陷阱裁决
-wire wb_exc     = wb_exc_valid & have_inst_WB;
-wire wb_mret    = wb_is_mret   & have_inst_WB;
-// 中断只能落在【没有已发生副作用】的提交点: 被 squash 的指令若已经写过内存
-// (MEM 级, 早一拍) 或写过 CSR(EX 级), squash 会造成 DUT 与 golden model 永久不一致.
-wire irq_taken  = have_inst_WB & wb_irq_safe & ~wb_exc & ~wb_mret
-                & csr_mip_mtip & csr_mie_mtie & csr_mstatus_mie;
-// 重定向: 同步异常 / 中断入口 / mret, 三者都要求"跳到别处 + 冲掉年轻指令"
-wire redirect   = wb_exc | irq_taken | wb_mret;
-// 陷阱向量 / 返回地址: mret 走 mepc, 否则由 CSR 按 mtvec 模式解算
-wire [31:0] redirect_pc = wb_mret ? csr_mepc : csr_trap_vector;
-wire [31:0] trap_cause  = irq_taken ? `INTR_MTIP_CAUSE : {28'b0, wb_exc_cause};
-wire [31:0] trap_tval   = irq_taken ? 32'b0 : wb_exc_tval;
+// ---------------------------------------------------------------------------
+// 提交点 = RTU 的退休窗口 (阶段 1: doc/rtu_plan_zh.md §7)
+//
+// 改动前这里是**组合的 WB 级裁决** (wb_exc / irq_taken / wb_mret)。现在三者
+// 全部由 RTU 在退休拍给出, mycpu 只做转发:
+//   * 同步异常: 在 **MEM 级**报到 RTU 的异常口 (expt_*), 退休那拍命中;
+//   * 中断:     int_pending 送进 RTU, 由它按"退休窗口 + 无副作用"裁决;
+//   * mret:     表项里的 flags 位, 退休那拍由 RTU 发重定向。
+// 时序与改动前**同拍**: 指令在 MEM 那拍报异常/完成, 下一拍 (它的 WB 拍) 是
+// 退休判决拍 —— 与旧的 `wb_exc` 落在同一拍, 所以周期数不变。
+// ---------------------------------------------------------------------------
+// 重定向: 同步异常 / 中断入口 / mret / 误预测退休, 四者都要求"跳到别处 +
+// 冲掉年轻指令"。由 RTU 的慢路状态机在退休拍发出 (§6.3 ⑨), 单拍脉冲。
+// 误预测**也要**走这一路: 从 BEU 的执行级快路重定向到这条分支退休之间,
+// 前端已经派出若干条"拿着未恢复的 RAT 改名"的指令, 必须一起冲掉并从真实
+// 目标重取 —— 详见 §6.3 ⑨ 的长注。
+wire redirect    = rtu_ifu_flush;
+wire [31:0] redirect_pc = rtu_ifu_chgflw_pc;
 
 // 有效的寄存器写使能: 陷阱指令不写 rd(非对齐 load 的 rf_we=1 必须按掉),
 // 被中断 squash 掉的指令也不写. 必须从源头掐掉 —— 只改 debug_wb_ena 是不够的,
 // 因为 RegFile 和转发逻辑(Hazard_Detection 的 wb_rf_we)都在用它.
-wire wb_rf_we_eff = wb_rf_we & ~wb_exc & ~irq_taken;
+// rtu_trap_vld = trap_hit | int_take, 覆盖两者 (mret 的 rf_we 本来就是 0)。
+wire wb_rf_we_eff = wb_rf_we & ~rtu_trap_vld;
 
 // ---------------------------------------------------------------------------
 // WB 级写回数据: 乘法的结果在这里接进来 (doc §7)
@@ -238,14 +289,22 @@ wire wb_rf_we_eff = wb_rf_we & ~wb_exc & ~irq_taken;
 // 正确性靠"响应属于哪条指令由指令自己说了算": is_mul 跟着指令走完流水, 而
 // 乘法的发射拍与它的 WB 拍相差恒定 2 拍, 两者天然对齐 (见 MUL_DIV.v 的说明)。
 wire [31:0] wb_wD_eff = wb_is_mul ? md_resp_data : wb_wD;
-// 提交脉冲 (被中断 squash 掉的那条不算退休, 否则 instret 会多计)
-wire retire_now   = have_inst_WB & ~irq_taken;
+// instret 的口径: **RTU 的退休条数** (rtu_retire_cnt, §6.3 ⑥⑦ —— 是 [1:0] 的
+// 计数不是 3 位宽)。被中断 squash 掉的那条不计 (那拍 pop_n=0), 同步异常那条
+// **计** (它的交付脉冲照样发, 与 golden model 在 WB 级的 minstret++ 对齐)。
+//
+// `retire_now` 保留成"这一拍有没有退休"的脉冲 (tb_miniRV_dpi.sv 的指令计数
+// 探针抓它): 就是退休条数的非零位 —— 取中断那拍 pop_n=0, 所以不计。
 
 // CSR 文件是否"静止": 没有任何一级存在途的 CSR 写, 也没有重定向.
 // DUT 在 EX 级写 CSR(比提交早 2 拍), golden model 在提交当拍才写 ——
 // 只有在静止时才保证两边读到同一个状态, 在途窗口里比较会误报.
 // (陷阱自己的 mepc/mcause/mstatus 写发生在重定向边沿, 所以也排除 redirect.)
-wire csr_quiescent = ~redirect & ~ex_csr_we & ~mem_csr_we & ~wb_csr_we;
+// ⚠️ 口径随块 ③ 改过: CSR 写搬到退休拍之后就没有"EX 级早写两拍"的在途窗口了,
+//    只剩"这一拍正在落盘"需要跳过 (那一刻 DUT 读到的是边沿前的值, 而 golden
+//    model 已经在 gm_check_step 里应用完了)。下一拍两边都是新值。
+wire csr_quiescent = ~redirect & ~rtu_csr_we;
+wire retire_now    = |rtu_retire_cnt;
 
 `ifdef USE_IFU_ANY
 // ===================== IFU 取指 =====================
@@ -301,9 +360,9 @@ wire        ifu_biu_r_ready;
 // 前端重定向 (组合, 由 EX/WB 段驱动, 声明在后)
 wire        iu_ifu_chgflw_vld;
 wire [31:0] iu_ifu_chgflw_pc;
-wire        rtu_ifu_flush;
-wire        rtu_ifu_chgflw_vld;
-wire [31:0] rtu_ifu_chgflw_pc;
+// ⚠️ rtu_ifu_* 三根**无条件声明** —— 它们现在由 RTU 实例驱动, 而 redirect /
+//    redirect_pc (MUL_DIV 的 flush_valid / 各级流水寄存器的 flush 都在用)
+//    在 IFU=0 时也要有值。放进 `ifdef USE_IFU_ANY 里会造出 1 位隐式线网。
 
 // 前端两个总开关从 Makefile 的 +define+ 派生后透传给 ifu_subsys。
 // 不定义 ICACHE_OFF / BP_OFF 时两者都是 1, 与改动前逐位相同。
@@ -618,6 +677,7 @@ ID_EX U_ID_EX(
     .id_exc_tval   (id_exc_tval  ),
     .id_bht_chk    (id_bht_chk   ),
     .id_bht_pred   (id_bht_pred  ),
+    .id_iid        (id_iid       ),
     .Forward_A_en  (Forward_A_en ),
     .Forward_B_en  (Forward_B_en ),
     .A_forward     (A_forward    ),
@@ -648,6 +708,7 @@ ID_EX U_ID_EX(
     .ex_exc_tval   (ex_exc_tval  ),
     .ex_bht_chk    (ex_bht_chk   ),
     .ex_bht_pred   (ex_bht_pred  ),
+    .ex_iid        (ex_iid       ),
 
 //    ,//trace
     .pc_i        (id_pc         ),
@@ -829,8 +890,11 @@ wire mispredict = have_inst_EX & ~ex_inst_misaligned & ex_npc_mismatch;
 // 预测错了才像旧设计那样冲 IF/ID。
 assign branched = mispredict;
 
-// EX 级重定向 (IFU 内部 RTU 优先于 IU; 与陷阱同拍时由 ~redirect 掐掉)
-assign iu_ifu_chgflw_vld = mispredict & ~redirect;
+// EX 级重定向 (IFU 内部 RTU 优先于 IU; 与陷阱同拍时由 ~redirect 掐掉)。
+// ~rtu_beu_flush_chgflw_mask: 慢路冲刷窗口 (T..T+2) 里屏蔽 BEU 再发重定向,
+// 否则两次重定向会打架 (对应 C910 的 rtu_iu_flush_chgflw_mask, §6.2)。阶段 1
+// 里 EX 那拍已经是气泡、本来发不出重定向, 但这条门控是"契约要求"的接线。
+assign iu_ifu_chgflw_vld = mispredict & ~redirect & ~rtu_beu_flush_chgflw_mask;
 assign iu_ifu_chgflw_pc  = actual_npc;
 
 // ===================== BHT 训练反馈 =====================
@@ -871,10 +935,9 @@ assign iu_btb_is_jalr = ex_is_jalr;
 // 不能用"重定向时再读一次 GHR"那种做法 —— 那时 GHR 已经被错误路径上的块推过了。
 assign iu_btb_chk = ex_bht_chk;
 `endif
-// WB 提交点陷阱/中断/mret 重定向
-assign rtu_ifu_flush     = redirect;
-assign rtu_ifu_chgflw_vld = redirect;
-assign rtu_ifu_chgflw_pc  = redirect_pc;
+// 前端重定向的另一路 (rtu_ifu_flush / rtu_ifu_chgflw_vld / rtu_ifu_chgflw_pc)
+// 现在**由 RTU 实例直接驱动** —— 见文件末尾的 u_rtu。这里原来那三条
+// `assign rtu_ifu_* = redirect` 必须删掉: 留着就是双驱动 (X)。
 `endif
 
 // 优先级: 指令目标非对齐 > 访问异常 > 访存非对齐.
@@ -902,58 +965,94 @@ wire [31:0] ex_exc_tval_f  = ex_exc_valid ? ex_exc_tval  : ex_local_exc_tval;
 wire ex_irq_safe = ~ex_ram_we & ~ex_csr_we;
 
 // ---------------------------------------------------------------------------
-// CSR 文件
+// CSR 文件 —— 阶段 1: **读写都搬到了退休拍** (doc/rtu_plan_zh.md §7 / §6.3 ⑤⑩)
+//
+// 改动前: 读在 ID、写在 EX(比提交早两拍)。现在:
+//   * **写**: `rtu_csr_we/rtu_csr_addr/rtu_csr_wdata` —— RTU 在退休那拍现算
+//     (RW 直接写源, RS 置位, RC 清位), 源操作数来自两条路:
+//       - 立即数形式 (csrrwi/si/ci): CSR 槽里的 `csr_imm` (inst[19:15]);
+//       - 寄存器形式: `rtu_csr_src_rdata` ← 随流水走到 WB 的 rs1 (阶段 1 的等价物,
+//         阶段 2 的 PRF 有读口之后换成按 `rtu_csr_src_raddr` 真读)。
+//     "旧值"由 RTU 用 `csr_rdata` 现读 (下面那个地址 mux 保证它读的是**在途那条**
+//     CSR 指令的地址)。
+//   * **读**: 两个口 (CSR.v 里多了一个 16:1 读译码器):
+//       - 1 号口按 `id_csr_addr` —— 本指令自己的旧值, 当 rd 用 (走 ALU 的 A 口,
+//         与改动前完全一致, 所以 rd 的取值/转发路径一位没动);
+//       - 2 号口按 `rtu_csr_addr` —— RTU 在退休拍读, 算 RS/RC 的新值 + difftest。
+//     为什么不做成"一口 + 地址 mux": 那需要 mycpu 知道"有没有 CSR 在途",
+//     而那是 RTU 的内部状态 (`csr_inflight`), 把它引出来是新的跨模块耦合。
+//
+// ⚠️ 两条旧注释随本次改动作废:
+//   ① "EX→ID 旁路"删掉了 —— 写挪到退休拍之后, 后一条 CSR 指令被 `csr_inflight`
+//      一直按在 ID 里, 等前一条退休(写落盘)才放行 ⇒ 它读到的一定是新值,
+//      旁路本身也不再对应任何真实写 (`ex_csr_we` 已经不驱动写口了)。
+//   ② "计数器类读早一拍"的已知偏移也一并消失。
+//
+// 注: CSR 指令的 **rd 值**仍由 WB 的写口送出, 与 §6.3 ⑤ 的"rd 值退休当拍产生"
+//     是同一拍; `rtu_csr_rd_we/addr/wdata` 是阶段 2 物理寄存器堆写回用的, 阶段 1
+//     与 WB 写口**同拍同值**, 因此不接。
 // ---------------------------------------------------------------------------
-// 写数据在 EX 组合出来: RW 直接写源, RS 置位, RC 清位.
-// 源: csrrwi 系列 = uimm5 (经 Sext_Z 得到, 锁在 ex_sext);
-//     csrrw/rs/rc = rs1, 而且是【转发后】的 rs1 (ex_rD1).
-// 注意不能用 rs2: 对 csrr* 来说 inst[24:20] 属于 csr 域, 不是寄存器号.
-wire [31:0] ex_csr_src   = ex_csr_imm ? ex_sext : ex_rD1;
-// RS/RC 的"旧值"用的也是锁进来的那一份 (与 A 口同源, 保证 csrrw 后紧跟 csrrs 时
-// 置位/清位是相对**新值**做的)。
-wire [31:0] ex_csr_wdata = (ex_csr_op == `CSR_OP_RW) ? ex_csr_src
-                         : (ex_csr_op == `CSR_OP_RS) ? (ex_csr_rdata |  ex_csr_src)
-                         : (ex_csr_op == `CSR_OP_RC) ? (ex_csr_rdata & ~ex_csr_src)
-                         : 32'b0;
+// 1 号读口 = ID 级: 本指令自己的旧值 (当 rd 用, 走 ALU 的 A 口, 与改动前一致)。
+// 2 号读口 = 退休拍: RTU 按 `rtu_csr_addr` 读, 算 RS/RC 的新值 + difftest 取值。
+assign id_csr_rdata = csr_rdata;
 
 // ---------------------------------------------------------------------------
-// ID 级 CSR 读 + EX→ID 旁路 (2026-09-28)
+// 阶段 1 的调试探针 (只在编译时加 `+define+RTU_DBG` 才存在; 默认不参与编译)
 //
-// 读地址用 id_csr_addr (本条指令自己的 inst[31:20]), 结果随 ID_EX 锁一拍再进 EX。
-// 于是 CSR 的 16:1 读 mux 整条离开 EX 的组合路径。
+//   make run TEST=trap VCS_FLAGS_EXTRA="+define+RTU_DBG"
 //
-// ⚠️ 旁路是必需的, 而且必须带 `~redirect`:
-//   * 不带旁路: 指令 N (csrrw) 在 EX 写 CSR 的同拍, N+1 正在 ID 读 —— 读到的是
-//     **写之前**的旧值, 而架构要求 N+1 看到新值;
-//   * 不带 ~redirect: CSR 实例的写使能就是 `ex_csr_we & ~redirect`。重定向那拍
-//     这条更年轻的 CSR 指令会被 flush、写不进去, 旁路却把它的值转发出去 ——
-//     下游会读到"其实从没被写过"的值。
-//   * 只旁路 EX 一级就够: MEM/WB 级那些写是在它们自己的 EX 拍落的盘, 早已生效。
-//
-// 已知的行为偏移: 计数器类 (mcycle/minstret/cycle/instret) 与 mip 的读**早一拍**。
-// difftest 不比较 mcycle/minstret (golden_model/include/cpu.h 明确排除); CoreMark
-// 的 Total ticks 是首尾两次 rdcycle 相减, 两次同时早一拍 ⇒ 差值不变。
+// 两条都在这次接 RTU 时立过功, 留着当现成的抓手:
+//   * `[csrID]/[csrEX]` —— CSR 指令在 ID/EX 两侧看到的地址/旧值/写数据。
+//     "csrr 读回 0"那个坑就是靠它定位的 (CSR 被钉在 EX, 旁路值被冲成 0)。
+//   * `[cyc]` —— 每拍打印退休指针/占用计数与影子窗口 (含 vld/cmplt/pc/iid)。
+//     "同一条指令退休两次"是靠它看出 win1 挂着一份上一代的表项。
+// ⚠️ `[cyc]` 是**逐拍**打印, 只用在小用例上; 跑 coremark 会把日志撑爆。
 // ---------------------------------------------------------------------------
-assign id_csr_rdata = (ex_csr_we & ~redirect & (ex_csr_addr == id_csr_addr))
-                    ? ex_csr_wdata : csr_rdata;
-
+`ifdef RTU_DBG
+`include "RTU_define.vh"
+always @(posedge cpu_clk) begin
+    if (have_inst_ID && (id_csr_op != `CSR_OP_NONE))
+        $display("[csrID t=%0t] pc=%h addr=%h op=%b csr_rdata=%h id_csr_rdata=%h | 退休侧: we=%b addr=%h wdata=%h rdata2=%h | redirect=%b stall=%b",
+                 $time, id_pc, id_csr_addr, id_csr_op, csr_rdata, id_csr_rdata,
+                 rtu_csr_we, rtu_csr_addr, rtu_csr_wdata, rtu_csr_rdata, redirect, stall);
+    if (rtu_csr_we)
+        $display("[csrRET t=%0t] we=%b addr=%h wdata=%h rdata2=%h | wb_csr_src=%h wb_csr_we=%b",
+                 $time, rtu_csr_we, rtu_csr_addr, rtu_csr_wdata, rtu_csr_rdata,
+                 wb_csr_src, wb_csr_we);
+    if (!$test$plusargs("RTU_DBG_QUIET"))
+        $display("[cyc t=%0t] rptr=%0d occ=%0d | win0 vld=%b cmp=%b pc=%h iid=%h | win1 vld=%b cmp=%b pc=%h | vld0=%b trap=%b flushing=%b fsm=%b",
+          $time, u_rtu.u_rob.rptr, u_rtu.u_rob.occ_q,
+          u_rtu.win0[`RTU_E_VLD], u_rtu.win0[`RTU_E_CMPLT], u_rtu.win0[`RTU_E_PC], u_rtu.win_iid0,
+          u_rtu.win1[`RTU_E_VLD], u_rtu.win1[`RTU_E_CMPLT], u_rtu.win1[`RTU_E_PC],
+          rtu_commit_vld0, rtu_trap_vld, u_rtu.flushing, u_rtu.u_flush.st_q);
+end
+`endif
 CSR U_CSR(
     .clk            (cpu_clk),
     .rst            (cpu_rst),
-    // 读地址来自 **ID** (见上); 读写口仍然在 EX, 语义不变。
+    // 1 号读口: ID 级 (本指令自己的旧值 → rd)
     .raddr_i        (id_csr_addr),
     .rdata_o        (csr_rdata),
-    // 重定向当拍必须掐掉 EX 级这条【更年轻的】CSR 指令的写: 它会被 flush,
-    // 但它的写是在这个边沿生效的, 不掐就会漏进 CSR 文件.
-    .we_i           (ex_csr_we & ~redirect),
-    .waddr_i        (ex_csr_addr),
-    .wdata_i        (ex_csr_wdata),
-    .trap_i         (wb_exc | irq_taken),
-    .trap_cause_i   (trap_cause),
-    .trap_epc_i     (pc_WB),
-    .trap_tval_i    (trap_tval),
-    .mret_i         (wb_mret),
-    .retire_i       (retire_now),
+    // 2 号读口: RTU 退休拍 (在途那条 CSR 指令的地址)
+    .raddr2_i       (rtu_csr_addr),
+    .rdata2_o       (rtu_csr_rdata),
+    // 软件写口: **退休拍**由 RTU 驱动 (rtu_csr_we 已经含了"这条真要写"的口径,
+    // 也自动排除了被冲掉的那些 —— 不再需要 EX 时代那条 `& ~redirect`)。
+    .we_i           (rtu_csr_we),
+    .waddr_i        (rtu_csr_addr),
+    .wdata_i        (rtu_csr_wdata),
+    // 陷阱的 mepc/mcause/mtval/mstatus 写: 改由 **RTU 退休拍**驱动。
+    // 与旧的 wb_exc/irq_taken **同拍** (指令在 MEM 报异常、WB 拍退休判退),
+    // 所以 CSR 文件看到的时刻一位不变。trap_epc 取表项里的 PC, 与旧的 pc_WB 同值。
+    .trap_i         (rtu_trap_vld),
+    // ⚠️ mcause 的**中断位 (bit31) 要在这里补**: §6.2 的 rtu_trap_cause 只有 5 位
+    //    (异常号), 中断/异常的区分由"这一拍有没有交付脉冲"给出 (§6.3 ⑥/⑫):
+    //    取中断那拍 pop_n=0 ⇒ 没有交付脉冲。
+    .trap_cause_i   ({irq_taken, 26'b0, rtu_trap_cause}),
+    .trap_epc_i     (rtu_trap_epc),
+    .trap_tval_i    (rtu_trap_tval),
+    .mret_i         (rtu_mret_vld),
+    .retire_i       (rtu_retire_cnt),
     .timer_irq_i    (timer_irq_d1),
     .mstatus_mie_o  (csr_mstatus_mie),
     .mie_mtie_o     (csr_mie_mtie),
@@ -973,6 +1072,8 @@ EX_MEM U_EX_MEM(
     .ex_exc_tval    (ex_exc_tval_f),
     .ex_is_mret     (ex_is_mret),
     .ex_csr_we      (ex_csr_we  ),
+    .ex_iid         (ex_iid     ),
+    .ex_csr_src     (ex_rD1     ),   // 转发后的 rs1 —— CSR 的源操作数
     .ex_rf_we       (ex_rf_we    ),
     .ex_is_mul      (ex_is_mul   ),
     .ex_ram_we      (ex_ram_we   ),
@@ -996,6 +1097,8 @@ EX_MEM U_EX_MEM(
     .mem_exc_cause  (mem_exc_cause),
     .mem_exc_tval   (mem_exc_tval),
     .mem_is_mret    (mem_is_mret),
+    .mem_iid        (mem_iid    ),
+    .mem_csr_src    (mem_csr_src),
 
     //trace
     .pc_i        (pc_EX        ),
@@ -1040,12 +1143,14 @@ MEM_WB U_MEM_WB(
     .mem_exc_tval    (mem_exc_tval),
     .mem_is_mret     (mem_is_mret),
     .mem_csr_we      (mem_csr_we ),
+    .mem_csr_src     (mem_csr_src),
     .wb_csr_we       (wb_csr_we  ),
+    .wb_csr_src      (wb_csr_src ),
     .mem_rf_we       (mem_rf_we),
     .mem_is_mul      (mem_is_mul),
     .mem_wR          (mem_wR),
     .mem_wD          (mem_wD),
-    .wb_irq_safe     (wb_irq_safe),
+    .wb_irq_safe     (wb_irq_safe_mm),
     .wb_exc_valid    (wb_exc_valid),
     .wb_exc_cause    (wb_exc_cause),
     .wb_exc_tval     (wb_exc_tval),
@@ -1096,22 +1201,270 @@ Hazard_Detection U_Hazard_Detection(
     .wb_rf_we       (wb_rf_we_eff ),
     .div_stall      (div_stall   ), // 除法占住 EX
     .mul_stall      (mul_stall   ), // 乘法冒险停 ID (归因统计用)
-    .stall          (stall       ),
+    // ⚠️ 老的名字 `stall` 让给下面那条"合并后"的网线 (TB 用 dut.Core_cpu.stall
+    //    一级探针抓它, 名字不能变)。冒险本身的停顿在这里叫 hz_stall。
+    .stall          (hz_stall    ),
     .flush_IF_ID    (flush_if_id ),
-    .flush_ID_EX    (flush_id_ex ),
+    .flush_ID_EX    (hz_flush_id_ex ),
     .A_forward      (A_forward   ),
     .B_forward      (B_forward   ),
     .Forward_A_en   (Forward_A_en),
     .Forward_B_en   (Forward_B_en)
 );
+// ---------------------------------------------------------------------------
+// 退休单元 (RTU) —— 阶段 1 的接线现场 (doc/rtu_plan_zh.md §6/§7)
+//
+// 映射口径按 §7 的**读法 A**: 阶段 1 不重命名,
+//     disp*_dst_preg = disp*_old_preg = p_<lreg>,  ren_preg_req = 0
+// 于是四态表/自由池/AMT 全是惰性的 (§7 那张表), 真正激活在阶段 2。
+//
+// ============================ 本块搬进来的东西 ============================
+// ① 派遣点 = **ID 级**: 指令在 ID 这拍进 ROB, 同一拍锁进 ID_EX; 回执的 iid
+//    跟着指令走 ID_EX→EX_MEM, 完成/解析/异常口都按它寻址 (§6.3 ⑪)。
+// ② 完成 (cmplt) 从 **MEM 级**报: 这样"完成位置进表项"与"退休判决"正好错开
+//    一拍 ⇒ 退休判决落在该指令的 **WB 拍**, 与改动前的 `have_inst_WB` 同拍。
+// ③ 异常 (expt) 也从 **MEM 级**报 (异常随流水锁存到 MEM), 于是陷阱裁决同样
+//    落在 WB 拍 —— 与旧的 `wb_exc` 同拍。
+// ④ 误预测的解析 (resolve) 从 **EX 级**报 (BEU 就在那儿), 早于 cmplt, 满足 A8。
+// ⑤ 重定向/冲刷全部改由 RTU 的慢路状态机发 (§6.3 ⑨), 包括**误预测退休**那一路。
+//
+// 还没接 (后续块): store 退休时写 / CSR 退休时读写 / instret 计数 / 训练搬退休点。
+// ---------------------------------------------------------------------------
+
+// ---- 派遣车道的字段 (阶段 1 单发射, 只用车道 0) ----
+wire        id_is_csr    = (id_csr_op != `CSR_OP_NONE);
+// 控制转移: 条件分支 / JAL / JALR —— 三者都可能被 BTB 预测错, 都要走
+// "解析写表项 → 退休时慢路冲刷"这条路 (§6.3 ⑨)。与 iu_btb_update_vld 同集合。
+wire        id_is_cf     = (id_npc_op == `NPC_SEL_BRANCH) |
+                           (id_npc_op == `NPC_SEL_JAL)    |
+                           (id_npc_op == `NPC_SEL_ALU);
+wire        id_irq_safe  = ~id_ram_we & ~id_csr_we;   // 只进 flags 的 intmask 位
+// A6d: **不写寄存器时必须给 0**。给非 0 的垃圾 rd (store 的那几位本来是立即数)
+// 会让 RTU 按"要写 rd"去记账, 退休时 wr_eff 又不成立 ⇒ 编号静默泄漏。
+wire [4:0]  id_dst_lreg  = id_rf_we ? id_inst[11:7] : 5'd0;
+// 派遣条件: 真有一条指令, 而且它这一拍**真的会离开 ID**。
+//   ~stall      —— 停顿时 IF_ID 保持, 不加就会被重复派遣 (建多条表项);
+//   ~flush_if_id—— 它这一拍已被冲掉 (branched/trap), 不该再建表项。
+wire        rtu_disp0_vld = have_inst_ID & ~stall & ~flush_if_id;
+assign      id_iid        = rtu_disp_iid0;
+
+RTU u_rtu (
+    .cpu_clk (cpu_clk),
+    .cpu_rst (cpu_rst),
+
+    // ---- §6.0 preg 分配握手: 阶段 1 恒不请求 (读法 A) ----
+    .ren_preg_req       (2'd0),
+    .ren_preg_req_lreg0 (5'd0),
+    .ren_preg_req_lreg1 (5'd0),
+    .ren_preg_req_lreg2 (5'd0),
+
+    // ---- §6.1 派遣: 车道 0 = ID 级那条; 车道 1/2 恒空 (单发射) ----
+    .disp0_vld      (rtu_disp0_vld),
+    .disp0_pc       (id_pc),
+    .disp0_chk      (id_bht_chk),
+    .disp0_dst_lreg (id_dst_lreg),
+    .disp0_rf_we    (id_rf_we),
+    // 读法 A 的恒等映射: dst_preg = old_preg = p_<lreg>。
+    // p0..p31 恒为 ARCH, 所以 ret_arch_vld 是幂等的、ret_free_vld 恒 0
+    // (被 old_preg >= 32 那道门控挡住) —— 见 §7 的那张"惰性"表。
+    .disp0_dst_preg ({2'b0, id_dst_lreg}),
+    .disp0_old_preg ({2'b0, id_dst_lreg}),
+    .disp0_src1_preg({2'b0, id_inst[19:15]}),  // CSR 的 rs1 (= uimm5 for csrr*i)
+    .disp0_csr_addr (id_csr_addr),
+    // ⚠️ A6c: disp*_csr_op 要的是 **funct3 原样** (001=RW 010=RS 011=RC
+    //    101=RWI 110=RSI 111=RCI), 不是 Control.v 译出来的 CSR_OP_* 两位码 ——
+    //    RTU 用 bit2 判"是不是立即数形式" (`csr_is_imm`), 喂两位码会让它恒判成
+    //    寄存器形式, csrrwi 于是拿 rs1 的**垃圾值**当源 (症状: csrrwi 写进去
+    //    0 而不是 uimm5, 且只在 CSR 文件比对那一步炸)。
+    .disp0_csr_op   (id_inst[14:12]),
+    .disp0_csr_imm  (id_inst[19:15]),
+    .disp0_flags    ({id_is_mret, id_is_csr, id_irq_safe, id_ram_we, id_is_cf}),
+    .disp0_sq_id    (3'd0),
+
+    .disp1_vld (1'b0), .disp1_pc (32'd0), .disp1_chk (25'd0),
+    .disp1_dst_lreg (5'd0), .disp1_rf_we (1'b0),
+    .disp1_dst_preg (7'd0), .disp1_old_preg (7'd0), .disp1_src1_preg (7'd0),
+    .disp1_csr_addr (12'd0), .disp1_csr_op (3'd0), .disp1_csr_imm (5'd0),
+    .disp1_flags (5'd0), .disp1_sq_id (3'd0),
+
+    .disp2_vld (1'b0), .disp2_pc (32'd0), .disp2_chk (25'd0),
+    .disp2_dst_lreg (5'd0), .disp2_rf_we (1'b0),
+    .disp2_dst_preg (7'd0), .disp2_old_preg (7'd0), .disp2_src1_preg (7'd0),
+    .disp2_csr_addr (12'd0), .disp2_csr_op (3'd0), .disp2_csr_imm (5'd0),
+    .disp2_flags (5'd0), .disp2_sq_id (3'd0),
+
+    // ---- §6.1 完成: 从 MEM 级报 (见文件头 ②) ----
+    .cmplt_vld0 (rtu_cmplt_vld), .cmplt_iid0 (mem_iid),
+    .cmplt_vld1 (1'b0), .cmplt_iid1 (7'd0),
+    .cmplt_vld2 (1'b0), .cmplt_iid2 (7'd0),
+    .cmplt_vld3 (1'b0), .cmplt_iid3 (7'd0),
+    .cmplt_vld4 (1'b0), .cmplt_iid4 (7'd0),
+    // ---- §6.1 解析结果 (BEU, EX 级) ----
+    .resolve_vld    (rtu_resolve_vld),
+    .resolve_iid    (ex_iid),
+    .resolve_taken  (rtu_resolve_taken),
+    .resolve_mispred(rtu_resolve_mispred),
+    .resolve_target (rtu_resolve_target),
+    // ---- §6.1 异常 (MEM 级; 一级流水内天然"老级优先", 见 §6.3 ④) ----
+    .expt_vld   (rtu_expt_vld),
+    .expt_iid   (mem_iid),
+    .expt_cause ({1'b0, mem_exc_cause}),
+    .expt_tval  (mem_exc_tval),
+
+    // ---- §6.1 存储队列 / CSR / 中断 ----
+    // 阶段 1 还没有存储队列: 每个 store 的数据在 EX 级就算好了、直接随流水带下来,
+    // 到 MEM 级就写出去 —— 对退休级而言"永远就绪", 所以 sq_rdy 恒 1、sq_stall 恒 0。
+    // (⚠️ 这里**不能**接 0: 接 0 会让每一条 store 都永远退不了休 —— 死锁。)
+    .sq_rdy0 (1'b1), .sq_rdy1 (1'b1), .sq_rdy2 (1'b1), .sq_stall (1'b0),
+    // 阶段 1 的 CSR 仍在 EX 级读写, 所以这里喂进去的 csr_rdata 其实是**该条指令
+    // 自己的 CSR 旧值**(= wb_wD_eff: CSR 的 rf_wsel 是 ALUC 且 A 口取旧值, 见
+    // Control.v 的 SYSTEM 分支)。RTU 在退休拍正好需要"这条 CSR 指令的旧值"——
+    // 于是阶段的巧合正好对上。块 ④ 把 CSR 搬到退休时, 这里换成按 rtu_csr_addr
+    // 组合读 CSR 文件。
+    .csr_rdata  (rtu_csr_rdata),
+    .int_pending(rtu_int_pending),
+
+    // ---- §6.1 物理寄存器堆读口 (A1) ----
+    // 阶段 1 的 PRF 就是核里的 RegFile, 而退休拍**恒等于 WB 拍**(见文件头 ②),
+    // 所以值就在 wb_wD_eff 上 —— 直接喂, 不另开读口。
+    // (rtu_preg_raddr* 的观察口在阶段 1 就是 lreg 自己, 仍接出来给以后的 PRF 用。)
+    .preg_rdata0 (wb_wD_eff), .preg_rdata1 (32'd0), .preg_rdata2 (32'd0),
+    // CSR 的源操作数 (转发后的 rs1) 随流水走到 WB —— 退休拍 RTU 现算新值要用。
+    .rtu_csr_src_rdata (wb_csr_src),
+    .csr_trap_vector (csr_trap_vector),
+    .csr_mepc        (csr_mepc),
+
+    // ===================== 输出 =====================
+    // ---- 前端重定向 (陷阱/中断/mret/误预测退休) ----
+    .rtu_ifu_flush      (rtu_ifu_flush),
+    .rtu_ifu_chgflw_vld (rtu_ifu_chgflw_vld),
+    .rtu_ifu_chgflw_pc  (rtu_ifu_chgflw_pc),
+    // ---- BEU: 冲刷窗口里屏蔽再发重定向 ----
+    .rtu_beu_flush_chgflw_mask (rtu_beu_flush_chgflw_mask),
+    // ---- 重命名级: 阶段 1 只消费派遣停顿与派遣回执 ----
+    .rtu_disp_stall (rtu_disp_stall),
+    .rtu_disp_vld0  (rtu_disp_vld0),
+    .rtu_disp_iid0  (rtu_disp_iid0),
+    // ---- 提交点副作用: CSR 读写 (阶段 1 块 ③ 接上) ----
+    .rtu_csr_we     (rtu_csr_we),
+    .rtu_csr_addr   (rtu_csr_addr),
+    .rtu_csr_wdata  (rtu_csr_wdata),
+    .rtu_retire_cnt (rtu_retire_cnt),
+    // ---- 陷阱 / mret ----
+    .rtu_trap_vld   (rtu_trap_vld),
+    .rtu_mret_vld   (rtu_mret_vld),
+    .rtu_trap_epc   (rtu_trap_epc),
+    .rtu_trap_tval  (rtu_trap_tval),
+    .rtu_trap_cause (rtu_trap_cause),
+    // ---- difftest ----
+    .dbg_commit_vld0  (rtu_commit_vld0),
+    .dbg_commit_ena0  (rtu_commit_ena0),
+    .dbg_commit_pc0   (rtu_commit_pc0),
+    .dbg_commit_reg0  (rtu_commit_reg0),
+    .dbg_commit_value0(rtu_commit_value0)
+
+    // ⚠️ 其余输出 (preg 分配/释放观察口、CSR 写口、store 提交口、retire_cnt、
+    //    训练口、backend_flush、beu_retire_iid、commit_vld1/2) 本块**刻意不接**,
+    //    由后面的块逐个补上 —— 每接一组在这里加, 不要在别处另起一份例化。
+);
+
+// 派遣停顿并入流水线停顿: 冲刷窗口 (T..T+2) 里必须冻住 ID, 否则那条指令会
+// 顺着流水走下去、而它的表项在 FLUSH_2 被清掉 ⇒ **静默丢一条指令**
+// (D3.1 的前提③)。ROB 满 / CSR 在途同理由 RTU 一并给出 (§6.2 的 rtu_disp_stall)。
+//
+// ⚠️ **必须用"停前端 + 给 EX 灌气泡"这一对, 不能只拉 stall。**
+//    本核的 stall 语义是"保持 ID_EX"(不是插气泡), 只拉 stall 会把 EX 里那条
+//    指令**钉死在 EX**上。对冲刷无所谓 (反正要冲掉), 但对 `csr_inflight`
+//    是致命的: CSR 指令被钉在 EX ⇒ 永远走不到退休 ⇒ `csr_inflight` 永远不清 ⇒
+//    派遣永远停摆 (实测: CSR 卡在 EX 4 拍, 期间它的 ex_rD1 被无条件更新的
+//    A/B 锁存块冲成 0, 还把后面那条 csrr 的旁路值一起带成 0 —— 现象是
+//    "csrr 读回 0" 而不是卡死, 更难查)。
+//    load-use / mul_stall 用的就是这一对 (见 Hazard_Detection 的 flush_ID_EX),
+//    这里与它们对齐: 前端停, EX 那条照常往前走, 留下一个气泡。
+assign stall = hz_stall | rtu_disp_stall;
+assign flush_id_ex = hz_flush_id_ex | rtu_disp_stall;
+
+// 中断的屏蔽条件 (与改动前 irq_taken 里的那三个与项同源)。RTU 还会补上
+// "退休窗口 + 无副作用"那几条 (§6.3 ⑥ / D10 的单退休模式)。
+assign rtu_int_pending = csr_mip_mtip & csr_mie_mtie & csr_mstatus_mie;
+
+// ---------------------------------------------------------------------------
+// 完成 / 异常 / 解析 三个上报口
+//
+// **为什么是 MEM 级而不是 WB 级**: RTU 把"完成"位置进表项之后, 判退用的是
+// 寄存过的表项内容, 中间差一拍。从 MEM 报 ⟹ 判决落在该指令的 WB 拍 ——
+// 与改动前的 `have_inst_WB` 同拍, 周期数一位不变 (见文件头 ②)。
+// 同时 RegFile 的写口仍在 WB 拍, 所以"退休拍 = WB 拍"这条不变式保证
+// dbg_commit_value (= wb_wD_eff) 就是这条指令的结果。
+//
+// 另一条**必须**同时满足的是契约 A8: 解析不能晚于完成。这里解析在 EX 报、
+// 完成在 MEM 报, 天然满足。
+// ---------------------------------------------------------------------------
+// ~redirect: 重定向那拍流水线上全是比队头年轻的指令 (要被冲掉的), 不必也不能
+// 给它们标完成 —— 虽然表项随后会被 FLUSH_2 清掉, 但少一分"错路径标完成"就
+// 少一分将来被人依赖的机会。
+assign rtu_cmplt_vld = have_inst_MEM & ~redirect;
+// 异常: 随流水锁存到 MEM (ID 级的非法/取指故障 + EX 级的非对齐/越界都在里面),
+// 所以这一个口就覆盖了 §6.3 ④ 说的"ID/EX/MEM 各级检出点"。
+// 单发射顺序核里"最旧者胜"是自动的: 先进 MEM 的那条一定更老。
+assign rtu_expt_vld  = have_inst_MEM & mem_exc_valid & ~redirect;
+
+`ifdef USE_IFU_ANY
+// 解析: BEU 在 EX 解出"这条控制转移跳没跳、去了哪、是不是预测错了"。
+//
+// ⚠️ 这里**不加 `~stall`**(邻近的 iu_bht_check_vld / iu_btb_update_vld 加了)。
+//    原因: 解析结果决定了**误预测冲刷**, 漏报一次就是"错误路径照常执行"。
+//    而"重复上报"在这条路上根本不可能发生 —— ID_EX 只在 `stall & ~flush` 时保持,
+//    而 stall 的三个来源里 load_use / mul_stall 都同时拉 flush_ID_EX (EX 那条照常
+//    前进), 唯一真正钉住 EX 的是 div_stall, 而被钉住的必然是**除法**、不可能是
+//    控制转移 (`ex_is_cf` 当场为 0)。所以精确的写法就是不加 stall 门控。
+//    (阶段 1 加过 `~stall`, 它会把 rt_ 的 disp_stall 也一起吃进来 —— 那时 EX 里的
+//     分支明明要往前走, 解析却被吞掉。目前走不到, 但那是颗定时炸弹。)
+wire ex_is_cf = (ex_npc_op == `NPC_SEL_BRANCH) |
+                (ex_npc_op == `NPC_SEL_JAL)    |
+                (ex_npc_op == `NPC_SEL_ALU);
+assign rtu_resolve_vld     = have_inst_EX & ex_is_cf & ~redirect;
+assign rtu_resolve_taken   = (ex_npc_op == `NPC_SEL_BRANCH) ? ex_br_taken : 1'b1;
+assign rtu_resolve_mispred = mispredict;
+assign rtu_resolve_target  = actual_npc;
+`else
+// IFU=0 的老通路没有"预测"这回事 (分支在 EX 直接算 NPC), 解析口没有意义。
+assign rtu_resolve_vld     = 1'b0;
+assign rtu_resolve_taken   = 1'b0;
+assign rtu_resolve_mispred = 1'b0;
+assign rtu_resolve_target  = 32'd0;
+`endif
+
+// 给 difftest 的"这个提交点能不能取中断": **就是 RTU 的 int_take 本身**
+// (rtu_trap_vld=1 且这一拍没有交付脉冲)。
+// 为什么不沿用旧的 `~ram_we & ~csr_we`: RTU 的口径是 `~store & ~csr & ~mret`,
+// 两者对"不写 CSR 的 CSR 指令"结论不同 —— 只要有一次判断不同, 模型就会比 DUT
+// 早/晚一条指令取中断, 之后每条都对不上。直接把 DUT 的判决推给模型, 两边
+// **逐拍同沿**。
+// 顺带修掉旧口径的一个隐患: 陷阱当拍旧口径会给出 irq_safe=1, 于是模型可能
+// 把中断取在一条"将要陷入"的指令上 (trap.S 里只是侥幸没撞上)。
+assign irq_taken   = rtu_trap_vld & ~rtu_commit_vld0;   // = RTU 的 int_take
+assign wb_irq_safe = irq_taken;                          // 同口径推给 golden model
+// (tb/tb_miniRV_dpi.sv:722 的陷阱诊断 $display 直接抓 dut.Core_cpu.irq_taken,
+//  所以这个名字要留着 —— 它现在的含义是"这一拍退休窗口取走了中断"。)
+
 `ifdef RUN_TRACE
-//     Debug Interface
-    assign debug_wb_have_inst = have_inst_WB;
-    assign debug_wb_pc        = pc_WB;
-    // 用掐过的写使能: 陷阱指令(非对齐 load)不写 rd, 被中断 squash 的也不写
-    assign debug_wb_ena       = wb_rf_we_eff & (wb_wR != 5'b0);
-    assign debug_wb_reg       = wb_wR;
-    assign debug_wb_value     = wb_wD_eff;
+//     Debug Interface —— 阶段 1 起**全部来自 RTU 的退休窗口** (§6.2 的 dbg_commit_*)
+    // ⚠️ have_inst 必须**或上 rtu_trap_vld**: 被中断 squash 的那条不发交付脉冲
+    //    (§6.3 ⑥), 但 golden model 是在"有指令提交"的那个沿里取中断的
+    //    (dpi_shim.c:133-145 的 `if (!dut_wb_have_inst) return 0;`), 不给这个沿
+    //    模型就永远取不到中断、差一条指令。见 §10.C 的 C3。
+    //    同步异常那条本来就有脉冲 (rtu_trap_vld 与它重合), 所以这里只是把
+    //    "中断"这一路的沿补上 —— 退休口径 (rtu_retire_cnt / 副作用) 一位没动。
+    assign debug_wb_have_inst = rtu_commit_vld0 | rtu_trap_vld;
+    assign debug_wb_pc        = rtu_commit_pc0;
+    // ena 的口径对齐 golden model 的 `wb_en && !trapped`, 而 wb_en 是 `dst != 0`:
+    // RTU 的 commit_ena 只到 "rf_we 且没陷阱", 少 `dst != 0` 这一条, 在这里补。
+    // (addi x0, ... 的 rf_we=1、rd=0, DUT 与模型都必须报 ena=0 —— 两者必须能分开。)
+    assign debug_wb_ena       = rtu_commit_ena0 & (rtu_commit_reg0 != 5'd0);
+    assign debug_wb_reg       = rtu_commit_reg0;
+    // 值 = 退休拍那条指令的结果。阶段 1 退休拍恒等于 WB 拍 ⇒ 就是 wb_wD_eff。
+    assign debug_wb_value     = rtu_commit_value0;
 `endif
 
 endmodule

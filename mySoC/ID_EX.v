@@ -60,6 +60,10 @@ module ID_EX(
     // 与当时的方向预测. EX 级解析条件分支时回送给 BHT 做训练/VGHR 修复.
     input [24:0]                        id_bht_chk   ,
     input                               id_bht_pred  ,
+    // 本条指令在 ROB 里的 iid (rtu_disp_iid0 的派遣回执). 一路带到 MEM/WB ——
+    // 退休单元的 cmplt_iid / resolve_iid / expt_iid 全是**按 iid 寻址**的,
+    // 而 RTU 表项里只存回绕位, 编号只有分配者知道 (§6.3 ⑪)。
+    input [6:0]                         id_iid       ,
     input                               Forward_A_en ,
     input                               Forward_B_en ,
     input [31:0]                        A_forward    ,
@@ -90,7 +94,8 @@ module ID_EX(
     output reg [3:0]                    ex_exc_cause ,
     output reg [31:0]                   ex_exc_tval  ,
     output reg [24:0]                   ex_bht_chk   ,
-    output reg                          ex_bht_pred
+    output reg                          ex_bht_pred  ,
+    output reg [6:0]                    ex_iid
 
     //trace
     ,input  wire [31:0] pc_i       ,
@@ -155,6 +160,7 @@ always @(posedge clk or posedge rst) begin
         ex_exc_tval <= 0;
         ex_bht_chk  <= 0;
         ex_bht_pred <= 0;
+        ex_iid      <= 7'd0;
     end else if(flush) begin
         ex_alu_op   <= 0;
         ex_rf_we    <= 0;
@@ -178,6 +184,7 @@ always @(posedge clk or posedge rst) begin
         ex_exc_tval <= 0;
         ex_bht_chk  <= 0;
         ex_bht_pred <= 0;
+        ex_iid      <= 7'd0;
     end else if(!stall) begin
         // 注意: 这里不能再用 stall 分支去清零 payload.
         // stall = load_use_exist | muldiv_stall, 而 muldiv_stall 期间正需要把
@@ -207,6 +214,7 @@ always @(posedge clk or posedge rst) begin
         ex_exc_tval <= id_exc_tval;
         ex_bht_chk  <= id_bht_chk ;
         ex_bht_pred <= id_bht_pred;
+        ex_iid      <= id_iid     ;
     end
 end
 

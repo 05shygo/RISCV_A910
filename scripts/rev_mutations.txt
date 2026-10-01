@@ -255,27 +255,35 @@ AFTER
 # ---------------------------------------------------------------------------
 
 ### M16 redirect_mret_swap
-file:  mySoC/mycpu.v
+file:  mySoC/rtu/rtl/RTU_commit.v
 tests: trap
 note:  重定向目标: mret 回 mepc, 其他陷阱去 mtvec。对调之后 mret 跳到陷阱向量,
        trap.S 的 handler 永远回不去。
+       (阶段 1 起这条选择搬进了 RTU 的判退级 —— 原来的锚点
+        `mycpu.v` 的 `redirect_pc` 已经变成"转发 RTU 的输出", 见 §7。)
 <<<BEFORE
-wire [31:0] redirect_pc = wb_mret ? csr_mepc : csr_trap_vector;
+    assign flush_pc = (trap_hit | int_take) ? csr_trap_vector :
+                      mret_hit              ? csr_mepc        :
+                                              mispred_target;
 BEFORE
 <<<AFTER
-wire [31:0] redirect_pc = wb_mret ? csr_trap_vector : csr_mepc;
+    assign flush_pc = (trap_hit | int_take) ? csr_mepc :
+                      mret_hit              ? csr_trap_vector :
+                                              mispred_target;
 AFTER
 
 ### M17 wb_rf_we_exc_gate_off
 file:  mySoC/mycpu.v
 tests: trap
-note:  提交点写回门控: 出异常的指令不许写寄存器。去掉 ~wb_exc 之后,
+note:  提交点写回门控: 出异常(或取中断)的指令不许写寄存器。去掉门控之后,
        非对齐 load 照样把 rd 改掉。trap.S:134-142 专门回读 rd 确认没被改写。
+       (阶段 1 起门控源从 WB 级的 `wb_exc | irq_taken` 换成 RTU 的
+        `rtu_trap_vld = trap_hit | int_take`, 同一拍、同一含义, 见 §7。)
 <<<BEFORE
-wire wb_rf_we_eff = wb_rf_we & ~wb_exc & ~irq_taken;
+wire wb_rf_we_eff = wb_rf_we & ~rtu_trap_vld;
 BEFORE
 <<<AFTER
-wire wb_rf_we_eff = wb_rf_we & ~irq_taken;
+wire wb_rf_we_eff = wb_rf_we;
 AFTER
 
 ### M18 wb_wD_mul_bypass_off

@@ -70,8 +70,26 @@ module RTU_ROB (
     output wire [`RTU_E_W-1:0] win_q2,
     output wire [6:0]          occ,
     output wire                rob_full,
-    output wire [2:0]          disp_wrap        // 3 条派遣各自 iid 的回绕位
+    output wire [2:0]          disp_wrap,       // 3 条派遣各自 iid 的回绕位
+    output wire [5:0]          cptr_idx         // 创造指针的二进制下标 (派遣回执用)
 );
+
+    // -----------------------------------------------------------------------
+    // 创造指针的二进制下标 —— 给 §6.2 的"派遣回执" (rtu_disp_iid*) 用。
+    //
+    // ⚠️ **由 cptr_oh 组合译出, 不另存一份二进制指针**: 两份状态一旦走岔,
+    //    回执发出去的 iid 会指向别的表项 —— 完成信号就会标到错的表项上,
+    //    症状是"退休顺序错乱"而不是报错。
+    // -----------------------------------------------------------------------
+    function [5:0] oh2idx;
+        input [63:0] oh;
+        integer      j;
+        begin
+            oh2idx = 6'd0;
+            for (j = 0; j < 64; j = j + 1)
+                if (oh[j]) oh2idx = j[5:0];
+        end
+    endfunction
 
     // -----------------------------------------------------------------------
     // 指针与派遣使能
@@ -131,11 +149,19 @@ module RTU_ROB (
 
         wire e_res = resolve_vld && (resolve_iid[5:0] == IDX) && (resolve_iid[6] == rob_q[gi][`RTU_E_WRAP]);
 
+        // 本项这一拍被退休弹出 (见 RTU_ROB_entry 的 pop_en 注释)。
+        // 距离用模 64 减法算, 于是回绕天然正确; pop_n 在 0 时全部为 0。
+        wire [5:0] e_dist = IDX - rptr;
+        wire       e_pop  = (pop_n == 2'd1) ? (e_dist == 6'd0) :
+                            (pop_n == 2'd2) ? (e_dist <= 6'd1) :
+                            (pop_n == 2'd3) ? (e_dist <= 6'd2) : 1'b0;
+
         RTU_ROB_entry u_entry (
             .cpu_clk       (cpu_clk),
             .cpu_rst       (cpu_rst),
             .disp_en       (e_hit0),
             .disp_data     (e_data),
+            .pop_en        (e_pop),
             .reload_en     (1'b0),
             .reload_data   ({`RTU_E_W{1'b0}}),
             .cmplt_hit     (e_cmplt),
@@ -184,7 +210,7 @@ module RTU_ROB (
 
     RTU_ROB_entry u_win0 (
         .cpu_clk(cpu_clk), .cpu_rst(cpu_rst),
-        .disp_en(1'b0), .disp_data({`RTU_E_W{1'b0}}),
+        .disp_en(1'b0), .disp_data({`RTU_E_W{1'b0}}), .pop_en(1'b0),
         .reload_en(win_rld0), .reload_data(rob_d[rld_idx0]),
         .cmplt_hit(win_cmplt0), .resolve_hit(win_res0),
         .resolve_taken(resolve_taken), .resolve_mispred(resolve_mispred),
@@ -194,7 +220,7 @@ module RTU_ROB (
 
     RTU_ROB_entry u_win1 (
         .cpu_clk(cpu_clk), .cpu_rst(cpu_rst),
-        .disp_en(1'b0), .disp_data({`RTU_E_W{1'b0}}),
+        .disp_en(1'b0), .disp_data({`RTU_E_W{1'b0}}), .pop_en(1'b0),
         .reload_en(win_rld1), .reload_data(rob_d[rld_idx1]),
         .cmplt_hit(win_cmplt1), .resolve_hit(win_res1),
         .resolve_taken(resolve_taken), .resolve_mispred(resolve_mispred),
@@ -204,7 +230,7 @@ module RTU_ROB (
 
     RTU_ROB_entry u_win2 (
         .cpu_clk(cpu_clk), .cpu_rst(cpu_rst),
-        .disp_en(1'b0), .disp_data({`RTU_E_W{1'b0}}),
+        .disp_en(1'b0), .disp_data({`RTU_E_W{1'b0}}), .pop_en(1'b0),
         .reload_en(win_rld2), .reload_data(rob_d[rld_idx2]),
         .cmplt_hit(win_cmplt2), .resolve_hit(win_res2),
         .resolve_taken(resolve_taken), .resolve_mispred(resolve_mispred),
@@ -262,5 +288,7 @@ module RTU_ROB (
     assign disp_wrap[0] = cptr_msb;
     assign disp_wrap[1] = cptr_msb ^ cptr_oh[63];
     assign disp_wrap[2] = cptr_msb ^ (cptr_oh[63] | cptr_oh[62]);
+
+    assign cptr_idx     = oh2idx(cptr_oh);
 
 endmodule

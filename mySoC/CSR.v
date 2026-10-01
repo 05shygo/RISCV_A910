@@ -24,8 +24,16 @@ module CSR(
     // 操作数上, 是 FPGA 关键路径的链头 (2026-09-28)。
     input  wire [11:0] raddr_i,
     output reg  [31:0] rdata_o,
+    // ---- 第二个读口 (阶段 1 新增): 专给 RTU 的退休拍读 ----
+    // CSR 的**写**搬到退休拍之后, "读旧值算新值"与 difftest 取值都要按
+    // `rtu_csr_addr` 读; 而 ID 级那份读 (`raddr_i`) 要拿本指令自己的旧值当 rd ——
+    // 两者可能不是同一个地址, 共用一口就得引入 mux 和一个"CSR 在途"状态位
+    // (那是 RTU 内部信号, 不该再引出来)。CSR 文件只有十几个寄存器, 多一个
+    // 16:1 读译码器的代价远小于那条跨模块耦合。
+    input  wire [11:0] raddr2_i,
+    output reg  [31:0] rdata2_o,
 
-    // 软件写口 (来自 EX, 已由 mycpu 用 ~redirect 门控)
+    // 软件写口 (**阶段 1 起来自 RTU 的退休拍**: rtu_csr_we/addr/wdata)
     input  wire        we_i,
     input  wire [11:0] waddr_i,
     input  wire [31:0] wdata_i,
@@ -39,8 +47,10 @@ module CSR(
     // 中断返回
     input  wire        mret_i,
 
-    // 提交脉冲: 用于 instret 计数 (被中断 squash 掉的那条不计)
-    input  wire        retire_i,
+    // 本拍**退休条数** (0..3), 给 instret 计数用 —— 阶段 1 起由 RTU 的
+    // `rtu_retire_cnt` 驱动 (被中断 squash 的那条不计, §6.3 ⑥⑦)。
+    // ⚠️ 是计数不是脉冲: 口径见 doc/rtu_plan_zh.md §8.2 第 2 条。
+    input  wire [1:0]   retire_i,
 
     // 已寄存的定时器中断电平, 硬件驱动 mip[7]
     input  wire        timer_irq_i,
@@ -97,7 +107,7 @@ module CSR(
         end else begin
             // 1) 计数器
             mcycle <= mcycle + 1'b1;
-            if (retire_i) minstret <= minstret + 1'b1;
+            minstret <= minstret + {62'b0, retire_i};   // 退休条数, 不是脉冲
 
             // 2) 软件写 (来自 EX 的 CSR 指令)
             //    只保存"已实现位", 未实现位读回恒 0 (WARL)
@@ -141,8 +151,13 @@ module CSR(
                                  3'b0, mstatus_mie,
                                  3'b0};
 
+    // ---- 两个读口 ----
+    // ⚠️ **必须是两个显式的 `always @(*)` + 内联 case, 不能抽成 task/function**:
+    //    抽出去之后 VCS 推出来的敏感表只剩调用处的实参 (地址), CSR 寄存器自身的变化
+    //    不再触发重算 ⇒ 读口恒为旧值 (实测: 写进去了、读出来还是 0, 而且只在
+    //    "改完再读"的用例上炸)。两份 case 必须**一起改**, 这是重复换来的安全。
     always @(*) begin
-        case (raddr_i)
+        case (raddr_i)                       // 1 号口: ID 级, 本指令自己的旧值
             `CSR_MSTATUS:  rdata_o = mstatus_rdata;
             `CSR_MIE:      rdata_o = {31'b0, mie_mtie};
             `CSR_MTVEC:    rdata_o = {mtvec[31:2], mtvec[0], 1'b0};
@@ -165,6 +180,30 @@ module CSR(
             // 未实现地址: Control.v 已经把它判成非法指令了, 这里的取值不重要,
             // 给 0 保证不会有 X 传播.
             default:       rdata_o = 32'b0;
+        endcase
+    end
+
+    always @(*) begin
+        case (raddr2_i)                      // 2 号口: RTU 退休拍 (在途那条的地址)
+            `CSR_MSTATUS:  rdata2_o = mstatus_rdata;
+            `CSR_MIE:      rdata2_o = {31'b0, mie_mtie};
+            `CSR_MTVEC:    rdata2_o = {mtvec[31:2], mtvec[0], 1'b0};
+            `CSR_MSCRATCH: rdata2_o = mscratch;
+            `CSR_MEPC:     rdata2_o = mepc;
+            `CSR_MCAUSE:   rdata2_o = mcause;
+            `CSR_MTVAL:    rdata2_o = mtval;
+            `CSR_MIP:      rdata2_o = {31'b0, timer_irq_i};
+
+            `CSR_MCYCLE:   rdata2_o = mcycle[31:0];
+            `CSR_MCYCLEH:  rdata2_o = mcycle[63:32];
+            `CSR_MINSTRET: rdata2_o = minstret[31:0];
+            `CSR_MINSTRETH:rdata2_o = minstret[63:32];
+            `CSR_CYCLE:    rdata2_o = mcycle[31:0];
+            `CSR_CYCLEH:   rdata2_o = mcycle[63:32];
+            `CSR_INSTRET:  rdata2_o = minstret[31:0];
+            `CSR_INSTRETH: rdata2_o = minstret[63:32];
+
+            default:       rdata2_o = 32'b0;
         endcase
     end
 

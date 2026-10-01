@@ -34,6 +34,8 @@ module MEM_WB(
     input [31:0]                mem_exc_tval ,
     input                       mem_is_mret  ,
     input                       mem_csr_we   ,
+    // CSR 指令的源操作数 (见 EX_MEM.v): 退休拍 RTU 现算新值时要它
+    input [31:0]                mem_csr_src  ,
     input                       mem_rf_we ,
     // 这条指令是乘法: 它的结果不在 mem_wD 里, 由 mycpu.v 在 WB 级换进 wb_wD
     // (必须和其余 payload 走**同一条条件链**, 否则会出现"is_mul 还挂着、
@@ -47,6 +49,7 @@ module MEM_WB(
     output reg [31:0]           wb_exc_tval  ,
     output reg                  wb_is_mret   ,
     output reg                  wb_csr_we    ,
+    output reg [31:0]           wb_csr_src   ,
     output reg                  wb_rf_we  ,
     output reg                  wb_is_mul ,
     output reg [4:0]           wb_wR     ,
@@ -73,6 +76,7 @@ always @(posedge clk or posedge rst) begin
         wb_exc_tval  <= 0;
         wb_is_mret   <= 1'b0;
         wb_csr_we    <= 1'b0;
+        wb_csr_src   <= 32'd0;
     end else begin
         wb_rf_we     <= mem_rf_we ;
         wb_is_mul    <= mem_is_mul;
@@ -84,6 +88,7 @@ always @(posedge clk or posedge rst) begin
         wb_exc_tval  <= mem_exc_tval ;
         wb_is_mret   <= mem_is_mret  ;
         wb_csr_we    <= mem_csr_we   ;
+        wb_csr_src   <= mem_csr_src  ;
     end
 end
 

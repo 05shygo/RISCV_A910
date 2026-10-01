@@ -724,9 +724,13 @@ module tb_miniRV_dpi;
              dut.Core_cpu.ex_local_exc_valid, dut.Core_cpu.ex_local_exc_cause,
              dut.Core_cpu.ex_target, dut.Core_cpu.ex_addr_bad,
              dut.Core_cpu.ex_is_load, dut.Core_cpu.ex_is_store);
-    $display("        CSR ex_we=%b op=%0d addr=%03x imm=%b wdata=%08x rdata=%08x redirect=%b mtvec=%08x",
+    // ⚠️ 阶段 1 起 CSR 的新值在**退休拍**由 RTU 现算 (mycpu.v 的块 ③),
+    //    EX 级不再有 ex_csr_wdata —— 这里改印退休侧那一组。
+    $display("        CSR ex_we=%b op=%0d addr=%03x imm=%b | ret we=%b addr=%03x wdata=%08x rdata=%08x redirect=%b mtvec=%08x",
              dut.Core_cpu.ex_csr_we, dut.Core_cpu.ex_csr_op, dut.Core_cpu.ex_csr_addr,
-             dut.Core_cpu.ex_csr_imm, dut.Core_cpu.ex_csr_wdata, dut.Core_cpu.csr_rdata,
+             dut.Core_cpu.ex_csr_imm,
+             dut.Core_cpu.rtu_csr_we, dut.Core_cpu.rtu_csr_addr, dut.Core_cpu.rtu_csr_wdata,
+             dut.Core_cpu.rtu_csr_rdata,
              dut.Core_cpu.redirect, dut.Core_cpu.U_CSR.mtvec);
     $display("        CSR2 mepc=%08x mcause=%08x mtval=%08x mstatus=%08x",
              dut.Core_cpu.U_CSR.mepc, dut.Core_cpu.U_CSR.mcause,

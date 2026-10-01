@@ -21,6 +21,14 @@ module RTU_ROB_entry (
 
     input  wire                disp_en,
     input  wire [`RTU_E_W-1:0] disp_data,
+    // 本项这一拍被退休弹出 —— 清成 0。
+    // ⚠️ `vld` 的语义必须是"这一格**现在**装着一条在途指令": 阵列不随指针绕圈
+    //    自动失效, 所以弹出时不清的话, 那些格子会一直挂着上一代 (甚至上上代) 的
+    //    vld=1/cmplt=1。窗口的"补空"路径与 pop 后的重填都拿 vld 当"这格有没有
+    //    东西", 于是 ROB 快排空时会把旧表项当成在途项补进窗口 —— 判退级联按它
+    //    再发一次交付脉冲, 症状是"同一条指令退休两次"(实机: trap.S 的 wait_loop
+    //    里 0x304 被重复提交, 而参考流早就往前走了)。
+    input  wire                pop_en,
     input  wire                reload_en,
     input  wire [`RTU_E_W-1:0] reload_data,
 
@@ -53,9 +61,15 @@ module RTU_ROB_entry (
     end
 
     // ---- 写入优先级 ----
+    // 优先级: flush > disp > pop > reload > 自更新。
+    //   * flush 高于一切 (FLUSH_2 与指针复位同拍);
+    //   * disp 与 pop 不会撞: 弹出的下标是 [rptr, rptr+pop_n), 派遣的是
+    //     [rptr+occ, ...), 而 pop_n <= occ, 两个区间不相交;
+    //   * pop 高于 reload: 影子窗口只 reload 不 pop, 顺序在这里只是防御。
     assign entry_d = flush_clr ? {`RTU_E_W{1'b0}} :
-                     reload_en ? reload_data         :
-                     disp_en   ? disp_data           : upd;
+                     disp_en   ? disp_data           :
+                     pop_en    ? {`RTU_E_W{1'b0}}    :
+                     reload_en ? reload_data         : upd;
 
     always @(posedge cpu_clk or posedge cpu_rst) begin
         if (cpu_rst) q <= {`RTU_E_W{1'b0}};
