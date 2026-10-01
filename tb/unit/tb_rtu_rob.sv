@@ -380,8 +380,8 @@ module tb_rtu_rob;
             for (int j = 0; j < LOGN; j = j + 1)
                 if (evt_i > j) begin
                     int idx;
-                    idx = evt_i - LOGN + j;                      // 可能是负数
-                    if (idx < 0) idx = idx + LOGN;               // 环回的取模要显式做
+                    idx = (evt_i - LOGN + j) % LOGN;             // 环回取模 (Verilog 的 % 对负数结果不保证)
+                    if (idx < 0) idx = idx + LOGN;
                     if (evt[idx] != "") $display("    %s", evt[idx]);
                 end
             log_dumped = 1'b1;
@@ -555,37 +555,6 @@ module tb_rtu_rob;
                 n_mret = n_mret + 1;
             end
 
-            // ---------- 4a) DUT 的 rptr 每拍只能前进 pop_n (除冲刷复位之外不许跳) ----------
-            if (!ren_flush) begin
-                logic [6:0] exp_rp;
-                // 上拍读到的 rptr + **本拍锁存的** pop (即结束上一拍那个边沿上用的值)
-                exp_rp = {rptr_msb_prev, rptr_prev} + {5'b0, ret_cnt_q};
-                if ({dut.u_rob.rptr_msb, dut.u_rob.rptr} !== exp_rp[6:0])
-                    err($sformatf("rptr 推进异常: 上拍=%0d.%0d pop=%0d, 本拍 DUT=%0d.%0d (应为 %0d) | 本拍内部: pop_n=%0d nxt=%0d flushlvl=%b flushing=%b",
-                                  rptr_msb_prev, rptr_prev, ret_cnt_q,
-                                  dut.u_rob.rptr_msb, dut.u_rob.rptr, exp_rp[6:0],
-                                  dut.u_rob.pop_n, dut.u_rob.nxt_rptr,
-                                  dut.u_rob.flush_lvl, dut.u_rob.flushing));
-            end
-            rptr_prev     = dut.u_rob.rptr;
-            rptr_msb_prev = dut.u_rob.rptr_msb;
-            pop_prev      = ret_cnt_q;   // 用 posedge 锁存的那份 (DUT 边沿上用的就是它)
-
-            // ---------- 4b) 退休指针: DUT 的 {msb,rptr} 必须等于"本圈已退休条数" ----------
-            // 这是把参考流与 DUT 的退休位置直接钉在一起的不变量 (带本圈基准, 免得把
-            // 全局指令号与圈内位置混在一起)。它一旦不发散, 后面那些 iid/完成信号
-            // 的对齐问题就不可能存在。
-            begin
-                integer since;
-                since = n_ret - lap_base;
-                if ({dut.u_rob.rptr_msb, dut.u_rob.rptr} !== since[6:0]) begin
-                    err($sformatf("退休位置不符: DUT=%0d.%0d, 本圈已退 %0d 条 (n_ret=%0d lap_base=%0d, flst=%0d)",
-                                  dut.u_rob.rptr_msb, dut.u_rob.rptr, since,
-                                  n_ret, lap_base, fl_state));
-                    if (!log_dumped2) begin dump_log(); log_dumped2 = 1'b1; end
-                end
-            end
-
             // ---------- 5a) 影子窗口必须等于阵列的 rptr+0/1/2 (D5 的机制本身) ----------
             // 判退逻辑面对的是影子窗口; 它一旦落后于阵列, 症状就是"指令明明完成了
             // 却不退休" —— 而那是最难从外部现象反推的一类。
@@ -609,19 +578,6 @@ module tb_rtu_rob;
                                       dut.u_rob.rob_q[ix][`RTU_E_PC]));
                 end
             end
-
-            // ---------- 5b) iid 约定 ----------
-            // ⚠️ 冲刷当拍 (ren_flush) 不比: DUT 在那一拍把 rptr 归零重新开始, 而参考流
-            //    要到同一拍稍后才重新对齐 —— 在这一拍比必然误报 (踩过: 这一条曾独占
-            //    失败总数的绝大部分)。
-            if ((n_ret < n_inst) && !ren_flush && (fl_state == 0)) begin
-                if (beu_retire_iid !== x_iid[n_ret]) begin
-                    err($sformatf("retire_iid 不符: exp=%0d got=%0d (n_ret=%0d, dutrptr=%0d, flst=%0d)",
-                                  x_iid[n_ret], beu_retire_iid, n_ret, dut.u_rob.rptr, fl_state));
-                    if (!log_dumped2) begin dump_log(); log_dumped2 = 1'b1; end
-                end
-            end
-
 
             // ---------- 6) 分配器 ----------
             if (alloc_vld0 && (alloc0 < 7'd32)) err("分配器给出架构寄存器");
@@ -934,6 +890,60 @@ module tb_rtu_rob;
         end
     endtask
 
+    // 记账**之后**才能比的检查 (指针位置 / iid 约定):
+    // ⚠️ 它们必须跑在 ref_retire 之后 —— 退休脉冲是 posedge 锁存的, 而 DUT 的 rptr
+    //    在同一个边沿就前进了; 若在记账前比, 参考流永远"慢一拍", 于是每一拍都误报。
+    task automatic check_after_retire;
+        integer i;
+        begin
+        // ---------- 4a) DUT 的 rptr 每拍只能前进 pop_n (除冲刷复位之外不许跳) ----------
+        // ⚠️ 用**锁存**的冲刷标志: 冲刷脉冲在 FLUSH_2 那拍, 指针复位就在同一个边沿 ——
+        //    到了下一拍 negedge, 实时的 ren_flush 已经回 0, 但指针确实"跳"过,
+        //    用实时信号做守卫会漏掉那一拍 (踩过)。
+        if (!ret_flush_q) begin
+            logic [6:0] exp_rp;
+            // 上拍读到的 rptr + **本拍锁存的** pop (即结束上一拍那个边沿上用的值)
+            exp_rp = {rptr_msb_prev, rptr_prev} + {5'b0, ret_cnt_q};
+            if ({dut.u_rob.rptr_msb, dut.u_rob.rptr} !== exp_rp[6:0])
+                err($sformatf("rptr 推进异常: 上拍=%0d.%0d pop=%0d, 本拍 DUT=%0d.%0d (应为 %0d) | 本拍内部: pop_n=%0d nxt=%0d flushlvl=%b flushing=%b",
+                              rptr_msb_prev, rptr_prev, ret_cnt_q,
+                              dut.u_rob.rptr_msb, dut.u_rob.rptr, exp_rp[6:0],
+                              dut.u_rob.pop_n, dut.u_rob.nxt_rptr,
+                              dut.u_rob.flush_lvl, dut.u_rob.flushing));
+        end
+        rptr_prev     = dut.u_rob.rptr;
+        rptr_msb_prev = dut.u_rob.rptr_msb;
+        pop_prev      = ret_cnt_q;   // 用 posedge 锁存的那份 (DUT 边沿上用的就是它)
+
+        // ---------- 4b) 退休指针: DUT 的 {msb,rptr} 必须等于"本圈已退休条数" ----------
+        // 这是把参考流与 DUT 的退休位置直接钉在一起的不变量 (带本圈基准, 免得把
+        // 全局指令号与圈内位置混在一起)。它一旦不发散, 后面那些 iid/完成信号
+        // 的对齐问题就不可能存在。
+        begin
+            integer since;
+            since = n_ret - lap_base;
+            if ({dut.u_rob.rptr_msb, dut.u_rob.rptr} !== since[6:0]) begin
+                err($sformatf("退休位置不符: DUT=%0d.%0d, 本圈已退 %0d 条 (n_ret=%0d lap_base=%0d, flst=%0d)",
+                              dut.u_rob.rptr_msb, dut.u_rob.rptr, since,
+                              n_ret, lap_base, fl_state));
+                if (!log_dumped2) begin dump_log(); log_dumped2 = 1'b1; end
+            end
+        end
+
+        // ---------- 5b) iid 约定 ----------
+        // ⚠️ 冲刷当拍 (ren_flush) 不比: DUT 在那一拍把 rptr 归零重新开始, 而参考流
+        //    要到同一拍稍后才重新对齐 —— 在这一拍比必然误报 (踩过: 这一条曾独占
+        //    失败总数的绝大部分)。
+        if ((n_ret < n_inst) && !ren_flush && (fl_state == 0)) begin
+            if (beu_retire_iid !== x_iid[n_ret]) begin
+                err($sformatf("retire_iid 不符: exp=%0d got=%0d (n_ret=%0d, dutrptr=%0d, flst=%0d)",
+                              x_iid[n_ret], beu_retire_iid, n_ret, dut.u_rob.rptr, fl_state));
+                if (!log_dumped2) begin dump_log(); log_dumped2 = 1'b1; end
+            end
+        end
+        end
+    endtask
+
     task automatic gen_complete;
         integer done_cnt;
         int     pick;
@@ -1021,6 +1031,8 @@ module tb_rtu_rob;
             disp_step();
 
             ref_retire();       // 本拍的退休 / 提交 / 冲刷
+
+            check_after_retire();   // 指针位置 / iid 约定 (必须在记账之后比)
 
             // 本拍刚派出去的不能同拍给完成信号 (同一个边沿, 表项还没建出来)
             n_ready = n_inst;
