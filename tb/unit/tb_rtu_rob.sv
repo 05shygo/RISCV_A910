@@ -228,41 +228,48 @@ module tb_rtu_rob;
     logic [5:0]  tb_cptr = 6'd0;       // 派遣指针镜像 (iid = {回绕位, 槽号})
     logic        tb_cmsb = 1'b0;
 
-    integer      n_plan = 0;           // 下一份计划 (gen_plan 写, 下一拍才搬进 plan_n)
-    logic [4:0]  n_lreg [0:2];
-    logic [31:0] n_pc   [0:2];
-    logic [24:0] n_chk  [0:2];
-    logic        n_rfwe [0:2];
-    logic [4:0]  n_flg  [0:2];
-    logic [6:0]  n_opreg[0:2];
-    logic [6:0]  n_s1   [0:2];
-    logic [11:0] n_ca   [0:2];
-    logic [2:0]  n_cop  [0:2];
-    logic [4:0]  n_cimm [0:2];
-    logic [2:0]  n_sqi  [0:2];
-    logic [31:0] n_val  [0:2];
+    // =======================================================================
+    // 派遣驱动: 一台**显式握手状态机**
+    //
+    // §6.0 的握手是两拍: T 拍给编号, T+1 拍才派遣。TB 在 negedge 采样、DUT 在
+    // posedge 采样, 所以计划必须**晚一代**才摆上口, 否则配到的是上一代编号 ——
+    // 编号早已回池, 指令却拿着它, 紧接着它会被发给别人 (本 TB 栽过的坑)。
+    //
+    //   D_IDLE --(有活 && 不 stall)--> D_REQ --(无条件)--> D_DISP --(无条件)--> D_IDLE
+    //        生成计划 pl_*            摆 ren_preg_req      摆 disp_* + 记流水账
+    //
+    // 三条纪律, 缺一条就会再栽:
+    //   ① **所有派遣端口都是连续赋值** (由 dstate + pl_* + h_got* 驱动), 不做过程式
+    //      驱动 —— 这样"摆上口的值"与"TB 记的账"在构造上就是同一个表达式, 不会
+    //      在同一个时间步里读到旧值;
+    //   ② 派遣 vld 由**当拍** disp_stall 连续门控, 与 DUT 的接受条件同式 ——
+    //      "成没成"是当拍的函数, 不需要预测下一拍;
+    //   ③ 记账只在 D_DISP→D_IDLE 那一步做一次。
+    // =======================================================================
+    localparam [1:0] D_IDLE = 2'd0, D_REQ = 2'd1, D_DISP = 2'd2;
+    logic [1:0] dstate = D_IDLE;
 
-    integer      plan_n = 0;           // 本拍请求、下一拍要落的派遣
-    logic [4:0]  p_lreg [0:2];
-    logic [31:0] p_pc   [0:2];
-    logic [24:0] p_chk  [0:2];
-    logic        p_rfwe [0:2];
-    logic [4:0]  p_flg  [0:2];
-    logic [6:0]  p_opreg[0:2];
-    logic [6:0]  p_s1   [0:2];
-    logic [11:0] p_ca   [0:2];
-    logic [2:0]  p_cop  [0:2];
-    logic [4:0]  p_cimm [0:2];
-    logic [2:0]  p_sqi  [0:2];
-    logic [31:0] p_val  [0:2];
-    logic [6:0]  p_iid  [0:2];
+    integer      pl_n = 0;             // 本份计划要派几条
+    logic [4:0]  pl_lreg [0:2];
+    logic [31:0] pl_pc   [0:2];
+    logic [24:0] pl_chk  [0:2];
+    logic        pl_rfwe [0:2];
+    logic [4:0]  pl_flg  [0:2];
+    logic [6:0]  pl_opreg[0:2];
+    logic [6:0]  pl_s1   [0:2];
+    logic [11:0] pl_ca   [0:2];
+    logic [2:0]  pl_cop  [0:2];
+    logic [4:0]  pl_cimm [0:2];
+    logic [2:0]  pl_sqi  [0:2];
+    logic [31:0] pl_val  [0:2];
 
-    logic [6:0]  got0, got1, got2;     // 本拍拿到的编号 (下一拍派遣用)
-    logic        got_v0, got_v1, got_v2;
+    logic [6:0]  h_got  [0:2];         // D_REQ 那拍锁存下来的编号
+    logic [2:0]  h_gotv = 3'd0;
 
-    // 摆在派遣口上的那一份 (它是否真被接受, 只有下一拍才看得见 —— DUT 用的是
-    // **当拍**的 disp_stall/flushing 门控, 而 TB 是在 negedge 把数据摆上去的)。
-    integer      cp_n = 0;
+    // 已经摆上口的那份计划的快照 + "它还欠一次结算"。
+    // 为什么要留一份: 接受位是 posedge 锁存的 (acc_q), 要等到**下一拍**才读得到,
+    // 而那时 pl_* 已经被下一份计划覆盖了。
+    integer      cp_n = 0;             // 快照的条数 (即"上一条被派遣的"条数)
     logic [4:0]  cp_lreg [0:2];
     logic [31:0] cp_pc   [0:2];
     logic [24:0] cp_chk  [0:2];
@@ -275,42 +282,56 @@ module tb_rtu_rob;
     logic [4:0]  cp_cimm [0:2];
     logic [2:0]  cp_sqi  [0:2];
     logic [31:0] cp_val  [0:2];
-    logic [6:0]  cp_dpreg[0:2];
-    logic [2:0]  cp_gotv;             // 摆这份计划时, 各车道拿到的编号是否有效
+    logic [6:0]  cp_got  [0:2];
+    logic        commit_pending = 1'b0;
 
-    // 派遣使能: 需要 preg 的车道必须拿到编号, 且**当拍**不 stall。
-    // disp_stall 里含 flushing, 所以这一条同时覆盖冲刷窗口 (与 DUT 的 disp_acc 等价)。
+    // ---- 连续驱动: 编号请求 (只在 D_REQ 那拍有效) ----
+    assign ren_preg_req = (dstate == D_REQ) ? pl_n[1:0] : 2'd0;
+    assign ren_lreg0    = pl_lreg[0];
+    assign ren_lreg1    = pl_lreg[1];
+    assign ren_lreg2    = pl_lreg[2];
+
+    // ---- 连续驱动: 派遣 ----
+    // 需要 preg 的车道必须拿到编号; dst_lreg==0 的车道不需要 (编号按 §6.0 是 don't-care)
     wire [2:0] lane_ok;
-    // ⚠️ 必须用**与计划一起锁存**的 cp_gotv, 不能读实时的 got_v* —— 后者在同一次
-    //    迭代里稍后才被刷新, 于是"摆到口上的 vld"与"TB 记的账"会用不同的值
-    //    (踩过: acc_l 与 DUT 的 disp_acc 就差这一拍)。
-    assign lane_ok[0] = (cp_n > 0) && ((cp_lreg[0] != 5'd0) ? cp_gotv[0] : 1'b1);
-    assign lane_ok[1] = lane_ok[0] && (cp_n > 1) && ((cp_lreg[1] != 5'd0) ? cp_gotv[1] : 1'b1);
-    assign lane_ok[2] = lane_ok[1] && (cp_n > 2) && ((cp_lreg[2] != 5'd0) ? cp_gotv[2] : 1'b1);
-    wire [2:0] lane_go = lane_ok & {3{~disp_stall}};
+    assign lane_ok[0] = (dstate == D_DISP) && (pl_n > 0) && ((pl_lreg[0] != 5'd0) ? h_gotv[0] : 1'b1);
+    assign lane_ok[1] = lane_ok[0] && (pl_n > 1) && ((pl_lreg[1] != 5'd0) ? h_gotv[1] : 1'b1);
+    assign lane_ok[2] = lane_ok[1] && (pl_n > 2) && ((pl_lreg[2] != 5'd0) ? h_gotv[2] : 1'b1);
+    wire [2:0] lane_go = lane_ok & {3{~disp_stall}};   // disp_stall 里含 flushing
 
-    // ⚠️ 派遣是否真被接受, 由 TB **自己按同一个表达式算**, 不去读连续赋值的 d*_vld:
-    //    drive_disp() 刚改完 cp_*, 同一时间步里读 d*_vld 可能还是旧值 (delta 顺序),
-    //    那样 DUT 派了、TB 没记账, 两边立刻发散 (踩过: 症状是"一条也派不出去")。
-    bit [2:0] acc_l;
-    task automatic calc_acc;
-        begin
-            acc_l[0] = (cp_n > 0) && ((cp_lreg[0] != 5'd0) ? cp_gotv[0] : 1'b1);
-            acc_l[1] = acc_l[0] && (cp_n > 1) && ((cp_lreg[1] != 5'd0) ? cp_gotv[1] : 1'b1);
-            acc_l[2] = acc_l[1] && (cp_n > 2) && ((cp_lreg[2] != 5'd0) ? cp_gotv[2] : 1'b1);
-            acc_l = acc_l & {3{~disp_stall}};
-        end
-    endtask
+    // ⚠️ 接受与否必须在 **posedge** 那一刻锁存 —— DUT 就是在那时采样的。
+    //    用 negedge 再读 lane_go 已经晚了: 同一个 posedge 上 DUT 的寄存器已经翻过,
+    //    disp_stall 可能已经变成 1 (比如这一次派遣自己引入的 csr_inflight),
+    //    于是明明派出去了却记成"没派成" (踩过: 状态机永远停不下来)。
+    logic [2:0] acc_q = 3'd0;
+    // 采样时机: 进入 D_DISP 时"上膛", 紧随其后的那个 posedge 采一次然后卸膛。
+    // 那个 posedge 正是 DUT 采样的那一个 (TB 在 negedge 摆状态, DUT 在下一个
+    // posedge 采), 两边看到的是同一个 lane_go —— 这样"记的账"必然等于"真派出去的"。
+    // ⚠️ 不能无条件每拍锁存: 下一个 posedge 时状态已经切走了, 会把 0 覆盖上去。
+    logic       d_arm = 1'b0;
+    always @(posedge clk) if (d_arm) begin acc_q <= lane_go; d_arm <= 1'b0; end
 
-    assign d0_vld = lane_go[0];
-    assign d1_vld = lane_go[1];
-    assign d2_vld = lane_go[2];
+    assign d0_vld = lane_go[0];    assign d1_vld = lane_go[1];    assign d2_vld = lane_go[2];
+    assign d0_pc  = pl_pc[0];      assign d1_pc  = pl_pc[1];      assign d2_pc  = pl_pc[2];
+    assign d0_chk = pl_chk[0];     assign d1_chk = pl_chk[1];     assign d2_chk = pl_chk[2];
+    assign d0_lreg= pl_lreg[0];    assign d1_lreg= pl_lreg[1];    assign d2_lreg= pl_lreg[2];
+    assign d0_rfwe= pl_rfwe[0];    assign d1_rfwe= pl_rfwe[1];    assign d2_rfwe= pl_rfwe[2];
+    assign d0_opreg=pl_opreg[0];   assign d1_opreg=pl_opreg[1];   assign d2_opreg=pl_opreg[2];
+    assign d0_s1preg=pl_s1[0];     assign d1_s1preg=pl_s1[1];     assign d2_s1preg=pl_s1[2];
+    assign d0_ca  = pl_ca[0];      assign d1_ca  = pl_ca[1];      assign d2_ca  = pl_ca[2];
+    assign d0_cop = pl_cop[0];     assign d1_cop = pl_cop[1];     assign d2_cop = pl_cop[2];
+    assign d0_cimm= pl_cimm[0];    assign d1_cimm= pl_cimm[1];    assign d2_cimm= pl_cimm[2];
+    assign d0_flg = pl_flg[0];     assign d1_flg = pl_flg[1];     assign d2_flg = pl_flg[2];
+    assign d0_sqid= pl_sqi[0];     assign d1_sqid= pl_sqi[1];     assign d2_sqid= pl_sqi[2];
+    assign d0_dpreg = h_got[0];    assign d1_dpreg = h_got[1];    assign d2_dpreg = h_got[2];
 
     integer      errors = 0;
     integer      n_done = 0, n_trap = 0, n_int = 0, n_flush = 0;
     integer      n_store = 0, n_csr = 0, n_mret = 0, n_misp = 0;
     integer      fl_state = 0;         // 1=T 2=F1 3=F2
     integer      head_wait = 0;
+    integer      hcnt = 0;
+    integer      dcnt = 0;
     bit          trace_on = 0;
     integer      seed = 32'h1234_5678;
     integer      n_target = 200;
@@ -466,7 +487,8 @@ module tb_rtu_rob;
             end
 
             // ---------- 4) 误预测退休的重定向目标 ----------
-            if (ifu_chg_vld && !trap_vld) begin
+            // (mret 也会发前端重定向, 但那条走 §5 的检查)
+            if (ifu_chg_vld && !trap_vld && !mret_vld) begin
                 integer mi;
                 mi = -1;
                 for (int k = 0; k < 3; k = k + 1)
@@ -579,19 +601,6 @@ module tb_rtu_rob;
     // =======================================================================
     // 参考模型推进 (等价于 DUT 在一个时钟边沿做的事)
     // =======================================================================
-    task automatic ref_confirm;
-        begin
-            if (cp_gotv[0]) ref_pend[cp_dpreg[0]] = 1'b0;
-            if (cp_gotv[1]) ref_pend[cp_dpreg[1]] = 1'b0;
-            if (cp_gotv[2]) ref_pend[cp_dpreg[2]] = 1'b0;
-            // 只有"真的拿了编号"的车道才转占用 (dst_lreg==0 的车道没有编号)
-            // 只给"真派出去、且真的用了这个编号"的车道转占用
-            if (acc_l[0] && cp_gotv[0]) ref_busy[cp_dpreg[0]] = 1'b1;
-            if (acc_l[1] && cp_gotv[1]) ref_busy[cp_dpreg[1]] = 1'b1;
-            if (acc_l[2] && cp_gotv[2]) ref_busy[cp_dpreg[2]] = 1'b1;
-        end
-    endtask
-
     task automatic ref_retire;
         integer i;
         begin
@@ -622,13 +631,16 @@ module tb_rtu_rob;
             if (csr_rd_we) pf[csr_rd_addr]    = csr_rd_wdata;
 
             if (ren_flush) begin
-                plan_n       = 0;          // 冲刷前做的计划必须作废 (指针已复位)
-                ren_preg_req = 2'd0;
                 n_ret    = n_inst;
-                ref_busy = 96'd0;
                 ref_pend = 96'd0;
                 tb_cptr  = 6'd0;
                 tb_cmsb  = 1'b0;
+                // ⚠️ 冲刷只把**在途的**(ALLOC/WF_ALLOC)放回自由池; **架构映射表里的
+                //    那批 preg 依然被占用** (AMT 只反映已退休的映射, 冲刷不动它)。
+                //    模型若在这里一律清零, 之后某条指令释放它的 old_preg (正是某个
+                //    架构映射) 就会被误报成"释放了不在占用态的 preg"。
+                ref_busy = 96'd0;
+                for (int l = 0; l < 32; l = l + 1) ref_busy[ref_amt[l]] = 1'b1;
             end
         end
     endtask
@@ -636,85 +648,46 @@ module tb_rtu_rob;
     // =======================================================================
     // 激励
     // =======================================================================
-    // 把当前计划摆到派遣口上 (vld 由 lane_go 连续给, 这里只摆数据)
-    task automatic drive_disp;
-        begin
-            cp_n = plan_n;
-            for (int k = 0; k < 3; k = k + 1) begin
-                cp_lreg[k]=n_lreg[k]; cp_pc[k]=n_pc[k];   cp_chk[k]=n_chk[k];
-                cp_rfwe[k]=n_rfwe[k]; cp_flg[k]=n_flg[k]; cp_opreg[k]=n_opreg[k];
-                cp_s1[k]=n_s1[k];     cp_ca[k]=n_ca[k];   cp_cop[k]=n_cop[k];
-                cp_cimm[k]=n_cimm[k]; cp_sqi[k]=n_sqi[k]; cp_val[k]=n_val[k];
-            end
-            // 编号此刻就定下来 (它只能在下一拍被确认, 所以必须存副本)
-            cp_dpreg[0] = got_v0 ? got0 : 7'd0;
-            cp_dpreg[1] = got_v1 ? got1 : 7'd0;
-            cp_dpreg[2] = got_v2 ? got2 : 7'd0;
-            cp_gotv[0]  = got_v0;
-            cp_gotv[1]  = got_v1;
-            cp_gotv[2]  = got_v2;
-            d0_pc=cp_pc[0]; d0_chk=cp_chk[0]; d0_lreg=cp_lreg[0]; d0_rfwe=cp_rfwe[0];
-            d0_opreg=cp_opreg[0]; d0_s1preg=cp_s1[0]; d0_ca=cp_ca[0]; d0_cop=cp_cop[0];
-            d0_cimm=cp_cimm[0]; d0_flg=cp_flg[0]; d0_sqid=cp_sqi[0]; d0_dpreg=cp_dpreg[0];
-            d1_pc=cp_pc[1]; d1_chk=cp_chk[1]; d1_lreg=cp_lreg[1]; d1_rfwe=cp_rfwe[1];
-            d1_opreg=cp_opreg[1]; d1_s1preg=cp_s1[1]; d1_ca=cp_ca[1]; d1_cop=cp_cop[1];
-            d1_cimm=cp_cimm[1]; d1_flg=cp_flg[1]; d1_sqid=cp_sqi[1]; d1_dpreg=cp_dpreg[1];
-            d2_pc=cp_pc[2]; d2_chk=cp_chk[2]; d2_lreg=cp_lreg[2]; d2_rfwe=cp_rfwe[2];
-            d2_opreg=cp_opreg[2]; d2_s1preg=cp_s1[2]; d2_ca=cp_ca[2]; d2_cop=cp_cop[2];
-            d2_cimm=cp_cimm[2]; d2_flg=cp_flg[2]; d2_sqid=cp_sqi[2]; d2_dpreg=cp_dpreg[2];
-        end
-    endtask
-
-    // 生成本拍要请求的派遣计划 (下一拍真派)。iid 由指针镜像按 RTL 同规则算。
+    // 生成一份新计划 (D_IDLE→D_REQ 那一步调用)
     task automatic gen_plan;
         int n, r;
-        logic [5:0] c [0:2];
-        logic       w [0:2];
         begin
-            plan_n = 0;
             n = {$urandom} % 4;
-            c[0] = tb_cptr;
-            c[1] = (tb_cptr + 6'd1) & 6'h3f;
-            c[2] = (tb_cptr + 6'd2) & 6'h3f;
-            w[0] = tb_cmsb;
-            w[1] = tb_cmsb ^ (tb_cptr == 6'd63);
-            w[2] = tb_cmsb ^ (tb_cptr >= 6'd62);
-            for (int k = 0; k < n; k = k + 1) begin
+            pl_n = n;
+            for (int k = 0; k < 3; k = k + 1) begin
                 logic [4:0] f;
                 f = 5'd0;
-                r = {$urandom} % 100;
-                if (allow_store && r < 20)                        f[`RTU_FLG_STORE]  = 1'b1;
-                else if (allow_branch && r < 40)                  f[`RTU_FLG_BRANCH] = 1'b1;
-                else if (allow_csr && r < 50)                     f[`RTU_FLG_CSR]    = 1'b1;
-                else if (r < 55)                                  f[`RTU_FLG_MRET]   = 1'b1;
-                n_flg[k]   = f | (({$urandom} % 100 < 8) ? (5'b1 << `RTU_FLG_INTMASK) : 5'd0);
-                n_lreg[k]  = {$urandom} % 32;
-                n_rfwe[k]  = !(f[`RTU_FLG_STORE] || f[`RTU_FLG_BRANCH] || f[`RTU_FLG_MRET]);
-                // old_preg = 该逻辑寄存器**当前的架构映射** (照参考模型自己的 AMT 推)。
-                // ⚠️ 不能随手编一个: 真实机器里 old_preg 一定是"以前分配出去、现在
-                //    正被占用的"那个 preg。编一个没分配过的, 退休释放就会往自由池里
-                //    灌一个莫须有的编号 (池子放水 → 之后又把它发给别人)。
-                //    首次写某个 lreg 时它是 <32 的初始映射, 正好覆盖"永不回收"那条门控。
-                n_opreg[k] = ref_amt[n_lreg[k]];
-                n_pc[k]    = {$urandom};
-                n_chk[k]   = {$urandom} % (1 << 25);
-                n_val[k]   = {$urandom};
-                n_s1[k]    = {$urandom} % 96;
-                n_ca[k]    = {$urandom} % 4096;
-                n_cop[k]   = 3'b001 + ({$urandom} % 3);
-                n_cimm[k]  = {$urandom} % 32;
-                n_sqi[k]   = {$urandom} % 8;
-                p_iid[k]   = {w[k], c[k]};
+                if (k < n) begin
+                    r = {$urandom} % 100;
+                    if (allow_store && r < 20)        f[`RTU_FLG_STORE]  = 1'b1;
+                    else if (allow_branch && r < 40)  f[`RTU_FLG_BRANCH] = 1'b1;
+                    else if (allow_csr && r < 50)     f[`RTU_FLG_CSR]    = 1'b1;
+                    else if (r < 55)                  f[`RTU_FLG_MRET]   = 1'b1;
+                    pl_flg[k] = f | ((({$urandom} % 100) < 8) ? (5'b1 << `RTU_FLG_INTMASK) : 5'd0);
+                    pl_lreg[k]  = {$urandom} % 32;
+                    pl_rfwe[k]  = !(f[`RTU_FLG_STORE] || f[`RTU_FLG_BRANCH] || f[`RTU_FLG_MRET]);
+                    // old_preg == 该 lreg **当前的架构映射**: 真机里它一定是"以前发出去、
+                    // 现在正被占用的"那个 preg。随手编一个没分配过的, 退休释放就会往
+                    // 自由池里灌一个莫须有的编号 (池子放水 → 之后又把它发给别人)。
+                    // 首次写某个 lreg 时它是 <32 的初始映射, 正好覆盖"永不回收"那条门控。
+                    pl_opreg[k] = ref_amt[pl_lreg[k]];
+                    pl_pc[k]    = {$urandom};
+                    pl_chk[k]   = {$urandom} % (1 << 25);
+                    pl_val[k]   = {$urandom};
+                    pl_s1[k]    = {$urandom} % 96;
+                    pl_ca[k]    = {$urandom} % 4096;
+                    pl_cop[k]   = 3'b001 + ({$urandom} % 3);
+                    pl_cimm[k]  = {$urandom} % 32;
+                    pl_sqi[k]   = {$urandom} % 8;
+                end else begin
+                    pl_flg[k]=0; pl_lreg[k]=0; pl_rfwe[k]=0; pl_opreg[k]=0;
+                    pl_pc[k]=0;  pl_chk[k]=0;  pl_val[k]=0;  pl_s1[k]=0;
+                    pl_ca[k]=0;  pl_cop[k]=1;  pl_cimm[k]=0; pl_sqi[k]=0;
+                end
             end
-            n_plan = n;                       // ⚠️ 忘了这一步就永远派 0 条
-            ren_preg_req = n[1:0];
-            ren_lreg0 = p_lreg[0]; ren_lreg1 = p_lreg[1]; ren_lreg2 = p_lreg[2];
         end
     endtask
 
-    // 派遣当拍的 iid: {回绕位, cptr+k} —— 必须用**此刻**的指针镜像算。
-    // ⚠️ 不能在 gen_plan 里就把 iid 算好: 计划是上一拍做的, 而指针可能已被冲刷复位,
-    //    那样派出去的指令会拿到上一代的 iid (踩过: 症状是"退了一条还没派遣的指令")。
     function automatic logic [6:0] iid_at(input int k);
         logic [5:0] cc;
         logic       ww;
@@ -725,31 +698,97 @@ module tb_rtu_rob;
         end
     endfunction
 
-    task automatic commit_stream;
-        integer i;
-        begin
-            for (int k = 0; k < cp_n; k = k + 1) begin
-                if (acc_l[k]) begin
-                    i = n_inst;
-                    p_iid[k] = iid_at(k);
-                    x_pc[i]=cp_pc[k];   x_val[i]=cp_val[k];   x_lreg[i]=cp_lreg[k];
-                    x_rfwe[i]=cp_rfwe[k]; x_flg[i]=cp_flg[k]; x_sqi[i]=cp_sqi[k];
-                    x_dpr[i]=cp_dpreg[k];
-                    x_opr[i]=cp_opreg[k]; x_iid[i]=p_iid[k];
-                    x_ca[i]=cp_ca[k];   x_cop[i]=cp_cop[k];   x_cim[i]=cp_cimm[k];
-                    x_cmp[i]=1'b0; x_exc[i]=1'b0; x_ec[i]=5'd0; x_etv[i]=32'd0;
-                    x_tgt[i]=32'd0; x_tkn[i]=1'b0; x_msp[i]=1'b0; x_rsv[i]=1'b0;
-                    n_inst = n_inst + 1;
-                end
-            end
-        end
-    endtask
-
     task automatic step_cptr(input int nd);
         begin
             if (nd > 0) begin
                 if ((tb_cptr + nd) > 63) tb_cmsb = ~tb_cmsb;
                 tb_cptr = (tb_cptr + nd) & 6'h3f;
+            end
+        end
+    endtask
+
+    // 把"被接受的车道"记进参考流 + 推进指针镜像
+    task automatic dispatch_record(input int nd);
+        integer i;
+        begin
+            for (int k = 0; k < nd; k = k + 1) begin
+                i = n_inst;
+                x_pc[i]=cp_pc[k];     x_val[i]=cp_val[k];   x_lreg[i]=cp_lreg[k];
+                x_rfwe[i]=cp_rfwe[k]; x_flg[i]=cp_flg[k];   x_sqi[i]=cp_sqi[k];
+                x_dpr[i]=cp_got[k];
+                x_opr[i]=cp_opreg[k]; x_iid[i]=iid_at(k);
+                x_ca[i]=cp_ca[k];     x_cop[i]=cp_cop[k];   x_cim[i]=cp_cimm[k];
+                x_cmp[i]=1'b0; x_exc[i]=1'b0; x_ec[i]=5'd0; x_etv[i]=32'd0;
+                x_tgt[i]=32'd0; x_tkn[i]=1'b0; x_msp[i]=1'b0; x_rsv[i]=1'b0;
+                n_inst = n_inst + 1;
+            end
+            step_cptr(nd);
+            // 记账后立刻核对指针镜像与 DUT 的创造指针 —— 两者必须一致,
+            // 不一致就说明"这一拍记的条数"与实际派出去的条数对不上。
+            if (!dut.u_rob.cptr_oh[tb_cptr])
+                err($sformatf("指针镜像与 DUT 不符: 记了 %0d 条后 TBmir=%0d, 但 DUT 的创造指针不在那儿 (cptr_oh=%b)",
+                              nd, tb_cptr, dut.u_rob.cptr_oh[15:0]));
+        end
+    endtask
+
+    // 状态机推进 + 流水账 (每拍一次, 必须排在 check_cycle 之后 —— 它要先看到本拍的值)
+    task automatic disp_step;
+        int nd;
+        begin
+            if (ren_flush) begin
+                // 冲刷: 挂着的编号由 DUT 在 FLUSH_2 放回, 模型里一并清掉
+                for (int k = 0; k < 3; k = k + 1)
+                    if (h_gotv[k]) ref_pend[h_got[k]] = 1'b0;
+                h_gotv = 3'd0; pl_n = 0; cp_n = 0; commit_pending = 1'b0;
+                d_arm = 1'b0;
+                dstate = D_IDLE;
+            end else begin
+                case (dstate)
+                    D_IDLE: begin
+                        if (!disp_stall) begin
+                            gen_plan();                 // 第一份计划
+                            dstate = D_REQ;
+                        end
+                    end
+                    D_REQ: begin
+                        // (a) 先结算**上一份**: 它的接受位 acc_q 是上一个 posedge 锁存的,
+                        //     与 DUT 采到的 disp_acc 同刻同值。此刻 h_got 还是它的编号。
+                        if (commit_pending) begin
+                            nd = 0;
+                            for (int k = 0; k < 3; k = k + 1) begin
+                                if (acc_q[k]) nd = nd + 1;
+                                if (h_gotv[k] && acc_q[k]) ref_busy[h_got[k]] = 1'b1;
+                                if (h_gotv[k]) ref_pend[h_got[k]] = 1'b0;  // 没派成的还回池子
+                            end
+                            dispatch_record(nd);
+                            commit_pending = 1'b0;
+                        end
+                        // (b) 再锁存**本份**计划拿到的编号
+                        h_got[0] = alloc_vld0 ? alloc0 : 7'd0;
+                        h_got[1] = alloc_vld1 ? alloc1 : 7'd0;
+                        h_got[2] = alloc_vld2 ? alloc2 : 7'd0;
+                        h_gotv   = {alloc_vld2, alloc_vld1, alloc_vld0};
+                        for (int k = 0; k < 3; k = k + 1)
+                            if (h_gotv[k]) ref_pend[h_got[k]] = 1'b1;
+                        d_arm  = 1'b1;
+                        dstate = D_DISP;
+                    end
+                    default: begin                     // D_DISP: 本拍把派遣摆在口上
+                        cp_n       = pl_n;             // 留给下一拍结算
+                        cp_got[0]  = h_got[0];
+                        cp_got[1]  = h_got[1];
+                        cp_got[2]  = h_got[2];
+                        for (int k = 0; k < 3; k = k + 1) begin
+                            cp_lreg[k]=pl_lreg[k]; cp_pc[k]=pl_pc[k];   cp_chk[k]=pl_chk[k];
+                            cp_rfwe[k]=pl_rfwe[k]; cp_flg[k]=pl_flg[k]; cp_opreg[k]=pl_opreg[k];
+                            cp_s1[k]=pl_s1[k];     cp_ca[k]=pl_ca[k];   cp_cop[k]=pl_cop[k];
+                            cp_cimm[k]=pl_cimm[k]; cp_sqi[k]=pl_sqi[k]; cp_val[k]=pl_val[k];
+                        end
+                        commit_pending = 1'b1;
+                        gen_plan();                    // 下一份 (下一拍在 D_REQ 里请求)
+                        dstate = D_REQ;
+                    end
+                endcase
             end
         end
     endtask
@@ -836,51 +875,14 @@ module tb_rtu_rob;
 
             check_cycle();      // 用"上一拍驱动的输入 + 本拍输出"检查
 
-            calc_acc();         // 上一拍摆上去的那次派遣, 本拍才谈得上"成没成"
-            if (acc_l !== dut.u_rob.disp_acc)
-                err($sformatf("acc_l=%b 与 DUT 的 disp_acc=%b 不一致 (stall=%b cp_n=%0d)",
-                              acc_l, dut.u_rob.disp_acc, disp_stall, cp_n));
-            // ⚠️ 摆上去的计划**只摆一拍**: 没派成就作废。
-            //    跨拍重试是错的 —— §6.0 的握手窗口只有一拍 (编号在下一拍是 WF_ALLOC,
-            //    再下一拍就回 FREE 了), 拿过期编号去派 = 指令拿着一个已经回池的 preg,
-            //    紧接着它就会被发给别人 (踩过: 单测台第一版就是这么把池子搅乱的)。
-            ref_confirm();      // 结算它的编号
-            commit_stream();    // 记进参考流 (必须在清 cp_n 之前)
-            nd = {1'b0, acc_l[0]} + {1'b0, acc_l[1]} + {1'b0, acc_l[2]};
-            step_cptr(nd);
-            cp_n = 0;           // 这份计划用完即弃 (下一拍由 drive_disp 摆新的)
+            // 状态机推进 + 流水账。必须排在 check_cycle 之后: check_cycle 要在
+            // dstate==D_DISP 那拍核对"摆上口的 vld"与 DUT 内部接受的 disp_acc 是否一致。
+            disp_step();
 
             ref_retire();       // 本拍的退休 / 提交 / 冲刷
 
-            // 抓本拍 DUT 发出来的编号 —— 下一拍派遣要用 (§6.0 的两拍语义)
-            got0 = alloc0; got1 = alloc1; got2 = alloc2;
-            got_v0 = alloc_vld0; got_v1 = alloc_vld1; got_v2 = alloc_vld2;
-            if (got_v0) ref_pend[got0] = 1'b1;
-            if (got_v1) ref_pend[got1] = 1'b1;
-            if (got_v2) ref_pend[got2] = 1'b1;
-
             // 本拍刚派出去的不能同拍给完成信号 (同一个边沿, 表项还没建出来)
             n_ready = n_inst;
-
-            // ⚠️ 计划要**晚一代**才摆上口: 请求在 T 拍发出 (gen_plan), 编号在 T 拍
-            //    拿到 (上面刚抓), 派遣必须在 T+1 拍才发生 (§6.0)。若把 gen_plan 与
-            //    drive_disp 放在同一次迭代里, 摆上去的计划配的是**上一代**编号 ——
-            //    编号早已回池, 于是指令拿着一个别人的 preg。
-            plan_n = n_plan;
-            for (int k = 0; k < 3; k = k + 1) begin
-                p_lreg[k]=n_lreg[k]; p_pc[k]=n_pc[k];   p_chk[k]=n_chk[k];
-                p_rfwe[k]=n_rfwe[k]; p_flg[k]=n_flg[k]; p_opreg[k]=n_opreg[k];
-                p_s1[k]=n_s1[k];     p_ca[k]=n_ca[k];   p_cop[k]=n_cop[k];
-                p_cimm[k]=n_cimm[k]; p_sqi[k]=n_sqi[k]; p_val[k]=n_val[k];
-            end
-
-            // 把本拍要派的计划摆到口上, 并**当拍**记账。
-            // ⚠️ 记账必须与 DUT 采样的那一刻用同一个 disp_stall: d*_vld 是连续门控,
-            //    DUT 在 posedge 采到的就是"那一刻的 disp_stall" (= 本拍的值, 寄存器
-            //    要到边沿才变), TB 在 negedge 读到的也是本拍的值 —— 两边必然一致。
-            //    (踩过: 挪到下一拍再记账, 就会在 disp_stall 恰好在边沿翻转时错记一条。)
-            // 把下一拍要派的计划摆到口上 (成不成, 下一拍由 calc_acc 结算)
-            drive_disp();
 
             // 下一拍的完成 / 解析 / 异常 / 存储队列 / 中断
             gen_complete();
@@ -892,27 +894,11 @@ module tb_rtu_rob;
             sq_rdy2 = (({$urandom} % 100) < 90);
             sq_stall = (({$urandom} % 100) < 5);
 
-            // 下一拍的派遣计划 (顺带为它请求 preg)
-            if ((fl_state == 0) && !disp_stall) gen_plan();
-            else begin
-                n_plan = 0;
-                ren_preg_req = 2'd0;
-                cp_n = 0;                 // 口上的那一份也作废, 别在冲刷后派出去
-            end
-
             cyc = cyc + 1;
         end
     endtask
 
     initial begin
-        ren_preg_req=0; ren_lreg0=0; ren_lreg1=0; ren_lreg2=0;
-        d0_pc=0; d1_pc=0; d2_pc=0; d0_chk=0; d1_chk=0; d2_chk=0;
-        d0_lreg=0; d1_lreg=0; d2_lreg=0; d0_rfwe=0; d1_rfwe=0; d2_rfwe=0;
-        d0_dpreg=0; d1_dpreg=0; d2_dpreg=0; d0_opreg=0; d1_opreg=0; d2_opreg=0;
-        d0_s1preg=0; d1_s1preg=0; d2_s1preg=0;
-        d0_ca=0; d1_ca=0; d2_ca=0; d0_cop=1; d1_cop=1; d2_cop=1;
-        d0_cimm=0; d1_cimm=0; d2_cimm=0; d0_flg=0; d1_flg=0; d2_flg=0;
-        d0_sqid=0; d1_sqid=0; d2_sqid=0;
         cv0=0; cv1=0; cv2=0; cv3=0; cv4=0; ci0=0; ci1=0; ci2=0; ci3=0; ci4=0;
         rsv_vld=0; rsv_iid=0; rsv_taken=0; rsv_misp=0; rsv_tgt=0;
         ex_vld=0; ex_iid=0; ex_cause=0; ex_tval=0;
@@ -920,20 +906,12 @@ module tb_rtu_rob;
         int_pending=0;
         csr_tvec = 32'h0000_1000;
         csr_mepc_i = 32'h0000_2000;
-        got0=0; got1=0; got2=0; got_v0=0; got_v1=0; got_v2=0;
-        cp_n = 0; cp_gotv = 3'd0; n_plan = 0;
+        dstate = D_IDLE; pl_n = 0; h_gotv = 3'd0; cp_n = 0; commit_pending = 1'b0;
         for (int k = 0; k < 3; k = k + 1) begin
-            n_lreg[k]=0; n_pc[k]=0; n_chk[k]=0; n_rfwe[k]=0; n_flg[k]=0;
-            n_opreg[k]=0; n_s1[k]=0; n_ca[k]=0; n_cop[k]=1; n_cimm[k]=0;
-            n_sqi[k]=0; n_val[k]=0;
-        end
-        for (int k = 0; k < 3; k = k + 1) begin
-            cp_lreg[k]=0; cp_pc[k]=0; cp_chk[k]=0; cp_rfwe[k]=0; cp_flg[k]=0;
-            cp_opreg[k]=0; cp_s1[k]=0; cp_ca[k]=0; cp_cop[k]=1; cp_cimm[k]=0;
-            cp_sqi[k]=0; cp_val[k]=0; cp_dpreg[k]=0;
-            n_lreg[k]=0; n_pc[k]=0; n_chk[k]=0; n_rfwe[k]=0; n_flg[k]=0;
-            n_opreg[k]=0; n_s1[k]=0; n_ca[k]=0; n_cop[k]=1; n_cimm[k]=0;
-            n_sqi[k]=0; n_val[k]=0; p_iid[k]=0;
+            h_got[k]=0;
+            pl_lreg[k]=0; pl_pc[k]=0; pl_chk[k]=0; pl_rfwe[k]=0; pl_flg[k]=0;
+            pl_opreg[k]=0; pl_s1[k]=0; pl_ca[k]=0; pl_cop[k]=1; pl_cimm[k]=0;
+            pl_sqi[k]=0; pl_val[k]=0;
         end
         cycle = 0;
 
