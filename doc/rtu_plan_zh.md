@@ -32,7 +32,7 @@
    只在 CSR 退休时用的字段（约 26 bit/项）抽成单槽，省 ≈1.5 Kb（§4.3）。
    **判据是"这个字段在哪条路径上被消费"，不是"能省多少"。**
 
-目标是 **≤ 1500 行 RTL**，ROB 表项约 **121 bit** × 64 项 ≈ **7.7 Kb** 触发器
+目标是 **≤ 1500 行 RTL**，ROB 表项约 **122 bit** × 64 项 ≈ **7.8 Kb** 触发器
 （外加 `read_entry` 影子表项 360 bit + CSR 槽 26 bit）。
 
 ---
@@ -300,7 +300,7 @@ FIFO 的 push（退休释放）会绕圈覆盖槽位，如果盖掉了"被 pop �
 > 比它老的指令还活着、还占着 `ALLOC`，于是 RAT 不能整表覆盖、preg 也不能一律放回 ——
 > 必须改成按 iid 比较，复杂度立刻回到 C910 的 `ct_rtu_pst_preg.v`（8 637 行）水平。
 
-### D4 ROB 表项位域（121 bit，已含 §4.3 的省资源）
+### D4 ROB 表项位域（122 bit，已含 §4.3 的省资源）
 
 对比：C910 动态部分 40 bit（含向量/断点/debug）+ PST 里的寄存器簿记；
 参考核 80 bit 静态字段放异步读 RAM。
@@ -316,6 +316,7 @@ FIFO 的 push（退休释放）会绕圈覆盖槽位，如果盖掉了"被 pop �
 | `dst_lreg[4:0]` | 5 | 退休时写 AMT |
 | `dst_preg[6:0]` | 7 | 退休时 `ALLOC → ARCH`；difftest 读结果用 |
 | `old_preg[6:0]` | 7 | 退休时释放（判 `>= 32`） |
+| `rf_we` | 1 | 写 rd（**2026-10-01 补 A6b**：`dpi_shim.c:164` 连 `debug_wb_ena` 都比对，ena 不能用 `dst_lreg!=0` 现推） |
 | `is_csr` | 1 | 本指令是 CSR 指令（字段见下表后的"CSR 槽"） |
 | `is_mret` | 1 | `mret`（**2026-10-01 补**：§6.2 要输出 `rtu_mret_vld`，而 mret 没有异常包可依） |
 | `is_branch` | 1 | 分支/JAL/JALR：要训练、可能要重定向 |
@@ -324,11 +325,13 @@ FIFO 的 push（退休释放）会绕圈覆盖槽位，如果盖掉了"被 pop �
 | `is_store` | 1 | 退休时提交存储 |
 | `sq_id[2:0]` | 3 | 存储队列槽号 |
 | `intmask` | 1 | 阻断中断（CSR 等），见 D10 |
-| — | **≈121** | 总共 64 项 ≈ 7.7 Kb 触发器 |
+| — | **≈122** | 总共 64 项 ≈ 7.8 Kb 触发器 |
 
-**CSR 槽（表项外，单个寄存器，26 bit）**：`{src1_preg[6:0], csr_addr[11:0], csr_op[1:0], csr_imm[4:0]}`。
+**CSR 槽（表项外，单个寄存器，27 bit）**：`{src1_preg[6:0], csr_addr[11:0], csr_op[2:0], csr_imm[4:0]}`。
+（`csr_op` 取 **funct3 原样**、不是 2 位压缩版 —— 本核 `Control.v` 把 `csrrwi/rsri/rrci`
+折进了 `RW/RS/RC`，那样一折，退休级就分不出"源是 rs1 还是 uimm5"了。A6c。）
 
-CSR 的四个字段本来要占 **26 bit × 64 = 1.66 Kb**，而它们**只在 CSR 指令退休那一拍**
+CSR 的四个字段本来要占 **27 bit × 64 = 1.7 Kb**，而它们**只在 CSR 指令退休那一拍**
 被消费（不参与判退，不在 P1 链上）。抽成单槽后表项只剩 1 位 `is_csr`：
 
 * **省 ≈1.5 Kb**，且退休级少读 4 个 64 选 1 的字段 —— **时序是正向的**；
@@ -612,7 +615,7 @@ commit `7d8c8b1` 的实测分布 —— 500 条最差路径里：
 
 | # | 新路径 | 深度 | 对策 |
 |---|---|---|---|
-| P1 | **头部读 64:1 mux → 判退级联 → preg 释放/AMT 写** | ★★★ 最长 | **D5 的 `read_entry` 影子表项**：把 64:1 移出关键路径，判退只面对 3 个寄存值（表项 121 bit 而非 145 bit，这条 mux 也顺带窄了 17%） |
+| P1 | **头部读 64:1 mux → 判退级联 → preg 释放/AMT 写** | ★★★ 最长 | **D5 的 `read_entry` 影子表项**：把 64:1 移出关键路径，判退只面对 3 个寄存值（表项 122 bit 而非 145 bit，这条 mux 也顺带窄了 16%） |
 | P2 | **`iid_oldest` 串进重定向链**（★ 唯一新增到 EX→前端 的） | ★★ | **D12**：退化成 7 位相等 + 并行到达；两个比较数都必须来自寄存器。**这条要拿报告验** |
 | P8 | **`rob_full` → 前端捕获使能** | ★★ | `full` 只依赖寄存器；留 3~4 个空位容忍晚一拍（见上） |
 | P3 | 96 位三端口优先编码 → preg 状态更新 | ★★ | **D2 的 `WF_ALLOC`**：切成"选择 / 派遣确认"两拍 |
@@ -775,16 +778,22 @@ output [1:0]  rtu_preg_free_cnt;            // 剩余可用数（< 请求数时�
 input        disp0_vld;               // 允许少于 3 条，但不许跳号（前缀）
 input [31:0] disp0_pc;
 input [24:0] disp0_chk;               // 前端快照, 随指令走
-input [4:0]  disp0_dst_lreg;
+input [4:0]  disp0_dst_lreg;          // **原样的 rd 域**（store 那几位是立即数, 不要清洗）
+input        disp0_rf_we;             // A6b: 与今天 mycpu.v 的 wb_rf_we 同源
 input [6:0]  disp0_dst_preg;          // ← 来自 §6.0 的 rtu_preg_alloc k
 input [6:0]  disp0_old_preg;          // 被替换的（来自你自己的 RAT）
 input [6:0]  disp0_src1_preg;         // 仅 CSR 指令有意义（退休级要读源操作数）
 input [11:0] disp0_csr_addr;
-input [1:0]  disp0_csr_op;
-input [4:0]  disp0_csr_imm;
+input [2:0]  disp0_csr_op;            // A6c: **funct3 原样** 001=RW 010=RS 011=RC 101=RWI 110=RSI 111=RCI
+input [4:0]  disp0_csr_imm;           // csrrwi 系列的 uimm5（只有 csr_op[2]=1 时有效）
 input [4:0]  disp0_flags;             // {is_mret, is_csr, intmask, is_store, is_branch}
 input [2:0]  disp0_sq_id;
 // disp1_* / disp2_* 同上（源操作数与 dst 的对应关系按车道，不跨车道借用）
+//
+// ⚠️ `dst_lreg` 保持**原样**、`rf_we` 单列一位，是为了 difftest:
+//    `dpi/dpi_shim.c:164` 连 `debug_wb_ena` 本身都比对, 所以 ena 不能用
+//    `dst_lreg != 0` 现推 (addi x0,... 的 rf_we=1 而 rd=x0, 两者必须能分开)。
+//    AMT 的写口用 `rf_we & (dst_lreg != 0)` 门控。
 
 // —— 完成（来自各执行单元 / LSU），p = 0..4 ——
 input        cmplt_vld0;  input [6:0] cmplt_iid0;
@@ -819,6 +828,10 @@ input [31:0] preg_rdata0;             // ← PRF[rtu_preg_raddr0]，difftest 用
 input [31:0] preg_rdata1;
 input [31:0] preg_rdata2;
 input [31:0] rtu_csr_src_rdata;       // ← PRF[rtu_csr_src_raddr]，CSR 的 rs1 值
+
+// —— 重定向目标的来源（**A6 新增**：§6.2 声明了 rtu_ifu_chgflw_pc，就得有地方拿）——
+input [31:0] csr_trap_vector;         // 与今天喂给 PC 的那根同源（mtvec + cause<<2）
+input [31:0] csr_mepc;                // mret 的重定向目标
 ```
 
 ### 6.2 输出
@@ -935,6 +948,35 @@ output [31:0] dbg_commit_value2;
 **⑦ `rtu_retire_cnt` 是 `[1:0]`**（编码 0..3），不是 3 bit 宽。`int_pending` 拉高后退休宽度压到 1。
 
 **⑧ 同一时刻只允许一条 CSR 在途**：`disp_stall` 里必须有这一项，冲刷时清掉。
+
+**⑩ CSR 的新值在退休级现算**（`csr_rdata` 是组合读口的输出，地址由 `rtu_csr_addr` 给）：
+
+```
+csr_src   = csr_op[2] ? {27'b0, csr_imm} : rtu_csr_src_rdata;  // csrrwi 系列没有 rs1
+csr_wdata = (csr_op[1:0] == 2'b01) ? csr_src                   // RW
+          : (csr_op[1:0] == 2'b10) ? (csr_rdata |  csr_src)    // RS
+          :                          (csr_rdata & ~csr_src);   // RC
+rtu_csr_rd_wdata = csr_rdata;      // 写 rd 的就是"旧值", 三种 op 一样
+rtu_csr_we       = (csr_op[1:0] == 2'b01)                      // RW 恒写
+                 | (csr_op[2] ? (csr_imm != 0) : (src1_preg != 0));  // 与 Control.v 同口径
+```
+
+> 最后那行能这么写，是因为 **x0 恒映射到 p0**（复位时 `AMT[0]=p0`，且 `p0` 永不进自由池），
+> 所以 `src1_preg == 0` 与"rs1 域是 x0"等价 —— 这正是 `Control.v` 里
+> `csr_we = (csr_op==RW) || (rs1_addr != 0)` 那一条的退休级改写。
+
+**⑨ 慢路冲刷**也要重定向前端**（A6 的落地，这一条是从"哪些指令会被杀"倒推出来的）**：
+T 拍 `rtu_ifu_chgflw_vld=1`，`rtu_ifu_chgflw_pc` 按来源三选一 ——
+陷阱/中断取 `csr_trap_vector`；`mret` 取 `csr_mepc`；**误预测退休取该分支表项里的 `target`**。
+
+> 为什么误预测也要重定向：从 BEU 在执行级发出重定向（D1 的快路）到这条分支退休之间，
+> 前端已经重启并派出了若干条**正确路径**的指令 —— 但它们**是拿着还没恢复的 RAT
+> 改名出来的**（RAT 要到 FLUSH_2 才被 AMT 整表覆盖）。所以它们必须和错误路径一起冲掉，
+> 而冲掉之后必须**从分支的真实目标重取**，否则这些指令会被静默跳过。
+> 换句话说：慢路不是"只冲后端"，它是一次完整的"冲干净 + 从目标重取"。
+> 代价是误预测要重取几条指令（阶段 1 允许周期变差）；若将来要省掉这一笔，
+> 加法是给 RTU 一个 `beu_redirect_vld`（BEU 在执行级发重定向时告诉 RTU 一声），
+> 从那一拍起就把 `rtu_disp_stall` 拉高直到 FLUSH_2 —— **那是加法，不是返工**。
 
 ---
 

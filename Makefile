@@ -397,8 +397,10 @@ UNIT_SIMV  := $(UNIT_BUILD)/simv
 UNIT_SRC   := $(PWD)/mySoC/iu/rtl/MUL_DIV.v $(PWD)/mySoC/iu/rtl/mul_pipe.v $(PWD)/mySoC/iu/rtl/div_pipe.v
 UNIT_TB    := $(PWD)/tb/unit/tb_muldiv_unit.sv
 
+# ⚠️ `-exitstatus` 不能省: 没有它时 $fatal(1,...) 也让 simv 返回 0,
+# 于是"单元测试失败"会被 make 当成通过 (与主流程 SIM_ARGS 里那条同源)。
 muldiv-unit: $(UNIT_SIMV)
-	@$(UNIT_SIMV) -l $(UNIT_BUILD)/sim.log
+	@$(UNIT_SIMV) +vcs+lic+wait -exitstatus -l $(UNIT_BUILD)/sim.log
 
 $(UNIT_SIMV): $(UNIT_SRC) $(UNIT_TB)
 	@mkdir -p $(UNIT_BUILD)
@@ -419,12 +421,15 @@ $(UNIT_SIMV): $(UNIT_SRC) $(UNIT_TB)
 # ---------------------------------------------------------------------------
 RTU_UNIT_BUILD := $(PWD)/obj_unit_rtu
 RTU_UNIT_SIMV  := $(RTU_UNIT_BUILD)/simv
+# 只给单元 TB 用的仿真参数 (例如 RTU_UNIT_ARGS="+SEED=123 +NINSTR=400")。
+# ⚠️ 不要用 SIM_ARGS —— 那是主流程的, 而且改了它会连 -exitstatus 一起吃掉。
+RTU_UNIT_ARGS  ?=
 RTU_UNIT_SRC   := $(wildcard $(PWD)/mySoC/rtu/rtl/*.v)
 RTU_UNIT_HDR   := $(wildcard $(PWD)/mySoC/rtu/rtl/*.vh)
 RTU_UNIT_TB    := $(PWD)/tb/unit/tb_rtu_rob.sv
 
 rtu-unit: $(RTU_UNIT_SIMV)
-	@$(RTU_UNIT_SIMV) -l $(RTU_UNIT_BUILD)/sim.log
+	@$(RTU_UNIT_SIMV) +vcs+lic+wait -exitstatus $(RTU_UNIT_ARGS) -l $(RTU_UNIT_BUILD)/sim.log
 
 $(RTU_UNIT_SIMV): $(RTU_UNIT_SRC) $(RTU_UNIT_HDR) $(RTU_UNIT_TB)
 	@mkdir -p $(RTU_UNIT_BUILD)

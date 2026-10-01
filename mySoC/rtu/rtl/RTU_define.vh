@@ -52,4 +52,36 @@
 `define RTU_FLG_CSR     3
 `define RTU_FLG_MRET    4
 
+// ---- ROB 表项位域 (122 bit, D4) ----
+// 布局与 D4 的表格逐行对应; 表项模块的拼接顺序必须与这里一致。
+//   [121] vld   [120] cmplt  [119] wrap  [118:87] pc    [86:55] target
+//   [54:30] chk [29:25] dst_lreg [24:18] dst_preg [17:11] old_preg [10:6] flags
+//   [5] rf_we   [4] actual_taken [3] mispred [2:0] sq_id
+// 为什么不存完整 iid: iid = {wrap, 本表项固定索引}, 索引是常量 (§4.3 第 2 条)。
+`define RTU_E_W        122
+`define RTU_E_VLD      121
+`define RTU_E_CMPLT    120
+`define RTU_E_WRAP     119
+`define RTU_E_PC       118:87
+`define RTU_E_TARGET   86:55
+`define RTU_E_CHK      54:30
+`define RTU_E_DST_LREG 29:25
+`define RTU_E_DST_PREG 24:18
+`define RTU_E_OLD_PREG 17:11
+`define RTU_E_FLAGS    10:6
+`define RTU_E_RF_WE    5
+`define RTU_E_TAKEN    4
+`define RTU_E_MISPRED  3
+`define RTU_E_SQ_ID    2:0
+
+// ---- 冲刷来源 (D11 的优先级: 异常/中断 > mret > 误预测) ----
+`define RTU_FS_EXPT     2'd0
+`define RTU_FS_INT      2'd1
+`define RTU_FS_MRET     2'd2
+`define RTU_FS_MISPRED  2'd3
+
+// 中断的 cause: MTIP (与 defines.vh 的 INTR_MTIP_CAUSE 同值, 这里自带一份,
+// 免得退休单元的非测试台也得去 include 核的 defines.vh)
+`define RTU_CAUSE_MTIP  5'd7
+
 `endif
