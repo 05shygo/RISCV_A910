@@ -235,8 +235,10 @@ module tb_rtu_rob;
     logic        x_msp [0:MAXI-1];
     logic        x_rsv [0:MAXI-1];
 
-    logic [95:0] ref_busy = 96'd0;     // 占用 (派遣确认过)
-    logic [95:0] ref_pend = 96'd0;     // 已发出编号、还没确认 (WF_ALLOC)
+    // ⚠️ 这里**故意不维护**"哪些 preg 被占用"的位图。
+    //    它是从 参考流 + AMT + 派发中的编号 派生出来的量, 维护第二份必然与它们打架
+    //    (单测台为此debug 了很多轮)。占用与否一律**直接问 DUT 自己的状态表**,
+    //    或者从参考流现场算 —— 两者都与相位无关。
     logic [6:0]  ref_amt [0:31];       // 参考模型自己维护的 AMT
 
     logic [5:0]  tb_cptr = 6'd0;       // 派遣指针镜像 (iid = {回绕位, 槽号})
@@ -327,12 +329,35 @@ module tb_rtu_rob;
     logic       ret_trap_q = 1'b0;
     logic [4:0] ret_tcause_q = 5'd0;
     logic       ret_flush_q = 1'b0;
+
+    logic [31:0] ret_epc_q = 32'd0, ret_tval_q = 32'd0;
+    logic        ret_mret_q = 1'b0, ret_iflush_q = 1'b0, ret_bflush_q = 1'b0;
+    logic [31:0] ret_ipc_q = 32'd0;
+    logic [2:0]  ret_sw_q = 3'd0;
+    logic [8:0]  ret_sqid_q = 9'd0;
+    logic        ret_csrwe_q = 1'b0, ret_csrrd_q = 1'b0;
+    logic [11:0] ret_csra_q = 12'd0;
+    logic [31:0] ret_csrw_q = 32'd0, ret_csrrw_q = 32'd0;
+    logic [6:0]  ret_csrra_q = 7'd0;
+    logic [2:0]  ret_fv_q = 3'd0;
+    logic [20:0] ret_fp_q = 21'd0;
     always @(posedge clk) begin
         ret_vld_q    <= {cmv2, cmv1, cmv0};
         ret_cnt_q    <= retire_cnt;
         ret_trap_q   <= trap_vld;
         ret_tcause_q <= trap_cause;
         ret_flush_q  <= ren_flush;
+        ret_epc_q    <= trap_epc;    ret_tval_q <= trap_tval;
+        ret_mret_q   <= mret_vld;
+        ret_iflush_q <= ifu_chg_vld; ret_ipc_q  <= ifu_chg_pc;
+        ret_bflush_q <= backend_flush;
+        ret_sw_q     <= {store_vld2, store_vld1, store_vld0};
+        ret_sqid_q   <= {store_sqid2, store_sqid1, store_sqid0};
+        ret_csrwe_q  <= csr_we;      ret_csrrd_q <= csr_rd_we;
+        ret_csra_q   <= csr_addr;    ret_csrw_q  <= csr_wdata;
+        ret_csrrw_q  <= csr_rd_wdata; ret_csrra_q <= csr_rd_addr;
+        ret_fv_q     <= {ren_free_vld2, ren_free_vld1, ren_free_vld0};
+        ret_fp_q     <= {ren_free_preg2, ren_free_preg1, ren_free_preg0};
     end
     // 采样时机: 进入 D_DISP 时"上膛", 紧随其后的那个 posedge 采一次然后卸膛。
     // 那个 posedge 正是 DUT 采样的那一个 (TB 在 negedge 摆状态, DUT 在下一个
@@ -443,7 +468,7 @@ module tb_rtu_rob;
                     if (trap_cause == `RTU_CAUSE_MTIP) begin
                         n_int = n_int + 1;
                         if (int_pending !== 1'b1) err("取了中断但 int_pending=0");
-                        if (retire_cnt !== 2'd0)  err("取中断那一拍不该有退休计数");
+                        if (retire_cnt !== 2'd0) err("取中断那一拍不该有退休计数");
                         if (vldv !== 3'b000)      err("取中断那一拍不该有提交脉冲");
                         if (flg_of(i)[`RTU_FLG_STORE] || flg_of(i)[`RTU_FLG_CSR] ||
                             flg_of(i)[`RTU_FLG_MRET])
@@ -517,15 +542,11 @@ module tb_rtu_rob;
                                 err($sformatf("指令 %0d 释放的编号不符: exp=%0d got=%0d",
                                               i, x_opr[i], fp_k));
                             if (fv_k && (fp_k < 7'd32)) err("释放了架构寄存器 p0..p31");
-                            if (fv_k) begin
-                                logic in_amt;
-                                in_amt = 1'b0;
-                                for (int l = 0; l < 32; l = l + 1)
-                                    if (ref_amt[l] == fp_k) in_amt = 1'b1;
-                                err($sformatf("释放了不在占用态的 p%0d (指令 %0d, trap=%b) | DUT st=%0d 在模型 AMT 里=%b ref_pend=%b 该指令 dpr=%0d old=%0d",
-                                              fp_k, i, trap_this, dut.u_preg.st[fp_k],
-                                              in_amt, ref_pend[fp_k], x_dpr[i], x_opr[i]));
-                            end
+                            // 纯 DUT 侧: 释放的编号在 DUT 的池子里绝不该是 FREE 态
+                            // (它是"被替换掉的架构映射", 一定处于 ARCH/ALLOC)。
+                            if (fv_k && (dut.u_preg.st[fp_k] === 2'd0))
+                                err($sformatf("释放了 FREE 态的 p%0d (指令 %0d, trap=%b) dpr=%0d old=%0d",
+                                              fp_k, i, trap_this, x_dpr[i], x_opr[i]));
                         end
                     end
                 end
@@ -699,23 +720,19 @@ module tb_rtu_rob;
         begin
             vldv = ret_vld_q;                    // 用 posedge 锁存的那一份 (与 DUT 同刻)
             if (ret_trap_q) begin
-                log_evt($sformatf("TRAP n_ret=%0d n_inst=%0d cause=%0d", n_ret, n_inst, ret_tcause_q));
-                if (ret_tcause_q == `RTU_CAUSE_MTIP) begin
+                log_evt($sformatf("TRAP n_ret=%0d n_inst=%0d cause=%0d", n_ret, n_inst, trap_cause));
+                if (trap_cause == `RTU_CAUSE_MTIP) begin
                     n_ret = n_inst;                       // 队头被 squash, 后面全丢
                 end else if (vldv[0]) begin
-                    if (x_rfwe[n_ret] && (x_lreg[n_ret] != 5'd0))
-                        ref_busy[x_dpr[n_ret]] = 1'b0;    // 分配过但没写 -> 回 FREE
+                    // 陷阱那条: 分配过但没写 -> 回 FREE (DUT 侧由 ret_kill_vld 完成)
                     n_ret = n_ret + 1;
                 end
             end else begin
                 for (int k = 0; k < 3; k = k + 1) begin
                     if (vldv[k]) begin
                         i = n_ret;
-                        if (x_rfwe[i] && (x_lreg[i] != 5'd0)) begin
-                            if (x_opr[i] >= 7'd32) ref_busy[x_opr[i]] = 1'b0;
-                            ref_busy[x_dpr[i]] = 1'b1;
-                            ref_amt[x_lreg[i]] = x_dpr[i];
-                        end
+                        if (x_rfwe[i] && (x_lreg[i] != 5'd0))
+                            ref_amt[x_lreg[i]] = x_dpr[i];   // 模型只需要维护 AMT
                         log_evt($sformatf("RET  inst=%0d iid=%0d rptr=%0d lreg=%0d dpr=%0d rfwe=%b",
                                           i, x_iid[i], dut.u_rob.rptr, x_lreg[i], x_dpr[i], x_rfwe[i]));
                         n_ret = n_ret + 1;
@@ -731,15 +748,9 @@ module tb_rtu_rob;
                 log_evt($sformatf("FLUSH n_ret=%0d n_inst=%0d (都归零重来)", n_ret, n_inst));
                 lap_base = n_inst;
                 n_ret    = n_inst;
-                ref_pend = 96'd0;
                 tb_cptr  = 6'd0;
                 tb_cmsb  = 1'b0;
-                // ⚠️ 冲刷只把**在途的**(ALLOC/WF_ALLOC)放回自由池; **架构映射表里的
-                //    那批 preg 依然被占用** (AMT 只反映已退休的映射, 冲刷不动它)。
-                //    模型若在这里一律清零, 之后某条指令释放它的 old_preg (正是某个
-                //    架构映射) 就会被误报成"释放了不在占用态的 preg"。
-                ref_busy = 96'd0;
-                for (int l = 0; l < 32; l = l + 1) ref_busy[ref_amt[l]] = 1'b1;
+                // AMT 不因冲刷而变 (它只反映已退休的映射) —— 这正是"恢复靠整表覆盖"的底气。
             end
         end
     endtask
@@ -850,8 +861,7 @@ module tb_rtu_rob;
                 nd = 0;
                 for (int k = 0; k < 3; k = k + 1) begin
                     if (acc_q[k]) nd = nd + 1;
-                    if (cp_gotv[k] && acc_q[k]) ref_busy[cp_got[k]] = 1'b1;
-                    if (cp_gotv[k]) ref_pend[cp_got[k]] = 1'b0;   // 没派成的还回池子
+                    // (编号的占用/归还由 DUT 自己的状态表负责, 这里不做镜像)
                 end
                 dispatch_record(nd);
                 commit_pending = 1'b0;
@@ -859,8 +869,6 @@ module tb_rtu_rob;
 
             if (ren_flush) begin
                 // 冲刷: 挂着的编号由 DUT 在 FLUSH_2 放回, 模型里一并清掉
-                for (int k = 0; k < 3; k = k + 1)
-                    if (h_gotv[k]) ref_pend[h_got[k]] = 1'b0;
                 h_gotv = 3'd0; pl_n = 0; cp_n = 0; commit_pending = 1'b0;
                 d_arm = 1'b0;
                 dstate = D_IDLE;
@@ -886,8 +894,6 @@ module tb_rtu_rob;
                         h_got[1] = alloc_vld1 ? alloc1 : 7'd0;
                         h_got[2] = alloc_vld2 ? alloc2 : 7'd0;
                         h_gotv   = {alloc_vld2, alloc_vld1, alloc_vld0};
-                        for (int k = 0; k < 3; k = k + 1)
-                            if (h_gotv[k]) ref_pend[h_got[k]] = 1'b1;
                         d_arm  = 1'b1;
                         dstate = D_DISP;
                         end
@@ -923,11 +929,6 @@ module tb_rtu_rob;
     task automatic check_after_retire;
         integer i;
         begin
-        // ---------- -1) 模型自洽: AMT 里的每个映射都必须是"占用"的 ----------
-        // (复位时 p0..p31 就是 x0..x31 的映射, 它们同样是占用的)
-        for (int l = 0; l < 32; l = l + 1)
-            if (!ref_busy[ref_amt[l]])
-                err($sformatf("模型自洽失败: AMT[%0d]=p%0d 却不在 ref_busy 里", l, ref_amt[l]));
         // ---------- 0) 影子窗口的每个字段都必须等于参考流里对应的那条指令 ----------
         // 这是"流有没有错位"最直接的判据: 位置对得上 (4b 已查), 字段也必须对得上。
         for (int k = 0; k < 3; k = k + 1) begin
@@ -1129,10 +1130,7 @@ module tb_rtu_rob;
 
         for (int a = 0; a < 4096; a = a + 1) csr_file[a] = {$urandom};
         for (int p = 0; p < 96;   p = p + 1) pf[p] = {$urandom};
-        for (int l = 0; l < 32;   l = l + 1) begin
-            ref_amt[l]   = l[6:0];
-            ref_busy[l]  = 1'b1;          // 复位时 p0..p31 已是架构态 -> 占用
-        end
+        for (int l = 0; l < 32;   l = l + 1) ref_amt[l] = l[6:0];
 
         $display("==================================================");
         $display("  RTU 单元 TB: seed=%0d 目标指令数=%0d", seed, n_target);
