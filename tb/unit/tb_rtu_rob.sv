@@ -305,6 +305,21 @@ module tb_rtu_rob;
     //    disp_stall 可能已经变成 1 (比如这一次派遣自己引入的 csr_inflight),
     //    于是明明派出去了却记成"没派成" (踩过: 状态机永远停不下来)。
     logic [2:0] acc_q = 3'd0;
+    // 同理: 退休观察也要**在 posedge 锁存** —— DUT 是在那一刻采样的。
+    // 在 negedge 直接读 vldv/retire_cnt 会与"那一拍 DUT 真正做了什么"错开
+    // (TB 在这一拍还会改自己的激励), 记账就会与 rptr 差一条 (踩过)。
+    logic [2:0] ret_vld_q = 3'd0;
+    logic [1:0] ret_cnt_q = 2'd0;
+    logic       ret_trap_q = 1'b0;
+    logic [4:0] ret_tcause_q = 5'd0;
+    logic       ret_flush_q = 1'b0;
+    always @(posedge clk) begin
+        ret_vld_q    <= {cmv2, cmv1, cmv0};
+        ret_cnt_q    <= retire_cnt;
+        ret_trap_q   <= trap_vld;
+        ret_tcause_q <= trap_cause;
+        ret_flush_q  <= ren_flush;
+    end
     // 采样时机: 进入 D_DISP 时"上膛", 紧随其后的那个 posedge 采一次然后卸膛。
     // 那个 posedge 正是 DUT 采样的那一个 (TB 在 negedge 摆状态, DUT 在下一个
     // posedge 采), 两边看到的是同一个 lane_go —— 这样"记的账"必然等于"真派出去的"。
@@ -332,6 +347,10 @@ module tb_rtu_rob;
     integer      fl_state = 0;         // 1=T 2=F1 3=F2
     integer      head_wait = 0;
     integer      hcnt = 0;
+    integer      lap_base = 0;      // 本圈起点 (上次冲刷时的 n_inst)
+    logic [5:0]  rptr_prev = 6'd0;  // [核对] DUT 上一拍的 rptr
+    logic        rptr_msb_prev = 1'b0;
+    logic [1:0]  pop_prev = 2'd0;   // [核对] DUT 上一拍的 pop_n
     integer      dcnt = 0;
 
     // [诊断] 最近 64 条事件 (派遣/退休/冲刷), 第一次 retire_iid 错位时整段倒出来
@@ -339,6 +358,7 @@ module tb_rtu_rob;
     string       evt [0:LOGN-1];
     integer      evt_i = 0;
     bit          log_dumped = 0;
+    bit          log_dumped2 = 0;
     bit          trace_on = 0;
     integer      seed = 32'h1234_5678;
     integer      n_target = 200;
@@ -535,15 +555,70 @@ module tb_rtu_rob;
                 n_mret = n_mret + 1;
             end
 
+            // ---------- 4a) DUT 的 rptr 每拍只能前进 pop_n (除冲刷复位之外不许跳) ----------
+            if (!ren_flush) begin
+                logic [6:0] exp_rp;
+                // 上拍读到的 rptr + **本拍锁存的** pop (即结束上一拍那个边沿上用的值)
+                exp_rp = {rptr_msb_prev, rptr_prev} + {5'b0, ret_cnt_q};
+                if ({dut.u_rob.rptr_msb, dut.u_rob.rptr} !== exp_rp[6:0])
+                    err($sformatf("rptr 推进异常: 上拍=%0d.%0d pop=%0d, 本拍 DUT=%0d.%0d (应为 %0d) | 本拍内部: pop_n=%0d nxt=%0d flushlvl=%b flushing=%b",
+                                  rptr_msb_prev, rptr_prev, ret_cnt_q,
+                                  dut.u_rob.rptr_msb, dut.u_rob.rptr, exp_rp[6:0],
+                                  dut.u_rob.pop_n, dut.u_rob.nxt_rptr,
+                                  dut.u_rob.flush_lvl, dut.u_rob.flushing));
+            end
+            rptr_prev     = dut.u_rob.rptr;
+            rptr_msb_prev = dut.u_rob.rptr_msb;
+            pop_prev      = ret_cnt_q;   // 用 posedge 锁存的那份 (DUT 边沿上用的就是它)
+
+            // ---------- 4b) 退休指针: DUT 的 {msb,rptr} 必须等于"本圈已退休条数" ----------
+            // 这是把参考流与 DUT 的退休位置直接钉在一起的不变量 (带本圈基准, 免得把
+            // 全局指令号与圈内位置混在一起)。它一旦不发散, 后面那些 iid/完成信号
+            // 的对齐问题就不可能存在。
+            begin
+                integer since;
+                since = n_ret - lap_base;
+                if ({dut.u_rob.rptr_msb, dut.u_rob.rptr} !== since[6:0]) begin
+                    err($sformatf("退休位置不符: DUT=%0d.%0d, 本圈已退 %0d 条 (n_ret=%0d lap_base=%0d, flst=%0d)",
+                                  dut.u_rob.rptr_msb, dut.u_rob.rptr, since,
+                                  n_ret, lap_base, fl_state));
+                    if (!log_dumped2) begin dump_log(); log_dumped2 = 1'b1; end
+                end
+            end
+
+            // ---------- 5a) 影子窗口必须等于阵列的 rptr+0/1/2 (D5 的机制本身) ----------
+            // 判退逻辑面对的是影子窗口; 它一旦落后于阵列, 症状就是"指令明明完成了
+            // 却不退休" —— 而那是最难从外部现象反推的一类。
+            if (!ren_flush) begin
+                for (int k = 0; k < 3; k = k + 1) begin
+                    logic        wv, wc;
+                    logic [31:0] wp;
+                    integer      ix;
+                    ix = (dut.u_rob.rptr + k) & 6'h3f;
+                    if (k == 0) begin wv = dut.u_rob.win_q0[`RTU_E_VLD]; wc = dut.u_rob.win_q0[`RTU_E_CMPLT]; wp = dut.u_rob.win_q0[`RTU_E_PC]; end
+                    else if (k == 1) begin wv = dut.u_rob.win_q1[`RTU_E_VLD]; wc = dut.u_rob.win_q1[`RTU_E_CMPLT]; wp = dut.u_rob.win_q1[`RTU_E_PC]; end
+                    else begin wv = dut.u_rob.win_q2[`RTU_E_VLD]; wc = dut.u_rob.win_q2[`RTU_E_CMPLT]; wp = dut.u_rob.win_q2[`RTU_E_PC]; end
+                    // ⚠️ 只在窗口**已经有这一项**时比: 阵列新建的那一项要等"补空"路径
+                    //    下一拍才进窗口 (D5 的设计如此), 空窗 vs 有效阵列是正常的中间态。
+                    if (wv && ((wc !== dut.u_rob.rob_q[ix][`RTU_E_CMPLT]) ||
+                               (wp !== dut.u_rob.rob_q[ix][`RTU_E_PC])))
+                        err($sformatf("影子窗口[%0d] 与阵列[%0d] 不符: win(vld=%b cmpl=%b pc=%08x) vs arr(vld=%b cmpl=%b pc=%08x)",
+                                      k, ix, wv, wc, wp,
+                                      dut.u_rob.rob_q[ix][`RTU_E_VLD],
+                                      dut.u_rob.rob_q[ix][`RTU_E_CMPLT],
+                                      dut.u_rob.rob_q[ix][`RTU_E_PC]));
+                end
+            end
+
             // ---------- 5b) iid 约定 ----------
             // ⚠️ 冲刷当拍 (ren_flush) 不比: DUT 在那一拍把 rptr 归零重新开始, 而参考流
             //    要到同一拍稍后才重新对齐 —— 在这一拍比必然误报 (踩过: 这一条曾独占
             //    失败总数的绝大部分)。
             if ((n_ret < n_inst) && !ren_flush && (fl_state == 0)) begin
                 if (beu_retire_iid !== x_iid[n_ret]) begin
-                    err($sformatf("retire_iid 不符: exp=%0d got=%0d (n_ret=%0d, dutrptr=%0d)",
-                                  x_iid[n_ret], beu_retire_iid, n_ret, dut.u_rob.rptr));
-                    if (!log_dumped) dump_log();
+                    err($sformatf("retire_iid 不符: exp=%0d got=%0d (n_ret=%0d, dutrptr=%0d, flst=%0d)",
+                                  x_iid[n_ret], beu_retire_iid, n_ret, dut.u_rob.rptr, fl_state));
+                    if (!log_dumped2) begin dump_log(); log_dumped2 = 1'b1; end
                 end
             end
 
@@ -639,9 +714,10 @@ module tb_rtu_rob;
     task automatic ref_retire;
         integer i;
         begin
-            if (trap_vld) begin
-                log_evt($sformatf("TRAP n_ret=%0d n_inst=%0d cause=%0d", n_ret, n_inst, trap_cause));
-                if (trap_cause == `RTU_CAUSE_MTIP) begin
+            vldv = ret_vld_q;                    // 用 posedge 锁存的那一份 (与 DUT 同刻)
+            if (ret_trap_q) begin
+                log_evt($sformatf("TRAP n_ret=%0d n_inst=%0d cause=%0d", n_ret, n_inst, ret_tcause_q));
+                if (ret_tcause_q == `RTU_CAUSE_MTIP) begin
                     n_ret = n_inst;                       // 队头被 squash, 后面全丢
                 end else if (vldv[0]) begin
                     if (x_rfwe[n_ret] && (x_lreg[n_ret] != 5'd0))
@@ -657,9 +733,8 @@ module tb_rtu_rob;
                             ref_busy[x_dpr[i]] = 1'b1;
                             ref_amt[x_lreg[i]] = x_dpr[i];
                         end
-                        log_evt($sformatf("RET  inst=%0d iid=%0d lreg=%0d dpr=%0d rfwe=%b -> AMT[%0d]=%0d",
-                                          i, x_iid[i], x_lreg[i], x_dpr[i], x_rfwe[i],
-                                          x_lreg[i], x_dpr[i]));
+                        log_evt($sformatf("RET  inst=%0d iid=%0d rptr=%0d lreg=%0d dpr=%0d rfwe=%b",
+                                          i, x_iid[i], dut.u_rob.rptr, x_lreg[i], x_dpr[i], x_rfwe[i]));
                         n_ret = n_ret + 1;
                         n_done = n_done + 1;
                     end
@@ -669,8 +744,9 @@ module tb_rtu_rob;
             if (csr_we)    csr_file[csr_addr] = csr_wdata;
             if (csr_rd_we) pf[csr_rd_addr]    = csr_rd_wdata;
 
-            if (ren_flush) begin
+            if (ret_flush_q) begin
                 log_evt($sformatf("FLUSH n_ret=%0d n_inst=%0d (都归零重来)", n_ret, n_inst));
+                lap_base = n_inst;
                 n_ret    = n_inst;
                 ref_pend = 96'd0;
                 tb_cptr  = 6'd0;
