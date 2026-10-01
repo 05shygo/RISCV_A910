@@ -18,6 +18,8 @@
 // Additional Comments:
 // 
 //////////////////////////////////////////////////////////////////////////////////
+`include "defines.vh"
+
 module Hazard_Detection(
     input              id_rf1_used  ,
     input              id_rf2_used  ,

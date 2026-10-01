@@ -311,6 +311,34 @@ wait_done:
     csrw mie, x0
     csrw mstatus, x0
 
+    # ============ 11. 非法 S 型 funct3 -> 纯 no-op ============
+    # 编码: S 型, funct3 = 011 (RISC-V 保留编码), rs1=x30, rs2=x29, imm=0
+    #   -> .word 0x01DF3023
+    # 约定 (2026-10-01, 对齐参考核 RISCV_CPU/cpu): **不判非法指令** —— 不写内存、
+    # 不写寄存器、不报异常, 整条退化成 no-op。cpu 对同一情形是
+    # `default: inst_subtype_o = 4'b0` (= 它的 MEM_LB) 且 reg_wflag=0, 继续走。
+    #
+    # 这条盯的是 Control.v 的 OPCODE_S 兜底臂: 把 ram_we 改回 1 就会**真的写一个
+    # 整字** (dram_sel=LB 让 MEM.v 的 wdata_out 保持默认的 wdin, 而本核没有字节
+    # 使能), 哨兵会被改掉。更早的写法还会把上一笔 store 的残留数据写进来。
+    la   x30, s_f3_target
+    li   x29, 0x11112222
+    sw   x29, 0(x30)            # 哨兵
+    li   x29, 0x5555AAAA
+    .word 0x01DF3023            # 非法 funct3 的 S 型 (本该是 sw x29,0(x30))
+    lw   x31, 0(x30)
+    li   x28, 0x11112222
+    bne  x31, x28, fail         # 哨兵必须原封不动
+
+    # 奇数地址再来一次: 旧写法 (兜底 dram_sel=SW) 会让 ex_wsize_word=1 而报
+    # cause 6 (store 非对齐)。给一条非法指令报"非对齐"没有意义 —— 现在
+    # ram_we=0 让 ex_is_store=0, cause 6/7 都产生不了。
+    addi x30, x30, 1
+    li   x5, -1                 # 哨兵: 没陷入就保持 -1
+    .word 0x01FF3023            # 同一编码, rs2=x31
+    li   x28, -1
+    bne  x5, x28, fail
+
     # ===================== 全部通过 =====================
     li   x10, 0x80000000
     li   x11, 0x0000BEEF
@@ -328,4 +356,6 @@ fail:
 scratch:
     .word 0x0BADF00D
 jalr_target:
+    .word 0x00000000
+s_f3_target:                        # 第 11 节"非法 S 型 funct3"的哨兵
     .word 0x00000000

@@ -316,12 +316,32 @@ always @(*) begin
                 `FUNCT3_SB: dram_sel = `DRAM_SEL_SB;
                 `FUNCT3_SH: dram_sel = `DRAM_SEL_SH;
                 `FUNCT3_SW: dram_sel = `DRAM_SEL_SW;
-                // ⚠️ 这里是 `0` (= DRAM_SEL_LW, 一个**读**选择子) 而 ram_we=1。
-                //    配合 MEM.v 的 `wdata_out` 原先也是 latch, 非法 store funct3 时
-                //    实际写进内存的是**上一笔 store 的残留数据** —— 历史相关的垃圾。
-                //    改成 SW 后这个角落 = "按 SW 写 wdin", 确定且与 MEM.v 的
-                //    default 臂一致。合法 funct3 走不到这里。
-                default: dram_sel = `DRAM_SEL_SW;
+                // 非法 funct3 (RISC-V 保留编码): 整条指令退化成**纯 no-op** ——
+                // 不写内存、不写寄存器、不报异常。
+                //
+                // 为什么是"不报异常" (2026-10-01): 对齐参考实现 `RISCV_CPU/cpu`。
+                // 那个核对同一情形是 `default: inst_subtype_o = 4'b0;`
+                // (inst_decoder.v:237-239) —— 4'b0 就是它的 MEM_LB —— 同时
+                // reg_wflag=0, 即"挑一个无害的默认值继续走", **不判非法指令**。
+                // (该核整个没有非法指令机制: 它的异常只有 ecall/ebreak/mret。)
+                //
+                // 与两种历史写法的关系:
+                //   * 最初兜底 `0`(= DRAM_SEL_LW, 一个**读**选择子) 而 ram_we=1,
+                //     配合当时还是 latch 的 MEM.v.wdata_out, 会把**上一笔 store 的
+                //     残留数据**写进内存 —— 历史相关的垃圾 (见 DUT_BUG_REPORT)。
+                //   * 后来改成 SW 消除了不确定性, 但它仍然**真的写一个整字**,
+                //     而且 SW 让 ex_wsize_word=1, 奇数地址上还会报 cause 6 ——
+                //     给一条非法指令报"非对齐"没有意义。
+                // 现在直接 ram_we=0, 比 SW 更彻底: 那类"垃圾写"从根上没有了。
+                //
+                // 副产物: ex_is_store = ex_ram_we = 0 ⇒ 既不查非对齐也不查越界;
+                // ex_is_load 也恒 0 (本分支 rf_we=0) ⇒ cause 5/7 都产生不了。
+                // dram_sel 取 LB 只是为了与 case 之前的全局缺省
+                // (`dram_sel = DRAM_SEL_LB`) 一致 —— ram_we=0 时它已不被消费。
+                default: begin
+                    dram_sel = `DRAM_SEL_LB;
+                    ram_we   = 1'b0;
+                end
             endcase
         end
         `OPCODE_B: begin

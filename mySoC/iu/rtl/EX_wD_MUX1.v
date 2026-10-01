@@ -20,6 +20,8 @@
 //////////////////////////////////////////////////////////////////////////////////
 
 
+`include "defines.vh"
+
 module EX_wD_MUX1(
     input  wire [`RF_WSEL_WIDTH-1:0] rf_wsel,
     input  wire [31:0] pc4   ,

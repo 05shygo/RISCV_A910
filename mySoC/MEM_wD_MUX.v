@@ -20,6 +20,8 @@
 //////////////////////////////////////////////////////////////////////////////////
 
 
+`include "defines.vh"
+
 module MEM_wD_MUX(
     input  wire [`RF_WSEL_WIDTH-1:0] rf_wsel,
     input  wire [31:0] DRAM_rdo,

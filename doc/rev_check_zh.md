@@ -11,7 +11,10 @@
 > 方法：`python3 scripts/rev_check.py`。按 `scripts/rev_mutations.txt` 的清单逐条
 > **故意注入一个错误** → 独立 `BUILD_DIR` 重新编译 → 跑指定用例 → 断言**必须失败**
 > → 自动还原（含崩溃快照 + `--restore`）。
-> 全部实验在 HEAD `f72f06e`（IDU 重构之后）上做的。
+> 全部实验在 HEAD `f72f06e`（IDU 重构之后）上做的；此后 RTL 又做过两次改动，
+> 清单与结果都已同步：**非法 S 型 funct3 改成 no-op**（见 §5.3）、
+> **目录重组**（IDU→`mySoC/idu/rtl/`、执行单元→`mySoC/iu/rtl/`，见
+> `CORE_DESIGN.md` §2.1）。重组后 25 条全部重跑，结果不变。
 
 ---
 
@@ -20,11 +23,11 @@
 | | |
 |---|---|
 | 变异总数 | **25** |
-| 被抓 | **21** |
-| 幸存 | **4** |
-| 因本轮实验**补上的 asm 覆盖** | 2 条（`asm/trap.S` 的两处「反向验证补丁」） |
-| 补完后由幸存转被抓 | **2 条**（M06 / M15） |
-| 剩下的 4 条 | 全部是**等价变异或被下游门控遮蔽**，加用例**不可能**抓到 —— 见 §4 |
+| 被抓 | **22** |
+| 幸存 | **3** |
+| 因本轮实验**补上的 asm 覆盖** | 3 条（`asm/trap.S` 三处：两处「反向验证补丁」+ 第 11 节非法 S 型） |
+| 补完后由幸存转被抓 | **3 条**（M06 / M15 / M11） |
+| 剩下的 3 条 | 全部是**被下游门控遮蔽**的纵深防御，加用例**不可能**抓到 —— 见 §4 |
 
 四种「被抓到」的签名（都由 `-exitstatus` 变成非 0 返回码）：
 
@@ -86,7 +89,7 @@ python3 scripts/rev_check.py --restore       # 进程被 kill -9 后手动还原
 | M08 | `id_rf1_used` 恒 0 | `Control.v` | ✅ | trap / muldiv_edge |
 | M09 | `id_rf2_used` 恒 0 | `Control.v` | ✅ | trap / peri |
 | M10 | `dram_sel` 缺省 LB→SW | `Control.v` | 🔴 幸存 | —（见 §4.3） |
-| M11 | 非法 store funct3 兜底 → LW | `Control.v` | 🔴 幸存 | —（见 §4.4） |
+| M11 | 非法 S 型 funct3 兜底臂改成会写内存 | `Control.v` | ✅ | trap（**本轮补的用例**）|
 | M12 | `Sext_I` 符号位取错一位 | `SEXT.v` | ✅ | trap |
 | M13 | `Sext_Z` 取到 `din[7:3]` | `SEXT.v` | ✅ | trap |
 | M14 | x0 可写 | `RegFile.v` | ✅ | mul / trap |
@@ -116,11 +119,11 @@ python3 scripts/rev_check.py --restore       # 进程被 kill -9 后手动还原
 
 ---
 
-## 4. 四个幸存变异 —— 逐条归因
+## 4. 幸存变异 —— 逐条归因
 
-**四条都不是"用例写漏了"**，加用例抓不到它们。两条是**等价变异**（改了但语义不变），
-两条是**被下游门控遮蔽**（有第二条防线兜着）。后两条都用"复合变异"实验**证明**了
-遮蔽来源，不是靠读代码断言。
+**三条都不是"用例写漏了"**，加用例抓不到它们 —— 都是**被下游门控遮蔽**的
+纵深防御（有第二条防线兜着）。两条都用"复合变异"实验**证明**了遮蔽来源，
+不是靠读代码断言。
 
 ### 4.1 M01 · `IDU.v` 的 `have_inst` 门控 —— 被提交点的第二道门控遮蔽
 
@@ -188,51 +191,25 @@ wire ex_store_misaligned = have_inst_EX & ex_is_store & ex_addr_bad;   // mycpu.
 ⇒ 注释本身无害（保守一点没坏处），但它描述的**因果链已经断了**。§8.1 那条判据才是
 真正承重的那一条。
 
-### 4.4 M11 · 非法 store funct3 的兜底臂 —— **等价变异**
+### 4.4 原 M11 · 非法 store funct3 的兜底臂 —— 曾是等价变异，现已改掉
 
-`Control.v:319-324` 记录了一个真实的历史 bug：非法 store funct3 时 `dram_sel`
-兜底取了 `` `0``（= `DRAM_SEL_LW`，一个**读**选择子），配上 `ram_we=1`，实际写进
-内存的是**上一笔 store 的残留数据**。现在的写法是兜底 `DRAM_SEL_SW`。
+第一轮里 M11 打的是 `Control.v` 的 `default: dram_sel = DRAM_SEL_SW` / `LW`。
+它是**等价变异**：`MEM.v:46` 的 case 之前无条件给了 `wdata_out = wdin`，而 LW
+那一臂**只赋 `rdo`**、不碰 `wdata_out` ⇒ SW 与 LW 对 store **逐位相同**；而
+`ex_wsize_word` 也把 LW/SW 同等看待（`mycpu.v:759`），`rdo` 对 store 又不可达
+（store 的 `rf_we=0`）。历史那个"垃圾数据"bug 的成因是"**MEM.v 的 `wdata_out`
+当时也是 latch**"——MEM.v 在 2026-09-28 那轮 112 个推断 latch 的清理里补上了
+无条件默认值，**承重的那一半就搬到了 `MEM.v:46`**。
 
-把兜底改回 LW，`mul` / `div` / `muldiv_edge` 全过。原因是它现在是**等价**的：
-
-```verilog
-// MEM.v:46 —— case 之前无条件给默认值
-wdata_out = wdin;
-case (dram_sel)
-    `DRAM_SEL_LW: begin rdo = DRAM_rdata_in; end        // 只赋 rdo，不碰 wdata_out
-    ...
-    `DRAM_SEL_SW: begin wdata_out = wdin; end
-```
-
-LW 那一臂**只赋 `rdo`**，`wdata_out` 保持 case 前的默认 `wdin` —— 与 SW 臂**逐位
-相同**。而 `ex_wsize_word` 也把 LW/SW 同等看待（`mycpu.v:759`），`rdo` 对 store
-又不可达（store 的 `rf_we=0`）。
-
-⇒ 历史 bug 的成因是"**MEM.v 的 `wdata_out` 当时也是 latch**"；`MEM.v` 在 2026-09-28
-那轮 112 个推断 latch 的清理里补上了无条件默认值，**承重的那一半就搬到了 `MEM.v:46`**。
-`Control.v` 那个兜底从此变成等价写法，加任何用例都抓不到。
-
-### 4.5 顺带发现：非法 S 型 funct3 是 DUT 与参考模型**共同**的规范偏离
-
-追 M11 时发现的独立问题：`S` 型 `funct3 ∉ {0,1,2}` 是 RISC-V 的保留编码，按规范应当
-判非法指令。实际上：
-
-- DUT：`Control.v` 的非法指令白名单里 `OPCODE_S` 无条件放行（`Control.v:124-125`），
-  于是非法 funct3 被当成 SW 执行；
-- 参考模型：`golden_model/stage/ID.c:148` 同样 `default: ret.mem_op = MEM_SW;`。
-
-**两边一致 ⇒ difftest 永远看不见**，而且没有任何用例编码出这种指令。
-
-本轮**没有**为此加用例：加一条"断言它被当成 SW"的用例等于把规范偏离固化下来。
-这是个需要人来拍板的小问题（照规范改成陷入 → DUT 与参考模型要同时改），
-不在本次「补反向验证」的范围内，仅在此如实记录。
+**这条后来被处理掉了**（见 §5.3）：整个兜底臂改成纯 no-op 之后，承重位从
+"dram_sel 取哪个读选择子"变成了 `ram_we = 1'b0`，M11 也随之重定向成一条**真能被
+抓到**的变异。
 
 ---
 
-## 5. 本轮补上的两条 asm 覆盖
+## 5. 本轮补上的三处 asm 覆盖
 
-两条都是"用例漏了"，补完即由幸存转被抓（`asm/trap.S`，位置在 §1 CSR 旧值语义之后）。
+三处都是"用例没覆盖到"，补完即由幸存转被抓（`asm/trap.S`）。
 
 ### 5.1 补丁 1：CSR 读的 B 口必须是 0（抓 M15）
 
@@ -277,6 +254,80 @@ bne  x5, x28, fail           # 没陷入的话 x5 保持 -1
 > 拍就 difftest 失配：DUT 的 `mcycle` 数真实周期，而参考模型是**提交步进**的、只能
 > 按"每条指令 +1"计数（`DUT_BUG_REPORT.md` §16.3），两者本来就对不上 —— 计数器的值
 > 一旦落进 `rd` 就会被提交点比较。这里只需要"有没有陷入"这一个信息，值本身不要。
+
+### 5.3 补丁 3：非法 S 型 funct3 退化成纯 no-op（§4.4 的收口）
+
+§4.4 里追出过一个规范偏离：非法 S 型 funct3 被 DUT 和参考模型**都**当成 SW 执行。
+按 `RISCV_CPU/cpu`（参考核）的做法对齐之后，这条**已经定案**：
+
+**参考核怎么做的**（`cpu/src/inst_decoder.v:218-240`）：
+
+```verilog
+`INST_TYPE_S: begin
+    ...
+    case (funct3)
+        `INST_SB: inst_subtype_o = `MEM_SB;
+        `INST_SH: inst_subtype_o = `MEM_SH;
+        `INST_SW: inst_subtype_o = `MEM_SW;
+        default:  inst_subtype_o = 4'b0;      // = 它的 MEM_LB
+    endcase
+end
+```
+
+`reg_wflag_o` 在 S 分支开头就已置 0。也就是说参考核的策略是
+**「挑一个无害的默认值继续走，不判非法指令」**——它整个核都没有非法指令机制
+（异常只有 `ecall`/`ebreak`/`mret`，见 `cpu/src/wb.v:35-58`）。
+
+**本核据此改成**（`Control.v` 的 `OPCODE_S` 兜底臂）：
+
+```verilog
+default: begin
+    dram_sel = `DRAM_SEL_LB;
+    ram_we   = 1'b0;              // 关键：不写内存
+end
+```
+
+副产物是 `ex_is_store = ex_ram_we = 0` ⇒ 既不查非对齐也不查越界；
+`ex_is_load` 也恒 0（本分支 `rf_we=0`）⇒ cause 5/6/7 都产生不了，整条退化成 no-op。
+
+参考模型同步（`golden_model/stage/ID.c` 的 `ID_S` 兜底臂）：
+
+```c
+default: ret.mem_op = MEM_LB; ret.is_mem = 0; break;
+```
+
+`is_mem = 0` 是关键：`MEM.c:110` 的访存块是 `if(ex_info.is_mem && ...)` 进入的，
+置 0 之后既不写内存也不做越界/非对齐检查。**只把 `mem_op` 改成 `MEM_LB` 而留着
+`is_mem=1` 是不行的**——那样 `EX.c` 会把 `mem_op==MEM_LB` 当成一次 **load** 去查
+越界并报 cause **5**，而 DUT 什么都不报，两边立刻对不上。
+（`EX.c:128-130` 的 `is_store_op` 也只认 SB/SH/SW，所以留着 `MEM_SW` 会报 cause 6/7。）
+
+**为什么比原来的 SW 更好**：SW 仍然**真的写一个整字**（本核没有字节使能，
+`MEM.v` 靠读-改-写模拟窄访问），而且奇数地址上还会报 cause 6 ——
+给一条非法指令报"非对齐"没有意义。改成 `ram_we=0` 之后，那类"垃圾写"从根上没有了。
+
+**新用例**（`asm/trap.S` 第 11 节）把这条行为钉住：
+
+```asm
+la   x30, s_f3_target
+li   x29, 0x11112222
+sw   x29, 0(x30)            # 哨兵
+li   x29, 0x5555AAAA
+.word 0x01DF3023            # 非法 funct3 的 S 型 (本该是 sw x29,0(x30))
+lw   x31, 0(x30)
+bne  x31, x28, fail         # 哨兵必须原封不动
+addi x30, x30, 1            # 奇数地址: 旧写法会报 cause 6
+li   x5, -1
+.word 0x01FF3023            # 同一编码, rs2=x31
+bne  x5, x28, fail          # 不该陷入
+```
+
+配套的 M11 也随之**重定向**：原来打 `dram_sel` 取 SW 还是 LW（等价变异），
+现在打 `ram_we = 1'b0` → `1'b1`。补完**由幸存转为被抓**。
+
+> 注：这条同时说明了一件事——**"参考核怎么做"和"规范怎么说"不总是一致**。
+> 这里选择了跟参考核（不陷入）。要改成按规范判非法指令的话，DUT 与参考模型
+> 必须同时改，并重跑全量回归。
 
 ---
 

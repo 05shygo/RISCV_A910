@@ -114,8 +114,12 @@ foreach f [lsort [glob -nocomplain [file join $ROOT mySoC *.v]]] {
     if {[file tail $f] eq "ifu_subsys.v"} { continue }
     lappend src_files $f
 }
-foreach f [lsort [glob -nocomplain [file join $ROOT mySoC ifu2 rtl *.v]]] {
-    lappend src_files $f
+# 子目录要逐个列 —— glob 不递归。往 mySoC/ 下新开目录时忘了加, 症状是
+# Vivado 报 "module not found" 而不是文件缺失。
+foreach d {idu/rtl iu/rtl ifu2/rtl} {
+    foreach f [lsort [glob -nocomplain [file join $ROOT mySoC {*}[split $d /] *.v]]] {
+        lappend src_files $f
+    }
 }
 lappend src_files [file join $SP top_fmax.v]
 

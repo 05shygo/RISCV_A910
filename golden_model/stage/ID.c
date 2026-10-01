@@ -149,7 +149,19 @@ ID2EX ID_S(IF2ID inst) {
         case 0: ret.mem_op = MEM_SB; break;
         case 1: ret.mem_op = MEM_SH; break;
         case 2: ret.mem_op = MEM_SW; break;
-        default: ret.mem_op = MEM_SW; break;
+        // 非法 funct3 (RISC-V 保留编码): 与 DUT 一致 —— 整条指令退化成纯 no-op,
+        // 不写内存、不写寄存器、不报异常.
+        //
+        // 对齐参考实现 RISCV_CPU/cpu: 那个核对同一情形 `default:
+        // inst_subtype_o = 4'b0` (= 它的 MEM_LB) 且 reg_wflag=0, 即"挑一个无害的
+        // 默认值继续走", **不判非法指令** —— 它整个核都没有非法指令机制.
+        //
+        // is_mem=0 是关键: MEM.c 的访存块是 `if(ex_info.is_mem && !ret.exc_valid)`
+        // 进入的, 置 0 之后既不真的写内存, 也不做越界/非对齐检查 —— 而
+        // is_mem 仍为 1 的话, EX.c 会把 MEM_LB 当成一次 **load** 去查越界
+        // (报 cause 5), 与 DUT 的"什么都不报"对不上. 同样, EX.c 的
+        // is_store_op 只认 SB/SH/SW, mem_op=MEM_SW 会让它报 cause 6/7.
+        default: ret.mem_op = MEM_LB; ret.is_mem = 0; break;
     }
 
     ret.src1.type = OP_TYPE_REG;
@@ -258,7 +270,7 @@ ID2EX ID_J(IF2ID inst) {
 }
 
 // SYSTEM (opcode 1110011): CSR 五条 + ecall/ebreak/mret, 其余非法.
-// 与 mySoC/Control.v 的 `OPCODE_SYSTEM 分支逐条对应.
+// 与 mySoC/idu/rtl/Control.v 的 `OPCODE_SYSTEM 分支逐条对应.
 ID2EX ID_SYSTEM(IF2ID inst) {
     ID2EX ret = {0};
     ret.inst_raw_split.inst_raw = inst.inst;

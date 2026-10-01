@@ -43,11 +43,21 @@ BP ?= 1
 # 能被例化 —— 旧树整个不参与编译, elaborate 更快, 也不会把死代码带进网表。
 # ifu_subsys.v 必须一并排除: 它是 rv32_ifu_top 的 SoC 适配层, 而那棵树这时
 # 不在文件列表里, 留着一个例化不存在模块的 wrapper 会让 elaborate 直接失败。
+# ⚠️ `$(wildcard mySoC/*.v)` **不递归** —— 子目录必须逐个列出来。往
+# mySoC/ 下新开目录时忘了加这一行, 症状是 elaborate 报"找不到模块 XXX",
+# 而不是报文件缺失 (那个 .v 根本没进文件列表)。
+#   * mySoC/        核本体 (顶层/流水寄存器/冒险单元/访存/SoC 适配)
+#   * mySoC/idu/rtl ID 级 (译码+寄存器堆+立即数+异常检出)
+#   * mySoC/iu/rtl  执行单元 (ALU / 分支执行 / 乘除法)
+#   * mySoC/ifu2/rtl, mySoC/ifu_rv32i/rtl  两款前端 (二选一)
 ifeq ($(IFU),2)
 VSRC := $(filter-out $(PWD)/mySoC/ifu_subsys.v, $(wildcard $(PWD)/mySoC/*.v)) \
+        $(wildcard $(PWD)/mySoC/idu/rtl/*.v) $(wildcard $(PWD)/mySoC/iu/rtl/*.v) \
         $(wildcard $(PWD)/mySoC/ifu2/rtl/*.v) $(PWD)/vsrc/$(RAM)
 else
-VSRC := $(wildcard $(PWD)/mySoC/*.v) $(wildcard $(PWD)/mySoC/ifu_rv32i/rtl/*.v) $(PWD)/vsrc/$(RAM)
+VSRC := $(wildcard $(PWD)/mySoC/*.v) \
+        $(wildcard $(PWD)/mySoC/idu/rtl/*.v) $(wildcard $(PWD)/mySoC/iu/rtl/*.v) \
+        $(wildcard $(PWD)/mySoC/ifu_rv32i/rtl/*.v) $(PWD)/vsrc/$(RAM)
 endif
 SVSRC := $(wildcard $(PWD)/tb/*.sv)
 DPIC := $(wildcard $(PWD)/dpi/*.c)
@@ -376,7 +386,7 @@ run: build $(PWD)/bin/$(TEST).hex $(PWD)/bin/$(TEST).hex128
 # ---------------------------------------------------------------------------
 UNIT_BUILD := $(PWD)/obj_unit
 UNIT_SIMV  := $(UNIT_BUILD)/simv
-UNIT_SRC   := $(PWD)/mySoC/MUL_DIV.v $(PWD)/mySoC/mul_pipe.v $(PWD)/mySoC/div_pipe.v
+UNIT_SRC   := $(PWD)/mySoC/iu/rtl/MUL_DIV.v $(PWD)/mySoC/iu/rtl/mul_pipe.v $(PWD)/mySoC/iu/rtl/div_pipe.v
 UNIT_TB    := $(PWD)/tb/unit/tb_muldiv_unit.sv
 
 muldiv-unit: $(UNIT_SIMV)

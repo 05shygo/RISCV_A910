@@ -32,6 +32,8 @@
 // coremark 里 bltu 在 slot1, 0x858/0x85c 就此丢失。以前 BHT 未训练、条件分支
 // 的 L0 项从不武装, 这条路径基本走不到, 是更好的预测把它暴露出来的。
 // 修复见 rv32_ifu_ipctrl.v 的 l0_in_fragment (加在 redirect_pc 的 select 上)。
+`include "defines.vh"
+
 module ifu_subsys #(
 `ifdef ICACHE_OFF
     parameter ICACHE_EN = 0,       // I-Cache 开关 (make ICACHE=0; 关掉走 1 拍 bypass 读)

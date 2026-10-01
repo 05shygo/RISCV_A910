@@ -201,7 +201,19 @@ def build(tag):
 
 def link_images(test):
     """三个镜像必须一起链 —— 只链 bin 会让 DUT 跑上一个用例 (见 memory
-    sim-image-three-symlinks)"""
+    sim-image-three-symlinks)。
+
+    ⚠️ 还要先确保 .hex/.hex128 是**从当前 .bin 现生成**的。改了 asm/*.S 之后
+    只 `make asm`(重建 .bin) 而不重建 .hex 的话, DUT 跑的是旧程序、参考模型跑的
+    是新程序 —— 症状是极早的 difftest 失配 (实测: 加了十几条指令后 .data 从
+    0x1370 挪到 0x13b0, 在第 1068 拍报 `addi a4` 的结果不对), 看起来完全像
+    RTL 坏了。这里的 make 在已是最新时是 no-op。"""
+    b = os.path.join(ROOT, "bin", "%s.bin" % test)
+    if not os.path.exists(b):
+        return False
+    subprocess.call(["make", "-s", b[:-4] + ".hex", b[:-4] + ".hex128"],
+                    cwd=ROOT, env=env_clean(),
+                    stdout=open(os.devnull, "w"), stderr=subprocess.STDOUT)
     for ext, link in (("bin", "meminit.bin"),
                       ("hex", "meminit.hex"),
                       ("hex128", "meminit128.hex")):

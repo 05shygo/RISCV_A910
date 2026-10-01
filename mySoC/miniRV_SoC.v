@@ -57,6 +57,8 @@
 
 endmodule
 */
+`include "defines.vh"
+
 module miniRV_SoC (
       input  logic         fpga_rst,   // High active
       input  logic         fpga_clk,

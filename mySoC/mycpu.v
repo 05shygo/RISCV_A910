@@ -78,7 +78,7 @@ wire [31:0] mem_sext;
 wire [31:0] wb_sext;
 // id_sext_op / id_alua_sel / id_alub_sel / id_is_illegal / id_is_ecall / id_is_ebreak
 // 已经从本模块删除 —— 它们只在 ID 级内部用 (Control -> SEXT / ALU_input_MUX /
-// 异常检出), 现在都是 mySoC/IDU.v 的内部线网。
+// 异常检出), 现在都是 mySoC/idu/rtl/IDU.v 的内部线网。
 wire ex_alu_f;
 wire [31:0] ex_alu_c;
 wire [31:0] mem_alu_c;
@@ -140,7 +140,7 @@ wire branched;
 
 // ===================== RV32M: 乘除法单元接口 =====================
 // 单元是**真流水**的乘法 + radix-4 的除法, 两条独立流水共用一个带 tag 的
-// 请求/写回口 (见 mySoC/MUL_DIV.v)。核这边分四件事:
+// 请求/写回口 (见 mySoC/iu/rtl/MUL_DIV.v)。核这边分四件事:
 //
 //   1. 发射: ex_is_muldiv & ex_rf_we 那一拍把请求递进去 (req_valid);
 //   2. 乘法**不阻塞流水**: 结果 2 拍后从写回口出来, 靠 `is_mul` 随流水下传,
@@ -494,7 +494,7 @@ wire        id_bht_pred;
 //    变成**隐式 1 位线网** (本工程反复踩过这个坑, 见 rv32ifu2_top.v 里 chk0_f 的
 //    注释)。VCS 对这种情形只报 PCWM-W 警告、不报错, 而后果是
 //    ID_EX.ex_csr_addr 与 U_CSR.raddr_i 都只剩 1 位 ⇒ **所有 CSR 访问都会读写到
-//    错的寄存器**。译码本身已经搬进 mySoC/IDU.v (idu_csr_addr_o)。
+//    错的寄存器**。译码本身已经搬进 mySoC/idu/rtl/IDU.v (idu_csr_addr_o)。
 wire [11:0] id_csr_addr;
 // ID 级读出的 CSR 值 (含 EX→ID 旁路)。这里只**声明**; 赋值放在 ex_csr_wdata
 // 之后 —— 旁路要用到它。反过来会变成隐式线网。
@@ -526,7 +526,7 @@ IF_ID U_IF_ID(
 );
     
 // ---------------------------------------------------------------------------
-// ID 级数据通路 —— 整块封装在 mySoC/IDU.v 里。
+// ID 级数据通路 —— 整块封装在 mySoC/idu/rtl/IDU.v 里。
 //
 // 搬进去的: Control(主译码) / SEXT(立即数) / ID 级异常检出 / RegFile /
 //           ALU_input_MUX(操作数选择)。
@@ -678,7 +678,7 @@ ALU U_ALU(
     .alu_f(ex_alu_f)
 );
 
-// RV32M Multiplier and Divider Unit (真流水 + tag 接口, 见 mySoC/MUL_DIV.v)
+// RV32M Multiplier and Divider Unit (真流水 + tag 接口, 见 mySoC/iu/rtl/MUL_DIV.v)
 //   * req_op: MD_OP_* 与 ALU_OP 的 M 段低 3 位一一对应 (见 defines.vh 的注释);
 //   * req_tag: P1 里就是 rd 的序号 —— 换乱序核时改成 rename 的 preg 即可,
 //     单元和这里的其余接线都不用动 (doc §7);

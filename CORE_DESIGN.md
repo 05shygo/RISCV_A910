@@ -40,7 +40,7 @@
 ```
 
 **ID 级是一个模块：`IDU.v`。** 上表里的"译码 + 寄存器堆 + 立即数 + 异常检出"
-整块封装在 `mySoC/IDU.v` 里，它内部例化 `Control.v`（主译码）/ `SEXT.v`（立即数）/
+整块封装在 `mySoC/idu/rtl/IDU.v` 里，它内部例化 `Control.v`（主译码）/ `SEXT.v`（立即数）/
 `RegFile.v` / `ALU_input_MUX.v`（操作数选择）四个文件，另含 ID 级异常检出的
 优先级 mux。`IF_ID` / `ID_EX` 是 IF|ID 与 ID|EX 的**边界寄存器**，留在 `mycpu.v`；
 `Hazard_Detection` 要看 EX/MEM/WB 三级，是跨级单元，也留在 `mycpu.v`。
@@ -48,6 +48,45 @@ IDU 的端口用 `idu_*_i` / `idu_*_o`（与 IFU 侧 `idu_inst0_*` 同风格）�
 `mycpu.v` 顶层的**网名仍是 `id_*`** —— TB 用 `dut.Core_cpu.<net>` 一级层次探针
 直接抓 `id_inst` / `id_pc` / `have_inst_ID` / `id_exc_valid/cause/tval` 等，
 改网名会让 TB 在编译期就挂掉。
+
+### 2.1 目录结构（2026-10-01 重组）
+
+按功能块分目录，切法对齐参考实现 C910/C906 的 `gen_rtl/<块>/rtl/`：
+
+```
+mySoC/
+├── idu/rtl/     ID 级 (=C910 的 idu)   : IDU.v Control.v SEXT.v RegFile.v ALU_input_MUX.v
+├── iu/rtl/      执行单元 (=C910 的 iu) : ALU.v BEU.v MUL_DIV.v mul_pipe.v div_pipe.v EX_wD_MUX1.v
+├── ifu2/rtl/    自研 2 级前端 (IFU=2)
+├── ifu_rv32i/rtl/  C910 派生前端 (IFU=1)
+└── *.v          核本体: mycpu.v(顶层) miniRV_SoC.v
+                 IF_ID/ID_EX/EX_MEM/MEM_WB (级间边界寄存器)
+                 Hazard_Detection (跨级单元)
+                 MEM/MEM_wD_MUX/perip_bridge/sync_mem NPC/PC CSR
+```
+
+C910 把 CSR 单独放 `cp0/`、访存放 `lsu/`、总线放 `biu/`；本核目前只在
+**IDU 与执行单元**两块上照做，其余仍平铺在 `mySoC/` 根 —— 流水寄存器是级间
+边界、`Hazard_Detection` 是跨级单元，本来就不属于任何一级。
+
+⚠️ **往 `mySoC/` 下新开目录时，三处文件列表必须同步加**（三处都是 glob，不递归）：
+
+| 位置 | 变量 |
+|---|---|
+| `Makefile` | `VSRC`（两个 `ifeq ($(IFU),2)` 分支各一份） |
+| `synth/build_fmax.tcl` | `$src_files` 的 `foreach d {...}` 那行 |
+| `Makefile.verilator` | `VSRC` |
+
+漏了的症状是 **elaborate 报"找不到模块 XXX"，而不是报文件缺失** —— 那个 `.v`
+根本没进文件列表。另外 `make muldiv-unit` 的 `UNIT_SRC` 是**写死路径**的，
+搬家时要一起改。
+
+⚠️ **每个 `.v` 都必须自己 `` `include "defines.vh" ``。** 2026-10-01 搬家时暴露过
+一个潜伏很久的依赖：VCS 把所有文件当一个编译单元，宏会**跨文件泄漏**，而原先
+`mySoC/*.v` 按字母序把 `ALU_input_MUX.v`（它 include 了）排在第一个，于是后面
+13 个文件（`PC.v`、`MEM.v`、`ID_EX.v` …）**一直在白嫖它的宏定义**。文件一进
+子目录、顺序一变，立刻 `Error-[UM] Undefined macro`。已给那 13 个文件补上各自的
+include —— 别再靠顺序。
 
 **关键事实（后面所有设计都建立在这上面）**
 
@@ -412,7 +451,7 @@ handler 里"同步异常一律 `mepc+=4`"的惯例对取指越界**不成立**�
 ### 10.1 做了什么
 
 对外可见的行为**一位没变**。把原先散在 `mycpu.v` 里、横跨约 200 行的 ID 级胶水
-收进一个新的 `mySoC/IDU.v`：
+收进一个新的 `mySoC/idu/rtl/IDU.v`：
 
 | 搬进 IDU 的 | 原先在哪 |
 |---|---|
@@ -443,7 +482,7 @@ handler 里"同步异常一律 `mepc+=4`"的惯例对取指越界**不成立**�
 
 ### 10.3 动了哪些文件 / 新增哪些信号
 
-- 新增 `mySoC/IDU.v`（212 行）。
+- 新增 `mySoC/idu/rtl/IDU.v`（212 行）。
 - `mySoC/mycpu.v`：删 8 个只活在本级内部的网线，ID 段换成 `IDU U_IDU(...)`；
   `id_csr_addr` **保留声明但去掉初始化器**（改由 `idu_csr_addr_o` 驱动）。
 - `Control.v` / `SEXT.v` / `RegFile.v` / `ALU_input_MUX.v`：**零改动**。
@@ -500,5 +539,15 @@ IDU 的几条承重门控已进 `scripts/rev_mutations.txt`（M01~M04 守
 `ALUB_SEL_ZERO`；M05~M11 守 `Control.v` 的 CSR 白名单与 `csr_we`、两个 `id_rf*_used`、
 两个 `dram_sel` 缺省），跑 `python3 scripts/rev_check.py` 复现。
 结论：`have_inst` 那位门控与 `id_inst_oob` 兜底都**被下游二次门控遮蔽**
-（复合变异实验证明：拆掉下游那道才会暴露），两个 `dram_sel` 缺省是**等价变异**。
+（复合变异实验证明：拆掉下游那道才会暴露），`dram_sel` 的**全局**缺省是**等价变异**。
 详见 `doc/rev_check_zh.md`。
+
+**非法 S 型 funct3 已定案（2026-10-01）：退化成纯 no-op。** 参考实现
+`RISCV_CPU/cpu` 对同一情形是 `default: inst_subtype_o = 4'b0`（= 它的 MEM_LB）
+且 `reg_wflag=0` —— 即"挑一个无害的默认值继续走"，**不判非法指令**（那个核整个
+没有非法指令机制）。本核据此把 `Control.v` 的 `OPCODE_S` 兜底臂改成
+`dram_sel = DRAM_SEL_LB; ram_we = 1'b0;`：不写内存、不写寄存器、不报异常。
+`golden_model/stage/ID.c` 的 `ID_S` 同步成 `mem_op = MEM_LB; is_mem = 0;`
+（**`is_mem` 必须一起置 0**，否则 `EX.c` 会把它当 load 去查越界并报 cause 5）。
+比原来的兜底 `DRAM_SEL_SW` 更彻底 —— SW 仍会真的写一个整字，奇数地址上还会报
+cause 6。`asm/trap.S` 第 11 节钉住这条行为。
