@@ -600,6 +600,13 @@ module tb_rtu_rob;
             end
 
             // ---------- 6) 分配器 ----------
+            // 纯 DUT 侧的不变量: 给出的编号自身必须是 FREE 态 (与模型无关)
+            if (alloc_vld0 && (dut.u_preg.st[alloc0] !== 2'd0))
+                err($sformatf("分配器给出非 FREE 的 p%0d (st=%0d)", alloc0, dut.u_preg.st[alloc0]));
+            if (alloc_vld1 && (dut.u_preg.st[alloc1] !== 2'd0))
+                err($sformatf("分配器给出非 FREE 的 p%0d (st=%0d)", alloc1, dut.u_preg.st[alloc1]));
+            if (alloc_vld2 && (dut.u_preg.st[alloc2] !== 2'd0))
+                err($sformatf("分配器给出非 FREE 的 p%0d (st=%0d)", alloc2, dut.u_preg.st[alloc2]));
             if (alloc_vld0 && (alloc0 < 7'd32)) err("分配器给出架构寄存器");
             if (alloc_vld1 && (alloc1 < 7'd32)) err("分配器给出架构寄存器");
             if (alloc_vld2 && (alloc2 < 7'd32)) err("分配器给出架构寄存器");
@@ -916,6 +923,11 @@ module tb_rtu_rob;
     task automatic check_after_retire;
         integer i;
         begin
+        // ---------- -1) 模型自洽: AMT 里的每个映射都必须是"占用"的 ----------
+        // (复位时 p0..p31 就是 x0..x31 的映射, 它们同样是占用的)
+        for (int l = 0; l < 32; l = l + 1)
+            if (!ref_busy[ref_amt[l]])
+                err($sformatf("模型自洽失败: AMT[%0d]=p%0d 却不在 ref_busy 里", l, ref_amt[l]));
         // ---------- 0) 影子窗口的每个字段都必须等于参考流里对应的那条指令 ----------
         // 这是"流有没有错位"最直接的判据: 位置对得上 (4b 已查), 字段也必须对得上。
         for (int k = 0; k < 3; k = k + 1) begin
@@ -1117,7 +1129,10 @@ module tb_rtu_rob;
 
         for (int a = 0; a < 4096; a = a + 1) csr_file[a] = {$urandom};
         for (int p = 0; p < 96;   p = p + 1) pf[p] = {$urandom};
-        for (int l = 0; l < 32;   l = l + 1) ref_amt[l] = l[6:0];
+        for (int l = 0; l < 32;   l = l + 1) begin
+            ref_amt[l]   = l[6:0];
+            ref_busy[l]  = 1'b1;          // 复位时 p0..p31 已是架构态 -> 占用
+        end
 
         $display("==================================================");
         $display("  RTU 单元 TB: seed=%0d 目标指令数=%0d", seed, n_target);
