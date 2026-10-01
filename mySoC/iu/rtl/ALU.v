@@ -3,7 +3,6 @@
 // Company: 
 // Engineer: 
 // 
-// Create Date: 2023/06/30 15:15:20
 // Design Name: 
 // Module Name: ALU
 // Project Name: 

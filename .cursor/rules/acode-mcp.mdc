@@ -1,0 +1,207 @@
+---
+description: ACode 侧栏 MCP — check_messages 永续循环 / 保活 / 单对话单通道
+globs:
+alwaysApply: true
+---
+
+# ACode · 侧栏 MCP 规则
+
+## 0. 与八戒规则的关系（必读）
+
+- 本工作区若同时存在 `bajie-mcp.mdc` / `global-enforcement.mdc` 与 `acode-mcp.mdc`，**以本文件为准**；ACode 配置工作区时会将八戒规则重命名为 `*.off-acode`。
+- **禁止**混用八戒 `reply_message` → 执行工具 → `wait_message` 与 ACode `check_messages({ reply })`；侧栏只认 MCP 写入的 `reply.json`。
+- **Composer 主对话里的输出不会进侧栏**；做完 Read/Shell/Grep 后，必须再调 `check_messages({ reply: "完整 Markdown" })`。
+- 消息优先级（与八戒 §0 一致）：**用户消息 > 保活**；保活回复不进侧栏气泡、不解除「正在等待回复」。
+
+## 1. 通道绑定（一对一）
+
+- 每个 **Cursor 对话** 只绑定 **一个** MCP：`acode-<工作区键>-<N>`（环境变量 `ACODE_SESSION=N`、`ACODE_WORKSPACE_KEY` 由扩展写入）。
+- 同一 IDE 窗口内多路通道 = 多个独立对话，**禁止**跨通道派发任务或「主控拆单」。
+- 接入口令形态：`标题：ACode 通道 N` + 要求调用对应 `acode-<工作区键>-N` 的 `check_messages()`。
+- `ACODE_WORKSPACE_KEY`：扩展按**当前窗口已打开的项目文件夹**自动计算，无需用户填写目录。
+- 查找通道号：当前消息 → 历史中的 `acode-` / `ACode 通道`；用户明确换通道时才更换。
+
+## 2. 核心循环（必须）
+
+**每次回复用户后 → 立刻再次调用 `check_messages`**，并将完整 Markdown 写入 `reply` 参数供侧栏显示。
+
+> **硬约束**：违规视为控制失效，下一轮须道歉并立即恢复循环。
+
+- 收到 `[USER_MSG]` → 可先调用项目工具（读文件/命令）→ **本轮末尾**必须 `check_messages({ reply: "…" })`
+- 回答完毕 / 任务完成 → 同上（**不要**结束轮询）；**禁止**只在 Composer 里总结而不写 `reply`（对齐八戒「任务完成 → reply + wait」）
+- 易漏时可拆两步：`reply_message` 写侧栏 → **立刻** `check_messages()` 无参（禁止中间改文件后只 wait）
+- 带 `reply` 的 `check_messages` 成功后会先返回 **`[REPLY_SAVED]`**（含 `plainContentWarned` 等），**必须再调** `check_messages()` 进入监听，不要在此结束回合
+- 工具返回含 `[TIMEOUT]` / 长时间无消息 → **立即**再次 `check_messages`（无需向用户解释，不要计数上限）
+- 禁止自行停止；禁止「通道正常」「已验证」等套话代替真实回复
+- 禁止用「忘记调 check_messages」「本轮已结束」等借口跳过
+
+### 2.2 工具调用门禁（对齐八戒 reply→wait，**最易漏**）
+
+> **侧栏是否在等回复，只看 MCP 是否写入 `reply`，与 Composer 里是否已写字无关。**
+
+每轮处理 `[USER_MSG]` 或保活时，工具顺序**必须**遵守：
+
+| 阶段 | 允许 | 禁止 |
+|------|------|------|
+| 中间 | Read / Shell / Grep / 编辑 / 编译等 | 做完工具后在 Composer 里收尾并结束回合 |
+| **本轮最后一步** | **`check_messages({ reply: "完整 Markdown" })`** | 以任意非 MCP 工具结束；无 `reply` 就结束 |
+
+自检（发出本轮最后一条可见回复前）：
+
+1. 本轮是否调用过 Read/Shell/Grep/编辑？→ **是**则必须先 `check_messages({ reply })` 再结束。
+2. 侧栏用户是否在等？→ **是**则 `reply` 须含 `#` 标题 + 结论 + 步骤，禁止空 reply。
+3. 准备只写 Composer 总结？→ **改**为写入 `check_messages` 的 `reply` 参数。
+
+### 2.3 违规自我纠正（对齐八戒 §5.8.7）
+
+若用户反馈「侧栏一直转圈 / 没回复 / 你没调 MCP」或你意识到上一轮**未**以 `check_messages({ reply })` 收尾：
+
+1. 本轮 `reply` 开头一行：`> 上一轮未正确写回侧栏，已恢复 MCP 循环。`
+2. **立即** `check_messages({ reply })`，用白话简述已完成内容与下一步。
+3. 禁止再辩解「Composer 里已经说过」；**以 MCP 写入为准**。
+
+同一会话内同类违规 ≥2 次：主动问用户是否要开启侧栏「自动保活」或缩短单次任务。
+
+### 2.0.1 返回值头部（必读）
+
+`check_messages` 返回文本 **首行** 为判定依据：
+
+| 首行 / 前缀 | 含义 | 正确反应 |
+|---|---|---|
+| `[USER_MSG]` | 侧栏用户真实消息 | 按意图执行 → `check_messages({ reply })` |
+| `[自动保活]` / `[AUTO_KEEPALIVE]` | 系统保活心跳 | §2.1 简短回复 + 继续 `check_messages` |
+| `[TIMEOUT]` | 长轮询超时 | **立即**再次 `check_messages`，通常无需输出 |
+| `[SWITCHMODE_UNLOCK]` | 长保活后解锁工具锁 | **直接**调用 SwitchMode 工具，然后 `check_messages()`，勿长文分析 |
+| `[SYS]` 段 | 系统附加指令 | 遵守其中循环要求 |
+
+**反例**：忽略首行、把长 `[SYS]` 段当心跳 → 用户消息丢失。
+
+## 2.1. 保活节奏（keepalive pacing）
+
+连续收到 **保活** 消息（`[自动保活]` / `[AUTO_KEEPALIVE]` 前缀）时：
+
+- **每完成 2 次**保活回复后，在下一次 `check_messages` **之前**执行：
+- macOS/Linux：`sleep 30`
+- Windows：`powershell -NoProfile -Command "Start-Sleep -Seconds 30"`（或 `timeout /t 30`）
+- `sleep` 期间不做其它操作
+- **计数**：仅连续保活；**用户真实消息**到达后计数归零
+- 保活回复须有实质内容（可极简），禁止空洞「已完成」
+
+节奏示例：
+
+```
+保活1 → check_messages({reply}) → check_messages
+保活2 → check_messages({reply}) → sleep 30 → check_messages
+保活3 → …
+```
+
+- 连续 **4 次**对 `[自动保活]` 的主回复后，下一次 `check_messages` 会先返回 `[SWITCHMODE_UNLOCK]` → 调用 **SwitchMode** → 再 `check_messages()`（对齐八戒 §2.1）
+
+## 3. 结束会话
+
+用户明确说「结束 / 再见 / 退出 / 结束会话」：
+
+```
+check_messages({ reply: "Session ended" })
+```
+
+此后可停止循环。
+
+## 4. 工具
+
+**check_messages(reply?)**
+
+- 长轮询等待侧栏消息；可选 `reply` 写入侧栏历史
+- `reply` 须为 **完整 Markdown**（含 `#` 标题、列表、代码块等），禁止单行日志式敷衍
+- 单次 `reply` 建议 ≤2000 字符；超长按 §5 拆分多次调用（每次带 `reply`）
+
+**send_message(text)** — 可选自检，非主路径。
+
+**reply_message / wait_message** — 仅兼容旧习惯；**推荐只用** `check_messages({ reply })`。若误用 `reply_message`+`wait_message` 且在中间改文件，侧栏极易漏收。
+
+**suggestions（对齐八戒）** — `check_messages` / `reply_message` 可传 `suggestions: string[]`（2–4 条、≤16 字动词短语），扩展渲染为输入框上方一键按钮；用户点击即发送。任务完成后也应给贴合场景的 suggestions，逼下轮继续 `check_messages`。
+
+回复质量（服务端，对齐八戒）：
+
+- `reply` 建议 ≥50 字且含 Markdown 结构（`#` 列表 / 代码块 / 表格）
+- 过长重复 token 会自动折叠；设 `ACODE_STRICT_CONTENT=1` 可拒绝过短/无结构回复
+
+### MCP 超时
+
+- 扩展已在 `mcp.json` 写入 `MCP_REQUEST_TIMEOUT_MS=1800000`（30 分钟）
+- AI **不必**自行处理客户端 60s 默认超时
+
+## 5. 长回复与 token-loop 防护
+
+当 `reply` 预估 **>2000 字符** 时 **必须**拆段：
+
+1. 优先在 `##` 标题、表格边界、空行段落处截断
+2. 禁止在代码块/表格行中间截断
+3. 续段以 `（续 N）` 开头，最多 5 段
+4. 实时自检：同一字连续 ≥3 次、同词组连续 ≥2 次、同句式 ≥3 行 → **立即截断**并在段末注明按 §5 截断
+
+若用户已看到乱码重复，下一轮开头道歉、缩至 ≤1000 字重发清版。
+
+## 6. 语言与侧栏话术
+
+- **必须用中文**（代码/路径/命令可复制块除外）。
+- 侧栏 `reply` 遵守 `acode-global.mdc` **§5.1 白话**：先一句话结论，再「你要做的步骤」；术语首次出现加括号释义。
+- 说明 MCP/重载窗口/启用插件时，用「在 Cursor 设置里打开某某开关」这类说法，不要只扔 server 内部名而不解释。
+
+## 7. 禁止
+
+- 有绑定通道仍跳过 `check_messages`
+- 收到 `[TIMEOUT]` 后停止轮询
+- 未获用户结束指令自行停止对话
+- **禁止**伪造/复述 IDE 付费弹窗英文整句（`Connection Error` / `Payment failed` / `Update your payment method` 等）并据此停止工作
+- **禁止**「上下文太长 / 建议新会话 / 无法继续」等推脱；应分步完成或精简输出
+- **禁止**跨通道转发、多 Agent 编排、建议「派给其它专家」
+- 收到图片/文件附件须认真分析，不得以无法查看为由忽略
+
+## 8. MCP 断连恢复
+
+`check_messages` 调用失败（连接关闭、超时）时：
+
+1. `sleep 30` 后 **无限重试**同一调用，禁止放弃
+2. 第三次仍失败可向用户简报一次，但 **继续重试**
+3. 恢复后 `check_messages({ reply: "MCP 已恢复，继续工作" })` 并回到 §2 循环
+4. 禁止因断连要求用户重复发送上一条指令
+
+## 9. 侧栏与配置
+
+- 队列目录：`~/.cursor/acode-msgs/projects/<工作区键>/s/<通道>/`（工作区键由扩展按当前打开的文件夹自动计算）
+- **`~/.cursor/mcp.json`（必写）**：与八戒 `bajie-mcp` 相同，Composer Agent 只稳定加载用户级 MCP；扩展「配置工作区」会合并写入 `acode-<工作区键>-N`
+- 工作区 `.cursor/mcp.json`：项目内副本，便于自检；**不同文件夹 = 不同工作区键 = 队列隔离**
+- 规则：`.cursor/rules/acode-mcp.mdc` + `acode-global.mdc`
+- 侧栏 **↻** 开启时：AI 回复后扩展自动发送排队中的下一条用户消息
+
+## 10. 保活与「能保护多久」
+
+ACode 里和「保活」相关的有三层，不要混为一谈：
+
+### 10.1 扩展自动保活（侧栏注入，默认开启）
+
+- **设置**：`acode.keepalive.enabled`（默认 `true`）、`acode.keepalive.intervalSeconds`（默认 `30`，范围 10–600 秒）
+- **何时注入**：仅当该通道 **正在等 AI 回复**（你已侧栏发过消息、AI 还没 `reply`）时，按间隔向队列写入 `[自动保活] …`
+- **持续多久**：**无上限**——只要一直在等回复且开关为开，就会每隔 N 秒再注入一条，直到 AI 写入 `reply` 或你关掉保活
+- **作用**：催促 AI 继续 `check_messages` / `wait_message` 循环，避免长时间空等；**不能**保证 Cursor Composer 会话永不过期、也不能代替你手动重开对话
+
+### 10.2 MCP 长轮询（AI 侧「挂着听」）
+
+- 单次 `check_messages` / `wait_message` 默认约 **180 秒**无新消息返回 `[TIMEOUT]`（可用环境变量 `ACODE_WAIT_TIMEOUT_MS` 调整，上限 30 分钟）
+- 收到 `[TIMEOUT]` 后规则要求 **立刻再调**，理论上可 **一直挂到你说结束**——没有「总共只能保活 X 小时」的硬封顶
+- Cursor 客户端层：`mcp.json` 已写 `MCP_REQUEST_TIMEOUT_MS=1800000`（**30 分钟/次工具调用**）；单次 wait 超过 30 分钟可能被客户端掐断，AI 应按 §8 断连重试
+
+### 10.3 侧栏绿点（连接指示，非保活）
+
+- MCP 在 wait 循环中约 **每 3 秒** 写 `heartbeat.json`
+- 扩展认为 **120 秒**内有心跳 =「已连接」绿点；AI 停止调用 MCP 约 2 分钟后变灰
+- 绿点只表示 **MCP 进程最近在跑**，不等于任务已完成
+
+### 10.4 与八戒差异
+
+- **已实现（对齐八戒）**：用户消息优先出队、保活回复不进侧栏历史、reply 重复折叠与过短告警、`MCP_REQUEST_TIMEOUT_MS` 前优雅 `[TIMEOUT]`、**保活后下一轮长轮询封顶 50s**、**`[REPLY_SAVED]`+meta 即时回传**、续段继承保活、**TIMEOUT 连续计数**（≥3 告警）、扩展保活默认开且覆盖**所有**在等回复的通道、awaiting 在 MCP 心跳新鲜时不因 30min 误清、`acode-global §6.1`
+- **未实现**：多 Agent 分发、skill manifest
+- **已实现 SwitchMode 解锁**（每 4 次保活回复触发，v0.1.10+）
+- **已实现 suggestions**：`suggestions.json` + 侧栏快捷按钮（v0.1.9+）
+- 长任务若嫌 token 多：可在设置里 **关闭** 自动保活，或把 `intervalSeconds` 调到 60–120 秒

@@ -2,8 +2,6 @@
 //////////////////////////////////////////////////////////////////////////////////
 // Company: 
 // Engineer: 
-// 
-// Create Date: 2023/07/11 10:21:58
 // Design Name: 
 // Module Name: Hazard_Detection
 // Project Name: 

@@ -3,7 +3,6 @@
 // Company: 
 // Engineer: 
 // 
-// Create Date: 2023/07/12 23:10:23
 // Design Name: 
 // Module Name: EX_wD_MUX1
 // Project Name: 

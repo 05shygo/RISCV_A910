@@ -3,7 +3,6 @@
 // Company: 
 // Engineer: 
 // 
-// Create Date: 2023/06/30 16:45:32
 // Design Name: 
 // Module Name: ALU_input
 // Project Name: 
