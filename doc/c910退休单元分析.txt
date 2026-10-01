@@ -1,0 +1,411 @@
+玄铁C910为超标量乱序处理器，其发射顺序可以与原本程序不相同，但是为了保证语义的正确性，需要有退休单元对散落在流水线各级的指令进行顺序的回收与退休，而这个工作就由退休单元来完成。指令的退休为指令生命周期的末尾，因此还需要处理指令给处理器带来的各种影响，如流水线冲刷与异常处理。此外，在玄铁C910中，退休单元还会管理一张寄存器堆状态表，主要用于寄存器依赖检查与寄存器映射恢复。
+
+本文将退休单元分为重排序缓冲、寄存器状态表与异常和冲刷三部分来进行讲解。
+
+主要文件结构:
+
+文件名	文件内容
+ct_rtu_top.v	退休单元顶层
+ct_rtu_rob.v	退休单元ROB顶层与控制逻辑分发
+ct_rtu_rob_rt.v	处理指令的退休逻辑
+ct_rtu_rob_expt.v	处理异常的逻辑
+ct_rtu_rob_entry.v	ROB表项内容
+ct_rtu_retire.v	退休信号的分发以及flush的分发
+ct_rtu_pst_preg.v	物理寄存器状态表
+ct_rtu_pst_preg_entry.v	物理寄存器状态表项
+ct_rtu_pst_ereg.v	浮点异常寄存器状态表
+ct_rtu_pst_ereg_entry.v	浮点异常寄存器状态表项
+ct_rtu_compare_iid.v	iid比较逻辑以判断指令新旧
+
+一、重排序缓冲
+1.1 重排序缓冲的作用
+
+由于在乱序处理器中所有指令的发射和执行都有可能是乱序的，为了保证程序语义的正确性，就需要有一个部件来记录和处理指令遇到的特殊情况，这个部件在大多数乱序处理器中被称为重排序缓冲（ROB）。
+
+玄铁C910的重排序缓冲位于处理器的退休阶段，在指令派遣的时刻将指令记录在含有顺序的表项中，并返回表项的索引作为指令的顺序信息（iid），然后在指令执行的过程中收集执行情况的信息。玄铁C910的退休单元每周期会检查3条ROB头部的表项，检查这些指令的可退休条件，如果有能够退休的指令，将会移动ROB头部的指针来指向后续的指令。重排序缓冲的整体连接关系如下图所示:
+
+1.2 重排序缓冲的管理
+
+重排序缓冲表项:
+
+重排序缓冲表项中主要记录指令有关的信息，主要信号如下所述:
+1. valid信号：标志表项中指令的有效情况。
+2. 指令执行信息：包括指令的完成情况cmplt，完成计数cmplt_cnt（用于指令折叠的情况）以及与load执行相关的speculative预测信息记录。
+3. 指令类型的记录：包括记录ras指令，分支指令，load，store指令，还会记录指令是否被拆分的split位。
+4. 向量配置信息：会记录如vmul、vl等向量配置，但由于开源版本中无向量单元，因此并无作用。
+5. 断点信息：会记录断点相关的数据。
+
+重排序缓冲表项的读写逻辑:
+
+为了管理重排序缓冲表项的创建与更新，退休单元中会管理三个动作，分别是表项创建、表项信息的读取以及表项的弹出。对应的，有三个指针来指向对应的表项——创建指针(create_ptr)、读指针(read_ptr)和弹出指针(pop_ptr)。
+
+1. 表项的创建: 当IDU给出指令派遣的信号，ROB会根据创建指针找到对应的表项进行创建。同时创建指针会根据派遣的指令数量进行更新，更新逻辑如下所示。同时会根据创建指针给出表项的以辅助IDU进行指令iid的生成。
+
+always @(posedge create_ptr_clk or negedge cpurst_b)
+begin
+if(!cpurst_b) begin
+    rob_create0_ptr[63:0]  <= 64'h1;
+    rob_create0_iid[6:0]   <= 7'd0;
+    rob_create1_iid[6:0]   <= 7'd1;
+    rob_create2_iid[6:0]   <= 7'd2;
+    rob_create3_iid[6:0]   <= 7'd3;
+end
+else if(retire_rob_flush) begin
+...
+end
+else if(rob_create_ptr_add_4) begin
+    rob_create0_ptr[63:0]  <= {rob_create0_ptr[59:0],rob_create0_ptr[63:60]};
+    rob_create0_iid[6:0]   <= rob_create0_iid[6:0] + 7'd4;
+end
+...
+else if(rob_create_ptr_add_3) begin
+    rob_create0_ptr[63:0]  <= {rob_create0_ptr[60:0],rob_create0_ptr[63:61]};
+    rob_create0_iid[6:0]   <= rob_create0_iid[6:0] + 7'd3;
+...
+end
+else if(rob_create_ptr_add_2) begin
+    rob_create0_ptr[63:0]  <= {rob_create0_ptr[61:0],rob_create0_ptr[63:62]};
+    rob_create0_iid[6:0]   <= rob_create0_iid[6:0] + 7'd2;
+end
+...
+else if(rob_create_ptr_add_1) begin
+    rob_create0_ptr[63:0]  <= {rob_create0_ptr[62:0],rob_create0_ptr[63]};
+    rob_create0_iid[6:0]   <= rob_create0_iid[6:0] + 7'd1;
+...
+end
+else begin
+    rob_create0_ptr[63:0]  <= rob_create0_ptr[63:0];
+    rob_create0_iid[6:0]   <= rob_create0_iid[6:0];
+...
+end
+end
+
+1. 表项信息的读取: 可能是为了时序方面的考虑，玄铁C910在表项信息读取的过程中采用了中间buffer的方式来实现。除实际存储指令信息的表项外，还含有一级读取表项(read_entry)来作为读取信息的中间级，其构成与普通表项相同，但其写入和读取的信号是与读取指针相关。读指针会根据指令退休使能信号进行更新。表项信息的读取如下图所示:
+
+1. 表项的弹出: 表项在其记录的指令退休后需要进行弹出以释放其占用的表项空间。所谓弹出即为将表项的valid信号无效，而其弹出则是由弹出指针(pop_ptr)控制，弹出指针根据指令退休使能信号进行更新。弹出使能信号的逻辑如下代码所示，rtu_yy_xx_retirex为指令退休信号。
+
+assign rob_entry_pop_en[63:0] =
+        {64{rtu_yy_xx_retire0}} & rob_pop0_ptr_expand[63:0]
+      | {64{rtu_yy_xx_retire1}} & rob_pop1_ptr_expand[63:0]
+      | {64{rtu_yy_xx_retire2}} & rob_pop2_ptr_expand[63:0];
+
+指令的提交与退休:
+
+指令的提交与退休是指令在处理器中运行的重要状态，而这个状态也是由ROB进行管理的。
+指令的提交（commit）是指本条指令已经处于ROB头部的退休窗口（前三项）中，且位于这条指令前的所有指令都已经正常退休或正在正常退休。换言之，一条指令的提交意味着这条指令是安全的（一定会被执行的）。而指令的退休（retire）则是指令在执行后，且可以确定对处理器产生影响后，就从ROB中移除的过程。玄铁C910支持某些指令的退休先于其写回寄存器，这些指令通常是不会产生异常的指令，如算数指令。这样可以加速ROB指令的退休以尽早将后续的指令commit，加速某些需要commit才能执行的指令的执行，这种退休机制被称为快速退休机制。
+
+当指令进入ROB的读取表项中时，就代表其已经进入了退休窗口中。而处于退休窗口中的三条指令的commit条件是不同的，对read_entry0来说，只需要检查是否有debug或其他原因导致的retire的mask即可，但对read_entry1和read_entry2来说则需要额外检查与之前的entry的相关信息。如下述代码所示:
+
+assign rob_read0_commit = rob_read0_inst_vld
+                        && !had_rtu_inst_bkpt_dbgreq
+                        && !retire_rob_rt_mask;
+assign rob_read1_commit = rob_read1_inst_vld
+                        && !had_rtu_inst_bkpt_dbgreq
+                        && !retire_rob_rt_mask
+                        && !retire_rob_srt_en
+                        && rob_read0_cmplted
+                        && !rob_read0_abnormal;
+assign rob_read2_commit = rob_read2_inst_vld
+                        && !had_rtu_inst_bkpt_dbgreq
+                        && !retire_rob_rt_mask
+                        && !retire_rob_srt_en
+                        && rob_read0_cmplted
+                        && rob_read1_cmplted
+                        && !rob_read0_abnormal
+                        && !rob_read1_abnormal;
+
+可以看到对处于提交窗口末端的指令需要检查前序指令的完成情况与异常情况，我们可以发现在某些情况下会导致退休单元的提交宽度被限制为1，这些原因包括csr寄存器被设置为单退休模式，中断以及含有缓存相关指令带来的单退休情况，这些情况会在异常处理中阐述。
+
+当指令完成了提交后，如果指令已经完成了执行，那么在满足一定情况下就可以对指令进行退休。首先我们需要监控指令的完成情况，由于在IDU中会将某些指令折叠成一个ROB表项，所以我们在ROB表项中会管理一个完成计数值cmplt_cnt表示其折叠的数量，每次执行单元给出相同iid的完成信号时，其完成计数就会减一。当执行单元的完成数量与完成计数相同，或者执行单元给出完成信号且此条指令不考虑cmplt_cnt的情况下，ROB表项对应的指令就视为完成。其逻辑代码如下所示:
+
+assign rob_read0_commit = rob_read0_inst_vld
+                        && !had_rtu_inst_bkpt_dbgreq
+                        && !retire_rob_rt_mask;
+assign rob_read1_commit = rob_read1_inst_vld
+                        && !had_rtu_inst_bkpt_dbgreq
+                        && !retire_rob_rt_mask
+                        && !retire_rob_srt_en
+                        && rob_read0_cmplted
+                        && !rob_read0_abnormal;
+assign rob_read2_commit = rob_read2_inst_vld
+                        && !had_rtu_inst_bkpt_dbgreq
+                        && !retire_rob_rt_mask
+                        && !retire_rob_srt_en
+                        && rob_read0_cmplted
+                        && rob_read1_cmplted
+                        && !rob_read0_abnormal
+                        && !rob_read1_abnormal;
+
+指令的退休的前置条件是指令提交，所以退休的条件中有一部分与提交相同。在提交的基础上，由于玄铁C910仅允许异常与冲刷仅在entry0中处理，所以当指令不在entry0中且存在异常，就算其提交了且完成，这条指令也不能在此周期退休。此部分的逻辑如下所示:
+
+//rob read0 will unconditionally update retire entry0
+assign retire_entry0_updt_vld = rob_read0_cmplted
+                             && !retire_rob_rt_mask
+                             && !rob_commit0_mask;
+//rob read1 update retire entry1 when:
+assign retire_entry1_updt_vld = rob_read1_cmplted
+                             && !retire_rob_srt_en
+                             && !retire_rob_rt_mask
+                             && !rob_commit1_mask
+                             && retire_entry0_updt_vld
+                             && !rob_read0_abnormal
+                             && !rob_read1_abnormal
+                             && !rob_read1_data[ROB_RAS];
+//rob read2 update retire entry2 when:
+assign retire_entry2_updt_vld = rob_read2_cmplted
+                             && !retire_rob_srt_en
+                             && !retire_rob_rt_mask
+                             && !rob_commit2_mask
+                             && retire_entry0_updt_vld
+                             && retire_entry1_updt_vld
+                             && !rob_read0_abnormal
+                             && !rob_read1_abnormal
+                             && !rob_read2_abnormal
+                             && !rob_read1_data[ROB_RAS]
+                             && !rob_read2_data[ROB_RAS];
+
+退休指令PC的推理:
+
+在处理器发生异常时，我们可能需要将发生异常的当前pc或下一条pc当作mtval传送给cp0单元进行处理，同时debug单元也需要得到退休指令的pc等信息，所以我们需要能够得到退休指令的PC。但是玄铁C910的指令PC并不会存储在各个流水线中，所以在指令退休时需要根据一些信息去推断出退休指令的PC，而推断退休指令PC的方法是通过在整数执行单元中的PCFIFO来实现的
+
+PCFIFO中存储着有关分支相关的信息，如分支类型、分支跳转地址等。ROB会管理一个基址rob_cur_pc，其为此时头部指令的地址，在cpu复位时基址会被复位为0，或者从debug单元处会给出一个pc_load的信号进行置位。而此时处于退休窗口中的指令就可以以下三个信息来判断自己的pc: 上一条指令是否为分支指令、上一条指令的pc_offset以及如果为分支指令的跳转地址。
+
+比如，若我们要判断inst2指令的退休地址，如果inst0为分支指令，而inst1不为分支指令，且inst1的指令偏移为offset1，这样此时inst2的基址（addend0）就可以推断为inst0的跳转地址，而inst2的偏移（addend1）就可以推断为offset1。通过基址与偏移的叠加就可以推断出每一条指令的pc值，其具体逻辑由下列代码所示:
+
+always @( rob_cur_pc[38:0]
+        or rob_read1_data[9]
+        or rob_read0_next_pc[38:0]
+        or rob_read1_next_pc[38:0]
+        or rob_read0_data[9])
+begin
+if(rob_read1_data[ROB_BJU])
+    rob_read2_cur_pc_addend0[38:0] = rob_read1_next_pc[38:0];
+else if(rob_read0_data[ROB_BJU])
+    rob_read2_cur_pc_addend0[38:0] = rob_read0_next_pc[38:0];
+else
+    rob_read2_cur_pc_addend0[38:0] = rob_cur_pc[38:0];
+// &CombEnd; @1203
+end
+
+//pc offset will be 0 if bju
+assign rob_read2_cur_pc_addend1[4:0] = (rob_read1_data[ROB_BJU])
+                                     ? 5'b0 : rob_read0_pc_offset[4:0]
+                                           + rob_read1_pc_offset[4:0];
+
+而当指令有退休时，rob的基址也会根据指令退休的数量进行地址的更新。通过这样的方法，就可以在不存储PC值的情况下完成对PC值的推断，从而减小了寄存器的消耗。
+二、寄存器状态表
+2.1 寄存器状态表的作用
+玄铁C910的微架构采用显示重命名的动态调度方案，因此在IDU中会管理一个逻辑寄存器和物理寄存器间的对应表。但同时，物理寄存器的释放、退休和写回与指令的退休关系较大，所以玄铁C910选择在退休单元中管理一个寄存器状态表来对这些状态进行管理。这些状态表也会与退休单元的其他模块进行联动，共同管理如冲刷流水线等情况。
+
+2.2 寄存器状态表的管理
+寄存器的状态机：
+每个物理寄存器状态表中会管理一个状态机来描述寄存器状态的转移。主要包含以下5个状态: DEALLOC、WF_ALLOC、ALLOC、RETIRE、RELEASE，其状态转移图如下图所示:
+
+1. DEALLOC：表示此寄存器已经被写回和释放，已具备被重新分配的条件，但还需要经过优先级的判定来变为 WF_ALLOC。
+2. WF_ALLOC：表示此寄存器等待被分配，一旦IDU派遣指令，此物理寄存器就会被分配，并转换到 ALLOC 状态。
+3. ALLOC：表示此寄存器已经被分配，若其对应的指令退休则会转换到 RETIRE，若物理寄存器被释放则会转换到 RELEASE，若指令退休且已写回则会转换到 DEALLOC。
+4. RETIRE：表示此寄存器对应的producer已经退休，若物理寄存器被释放则会转换到 RELEASE，若指令已写回则会转换到 DEALLOC。
+5. RELEASE：表示此寄存器已经被释放，会在指令完成写回后跳转到 DEALLOC。
+
+寄存器的分配与释放:
+当IDU在rename阶段向RTU请求物理寄存器时，在寄存器状态表中会检查当前处于DEALLOC状态的空闲物理寄存器，并以如下的优先级顺序进行物理寄存器的选取并分配:
+1. alloc0: p0为最高优先级、p95为最低优先级。
+2. alloc1: p95为最高优先级、p0为最低优先级。
+3. alloc2: 去除掉inst0选中的寄存器外，再选择以p0为最高优先级、p95为最低优先级的寄存器。
+4. alloc3: 只有当inst0或inst1没有请求物理寄存器时才会响应物理寄存器，其物理寄存器借用inst0或inst1选择的物理寄存器。
+
+当一个物理寄存器对应的逻辑寄存器被后续的指令分配了新的物理寄存器时，并且等到那条指令退休后，之前旧的物理寄存器就可以被释放。按照这样的逻辑，首先在指令重命名时，会在寄存器状态表项中记录此逻辑寄存器的上一个物理寄存器索引(由IDU的寄存器对应表提供)。这样，当这条指令被退休时，会触发一个释放信号以释放旧的物理寄存器。其逻辑细节如下代码所示:
+
+// 指令重命名时记录的信息
+always @(...)
+begin
+  case (x_create_vld[3:0])
+    4'h1 : begin
+            create_iid[6:0]    = idu_rtu_pst_dis_inst0_preg_iid[6:0];
+            create_dst_reg[4:0] = idu_rtu_pst_dis_inst0_dst_reg[4:0];
+            create_rel_preg[6:0] = idu_rtu_pst_dis_inst0_rel_preg[6:0];
+            ...
+          end
+  endcase
+  // &CombEnd; @232
+end
+
+//释放信号的生成逻辑
+assign rel_retire_vld = lifecycle_cur_state_alloc && retire_vld;
+
+assign x_rel_preg_expand[95:0] =
+  {96{rel_retire_vld}} & rel_preg_expand[95:0];
+
+寄存器的恢复:
+正常情况下，对物理寄存器的分配和释放就可以成功将寄存器重命名运作起来。但是由于玄铁C910采用了推测执行的技术以加强性能，需要对可能存在的推测失败的情况进行状态的还原，其中也包括了对寄存器的还原。由于显式重命名的特点，对寄存器的恢复并不需要真正恢复物理寄存器的值，只需要将物理寄存器与逻辑寄存器的对应关系还原即可。
+
+在玄铁系统中，对物理与逻辑寄存器对应关系的恢复是依靠recover table来实现的。每个物理寄存器在被分配时就会记录下其对应的逻辑寄存器索引(推测执行下的索引)，如果寄存器状态为retire (对应关系已脱离推测)，则会在recover table中更新此物理寄存器与逻辑寄存器的对应关系；反之则不会影响recover table。当流水线发生需要恢复的情况时，RTU只需要将recover table向量发送给idu即可完成对应关系的恢复。
+
+//表项中生成的逻辑寄存器索引
+assign x_dreg[31:0] = {32{lifecycle_cur_state_retire}}
+                      & dst_reg_expand[31:0];
+
+//寄存器状态表顶层对信息的整合
+assign rtu_idu_rt_recover_preg[223:0] = {
+r31_preg[6:0], r30_preg[6:0], r29_preg[6:0], r28_preg[6:0],
+r27_preg[6:0], r26_preg[6:0], r25_preg[6:0], r24_preg[6:0],
+r23_preg[6:0], r22_preg[6:0], r21_preg[6:0], r20_preg[6:0],
+r19_preg[6:0], r18_preg[6:0], r17_preg[6:0], r16_preg[6:0],
+r15_preg[6:0], r14_preg[6:0], r13_preg[6:0], r12_preg[6:0],
+r11_preg[6:0], r10_preg[6:0], r9_preg[6:0],  r8_preg[6:0],
+r7_preg[6:0],  r6_preg[6:0],  r5_preg[6:0],  r4_preg[6:0],
+r3_preg[6:0],  r2_preg[6:0],  r1_preg[6:0],  r0_preg[6:0]};
+
+三、冲刷与异常
+3.1 流水线冲刷的管理
+退休单元还会管理由于各种特殊情况导致的流水线冲刷情况，其基本逻辑是由状态机来管理。流水线冲刷分为2个阶段，第一阶段冲刷前端（FE）或冲刷IS级（IS），第二阶段冲刷后端（BE）。状态机的状态与描述如下所示:
+
+1. FLUSH_IDLE：表示此时无冲刷的情况，无冲刷信号发出。当发现退休的inst0有冲刷流水线的信号，如果此时后端流水线已清空则跳转到 FLUSH_FE_BE，如果未清空则跳转到 FLUSH_FE。当发现退休的inst0发生了分支预测错误，如果此时后端流水线已清空则跳转到 FLUSH_IS_BE，如果未清空则跳转到 FLUSH_IS。同时在冲刷信号到来开始到冲刷结束，ROB中会停止commit，冲刷ROB表项和异常表项。
+2. FLUSH_IS：表示此时处于IS级的冲刷阶段，此阶段主要会冲刷IS/RF阶段的状态，并会停止ID阶段的译码。如果后端流水线清空则跳转到 FLUSH_BE，如果未清空则跳转到 WF_EMPTY。
+3. FLUSH_FE：表示此时处于前端的冲刷阶段，此阶段主要冲刷IFU和IDU的所有状态，并停止ID阶段的译码。如果后端流水线清空则跳转到 FLUSH_BE，如果未清空则跳转到 WF_EMPTY。
+4. WF_EMPTY：此状态为前后端冲刷的中间状态，意为等待后端流水线的清空，即等待未写回但已退休的指令的写回。
+5. FLUSH_IS_BE：为IS和BE的冲刷，冲刷信号为IS和BE的结合。下一状态将跳转至 FLUSH_IDLE。
+6. FLUSH_FE_BE：为FE和BE的冲刷，冲刷信号为FE和BE的结合。下一状态将跳转至 FLUSH_IDLE。
+7. FLUSH_BE：为后端的流水线冲刷，主要完成寄存器状态表的冲刷和恢复寄存器对应表，同时也会停止IDU的ID译码。下一状态将跳转至 FLUSH_IDLE。
+
+后端流水线清空:
+在上面的状态机中需要判断后端流水线的清空，在玄铁C910中是依靠判断寄存器状态来完成的。由于快速退休的存在，可能存在某些指令已经退休，但是还没有写回的清空，如果此时需要冲刷流水线，这些指令是需要被等待完成的。因此，我们判断所有物理寄存器是否有处于RETIRE状态，如果有则需要等待其写回。同时lsu中也需要等待所有已commit的指令的数据都有效。流水线清空信号的逻辑如下所示:
+
+assign retire_flush_pipeline_empty = pst_retire_retired_reg_wb
+                                  && lsu_rtu_all_commit_data_vld;
+
+3.2 异常的管理
+异常的处理在处理器设计中有着十分重要的地位，在risc-v spec中对处理器可能遇到的各个异常进行了定义，每个异常都具有自己的异常向量号用于在异常处理时进行分辨。具体的异常与其向量号定义如下:
+
+异常向量号	异常类型	mtval 更新值
+1	取指令访问错误异常	取指访问的虚拟地址
+2	非法指令异常	指令码
+3	调试断点异常	0
+4	加载指令非对齐访问异常	加载访问的虚拟地址
+5	加载指令访问错误异常	0
+6	存储/原子指令非对齐访问异常	存储/原子访问的虚拟地址
+7	存储/原子指令访问错误异常	0
+8	用户模式环境调用异常	0
+9	超级用户模式环境调用异常	0
+11	机器模式环境调用异常	0
+12	取指页面错误异常	取指访问的虚拟地址
+13	加载指令页面错误异常	加载访问的虚拟地址
+15	存储/原子指令页面错误异常	存储/原子访问的虚拟地址
+
+在玄铁处理器中异常的信息收集主要在 rtu_rob_expt.v 文件中完成，此模块会对流水线中的指令完成情况与异常情况进行监控，并根据流水线中指令的异常信息与顺序信息将最新的异常信息存储在 expt_entry 中，最后当具有abnormal信息的指令退休时，将会从 expt_entry 中的部分信息发送给cp0进行后续的异常处理。
+
+指令顺序的比较:
+rtu_compare_iid.v 时对 iid 进行顺序比较的模块。在玄铁中rob表项为64个，意味着在处理器中inflight的指令至多有64个， iid 设置一个冗余位来处理计数循环回来的比较，因此 iid 为一个7位的变量。比较的方法也比较简单，大体思路为当冗余位相同时， iid 低位部分较小的指令较旧；当冗余位不相同时， iid 低位部分较大的指令较新。
+
+assign iid0_5_0_larger =
+    iid0_larger[5]
+ || iid0_larger[4] && !iid1_larger[5]
+ || iid0_larger[3] && !(iid1_larger[5:4])
+ || iid0_larger[2] && !(iid1_larger[5:3])
+ || iid0_larger[1] && !(iid1_larger[5:2])
+ || iid0_larger[0] && !(iid1_larger[5:1]);
+
+assign iid1_5_0_larger =
+    iid1_larger[5]
+ || iid1_larger[4] && !iid0_larger[5]
+ || iid1_larger[3] && !(iid0_larger[5:4])
+ || iid1_larger[2] && !(iid0_larger[5:3])
+ || iid1_larger[1] && !(iid0_larger[5:2])
+ || iid1_larger[0] && !(iid0_larger[5:1]);
+
+assign x_iid0_older = !iid_msb_mismatch && iid1_5_0_larger
+                   || iid_msb_mismatch && iid0_5_0_larger;
+
+异常信息的更新:
+每当发现流水线中有指令的异常信息时，会将指令的 iid 信息收集并通过 compare_iid 模块对比发现的异常信息与 expt_entry 中的新旧关系，然后将最新的异常信息写入 expt_entry_data 中，具体逻辑如下代码所示:
+
+assign expt_entry_write_sel[4] = pipe4_expt_cmplt
+                              && (!pipe3_expt_cmplt || pipe4_older_3)
+                              && (!pipe2_expt_cmplt || pipe4_older_2)
+                              && (!pipe0_expt_cmplt || pipe4_older_0)
+                              && (!expt_entry_vld || pipe4_older_e);
+assign expt_entry_write_sel[3] = pipe3_expt_cmplt
+                              && (!pipe4_expt_cmplt || !pipe4_older_3)
+                              && (!pipe2_expt_cmplt || pipe3_older_2)
+                              && (!pipe0_expt_cmplt || pipe3_older_0)
+                              && (!expt_entry_vld || pipe3_older_e);
+assign expt_entry_write_sel[2] = pipe2_expt_cmplt
+                              && (!pipe4_expt_cmplt || !pipe4_older_2)
+                              && (!pipe3_expt_cmplt || !pipe3_older_2)
+                              && (!pipe0_expt_cmplt || pipe2_older_0)
+                              && (!expt_entry_vld || pipe2_older_e);
+assign expt_entry_write_sel[1] = pipe0_expt_cmplt
+                              && (!pipe4_expt_cmplt || !pipe4_older_0)
+                              && (!pipe3_expt_cmplt || !pipe3_older_0)
+                              && (!pipe2_expt_cmplt || !pipe2_older_0)
+                              && (!expt_entry_vld || pipe0_older_e);
+assign expt_entry_write_sel[0] = expt_entry_vld
+                              && (!pipe4_expt_cmplt || !pipe4_older_e)
+                              && (!pipe3_expt_cmplt || !pipe3_older_e)
+                              && (!pipe2_expt_cmplt || !pipe2_older_e)
+                              && (!pipe0_expt_cmplt || !pipe0_older_e);
+
+always @( expt_entry_write_sel[4:0]
+       or pipe4_expt_cmplt_data[69:0]
+       or pipe2_expt_cmplt_data[69:0]
+       or pipe0_expt_cmplt_data[69:0]
+       or expt_entry_data[69:0]
+       or pipe3_expt_cmplt_data[69:0])
+begin
+  case (expt_entry_write_sel[4:0])
+    5'h01 : expt_entry_updt_data[EXPT_WIDTH-1:0] = expt_entry_data[EXPT_WIDTH-1:0];
+    5'h02 : expt_entry_updt_data[EXPT_WIDTH-1:0] = pipe0_expt_cmplt_data[EXPT_WIDTH-1:0];
+    5'h04 : expt_entry_updt_data[EXPT_WIDTH-1:0] = pipe2_expt_cmplt_data[EXPT_WIDTH-1:0];
+    5'h08 : expt_entry_updt_data[EXPT_WIDTH-1:0] = pipe3_expt_cmplt_data[EXPT_WIDTH-1:0];
+    5'h10 : expt_entry_updt_data[EXPT_WIDTH-1:0] = pipe4_expt_cmplt_data[EXPT_WIDTH-1:0];
+    default: expt_entry_updt_data[EXPT_WIDTH-1:0] = {EXPT_WIDTH{1'bx}};
+  endcase
+// &CombEnd; @201
+end
+
+3.3 中断与其他特殊情况
+中断:
+中断在玄铁中的处理是比较迅速的，当处理器收到中断信号后，cp0会将中断请求发送至 rtu， rtu 中会立即停止新的指令commit，同时如果正在退休窗口中的指令的commit数量小于3时，就会在inst0退休时将中断的信息记录下来并且处理器进入到single retire mode（单退休模式）。其指令提交与退休的处理逻辑在 rtu_rob_rt.v 文件中:
+
+assign rob_read0_int_vld    = !cp0_rtu_xx_int_b && !had_rtu_xx_tme
+                           && !rob_commit2;
+assign rob_read0_int_vec[4:0] = cp0_rtu_xx_vec[4:0];
+assign rob_retire_int_srt_en = rob_read0_int_vld;
+assign rob_int_commit_mask   = !cp0_rtu_xx_int_b && !had_rtu_xx_tme;
+
+上述代码中我们可以看到当中断触发时会给出一个 commit_mask 作为指令提交的掩码，此掩码会阻止后续的新的指令提交，同时又不会影响已经提交的指令。其逻辑如下所示:
+
+assign rob_sync_commit_mask = rob_int_commit_mask || rob_dbg_commit_mask || rob_c;
+assign rob_commit0_sync_mask = 1'b0;
+assign rob_commit1_sync_mask =
+    rob_sync_commit_mask
+    && !(rob_commit1 && (rob_read1_iid[6:0] == rob_commit1_iid[6:0])
+    || rob_commit2 && (rob_read1_iid[6:0] == rob_commit2_iid[6:0]));
+assign rob_commit2_sync_mask =
+    rob_sync_commit_mask
+    && !(rob_commit2 && (rob_read2_iid[6:0] == rob_commit2_iid[6:0]));
+
+当有关中断的信息被记录下来后，会将这些信息传递给 rtu_retire.v 模块进行中断的响应与重定向。当中断满足被响应的条件后， retire 单元设置 mtval 与 mepc，向 ifu 发出异常处理的信号，并触发流水线冲刷的flush信号。如果退休的指令为split指令或中断屏蔽指令，那么中断响应会被延后。
+
+// 判断中断响应条件
+assign retire_expt_int      = rob_retire_inst0_int_vld
+                          && !rob_retire_inst0_split
+                          && !rob_retire_inst0_intmask;
+
+// 异常信号生成
+assign retire_expt_vld      = rob_retire_inst0_vld
+                          && !dbgreg_ack
+                          && (retire_expt_inst
+                          || retire_expt_int);
+
+// ifu 与 cp0 的信号
+assign retire_ifu_expt_vld  = (retire_expt_vld || retire_async_expt_vld)
+                          && !dbg_mode_on;
+assign rtu_cp0_expt_vld     = (retire_expt_vld || retire_async_expt_vld)
+                          && !dbg_mode_on;
+
+// 冲刷信号
+assign retire_inst0_flush   = retire_expt_vld
+                          || retire_inst0_inst_flush
+                          || dbgreg_ack
+                          || retire_async_expt_vld;
