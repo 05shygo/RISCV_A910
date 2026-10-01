@@ -283,6 +283,7 @@ module tb_rtu_rob;
     logic [2:0]  cp_sqi  [0:2];
     logic [31:0] cp_val  [0:2];
     logic [6:0]  cp_got  [0:2];
+    logic [2:0]  cp_gotv = 3'd0;
     logic        commit_pending = 1'b0;
 
     // ---- 连续驱动: 编号请求 (只在 D_REQ 那拍有效) ----
@@ -332,6 +333,12 @@ module tb_rtu_rob;
     integer      head_wait = 0;
     integer      hcnt = 0;
     integer      dcnt = 0;
+
+    // [诊断] 最近 64 条事件 (派遣/退休/冲刷), 第一次 retire_iid 错位时整段倒出来
+    localparam integer LOGN = 64;
+    string       evt [0:LOGN-1];
+    integer      evt_i = 0;
+    bit          log_dumped = 0;
     bit          trace_on = 0;
     integer      seed = 32'h1234_5678;
     integer      n_target = 200;
@@ -339,6 +346,27 @@ module tb_rtu_rob;
 
     logic [2:0]  vldv;
     logic        trap_this;
+
+    task automatic log_evt(input string e);
+        begin
+            evt[evt_i % LOGN] = e;
+            evt_i = evt_i + 1;
+        end
+    endtask
+
+    task automatic dump_log;
+        begin
+            $display("  ---- 最近 %0d 条事件 (旧 -> 新) ----", LOGN);
+            for (int j = 0; j < LOGN; j = j + 1)
+                if (evt_i > j) begin
+                    int idx;
+                    idx = evt_i - LOGN + j;                      // 可能是负数
+                    if (idx < 0) idx = idx + LOGN;               // 环回的取模要显式做
+                    if (evt[idx] != "") $display("    %s", evt[idx]);
+                end
+            log_dumped = 1'b1;
+        end
+    endtask
 
     task automatic err(input string msg);
         begin
@@ -508,10 +536,15 @@ module tb_rtu_rob;
             end
 
             // ---------- 5b) iid 约定 ----------
-            if (n_ret < n_inst) begin
-                if (beu_retire_iid !== x_iid[n_ret])
-                    err($sformatf("retire_iid 不符: exp=%0d got=%0d (n_ret=%0d)",
-                                  x_iid[n_ret], beu_retire_iid, n_ret));
+            // ⚠️ 冲刷当拍 (ren_flush) 不比: DUT 在那一拍把 rptr 归零重新开始, 而参考流
+            //    要到同一拍稍后才重新对齐 —— 在这一拍比必然误报 (踩过: 这一条曾独占
+            //    失败总数的绝大部分)。
+            if ((n_ret < n_inst) && !ren_flush && (fl_state == 0)) begin
+                if (beu_retire_iid !== x_iid[n_ret]) begin
+                    err($sformatf("retire_iid 不符: exp=%0d got=%0d (n_ret=%0d, dutrptr=%0d)",
+                                  x_iid[n_ret], beu_retire_iid, n_ret, dut.u_rob.rptr));
+                    if (!log_dumped) dump_log();
+                end
             end
 
 
@@ -552,9 +585,11 @@ module tb_rtu_rob;
                     if (!ren_flush) err("冲刷 T+2 拍应有 rtu_ren_flush");
                     if (!ren_recover_vld) err("ren_flush 那拍必须同时给 recover_vld");
                     for (int l = 0; l < 32; l = l + 1)
-                        if (ren_recover_map[7*l +: 7] !== ref_amt[l])
+                        if (ren_recover_map[7*l +: 7] !== ref_amt[l]) begin
                             err($sformatf("AMT[%0d] 广播不符: exp=%0d got=%0d",
                                           l, ref_amt[l], ren_recover_map[7*l +: 7]));
+                            if (!log_dumped) dump_log();
+                        end
                     fl_state = 3;
                 end
                 default: begin
@@ -605,6 +640,7 @@ module tb_rtu_rob;
         integer i;
         begin
             if (trap_vld) begin
+                log_evt($sformatf("TRAP n_ret=%0d n_inst=%0d cause=%0d", n_ret, n_inst, trap_cause));
                 if (trap_cause == `RTU_CAUSE_MTIP) begin
                     n_ret = n_inst;                       // 队头被 squash, 后面全丢
                 end else if (vldv[0]) begin
@@ -621,6 +657,9 @@ module tb_rtu_rob;
                             ref_busy[x_dpr[i]] = 1'b1;
                             ref_amt[x_lreg[i]] = x_dpr[i];
                         end
+                        log_evt($sformatf("RET  inst=%0d iid=%0d lreg=%0d dpr=%0d rfwe=%b -> AMT[%0d]=%0d",
+                                          i, x_iid[i], x_lreg[i], x_dpr[i], x_rfwe[i],
+                                          x_lreg[i], x_dpr[i]));
                         n_ret = n_ret + 1;
                         n_done = n_done + 1;
                     end
@@ -631,6 +670,7 @@ module tb_rtu_rob;
             if (csr_rd_we) pf[csr_rd_addr]    = csr_rd_wdata;
 
             if (ren_flush) begin
+                log_evt($sformatf("FLUSH n_ret=%0d n_inst=%0d (都归零重来)", n_ret, n_inst));
                 n_ret    = n_inst;
                 ref_pend = 96'd0;
                 tb_cptr  = 6'd0;
@@ -664,8 +704,13 @@ module tb_rtu_rob;
                     else if (allow_csr && r < 50)     f[`RTU_FLG_CSR]    = 1'b1;
                     else if (r < 55)                  f[`RTU_FLG_MRET]   = 1'b1;
                     pl_flg[k] = f | ((({$urandom} % 100) < 8) ? (5'b1 << `RTU_FLG_INTMASK) : 5'd0);
-                    pl_lreg[k]  = {$urandom} % 32;
                     pl_rfwe[k]  = !(f[`RTU_FLG_STORE] || f[`RTU_FLG_BRANCH] || f[`RTU_FLG_MRET]);
+                    // ⚠️ 不写寄存器的指令必须把 dst_lreg 给 **0** (§6.1)。
+                    //    给它一个非 0 的垃圾值, RTU 就会按"这条要写 rd"去申请/分配 preg;
+                    //    而退休时 `wr_eff = rf_we & lreg!=0` 又不成立, 那个 preg 既不转
+                    //    ARCH 也不释放 —— **漏掉**, 之后被当空闲再发出去 (踩过: 单测台
+                    //    第一版就是这么把自由池搅乱的, 表象是 AMT/iid 到处对不上)。
+                    pl_lreg[k]  = pl_rfwe[k] ? ({$urandom} % 32) : 5'd0;
                     // old_preg == 该 lreg **当前的架构映射**: 真机里它一定是"以前发出去、
                     // 现在正被占用的"那个 preg。随手编一个没分配过的, 退休释放就会往
                     // 自由池里灌一个莫须有的编号 (池子放水 → 之后又把它发给别人)。
@@ -722,6 +767,9 @@ module tb_rtu_rob;
                 x_tgt[i]=32'd0; x_tkn[i]=1'b0; x_msp[i]=1'b0; x_rsv[i]=1'b0;
                 n_inst = n_inst + 1;
             end
+            if (nd > 0)
+                log_evt($sformatf("DISP n_inst=%0d nd=%0d iid0=%0d got0=%0d lreg0=%0d",
+                                  n_inst, nd, iid_at(0), cp_got[0], cp_lreg[0]));
             step_cptr(nd);
             // 记账后立刻核对指针镜像与 DUT 的创造指针 —— 两者必须一致,
             // 不一致就说明"这一拍记的条数"与实际派出去的条数对不上。
@@ -735,6 +783,21 @@ module tb_rtu_rob;
     task automatic disp_step;
         int nd;
         begin
+            // ---- 结算上一拍摆上口的派遣 (与状态机走到哪个分支无关!) ----
+            // ⚠️ 这一步**必须**独立于状态路径: 有一次派遣自己引出的 csr_inflight 会把
+            //    状态机顶回 IDLE, 结算若只写在 D_REQ 分支里, 那次派遣就永远记不上账
+            //    —— 参考流是空的, 于是没有完成信号, CSR 槽再也放不掉 (踩过的死锁)。
+            if (commit_pending && !ren_flush) begin
+                nd = 0;
+                for (int k = 0; k < 3; k = k + 1) begin
+                    if (acc_q[k]) nd = nd + 1;
+                    if (cp_gotv[k] && acc_q[k]) ref_busy[cp_got[k]] = 1'b1;
+                    if (cp_gotv[k]) ref_pend[cp_got[k]] = 1'b0;   // 没派成的还回池子
+                end
+                dispatch_record(nd);
+                commit_pending = 1'b0;
+            end
+
             if (ren_flush) begin
                 // 冲刷: 挂着的编号由 DUT 在 FLUSH_2 放回, 模型里一并清掉
                 for (int k = 0; k < 3; k = k + 1)
@@ -751,18 +814,14 @@ module tb_rtu_rob;
                         end
                     end
                     D_REQ: begin
-                        // (a) 先结算**上一份**: 它的接受位 acc_q 是上一个 posedge 锁存的,
-                        //     与 DUT 采到的 disp_acc 同刻同值。此刻 h_got 还是它的编号。
-                        if (commit_pending) begin
-                            nd = 0;
-                            for (int k = 0; k < 3; k = k + 1) begin
-                                if (acc_q[k]) nd = nd + 1;
-                                if (h_gotv[k] && acc_q[k]) ref_busy[h_got[k]] = 1'b1;
-                                if (h_gotv[k]) ref_pend[h_got[k]] = 1'b0;  // 没派成的还回池子
-                            end
-                            dispatch_record(nd);
-                            commit_pending = 1'b0;
-                        end
+                        // (a2) 请求是上一拍发出去的, 本拍得重新看一次 stall:
+                        //      比如 CSR 单槽被占 (csr_inflight) 时**不许**再派新指令 ——
+                        //      否则第二条 CSR 会覆盖单槽, 第一条退休时读到别人的字段。
+                        //      此时这份计划连同刚发出去的编号一起作废 (编号由 DUT 放回)。
+                        if (disp_stall) begin
+                            pl_n = 0; h_gotv = 3'd0;
+                            dstate = D_IDLE;
+                        end else begin
                         // (b) 再锁存**本份**计划拿到的编号
                         h_got[0] = alloc_vld0 ? alloc0 : 7'd0;
                         h_got[1] = alloc_vld1 ? alloc1 : 7'd0;
@@ -772,12 +831,14 @@ module tb_rtu_rob;
                             if (h_gotv[k]) ref_pend[h_got[k]] = 1'b1;
                         d_arm  = 1'b1;
                         dstate = D_DISP;
+                        end
                     end
                     default: begin                     // D_DISP: 本拍把派遣摆在口上
                         cp_n       = pl_n;             // 留给下一拍结算
                         cp_got[0]  = h_got[0];
                         cp_got[1]  = h_got[1];
                         cp_got[2]  = h_got[2];
+                        cp_gotv    = h_gotv;
                         for (int k = 0; k < 3; k = k + 1) begin
                             cp_lreg[k]=pl_lreg[k]; cp_pc[k]=pl_pc[k];   cp_chk[k]=pl_chk[k];
                             cp_rfwe[k]=pl_rfwe[k]; cp_flg[k]=pl_flg[k]; cp_opreg[k]=pl_opreg[k];
@@ -785,8 +846,12 @@ module tb_rtu_rob;
                             cp_cimm[k]=pl_cimm[k]; cp_sqi[k]=pl_sqi[k]; cp_val[k]=pl_val[k];
                         end
                         commit_pending = 1'b1;
-                        gen_plan();                    // 下一份 (下一拍在 D_REQ 里请求)
-                        dstate = D_REQ;
+                        if (disp_stall) begin
+                            pl_n = 0; dstate = D_IDLE; // stall 时不再往下发
+                        end else begin
+                            gen_plan();                // 下一份 (下一拍在 D_REQ 里请求)
+                            dstate = D_REQ;
+                        end
                     end
                 endcase
             end
