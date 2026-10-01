@@ -1,6 +1,7 @@
 # 显式列 .v 与各子目录: 原来写的 `mySoC/*` 会把**目录**也喂给 verilator,
 # 而 wildcard 不递归、子目录里的 RTL 又收不到。
 VSRC = $(wildcard vsrc/ram.v mySoC/*.v mySoC/idu/rtl/*.v mySoC/iu/rtl/*.v \
+                    mySoC/rtu/rtl/*.v \
                     mySoC/ifu2/rtl/*.v mySoC/ifu_rv32i/rtl/*.v)
 CSRC = $(wildcard golden_model/*.c) $(wildcard golden_model/stage/*.c) $(wildcard golden_model/peripheral/*.c) $(wildcard csrc/*.c csrc/*.cpp)
 SIM_OPTS = --trace -Wno-lint -Wno-style -Wno-TIMESCALEMOD

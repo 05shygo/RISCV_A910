@@ -116,7 +116,7 @@ foreach f [lsort [glob -nocomplain [file join $ROOT mySoC *.v]]] {
 }
 # 子目录要逐个列 —— glob 不递归。往 mySoC/ 下新开目录时忘了加, 症状是
 # Vivado 报 "module not found" 而不是文件缺失。
-foreach d {idu/rtl iu/rtl ifu2/rtl} {
+foreach d {idu/rtl iu/rtl rtu/rtl ifu2/rtl} {
     foreach f [lsort [glob -nocomplain [file join $ROOT mySoC {*}[split $d /] *.v]]] {
         lappend src_files $f
     }
@@ -145,7 +145,8 @@ set DEFS [list \
     PATH128=$hex128 \
 ]
 set_property verilog_define $DEFS [get_filesets sources_1]
-set_property include_dirs [list [file join $ROOT mySoC] [file join $ROOT vsrc]] [get_filesets sources_1]
+set_property include_dirs [list [file join $ROOT mySoC] [file join $ROOT vsrc] \
+                               [file join $ROOT mySoC rtu rtl]] [get_filesets sources_1]
 set_property top top_fmax [get_filesets sources_1]
 
 # ---------------------------------------------------------------------------

@@ -49,20 +49,28 @@ BP ?= 1
 #   * mySoC/        核本体 (顶层/流水寄存器/冒险单元/访存/SoC 适配)
 #   * mySoC/idu/rtl ID 级 (译码+寄存器堆+立即数+异常检出)
 #   * mySoC/iu/rtl  执行单元 (ALU / 分支执行 / 乘除法)
+#   * mySoC/rtu/rtl 退休单元 (ROB/物理寄存器状态/异常/冲刷)
 #   * mySoC/ifu2/rtl, mySoC/ifu_rv32i/rtl  两款前端 (二选一)
 ifeq ($(IFU),2)
 VSRC := $(filter-out $(PWD)/mySoC/ifu_subsys.v, $(wildcard $(PWD)/mySoC/*.v)) \
         $(wildcard $(PWD)/mySoC/idu/rtl/*.v) $(wildcard $(PWD)/mySoC/iu/rtl/*.v) \
+        $(wildcard $(PWD)/mySoC/rtu/rtl/*.v) \
         $(wildcard $(PWD)/mySoC/ifu2/rtl/*.v) $(PWD)/vsrc/$(RAM)
 else
 VSRC := $(wildcard $(PWD)/mySoC/*.v) \
         $(wildcard $(PWD)/mySoC/idu/rtl/*.v) $(wildcard $(PWD)/mySoC/iu/rtl/*.v) \
+        $(wildcard $(PWD)/mySoC/rtu/rtl/*.v) \
         $(wildcard $(PWD)/mySoC/ifu_rv32i/rtl/*.v) $(PWD)/vsrc/$(RAM)
 endif
+# ⚠️ 头文件也必须当先决条件。原来只有 .v 在列表里, 于是**改 defines.vh 不会重编** ——
+# 症状是"改了宏但仿真器还是老的": 实测 `touch mySoC/defines.vh && make build` 耗时 0 秒、
+# simv 时间戳纹丝不动。这条直接伤反向验证: scripts/rev_check.py 的 M04 注入的正是
+# defines.vh, 单独跑 `rev_check.py M04` 会拿旧 simv 跑出"幸存"的假结论。
+VHDR := $(wildcard $(PWD)/mySoC/*.vh) $(wildcard $(PWD)/mySoC/rtu/rtl/*.vh)
 SVSRC := $(wildcard $(PWD)/tb/*.sv)
 DPIC := $(wildcard $(PWD)/dpi/*.c)
 CSRC_GM := $(wildcard $(PWD)/golden_model/*.c) $(wildcard $(PWD)/golden_model/stage/*.c) $(wildcard $(PWD)/golden_model/peripheral/*.c)
-INC  := +incdir+$(PWD)/mySoC +incdir+$(PWD)/vsrc
+INC  := +incdir+$(PWD)/mySoC +incdir+$(PWD)/vsrc +incdir+$(PWD)/mySoC/rtu/rtl
 DEFINES := +define+PATH=$(TESTFILE) +define+PATHHEX=$(TESTHEX) +define+PATH128=$(TESTHEX128)
 ifeq ($(IFU),1)
 DEFINES += +define+USE_IFU
@@ -127,7 +135,7 @@ CROSS     ?= riscv32-unknown-elf-
 ASM_SRCS  := $(wildcard $(PWD)/asm/*.S)
 ASM_BINS  := $(patsubst $(PWD)/asm/%.S,$(PWD)/bin/%.bin,$(ASM_SRCS))
 
-.PHONY: all build run run-all verdi clean help coremark asm muldiv-unit
+.PHONY: all build run run-all verdi clean help coremark asm muldiv-unit rtu-unit
 
 asm: $(ASM_BINS)
 
@@ -358,7 +366,7 @@ $(BP_CFG): FORCE
 
 FORCE:
 
-$(SIMV): $(VSRC) $(SVSRC) $(DPIC) $(CSRC_GM) $(IFU_CFG) $(LBUF_CFG) $(BP_CFG) $(ICACHE_CFG) $(BP_EN_CFG)
+$(SIMV): $(VSRC) $(VHDR) $(SVSRC) $(DPIC) $(CSRC_GM) $(IFU_CFG) $(LBUF_CFG) $(BP_CFG) $(ICACHE_CFG) $(BP_EN_CFG)
 	@mkdir -p $(BUILD_DIR)
 	$(VCS) $(VCS_FLAGS) $(VCS_FLAGS_EXTRA) $(INC) $(DEFINES) $(BP_DEFS) $(FSDB_VCS) -CFLAGS -DVCS \
 	  -CFLAGS -I$(PWD)/golden_model/include \
@@ -397,6 +405,32 @@ $(UNIT_SIMV): $(UNIT_SRC) $(UNIT_TB)
 	$(VCS) $(VCS_FLAGS) $(INC) -top tb_muldiv_unit -o $(UNIT_SIMV) \
 	  -Mdir=$(UNIT_BUILD)/csrc -l $(UNIT_BUILD)/compile.log \
 	  $(UNIT_SRC) $(UNIT_TB)
+
+# ---------------------------------------------------------------------------
+# RTU 单元 TB: 直接驱动 RTU 的 §6 端口 (tb/unit/tb_rtu_rob.sv), 不经整核。
+# 为什么单开一套: 退休单元 90% 的 bug (退休窗口/异常最旧者胜/冲刷/preg 释放与
+# 恢复/ROB 满停顿) 在整核 difftest 里只会表现成"某条指令结果不对", 定位不到是
+# ROB 指针、影子表项还是 preg 状态机算错; 而这些时序性质在这里一个 task 就能构造。
+#
+# ⚠️ BUILD_DIR 必须是**另一个**目录: obj_unit 是 muldiv-unit 的, 两家共用一个
+#    目录会让 simv 互相覆盖 (先跑的赢, 后跑的看起来"没问题")。
+#   make rtu-unit                       # 默认种子
+#   ./obj_unit_rtu/simv +SEED=12345     # 换种子重跑
+# ---------------------------------------------------------------------------
+RTU_UNIT_BUILD := $(PWD)/obj_unit_rtu
+RTU_UNIT_SIMV  := $(RTU_UNIT_BUILD)/simv
+RTU_UNIT_SRC   := $(wildcard $(PWD)/mySoC/rtu/rtl/*.v)
+RTU_UNIT_HDR   := $(wildcard $(PWD)/mySoC/rtu/rtl/*.vh)
+RTU_UNIT_TB    := $(PWD)/tb/unit/tb_rtu_rob.sv
+
+rtu-unit: $(RTU_UNIT_SIMV)
+	@$(RTU_UNIT_SIMV) -l $(RTU_UNIT_BUILD)/sim.log
+
+$(RTU_UNIT_SIMV): $(RTU_UNIT_SRC) $(RTU_UNIT_HDR) $(RTU_UNIT_TB)
+	@mkdir -p $(RTU_UNIT_BUILD)
+	$(VCS) $(VCS_FLAGS) $(INC) -top tb_rtu_rob -o $(RTU_UNIT_SIMV) \
+	  -Mdir=$(RTU_UNIT_BUILD)/csrc -l $(RTU_UNIT_BUILD)/compile.log \
+	  $(RTU_UNIT_SRC) $(RTU_UNIT_TB)
 
 run-all: build
 	@mkdir -p waveform
