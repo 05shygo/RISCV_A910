@@ -778,7 +778,7 @@ output [1:0]  rtu_preg_free_cnt;            // 剩余可用数（< 请求数时�
 input        disp0_vld;               // 允许少于 3 条，但不许跳号（前缀）
 input [31:0] disp0_pc;
 input [24:0] disp0_chk;               // 前端快照, 随指令走
-input [4:0]  disp0_dst_lreg;          // **原样的 rd 域**（store 那几位是立即数, 不要清洗）
+input [4:0]  disp0_dst_lreg;          // ⚠️ **不写寄存器时必须给 0**（见下面的 A6d）
 input        disp0_rf_we;             // A6b: 与今天 mycpu.v 的 wb_rf_we 同源
 input [6:0]  disp0_dst_preg;          // ← 来自 §6.0 的 rtu_preg_alloc k
 input [6:0]  disp0_old_preg;          // 被替换的（来自你自己的 RAT）
@@ -790,7 +790,15 @@ input [4:0]  disp0_flags;             // {is_mret, is_csr, intmask, is_store, is
 input [2:0]  disp0_sq_id;
 // disp1_* / disp2_* 同上（源操作数与 dst 的对应关系按车道，不跨车道借用）
 //
-// ⚠️ `dst_lreg` 保持**原样**、`rf_we` 单列一位，是为了 difftest:
+// ⚠️ **A6d（2026-10-01 补，单测台挖出来的）**：`rf_we == 0` 的指令，`dst_lreg` 必须给 0。
+//    RTU 侧"分配过就归还"的判据是 `wr_eff = write_vld & rf_we & (dst_lreg != 0)`：
+//    若给一个非 0 的垃圾 rd 域（store 的那几位本来是立即数），RTU 会按"要写 rd"去要
+//    编号、分配出去，而退休时 `wr_eff` 不成立 ⇒ 这个 preg 既不转 ARCH 也不释放，
+//    **静默泄漏**在 ALLOC 态，随后被优先编码器当空闲再发出去。
+//    给 0 不影响 difftest：`ena = rf_we`，`ena==0` 时 golden model 根本不比 `reg`
+//    （`dpi_shim.c:165` 的 `if (dut_wb_ena)`）。**不要把"原样"理解成"不清洗"**。
+//
+// ⚠️ 另一条同样是为了 difftest:
 //    `dpi/dpi_shim.c:164` 连 `debug_wb_ena` 本身都比对, 所以 ena 不能用
 //    `dst_lreg != 0` 现推 (addi x0,... 的 rf_we=1 而 rd=x0, 两者必须能分开)。
 //    AMT 的写口用 `rf_we & (dst_lreg != 0)` 门控。
