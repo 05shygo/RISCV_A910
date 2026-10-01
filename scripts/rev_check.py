@@ -204,8 +204,11 @@ def build(tag, kind="core"):
         #    "has modification time NNN s in the future"), 于是 `make` 认为
         #    simv 比刚改过的 RTL 还新, 直接 "Nothing to be done" —— 变异一条也
         #    没进仿真, 四条全部"幸存"(实测踩过)。
-        if os.path.exists(UNIT_SIMV):
-            os.unlink(UNIT_SIMV)
+        #   还要清掉 VCS 自己的增量时间戳: 删了 simv 但 VCS 认为"设计没变"
+        #   时会直接跳过链接 —— 于是既没有 simv 也不报错, 基线当场 FileNotFound。
+        for f in (UNIT_SIMV, UNIT_SIMV + ".daidir/.vcs.timestamp"):
+            if os.path.exists(f):
+                os.unlink(f)
         # ⚠️ 目标名必须是**绝对路径**: Makefile 里是 `$(PWD)/obj_unit_rtu/simv`,
         #    写成相对名 make 会报 "No rule to make target"。
         cmd = ["make", UNIT_SIMV]
