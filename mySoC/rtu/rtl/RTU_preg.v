@@ -138,9 +138,15 @@ module RTU_preg (
     wire [95:0] cand1 = v1;
     wire [95:0] cand2 = v2;
 
-    wire [95:0] sel_oh = ((96'd1 << sel0) & {96{req_lane[0]}})
-                       | ((96'd1 << sel1) & {96{req_lane[1]}})
-                       | ((96'd1 << sel2) & {96{req_lane[2]}});
+    // ⚠️ 每一路都必须**同时**用 `|candK` 门控。`enc_hi/enc_lo` 找不到时会返回 0,
+    //    于是 `1<<sel1` 就是 bit 0 —— 池子不够三路时 (请求 3 个只剩 1 个空闲),
+    //    第 2/3 路会把 **p0 置成 WF_ALLOC**。p0 是 x0 的映射, 一旦被置 WF 就会
+    //    按 wf_age 超时回 FREE, 随后被当普通编号发出去 —— x0 的映射就没了。
+    //    门控条件与 `rtu_preg_alloc_vld*` 逐位同式, 这样"WF 的表项数"也必然
+    //    等于"计数器的 n_alloc", 自由池的账才不会慢慢偏。
+    wire [95:0] sel_oh = ((96'd1 << sel0) & {96{req_lane[0] & (|cand0)}})
+                       | ((96'd1 << sel1) & {96{req_lane[1] & (|cand1)}})
+                       | ((96'd1 << sel2) & {96{req_lane[2] & (|cand2)}});
 
     assign rtu_preg_alloc0     = sel0;
     assign rtu_preg_alloc1     = sel1;
@@ -184,20 +190,30 @@ module RTU_preg (
     // -----------------------------------------------------------------------
     always @(*) begin
         for (i = 0; i < 96; i = i + 1) begin
+            // ⚠️ 三个车道之间必须按**程序序从年轻到老**判 (先车道 2, 再 1, 再 0)。
+            //    同一条 lreg 在一组里被写两次时, 年轻那条的 `old_preg` 正好是年长那条的
+            //    `dst_preg`: 年长那条把它转 ARCH, 年轻那条又要把它放回 FREE —— 架构上
+            //    最终是 FREE (年轻的那条才是这条 lreg 的新映射)。按"字段分组"判
+            //    (先全判 arch 再全判 free) 会留下 ARCH ⇒ **白漏一个编号**, 而且
+            //    空闲计数与真实状态当场对不上 (单测台的账就是在这儿差的)。
+            //    比较器个数没变, 只是换了枚举顺序。
             if (flush_lvl) begin
                 // 冲刷: 没退休的一律回 FREE, 架构态不动
                 nst[i] = (st[i] == `RTU_P_ARCH) ? `RTU_P_ARCH : `RTU_P_FREE;
-            end else if ((ret_arch_vld[0] && (ret_dst_preg0 == i)) ||
-                         (ret_arch_vld[1] && (ret_dst_preg1 == i)) ||
-                         (ret_arch_vld[2] && (ret_dst_preg2 == i))) begin
+            end else if ((ret_arch_vld[2] && (ret_dst_preg2 == i))) begin
+                nst[i] = `RTU_P_ARCH;
+            end else if ((ret_kill_vld[2] && (ret_dst_preg2 == i)) ||
+                         (ret_free_vld[2] && (ret_old_preg2 == i))) begin
+                nst[i] = `RTU_P_FREE;
+            end else if ((ret_arch_vld[1] && (ret_dst_preg1 == i))) begin
+                nst[i] = `RTU_P_ARCH;
+            end else if ((ret_kill_vld[1] && (ret_dst_preg1 == i)) ||
+                         (ret_free_vld[1] && (ret_old_preg1 == i))) begin
+                nst[i] = `RTU_P_FREE;
+            end else if ((ret_arch_vld[0] && (ret_dst_preg0 == i))) begin
                 nst[i] = `RTU_P_ARCH;
             end else if ((ret_kill_vld[0] && (ret_dst_preg0 == i)) ||
-                         (ret_kill_vld[1] && (ret_dst_preg1 == i)) ||
-                         (ret_kill_vld[2] && (ret_dst_preg2 == i))) begin
-                nst[i] = `RTU_P_FREE;
-            end else if ((ret_free_vld[0] && (ret_old_preg0 == i)) ||
-                         (ret_free_vld[1] && (ret_old_preg1 == i)) ||
-                         (ret_free_vld[2] && (ret_old_preg2 == i))) begin
+                         (ret_free_vld[0] && (ret_old_preg0 == i))) begin
                 nst[i] = `RTU_P_FREE;
             end else if (is_wf[i] &&  hit_disp[i]) begin
                 nst[i] = `RTU_P_ALLOC;          // 本拍被派出去了
@@ -222,19 +238,60 @@ module RTU_preg (
     end
 
     // -----------------------------------------------------------------------
+    // WF_ALLOC 的年龄 (1 bit 够: 只区分"刚发出去那一拍"和"已经等了一拍")
+    //
+    // ⚠️ 这个寄存器**曾经只有声明和读取、没有任何赋值** —— 于是 `nst` 里那条
+    //    "等满两拍没人认领就回 FREE" 永远不成立, 编号一旦被分配而没派成
+    //    (TB/重命名级在 T+1 那拍 stall), 就一直卡在 WF_ALLOC **直到下一次冲刷**。
+    //    单测台里冲刷频繁所以看不出来; 真核冲刷间隔上千拍, 自由池会被抽干
+    //    (free_cnt 掉到 0 → preg_short → 派遣永久停摆)。
+    //    时间线 (与 §6.0 的两拍握手对齐): 选中的那个 posedge 起 WF_ALLOC,
+    //    派遣确认在紧随的那个 posedge 采样; 再往后一拍还没人认领就回收。
+    // -----------------------------------------------------------------------
+    always @(posedge cpu_clk or posedge cpu_rst) begin
+        if (cpu_rst) wf_age <= 96'd0;
+        else
+            for (i = 0; i < 96; i = i + 1)
+                wf_age[i] <= sel_oh[i]                     ? 1'b0 :   // 本拍刚发出去
+                             (is_wf[i] && !hit_disp[i])    ? 1'b1 :   // 等了一拍还没派成
+                                                             1'b0;
+    end
+
+    // -----------------------------------------------------------------------
     // 空闲计数 (加减计数器, 不让 popcount 上路径)
     // -----------------------------------------------------------------------
     wire [95:0] do_free_wf = is_wf & ~hit_disp & wf_age;
     wire [1:0] n_cf = $countones(do_free_wf);             // 本拍放回自由池的个数 (0..3)
-    wire [2:0] n_freed = {2'b0, ret_free_vld[0]} + {2'b0, ret_free_vld[1]}
-                       + {2'b0, ret_free_vld[2]} + {1'b0, n_cf};
-    wire [2:0] n_alloc = {2'b0, rtu_preg_alloc_vld0} + {2'b0, rtu_preg_alloc_vld1}
-                       + {2'b0, rtu_preg_alloc_vld2};
+    // ⚠️ `ret_kill_vld` **也要算进去**: 陷阱那条自己的 dst_preg 是 ALLOC -> FREE
+    //    (它没写 rd), 漏了它每次陷阱都会让计数器少 1 —— 单测台里表现为
+    //    "计数器恒低 1, 一直不回来" (踩过)。陷阱那拍 write_vld=0, 所以 kill 与
+    //    arch/free 不会互相覆盖, 直接相加即可。 (最多 3+3+3 = 9, 用 4 位)
+    wire [3:0] n_freed = {3'b0, ret_free_vld[0]} + {3'b0, ret_free_vld[1]}
+                       + {3'b0, ret_free_vld[2]} + {3'b0, n_cf}
+                       + {3'b0, ret_kill_vld[0]} + {3'b0, ret_kill_vld[1]}
+                       + {3'b0, ret_kill_vld[2]};
+    wire [3:0] n_alloc = {3'b0, rtu_preg_alloc_vld0} + {3'b0, rtu_preg_alloc_vld1}
+                       + {3'b0, rtu_preg_alloc_vld2};
+
+    // 冲刷后还在池子外的只有 ARCH: p0..p31 恒 ARCH (32 个), 高段里 retired 过的映射
+    // 仍是 ARCH —— `st[i] == ARCH ? ARCH : FREE` 那一条把它们留下了。所以自由数
+    // **不是** 64 而是 64 − (p32..p95 里 ARCH 的个数)。写死 64 会永久高报, 于是
+    // `preg_short` 迟一拍才拦, 重命名级按高报的数发请求却拿不满编号 (§6.0 的承诺
+    // "编号在 T+1 拍仍然有效"就破了)。
+    wire [95:0] arch_vec;
+    generate
+        for (gv = 0; gv < 96; gv = gv + 1) begin : g_arch
+            assign arch_vec[gv] = (st[gv] == `RTU_P_ARCH);
+        end
+    endgenerate
+    // ⚠️ 只数 p32..p95。用位选而不是掩码常量: 掩码写反 (拼接是高位在前) 会去数
+    //    p0..p31 —— 那 32 个恒为 ARCH, 症状是自由数恒低 30 上下, 看着像固定偏移。
+    wire [6:0] arch_hi_cnt = $countones(arch_vec[95:32]);
 
     always @(posedge cpu_clk or posedge cpu_rst) begin
         if (cpu_rst)          free_cnt_q <= 7'd64;
-        else if (flush_lvl)   free_cnt_q <= 7'd64;
-        else                  free_cnt_q <= free_cnt_q + {4'b0, n_freed} - {4'b0, n_alloc};
+        else if (flush_lvl)   free_cnt_q <= 7'd64 - arch_hi_cnt;
+        else                  free_cnt_q <= free_cnt_q + {3'b0, n_freed} - {3'b0, n_alloc};
     end
 
     assign free_cnt          = free_cnt_q;
@@ -248,10 +305,14 @@ module RTU_preg (
         if (cpu_rst) begin
             for (i = 0; i < 32; i = i + 1) amt[i] <= i[6:0];
         end else begin
+            // ⚠️ 优先级必须**倒过来**: 同一拍退掉的多条指令可能写同一个 lreg
+            //    (`addi x8..; addi x8..` 相邻两条), 架构上最后留下的是**程序序最年轻**
+            //    的那条的 dst_preg, 也就是车道 2。按 0>1>2 判会把最老的写口留下 ——
+            //    单测台抓到的症状正是 `AMT[8] exp=72 got=46` (车道 1 写 46、车道 2 写 72)。
             for (i = 0; i < 32; i = i + 1) begin
-                if      (ret_arch_vld[0] && (ret_dst_lreg0 == i)) amt[i] <= ret_dst_preg0;
+                if      (ret_arch_vld[2] && (ret_dst_lreg2 == i)) amt[i] <= ret_dst_preg2;
                 else if (ret_arch_vld[1] && (ret_dst_lreg1 == i)) amt[i] <= ret_dst_preg1;
-                else if (ret_arch_vld[2] && (ret_dst_lreg2 == i)) amt[i] <= ret_dst_preg2;
+                else if (ret_arch_vld[0] && (ret_dst_lreg0 == i)) amt[i] <= ret_dst_preg0;
             end
         end
     end

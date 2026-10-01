@@ -218,7 +218,14 @@ module RTU_commit (
 
     // commit_vld: 发交付脉冲的槽 (陷阱那条发, 靠 ena=0)
     // write_vld : 真有副作用的槽 (陷阱那条没有)
-    assign commit_vld = { rv2 & ~int_take, rv1 & ~int_take, rv0 & ~int_take };
+    // ⚠️ 槽 1/2 必须**同时也被 trap_hit 门控**: 陷阱只退到它自己为止 (pop_n = 1),
+    //    若这两路还挂着, 交付脉冲就会报出 011 而 `rtu_retire_cnt` 报 1 —— 两者对不上,
+    //    单测台按交付脉冲逐槽核对时会去核一条**根本没退休**的指令 (踩过:
+    //    `retire_cnt=1 与提交脉冲 011 不符`, 连带一串 CSR 假失败)。
+    //    `ena` 那边本来就被 ~trap_hit 清零, 所以这条只影响"报了哪几槽"。
+    assign commit_vld = { rv2 & ~int_take & ~trap_hit,
+                          rv1 & ~int_take & ~trap_hit,
+                          rv0 & ~int_take };
     assign write_vld  = { rv2 & ~int_take & ~trap_hit,
                           rv1 & ~int_take & ~trap_hit,
                           rv0 & ~int_take & ~trap_hit };

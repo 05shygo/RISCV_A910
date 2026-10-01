@@ -192,20 +192,6 @@ module tb_rtu_rob;
         .dbg_commit_value0(cmval0), .dbg_commit_value1(cmval1), .dbg_commit_value2(cmval2)
     );
 
-    // [临时] 盯住 p94: 谁发了它、谁确认了它、谁又把它放回池子
-    logic [1:0] st94_prev = 2'd0;
-    always @(posedge clk) begin
-        if (dut.u_preg.st[94] !== st94_prev) begin
-            $display("  [P94] t=%0t st 变了: %0d -> %0d | 本拍 disp=%b dp=%0d,%0d,%0d iswf=%b hit=%b retfree=%b old0=%0d flushlvl=%b",
-                     $time, st94_prev, dut.u_preg.st[94], dut.u_rob.disp_acc,
-                     dut.disp0_dst_preg, dut.disp1_dst_preg, dut.disp2_dst_preg,
-                     dut.u_preg.is_wf[94], dut.u_preg.hit_disp[94],
-                     dut.u_preg.ret_free_vld, dut.u_preg.ret_old_preg0,
-                     dut.u_preg.flush_lvl);
-            st94_prev <= dut.u_preg.st[94];
-        end
-    end
-
     // =======================================================================
     // 参考模型
     // =======================================================================
@@ -229,17 +215,24 @@ module tb_rtu_rob;
     logic [11:0] x_ca  [0:MAXI-1];
     logic [2:0]  x_cop [0:MAXI-1];
     logic [4:0]  x_cim [0:MAXI-1];
+    logic [6:0]  x_s1  [0:MAXI-1];      // CSR 的 rs1_preg (判"写不写 CSR"用)
     logic [2:0]  x_sqi [0:MAXI-1];
     logic [31:0] x_tgt [0:MAXI-1];
     logic        x_tkn [0:MAXI-1];
     logic        x_msp [0:MAXI-1];
     logic        x_rsv [0:MAXI-1];
+    logic [1:0]  x_src [0:MAXI-1];      // [诊断] old_preg 的来源
+    integer      x_srcidx [0:MAXI-1];
 
     // ⚠️ 这里**故意不维护**"哪些 preg 被占用"的位图。
     //    它是从 参考流 + AMT + 派发中的编号 派生出来的量, 维护第二份必然与它们打架
     //    (单测台为此debug 了很多轮)。占用与否一律**直接问 DUT 自己的状态表**,
     //    或者从参考流现场算 —— 两者都与相位无关。
     logic [6:0]  ref_amt [0:31];       // 参考模型自己维护的 AMT
+    // 重命名级的**投机映射表 RAT** (§6: "谁负责什么" 里写死是重命名级的职责)。
+    // 派遣时写、冲刷时用 `rtu_ren_recover_map` (= ref_amt) 整表覆盖 —— 契约怎么
+    // 描述对面那一侧, 参考模型就怎么维护, 不再去"重建"它。
+    logic [6:0]  ref_rat [0:31];
 
     logic [5:0]  tb_cptr = 6'd0;       // 派遣指针镜像 (iid = {回绕位, 槽号})
     logic        tb_cmsb = 1'b0;
@@ -278,6 +271,8 @@ module tb_rtu_rob;
     logic [4:0]  pl_cimm [0:2];
     logic [2:0]  pl_sqi  [0:2];
     logic [31:0] pl_val  [0:2];
+    logic [1:0]  pl_src  [0:2];
+    integer      pl_srcidx[0:2];
 
     logic [6:0]  h_got  [0:2];         // D_REQ 那拍锁存下来的编号
     logic [2:0]  h_gotv = 3'd0;
@@ -298,6 +293,8 @@ module tb_rtu_rob;
     logic [4:0]  cp_cimm [0:2];
     logic [2:0]  cp_sqi  [0:2];
     logic [31:0] cp_val  [0:2];
+    logic [1:0]  cp_src  [0:2];
+    integer      cp_srcidx[0:2];
     logic [6:0]  cp_got  [0:2];
     logic [2:0]  cp_gotv = 3'd0;
     logic        commit_pending = 1'b0;
@@ -339,8 +336,27 @@ module tb_rtu_rob;
     logic [11:0] ret_csra_q = 12'd0;
     logic [31:0] ret_csrw_q = 32'd0, ret_csrrw_q = 32'd0;
     logic [6:0]  ret_csrra_q = 7'd0;
+    logic [2:0]  x_retarch_q = 3'd0, x_retkill_q = 3'd0, x_retfree_q = 3'd0;
+    logic [6:0]  x_dstp_q [0:2];
+    logic        x_flvl_q = 1'b0;
+    logic [6:0]  x_oldp_q [0:2];
     logic [2:0]  ret_fv_q = 3'd0;
     logic [20:0] ret_fp_q = 21'd0;
+    // ⚠️⚠️ 这里必须**整套**锁: 脉冲 + 载荷 + 检查要用到的输入 (sq_rdy/int_pending/CSR 读数据)。
+    //    只锁脉冲、载荷读实时值 = 两帧混用 —— 而且混出来的那一帧**根本不存在**:
+    //    在 negedge N 直接读的组合值 = f(边沿后的状态, 边沿前的输入), 而 DUT 在
+    //    posedge N+5 用的是**同一状态 + 本拍刚摆上去的输入**。两者只在"TB 这一拍
+    //    没有改动任何输入"时才相等。踩到的实例: 610000 拍读到 vld=011/pop=2, 但同一拍
+    //    TB 把 sq_rdy0 摇成 0 (槽 0 是 store) ⇒ DUT 真正提交 0 条, 参考流于是永远
+    //    慢一条, 之后成片失败。
+    //    唯一的自洽帧是"刚过去的那个 posedge 做了什么" —— 也就是这一整套 ret_*_q。
+    logic [31:0] ret_pc_q  [0:2];
+    logic [4:0]  ret_reg_q [0:2];
+    logic [31:0] ret_val_q [0:2];
+    logic [2:0]  ret_ena_q = 3'd0;
+    logic [2:0]  ret_rdy_q = 3'd0;
+    logic        ret_ipend_q = 1'b0;
+    logic [31:0] ret_csrrdata_q = 32'd0, ret_csrsrc_q = 32'd0;
     always @(posedge clk) begin
         ret_vld_q    <= {cmv2, cmv1, cmv0};
         ret_cnt_q    <= retire_cnt;
@@ -358,13 +374,60 @@ module tb_rtu_rob;
         ret_csrrw_q  <= csr_rd_wdata; ret_csrra_q <= csr_rd_addr;
         ret_fv_q     <= {ren_free_vld2, ren_free_vld1, ren_free_vld0};
         ret_fp_q     <= {ren_free_preg2, ren_free_preg1, ren_free_preg0};
+        ret_pc_q[0]  <= cmpc0;  ret_pc_q[1]  <= cmpc1;  ret_pc_q[2]  <= cmpc2;
+        ret_reg_q[0] <= cmreg0; ret_reg_q[1] <= cmreg1; ret_reg_q[2] <= cmreg2;
+        ret_val_q[0] <= cmval0; ret_val_q[1] <= cmval1; ret_val_q[2] <= cmval2;
+        ret_ena_q    <= {cmena2, cmena1, cmena0};
+        ret_rdy_q    <= {sq_rdy2, sq_rdy1, sq_rdy0};
+        ret_ipend_q  <= int_pending;
+        ret_csrrdata_q <= csr_rdata;
+        ret_csrsrc_q   <= csrsrc_rdata;
+        // [诊断] preg 表的边沿前输入, 用于给空闲计数的差账定位
+        x_retarch_q <= dut.u_preg.ret_arch_vld;
+        x_retkill_q <= dut.u_preg.ret_kill_vld;
+        x_dstp_q[0] <= dut.u_preg.ret_dst_preg0;
+        x_dstp_q[1] <= dut.u_preg.ret_dst_preg1;
+        x_dstp_q[2] <= dut.u_preg.ret_dst_preg2;
+        x_flvl_q    <= dut.u_preg.flush_lvl;
     end
+    // 四态表在**冲沿前**的快照。"释放的编号不该是 FREE 态"这条不变量问的是
+    // "释放发生在哪个状态上", 而释放本身就在同一个 posedge 把那个编号写成 FREE ——
+    // 在负沿直接读 st[] 必然读到 FREE (等于拿结果去问原因, 恒假)。所以留一份边沿前的副本。
+    logic [191:0] st_snap_q = 192'd0;
+    logic [223:0] amt_snap_q = 224'd0;
+    always @(posedge clk) begin
+        for (int si = 0; si < 96; si = si + 1)
+            st_snap_q[2*si +: 2] <= dut.u_preg.st[si];
+        for (int ai = 0; ai < 32; ai = ai + 1)
+            amt_snap_q[7*ai +: 7] <= dut.u_preg.amt[ai];
+    end
+
     // 采样时机: 进入 D_DISP 时"上膛", 紧随其后的那个 posedge 采一次然后卸膛。
     // 那个 posedge 正是 DUT 采样的那一个 (TB 在 negedge 摆状态, DUT 在下一个
     // posedge 采), 两边看到的是同一个 lane_go —— 这样"记的账"必然等于"真派出去的"。
     // ⚠️ 不能无条件每拍锁存: 下一个 posedge 时状态已经切走了, 会把 0 覆盖上去。
     logic       d_arm = 1'b0;
     always @(posedge clk) if (d_arm) begin acc_q <= lane_go; d_arm <= 1'b0; end
+
+    // ---- 分配编号的采样时机: **请求那一拍结束的那个 posedge** ----
+    // ⚠️⚠️ 这是本 TB 最大的一处踩坑。`rtu_preg_alloc*` 是优先编码器的**组合输出**,
+    //    只在"请求还挂在口上"的那一拍有效 (§6.0: "T 拍…**同拍**把编号放到
+    //    rtu_preg_alloc")。而选中的编号在那个 posedge 就进 WF_ALLOC、退出 free_vec,
+    //    编码器随即指向**下一批**空闲编号。
+    //    早先这里是在 D_REQ 那一拍 (也就是 T+1) 直接读实时值 —— 读到的永远是"下一批",
+    //    指令于是拿着一个**从没分配过、仍处于 FREE** 的编号当 dst_preg: 它既不进
+    //    ALLOC 也不会被认领, 很快被编码器发给别人 (双份发出 / `释放了 FREE 态的 pN` /
+    //    以 FREE 态退休成 ARCH, 各种下游症状都从这里长出来)。
+    //    修法与"接受位"同构: 进 D_REQ 时上膛, 请求周期结尾的那个 posedge 采一次 ——
+    //    取样点正是 DUT 采样 ren_preg_req 的同一刻, 两边看到的是同一批编号。
+    logic        al_arm = 1'b0;
+    logic [6:0]  s_got [0:2];
+    logic [2:0]  s_gotv = 3'd0;
+    always @(posedge clk) if (al_arm) begin
+        s_got[0] <= alloc0; s_got[1] <= alloc1; s_got[2] <= alloc2;
+        s_gotv   <= {alloc_vld2, alloc_vld1, alloc_vld0};
+        al_arm   <= 1'b0;
+    end
 
     assign d0_vld = lane_go[0];    assign d1_vld = lane_go[1];    assign d2_vld = lane_go[2];
     assign d0_pc  = pl_pc[0];      assign d1_pc  = pl_pc[1];      assign d2_pc  = pl_pc[2];
@@ -378,12 +441,19 @@ module tb_rtu_rob;
     assign d0_cimm= pl_cimm[0];    assign d1_cimm= pl_cimm[1];    assign d2_cimm= pl_cimm[2];
     assign d0_flg = pl_flg[0];     assign d1_flg = pl_flg[1];     assign d2_flg = pl_flg[2];
     assign d0_sqid= pl_sqi[0];     assign d1_sqid= pl_sqi[1];     assign d2_sqid= pl_sqi[2];
-    assign d0_dpreg = h_got[0];    assign d1_dpreg = h_got[1];    assign d2_dpreg = h_got[2];
+    // ⚠️ `dst_lreg == 0` 的车道**不申请也不使用**编号 (§6.1 约定 5: "RTU 侧按 0 处理")。
+    //    但 `rtu_preg_alloc*` 那根线上永远**有值** —— 那是别的车道要拿的编号。照抄
+    //    上口就等于告诉 RTU "这条指令要写 pXX", 参考流也跟着记错 (窗口逐字段比对会
+    //    对不上, "分配器不得再发在途 dst_preg" 也会拿它误报)。
+    assign d0_dpreg = (pl_lreg[0] != 5'd0) ? h_got[0] : 7'd0;
+    assign d1_dpreg = (pl_lreg[1] != 5'd0) ? h_got[1] : 7'd0;
+    assign d2_dpreg = (pl_lreg[2] != 5'd0) ? h_got[2] : 7'd0;
 
     integer      errors = 0;
     integer      n_done = 0, n_trap = 0, n_int = 0, n_flush = 0;
     integer      n_store = 0, n_csr = 0, n_mret = 0, n_misp = 0;
     integer      fl_state = 0;         // 1=T 2=F1 3=F2
+    integer      beu_orphan = 0;       // 见 beu_mask 那条检查 (连续多少拍"无解释")
     integer      head_wait = 0;
     integer      hcnt = 0;
     integer      lap_base = 0;      // 本圈起点 (上次冲刷时的 n_inst)
@@ -398,6 +468,7 @@ module tb_rtu_rob;
     integer      evt_i = 0;
     bit          log_dumped = 0;
     bit          log_dumped2 = 0;
+    bit          log_dumped3 = 0;
     bit          trace_on = 0;
     integer      seed = 32'h1234_5678;
     integer      n_target = 200;
@@ -405,6 +476,7 @@ module tb_rtu_rob;
 
     logic [2:0]  vldv;
     logic        trap_this;
+    logic        int_seen = 1'b0;      // 本拍刚取走了一次中断
 
     task automatic log_evt(input string e);
         begin
@@ -415,7 +487,7 @@ module tb_rtu_rob;
 
     task automatic dump_log;
         begin
-            $display("  ---- 最近 %0d 条事件 (旧 -> 新) ----", LOGN);
+            $display("  ---- 最近 %0d 条事件 (旧 -> 新) [evt_i=%0d] ----", LOGN, evt_i);
             for (int j = 0; j < LOGN; j = j + 1)
                 if (evt_i > j) begin
                     int idx;
@@ -446,7 +518,9 @@ module tb_rtu_rob;
         integer csr_slot;
         logic   exp_free_k;
         begin
-            vldv      = {cmv2, cmv1, cmv0};
+            // ⚠️ 整套用 posedge 锁存的那一份 (= "刚过去的那个 posedge DUT 做了什么")。
+            //    读实时组合值会拿到"还没发生的那个事件 + 上一拍的输入" —— 一个不存在的帧。
+            vldv      = ret_vld_q;
             trap_this = 1'b0;
             csr_slot  = -1;
             for (int k = 0; k < 3; k = k + 1)
@@ -456,19 +530,19 @@ module tb_rtu_rob;
             // ---------- 0) 提交脉冲必须是前缀, 且与 retire_cnt 一致 ----------
             if (vldv[1] && !vldv[0]) err("退休脉冲跳号: 有槽1无槽0");
             if (vldv[2] && !vldv[1]) err("退休脉冲跳号: 有槽2无槽1");
-            if (retire_cnt !== ({1'b0,vldv[2]} + {1'b0,vldv[1]} + {1'b0,vldv[0]}))
-                err($sformatf("retire_cnt=%0d 与提交脉冲 %b 不符", retire_cnt, vldv));
+            if (ret_cnt_q !== ({1'b0,vldv[2]} + {1'b0,vldv[1]} + {1'b0,vldv[0]}))
+                err($sformatf("retire_cnt=%0d 与提交脉冲 %b 不符", ret_cnt_q, vldv));
 
             // ---------- 1) 陷阱 / 中断 ----------
-            if (trap_vld) begin
+            if (ret_trap_q) begin
                 if (n_ret >= n_inst) err("trap_vld 但参考队列为空");
                 else begin
                     i = n_ret;
                     trap_this = 1'b1;
-                    if (trap_cause == `RTU_CAUSE_MTIP) begin
+                    if (ret_tcause_q == `RTU_CAUSE_MTIP) begin
                         n_int = n_int + 1;
-                        if (int_pending !== 1'b1) err("取了中断但 int_pending=0");
-                        if (retire_cnt !== 2'd0) err("取中断那一拍不该有退休计数");
+                        if (ret_ipend_q !== 1'b1) err("取了中断但 int_pending=0");
+                        if (ret_cnt_q !== 2'd0) err("取中断那一拍不该有退休计数");
                         if (vldv !== 3'b000)      err("取中断那一拍不该有提交脉冲");
                         if (flg_of(i)[`RTU_FLG_STORE] || flg_of(i)[`RTU_FLG_CSR] ||
                             flg_of(i)[`RTU_FLG_MRET])
@@ -476,17 +550,17 @@ module tb_rtu_rob;
                     end else begin
                         n_trap = n_trap + 1;
                         if (!x_exc[i]) err($sformatf("凭空陷入: 指令 %0d 没注入异常", i));
-                        else if (trap_cause !== x_ec[i])
-                            err($sformatf("陷阱 cause 不符: exp=%0d got=%0d", x_ec[i], trap_cause));
-                        else if (trap_tval !== x_etv[i]) err("陷阱 tval 不符");
-                        if (trap_epc !== x_pc[i]) err("陷阱 mepc 不是队头那条的 pc");
-                        if (!(vldv[0] && !cmv1 && !cmv2)) err("陷阱那拍应只退到它为止");
-                        if (cmena0 !== 1'b0) err("陷阱指令不该写 rd (ena 必须为 0)");
-                        if (store_vld0 || csr_we || csr_rd_we)
+                        else if (ret_tcause_q !== x_ec[i])
+                            err($sformatf("陷阱 cause 不符: exp=%0d got=%0d", x_ec[i], ret_tcause_q));
+                        else if (ret_tval_q !== x_etv[i]) err("陷阱 tval 不符");
+                        if (ret_epc_q !== x_pc[i]) err("陷阱 mepc 不是队头那条的 pc");
+                        if (!(vldv[0] && !vldv[1] && !vldv[2])) err("陷阱那拍应只退到它为止");
+                        if (ret_ena_q[0] !== 1'b0) err("陷阱指令不该写 rd (ena 必须为 0)");
+                        if (ret_sw_q[0] || ret_csrwe_q || ret_csrrd_q)
                             err("陷阱指令不该产生任何副作用");
                     end
-                    if (ifu_chg_vld !== 1'b1) err("陷阱/中断那拍必须发前端重定向");
-                    if (ifu_chg_pc !== csr_tvec) err("陷阱/中断的重定向目标应为陷阱向量");
+                    if (ret_iflush_q !== 1'b1) err("陷阱/中断那拍必须发前端重定向");
+                    if (ret_ipc_q !== csr_tvec) err("陷阱/中断的重定向目标应为陷阱向量");
                 end
             end
 
@@ -496,9 +570,8 @@ module tb_rtu_rob;
                 logic [31:0] pc, val;
                 logic [4:0]  rreg;
                 if (vldv[k]) begin
-                    if (k == 0) begin ena=cmena0; pc=cmpc0; rreg=cmreg0; val=cmval0; sw=store_vld0; end
-                    else if (k == 1) begin ena=cmena1; pc=cmpc1; rreg=cmreg1; val=cmval1; sw=store_vld1; end
-                    else begin ena=cmena2; pc=cmpc2; rreg=cmreg2; val=cmval2; sw=store_vld2; end
+                    ena = ret_ena_q[k];  pc = ret_pc_q[k];
+                    rreg = ret_reg_q[k]; val = ret_val_q[k];  sw = ret_sw_q[k];
 
                     if ((n_ret + k) >= n_inst) err($sformatf("槽 %0d 报了退休但队列里没有这条", k));
                     else begin
@@ -512,7 +585,7 @@ module tb_rtu_rob;
                                           i, x_rfwe[i] & ~trap_this, ena));
                         if (ena) begin
                             if (flg_of(i)[`RTU_FLG_CSR]) begin
-                                if (val !== csr_rdata) err("CSR 指令写 rd 的值必须等于 CSR 旧值");
+                                if (val !== ret_csrrdata_q) err("CSR 指令写 rd 的值必须等于 CSR 旧值");
                             end else if (val !== pf[x_dpr[i]])
                                 err($sformatf("指令 %0d 提交值不符: exp=%08x got=%08x",
                                               i, pf[x_dpr[i]], val));
@@ -520,10 +593,8 @@ module tb_rtu_rob;
                         if (sw !== (flg_of(i)[`RTU_FLG_STORE] && !trap_this))
                             err($sformatf("指令 %0d store 脉冲不符", i));
                         if (sw) begin
-                            if (!((k==0)?sq_rdy0:(k==1)?sq_rdy1:sq_rdy2))
-                                err("store 数据没就绪却退休了");
-                            if ((k==0?store_sqid0:(k==1?store_sqid1:store_sqid2)) !== x_sqi[i])
-                                err("store sq_id 不符");
+                            if (!ret_rdy_q[k]) err("store 数据没就绪却退休了");
+                            if (ret_sqid_q[3*k +: 3] !== x_sqi[i]) err("store sq_id 不符");
                             n_store = n_store + 1;
                         end
                         // 释放 old_preg: 脉冲与编号都必须逐位一致
@@ -532,9 +603,8 @@ module tb_rtu_rob;
                         begin
                             logic       fv_k;
                             logic [6:0] fp_k;
-                            if (k==0) begin fv_k=ren_free_vld0; fp_k=ren_free_preg0; end
-                            else if (k==1) begin fv_k=ren_free_vld1; fp_k=ren_free_preg1; end
-                            else begin fv_k=ren_free_vld2; fp_k=ren_free_preg2; end
+                            fv_k = ret_fv_q[k];
+                            fp_k = ret_fp_q[7*k +: 7];
                             if (fv_k !== exp_free_k)
                                 err($sformatf("指令 %0d 释放脉冲不符: exp=%b got=%b (old=%0d)",
                                               i, exp_free_k, fv_k, x_opr[i]));
@@ -544,40 +614,55 @@ module tb_rtu_rob;
                             if (fv_k && (fp_k < 7'd32)) err("释放了架构寄存器 p0..p31");
                             // 纯 DUT 侧: 释放的编号在 DUT 的池子里绝不该是 FREE 态
                             // (它是"被替换掉的架构映射", 一定处于 ARCH/ALLOC)。
-                            if (fv_k && (dut.u_preg.st[fp_k] === 2'd0))
-                                err($sformatf("释放了 FREE 态的 p%0d (指令 %0d, trap=%b) dpr=%0d old=%0d",
-                                              fp_k, i, trap_this, x_dpr[i], x_opr[i]));
+                            if (fv_k && (st_snap_q[2*fp_k +: 2] === 2'd0)) begin
+                                err($sformatf("释放了 FREE 态的 p%0d (指令 %0d, trap=%b) dpr=%0d old=%0d lreg=%0d amt=%0d oldsrc=%0d idx=%0d",
+                                              fp_k, i, trap_this, x_dpr[i], x_opr[i],
+                                              x_lreg[i], ref_amt[x_lreg[i]], x_src[i], x_srcidx[i]));
+                                if (!log_dumped3) begin dump_log(); log_dumped3 = 1'b1; end
+                            end
                         end
                     end
                 end
             end
 
             // ---------- 3) CSR 写口 ----------
-            if (csr_slot >= 0) begin
+            // ⚠️ 陷阱那拍要整个跳过: 异常正好注在这条 CSR 上时 `write_vld = 0`
+            //    (§4.5: 陷阱那条不发副作用), 于是 csr_we/csr_rd_we 本来就该是 0 ——
+            //    而下面这套检查是"RW 类必须写", 不跳过就是自己跟自己打架。
+            if ((csr_slot >= 0) && !trap_this) begin
                 integer ii;
                 logic [31:0] exp_w, src_v;
+                logic        exp_csr_we;
                 ii = n_ret + csr_slot;
-                if (csr_addr !== x_ca[ii]) err("CSR 写地址不符");
-                src_v = x_cop[ii][2] ? {27'b0, x_cim[ii]} : csrsrc_rdata;
+                if (ret_csra_q !== x_ca[ii]) err("CSR 写地址不符");
+                src_v = x_cop[ii][2] ? {27'b0, x_cim[ii]} : ret_csrsrc_q;
                 exp_w = (x_cop[ii][1:0] == 2'b01) ? src_v :
-                        (x_cop[ii][1:0] == 2'b10) ? (csr_rdata |  src_v) :
-                                                    (csr_rdata & ~src_v);
-                if (csr_we !== 1'b1) err("RW 类 CSR 指令必须写 CSR");
-                if (csr_wdata !== exp_w) err($sformatf("CSR 写值不符: exp=%08x got=%08x", exp_w, csr_wdata));
-                if (csr_rd_we !== (x_rfwe[ii] && (x_lreg[ii] != 5'd0)))
+                        (x_cop[ii][1:0] == 2'b10) ? (ret_csrrdata_q |  src_v) :
+                                                    (ret_csrrdata_q & ~src_v);
+                // 写不写 CSR 的口径 (§6.3 ⑤ / A6c): RW 恒写; RS/RC 看**源非零**
+                // (立即数型看 uimm, 寄存器型看 rs1_preg —— x0 恒映射到 p0, 而 p0 永不
+                //  进自由池, 所以 "src1_preg == 0" 就等价于 "rs1 是 x0")。
+                // ⚠️ 早先这里写死"必须写", 把 RS/RC 且源为 0 的正常情形也报成错。
+                exp_csr_we = (x_cop[ii][1:0] == 2'b01) ||
+                             (x_cop[ii][2] ? (|x_cim[ii]) : (|x_s1[ii]));
+                if (ret_csrwe_q !== exp_csr_we)
+                    err($sformatf("CSR 写使能不符: op=%b imm=%0d s1p=%0d exp=%b got=%b",
+                                  x_cop[ii], x_cim[ii], x_s1[ii], exp_csr_we, ret_csrwe_q));
+                if (ret_csrw_q !== exp_w) err($sformatf("CSR 写值不符: exp=%08x got=%08x", exp_w, ret_csrw_q));
+                if (ret_csrrd_q !== (x_rfwe[ii] && (x_lreg[ii] != 5'd0)))
                     err("CSR 指令的 rd 写使能不符");
-                if (csr_rd_we) begin
-                    if (csr_rd_addr !== x_dpr[ii]) err("CSR rd 写地址不符");
-                    if (csr_rd_wdata !== csr_rdata) err("CSR rd 写值必须等于旧值");
+                if (ret_csrrd_q) begin
+                    if (ret_csrra_q !== x_dpr[ii]) err("CSR rd 写地址不符");
+                    if (ret_csrrw_q !== ret_csrrdata_q) err("CSR rd 写值必须等于旧值");
                 end
                 n_csr = n_csr + 1;
-            end else if (csr_we || csr_rd_we) begin
+            end else if (!trap_this && (ret_csrwe_q || ret_csrrd_q)) begin
                 err("没有 CSR 指令退休却出现 CSR 写");
             end
 
             // ---------- 4) 误预测退休的重定向目标 ----------
             // (mret 也会发前端重定向, 但那条走 §5 的检查)
-            if (ifu_chg_vld && !trap_vld && !mret_vld) begin
+            if (ret_iflush_q && !ret_trap_q && !ret_mret_q) begin
                 integer mi;
                 mi = -1;
                 for (int k = 0; k < 3; k = k + 1)
@@ -585,14 +670,18 @@ module tb_rtu_rob;
                         flg_of(n_ret+k)[`RTU_FLG_BRANCH] && x_msp[n_ret+k] && (mi < 0))
                         mi = n_ret + k;
                 if (mi < 0) err("发了前端重定向, 但没有任何退休分支是误预测的");
-                else if (ifu_chg_pc !== x_tgt[mi]) err("误预测重定向目标应为该分支的真实目标");
+                else if (ret_ipc_q !== x_tgt[mi]) begin
+                    err($sformatf("误预测重定向目标不符: exp=%08x got=%08x | mi=%0d iid=%0d n_ret=%0d",
+                                  x_tgt[mi], ret_ipc_q, mi, x_iid[mi], n_ret));
+                    if (!log_dumped3) begin dump_log(); log_dumped3 = 1'b1; end
+                end
                 n_misp = n_misp + 1;
             end
 
             // ---------- 5) mret ----------
-            if (mret_vld) begin
+            if (ret_mret_q) begin
                 if ((n_ret >= n_inst) || !flg_of(n_ret)[`RTU_FLG_MRET]) err("mret_vld 但队头不是 mret");
-                else if (ifu_chg_pc !== csr_mepc_i) err("mret 的重定向目标应为 mepc");
+                else if (ret_ipc_q !== csr_mepc_i) err("mret 的重定向目标应为 mepc");
                 n_mret = n_mret + 1;
             end
 
@@ -637,31 +726,93 @@ module tb_rtu_rob;
             // 不得把**任何在途指令的 dst_preg** 再发一遍 —— 这条才是"自由池没漏干"
             // 的本质, 而且与 TB 对两拍握手的相位建模无关 (比"不得是上一拍刚发出去的
             // 那个"稳健得多: 后者要求 TB 把 T/T+1 的相位对得分毫不差, 很容易假报)。
-            for (int ii = n_ret; ii < n_inst; ii = ii + 1) begin
+            // ⚠️ 冲刷那一拍要跳过: 参考流的窗口要到 disp_step 里才清零, 此刻它还是
+            //    "冲掉之前"的旧窗口, 里面那些编号 DUT 已经放回自由池了 —— 比必然误报。
+            // ⚠️ **本拍正在退休的那几条要排除**: 它们此刻既还在参考流窗口里
+            //    (ref_retire 要等这一拍才把它记掉), 又已经把自己的编号交了出去 ——
+            //    ① 陷阱那条: `ret_kill_vld` 把它的 dst_preg 放回 FREE;
+            //    ② 同组里后一条写同一条 lreg 时, 它的 old_preg 正好是前一条的 dst_preg,
+            //       于是前一条刚转 ARCH 的编号在**同一拍**又被放回 FREE
+            //       (这正是"年轻者胜"该有的样子)。
+            //    这两种情形下那个编号本来就可以再发出去, 不排除就是纯假报。
+            for (int ii = n_ret; ii < n_inst && !ret_flush_q; ii = ii + 1) begin
+                // 陷阱那拍**整个窗口**的 dst_preg 都可能被 `ret_kill_vld` 放回 (三路
+                // 都带 rf_we&lreg!=0 就是三条全杀, 不只是槽 0) —— 那几条本来就随冲刷
+                // 一起作废, 编号可以再发出去, 所以整段跳过。
+                if (ret_trap_q) continue;
+                if (ii < (n_ret + ret_cnt_q)) continue;
                 if ((alloc_vld0 && (alloc0 == x_dpr[ii])) ||
                     (alloc_vld1 && (alloc1 == x_dpr[ii])) ||
                     (alloc_vld2 && (alloc2 == x_dpr[ii])))
-                    err($sformatf("分配器把在途指令 %0d 的 dst_preg (p%0d) 又发了一遍",
-                                  ii, x_dpr[ii]));
+                    begin
+                        err($sformatf("分配器把在途指令 %0d 的 dst_preg (p%0d) 又发了一遍 | st=%0d rfwe=%b lreg=%0d | 本拍 alloc=%b/%0d,%b/%0d,%b/%0d req=%0d",
+                                      ii, x_dpr[ii], dut.u_preg.st[x_dpr[ii]], x_rfwe[ii], x_lreg[ii],
+                                      alloc_vld0, alloc0, alloc_vld1, alloc1, alloc_vld2, alloc2,
+                                      ren_preg_req));
+                        if (!log_dumped3) begin dump_log(); log_dumped3 = 1'b1; end
+                    end
             end
 
 
+            // ---------- 6b) 空闲计数 == 池子里真 FREE 的个数 ----------
+            // 纯 DUT 侧自洽: 编号总数 96, p0..p31 恒为初始映射且永不回收, 所以
+            // "还剩几个可用" 就是高段里 FREE 的个数。这条是 §6.0 对重命名级的承诺
+            // (剩余可用数), 高报会让对面按高报的数发请求却拿不满编号。
+            begin
+                integer fcnt, fpre;
+                fcnt = 0; fpre = 0;
+                for (int q = 32; q < 96; q = q + 1) begin
+                    if (dut.u_preg.st[q] === `RTU_P_FREE) fcnt = fcnt + 1;
+                    if (st_snap_q[2*q +: 2] === `RTU_P_FREE) fpre = fpre + 1;
+                end
+                if (dut.u_preg.free_cnt !== fcnt[6:0]) begin
+                    string chg;
+                    chg = "";
+                    for (int q = 32; q < 96; q = q + 1)
+                        if (st_snap_q[2*q +: 2] !== dut.u_preg.st[q])
+                            chg = {chg, $sformatf(" p%0d:%0d>%0d", q,
+                                                  st_snap_q[2*q +: 2], dut.u_preg.st[q])};
+                    err($sformatf("空闲计数不符: 计数器=%0d, 实际 FREE=%0d | 本边沿变化:%s | E前 kill=%b flvl=%b fvl=%b old=%0d,%0d,%0d",
+                                  dut.u_preg.free_cnt, fcnt, chg,
+                                  x_retkill_q, x_flvl_q, ret_fv_q,
+                                  ret_fp_q[6:0], ret_fp_q[13:7], ret_fp_q[20:14]));
+                end
+            end
+
+            // ---------- 7) AMT 逐拍等于参考模型 ----------
+            // 边沿前的快照 vs 参考模型 (ref_amt 此刻正好是"上一个事件之后"的值),
+            // 两边同帧。比"只在冲刷那拍比"强得多: 映射一旦发散, 当场就能指出来,
+            // 而不是等到某次冲刷时看到一堆 exp/got 对不上。
+            for (int l = 0; l < 32; l = l + 1)
+                if (amt_snap_q[7*l +: 7] !== ref_amt[l]) begin
+                    err($sformatf("AMT[%0d] 与参考模型不符 (边沿前): exp=%0d got=%0d",
+                                  l, ref_amt[l], amt_snap_q[7*l +: 7]));
+                    if (!log_dumped) dump_log();
+                end
+
             // ---------- 8) 冲刷时间线 (§6.3 ①) ----------
-            case (fl_state)
+            // 对齐口径: 触发那个 posedge 叫 P。`backend_flush`/`ren_flush` 是 **st_q 的组合
+            // 输出**, 所以在 negedge 读实时值是对的 (边沿后的状态) —— 三段分别在
+            // P+5 / P+15 / P+25 的负沿上可见。而"有没有触发"必须用锁存的 ret_iflush_q
+            // (触发本身就是组合量, 读实时值会读到下一个事件)。
+            //
+            // 于是状态号的含义: 1 = P+5 那拍 (T, 后端冲刷), 2 = P+15 那拍 (T+1, 重命名冲刷)。
+            // 触发分支放在最前 (不看 fl_state): DUT 的冲刷状态机是 IDLE→F1→F2→IDLE
+            // 三拍, 但一次冲刷走完的**下一个 posedge** 就允许再触发一次 —— 靠 fl_state
+            // 去括号会把这种背靠背的第二次漏掉, 窗口从此错位 (踩过: 72 条
+            // "beu_flush_chgflw_mask 与冲刷窗口不符")。
+            if (ret_iflush_q) begin
+                n_flush   = n_flush + 1;
+                head_wait = 0;
+                fl_state  = 1;
+                if (!backend_flush) err("冲刷 T 拍应有 rtu_backend_flush");
+            end else case (fl_state)
                 0: begin
-                    if (ifu_chg_vld) begin
-                        fl_state  = 1;
-                        head_wait = 0;
-                        n_flush   = n_flush + 1;
-                    end else if (backend_flush || ren_flush)
+                    if (backend_flush || ren_flush)
                         err("没有触发却出现冲刷信号");
                 end
                 1: begin
-                    if (!backend_flush) err("冲刷 T+1 拍应有 rtu_backend_flush");
-                    fl_state = 2;
-                end
-                2: begin
-                    if (!ren_flush) err("冲刷 T+2 拍应有 rtu_ren_flush");
+                    if (!ren_flush) err("冲刷 T+1 拍应有 rtu_ren_flush");
                     if (!ren_recover_vld) err("ren_flush 那拍必须同时给 recover_vld");
                     for (int l = 0; l < 32; l = l + 1)
                         if (ren_recover_map[7*l +: 7] !== ref_amt[l]) begin
@@ -669,23 +820,34 @@ module tb_rtu_rob;
                                           l, ref_amt[l], ren_recover_map[7*l +: 7]));
                             if (!log_dumped) dump_log();
                         end
-                    fl_state = 3;
+                    fl_state = 2;
                 end
                 default: begin
-                    if (backend_flush || ren_flush) err("冲刷 T+3 拍应该已经结束了");
+                    if (backend_flush || ren_flush) err("冲刷 T+2 拍应该已经结束了");
                     fl_state = 0;
                 end
             endcase
             if ((fl_state != 0) && !disp_stall) err("冲刷窗口内 disp_stall 必须保持");
-            if (beu_mask !== (fl_state != 0)) err("beu_flush_chgflw_mask 与冲刷窗口不符");
-
-            // ---------- 9) 活性 ----------
-            if ((fl_state == 0) && !trap_vld && (n_ret < n_inst)) begin
-                if (x_cmp[n_ret] && !flg_of(n_ret)[`RTU_FLG_STORE] && !int_pending)
-                    head_wait = head_wait + 1;
-                else head_wait = 0;
-                if (head_wait > 8) err($sformatf("指令 %0d 早就完成却不退休", n_ret));
-            end else head_wait = 0;
+            // ⚠️ 不能拿 beu_mask 与 fl_state 逐拍相等: `beu_mask = flushing = flush_trig | ~idle`,
+            //    而 `flush_trig` 是**组合**的提交级信号 —— 它在负沿上可能刚好为 1, 但 DUT
+            //    在那个 posedge 用的输入已经被 TB 换掉, 状态机并不真的进 F1。逐拍相等会
+            //    报一堆假失败 (踩过: 66 条)。
+            //    有牙齿的两条: ① 窗口内必须保持; ② 窗口外只允许"这一拍确实在发起冲刷"
+            //    时拉高 —— 那种情形下一拍一定能从锁存的触发脉冲或 DUT 的 FSM 上看出来。
+            if (((fl_state != 0) || ret_iflush_q) && !beu_mask)
+                err("冲刷窗口内 beu_mask 必须保持");
+            // ⚠️ 只在一两拍上为 1 不算事: TB 在**负沿**换输入, 于是 `flush_trig` 这个
+            //    组合量可能"前半拍为 1、后半拍(被 DUT 采样的那一刻)又变 0" —— 真核里
+            //    输入是同步换的, 不会有这种半拍毛刺。有牙齿的是"一直挂着不放"。
+            if (!ret_iflush_q && !beu_mask && (fl_state == 0) && (dut.u_flush.st_q == `RTU_FSM_IDLE))
+                beu_orphan = 0;
+            else if (beu_mask && !ret_iflush_q && (fl_state == 0) &&
+                     (dut.u_flush.st_q == `RTU_FSM_IDLE)) begin
+                beu_orphan = beu_orphan + 1;
+                if (beu_orphan > 3)
+                    err("beu_flush_chgflw_mask 连续多拍拉高却没有对应的冲刷");
+            end else
+                beu_orphan = 0;
 
             if (trace_on && (n_inst > 17) && (n_inst < 26))
                 $display("        ARR occ=%0d rptr=%0d cptr=%b iid0..7=%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d vld=%b%b%b%b%b%b%b%b | TB n_inst=%0d n_ret=%0d",
@@ -719,10 +881,19 @@ module tb_rtu_rob;
         integer i;
         begin
             vldv = ret_vld_q;                    // 用 posedge 锁存的那一份 (与 DUT 同刻)
+            // ⚠️ 这里连"陷阱是哪一类"都必须用锁存的那一份: `trap_cause` 是**组合**输出,
+            //    没有 trap_hit 时它恒等于 `RTU_CAUSE_MTIP`(默认值)。早先这里读实时值,
+            //    于是每一次**同步**异常都被当成中断处理 —— `n_ret = n_inst` 把整条流
+            //    抹掉 (踩过: 症状是一堆 "退休位置不符 / 释放了 FREE 态")。
             if (ret_trap_q) begin
-                log_evt($sformatf("TRAP n_ret=%0d n_inst=%0d cause=%0d", n_ret, n_inst, trap_cause));
-                if (trap_cause == `RTU_CAUSE_MTIP) begin
-                    n_ret = n_inst;                       // 队头被 squash, 后面全丢
+                log_evt($sformatf("TRAP n_ret=%0d n_inst=%0d cause=%0d", n_ret, n_inst, ret_tcause_q));
+                if (ret_tcause_q == `RTU_CAUSE_MTIP) begin
+                    // ⚠️ 这里**不动 n_ret**: 取中断那拍 `pop_n = 0`, DUT 的 rptr 纹丝不动
+                    //    (ROB 要到 FLUSH_2 才清)。早先在这里 `n_ret = n_inst` 把整条流
+                    //    抹掉, 于是"本圈已退条数"与 DUT 的 rptr 立刻差开, 后面连着几拍
+                    //    的 `退休位置不符` 全是这么来的。被 squash 的那些由 FLUSH 那一刻
+                    //    的整表归零统一处理 (那条路径本来就对)。
+                    int_seen = 1'b1;
                 end else if (vldv[0]) begin
                     // 陷阱那条: 分配过但没写 -> 回 FREE (DUT 侧由 ret_kill_vld 完成)
                     n_ret = n_ret + 1;
@@ -741,17 +912,9 @@ module tb_rtu_rob;
                 end
             end
 
-            if (csr_we)    csr_file[csr_addr] = csr_wdata;
-            if (csr_rd_we) pf[csr_rd_addr]    = csr_rd_wdata;
-
-            if (ret_flush_q) begin
-                log_evt($sformatf("FLUSH n_ret=%0d n_inst=%0d (都归零重来)", n_ret, n_inst));
-                lap_base = n_inst;
-                n_ret    = n_inst;
-                tb_cptr  = 6'd0;
-                tb_cmsb  = 1'b0;
-                // AMT 不因冲刷而变 (它只反映已退休的映射) —— 这正是"恢复靠整表覆盖"的底气。
-            end
+            // 提交点副作用也要用锁存的那一份 (实时值描述的是**下一个**事件, 会写错地址)
+            if (ret_csrwe_q) csr_file[ret_csra_q] = ret_csrw_q;
+            if (ret_csrrd_q) pf[ret_csrra_q]      = ret_csrrw_q;
         end
     endtask
 
@@ -781,11 +944,9 @@ module tb_rtu_rob;
                     //    ARCH 也不释放 —— **漏掉**, 之后被当空闲再发出去 (踩过: 单测台
                     //    第一版就是这么把自由池搅乱的, 表象是 AMT/iid 到处对不上)。
                     pl_lreg[k]  = pl_rfwe[k] ? ({$urandom} % 32) : 5'd0;
-                    // old_preg == 该 lreg **当前的架构映射**: 真机里它一定是"以前发出去、
-                    // 现在正被占用的"那个 preg。随手编一个没分配过的, 退休释放就会往
-                    // 自由池里灌一个莫须有的编号 (池子放水 → 之后又把它发给别人)。
-                    // 首次写某个 lreg 时它是 <32 的初始映射, 正好覆盖"永不回收"那条门控。
-                    pl_opreg[k] = ref_amt[pl_lreg[k]];
+                    // old_preg **不在这里算** —— 见 old_preg_of(): 它要等 D_REQ 那拍
+                    // 拿到 dst_preg 之后才算得出来 (同拍/同计划里的依存要用到它)。
+                    pl_opreg[k] = 7'd0;
                     pl_pc[k]    = {$urandom};
                     pl_chk[k]   = {$urandom} % (1 << 25);
                     pl_val[k]   = {$urandom};
@@ -800,6 +961,18 @@ module tb_rtu_rob;
                     pl_ca[k]=0;  pl_cop[k]=1;  pl_cimm[k]=0; pl_sqi[k]=0;
                 end
             end
+            // §6.1 A7: **一拍最多一条 CSR**。CSR 单槽 (RTU_csr_slot) 只装得下一条,
+            // 组里出现第二条时它既写不进槽、退休时又读到别人的字段 —— 契约只能
+            // 把这条约束放在重命名级 (它看得见整组), 所以这里按契约把年轻的那条降级。
+            begin
+                bit seen_csr = 1'b0;
+                for (int k = 0; k < 3; k = k + 1) begin
+                    if ((k < pl_n) && pl_flg[k][`RTU_FLG_CSR]) begin
+                        if (seen_csr) pl_flg[k][`RTU_FLG_CSR] = 1'b0;
+                        else          seen_csr = 1'b1;
+                    end
+                end
+            end
         end
     endtask
 
@@ -810,6 +983,43 @@ module tb_rtu_rob;
             cc = (tb_cptr + k) & 6'h3f;
             ww = tb_cmsb ^ (((tb_cptr + k) > 63) ? 1'b1 : 1'b0);
             iid_at = {ww, cc};
+        end
+    endfunction
+
+    logic [1:0] g_op_src = 2'd0;    // [诊断] old 是从哪一路来的: 0=RAT 1=同计划更老的车道
+    integer     g_op_idx = -1;
+
+    // -----------------------------------------------------------------------
+    // old_preg = **重命名级的 RAT** 在该 lreg 上的当前值 (§6.1: "被替换的 (来自你自己的 RAT)")。
+    //
+    // ⚠️ 早先这里给的是 `ref_amt[lreg]`, 即**架构映射** —— 那是错的, 只在"同一 lreg 不会
+    //    有两条在途"时才碰巧等价。反例: inst A 写 x8 得 dpr=p50, inst B 再写 x8 时 A 还没
+    //    退休, B 拿到的 old 仍是 p36=A 的 old ⇒ A、B 退休时**都释放 p36**; 第一次是真释放,
+    //    第二次释放的是已经变 FREE 的 p36 —— 症状是 `释放了 FREE 态的 pNN`。
+    //
+    // 也**不要**去"从在途窗口重建" RAT (现场扫一遍 [n_ret, n_inst) 取最年轻的写者):
+    //    那是在替 RTL 复刻语义, 窗口边界慢一拍/陷阱杀编号/冲刷回收各撞过一次。
+    //    老老实实维护一份 ref_rat —— 这正是 §6 点名由重命名级持有的那一份状态。
+    //
+    // 同一份计划里的依存要按程序序串起来: 更老的车道 j<k 若写同一个 lreg, 它的
+    // dst_preg 就是刚锁存的 h_got[j] (那一刻 RAT 还没写进去, 查表查不到)。
+    //
+    // 必须在 D_REQ 那拍调用: 那时 (i) 上一份计划的账已经结完 (disp_step 开头),
+    // RAT 是新的; (ii) h_got 刚锁存好。
+    // -----------------------------------------------------------------------
+    function automatic logic [6:0] old_preg_of(input integer k);
+        begin
+            old_preg_of = 7'd0;
+            g_op_src = 2'd0;  g_op_idx = -1;
+            if (pl_rfwe[k] && (pl_lreg[k] != 5'd0)) begin
+                old_preg_of = ref_rat[pl_lreg[k]];
+                for (int j = 0; j < k; j = j + 1)
+                    if ((j < pl_n) && pl_rfwe[j] &&
+                        (pl_lreg[j] == pl_lreg[k]) && (pl_lreg[j] != 5'd0)) begin
+                        old_preg_of = h_got[j];
+                        g_op_src    = 2'd1;  g_op_idx = j;
+                    end
+            end
         end
     endfunction
 
@@ -830,13 +1040,21 @@ module tb_rtu_rob;
                 i = n_inst;
                 x_pc[i]=cp_pc[k];     x_val[i]=cp_val[k];   x_lreg[i]=cp_lreg[k];
                 x_rfwe[i]=cp_rfwe[k]; x_flg[i]=cp_flg[k];   x_sqi[i]=cp_sqi[k];
-                x_dpr[i]=cp_got[k];
+                // 不写寄存器的车道按契约摆 0 (§6.1 约定 5), 参考流也记 0 —— 这样
+                // "窗口逐字段等于参考流" 比的就是同一条线上的值。
+                x_dpr[i] = (cp_lreg[k] != 5'd0) ? cp_got[k] : 7'd0;
                 x_opr[i]=cp_opreg[k]; x_iid[i]=iid_at(k);
+                x_src[i]=cp_src[k];   x_srcidx[i]=cp_srcidx[k];
                 x_ca[i]=cp_ca[k];     x_cop[i]=cp_cop[k];   x_cim[i]=cp_cimm[k];
+                x_s1[i]=cp_s1[k];
                 x_cmp[i]=1'b0; x_exc[i]=1'b0; x_ec[i]=5'd0; x_etv[i]=32'd0;
                 x_tgt[i]=32'd0; x_tkn[i]=1'b0; x_msp[i]=1'b0; x_rsv[i]=1'b0;
                 n_inst = n_inst + 1;
             end
+            // RAT 更新与"记进参考流"同一个动作、同一个顺序 (老 -> 新), 年轻的覆盖年老的
+            for (int k = 0; k < nd; k = k + 1)
+                if (cp_rfwe[k] && (cp_lreg[k] != 5'd0))
+                    ref_rat[cp_lreg[k]] = cp_got[k];
             if (nd > 0)
                 log_evt($sformatf("DISP n_inst=%0d nd=%0d iid0=%0d got0=%0d lreg0=%0d",
                                   n_inst, nd, iid_at(0), cp_got[0], cp_lreg[0]));
@@ -853,6 +1071,23 @@ module tb_rtu_rob;
     task automatic disp_step;
         int nd;
         begin
+            // ---- 冲刷记账 (必须排在**最前**, 早于下面任何一次用 n_ret/n_inst 的判断) ----
+            // ⚠️ 这一条踩过: DUT 在 FLUSH_2 那个 posedge 就把 ROB 清了 (非 ARCH 全回 FREE),
+            //    而 TB 要等 ret_flush_q 锁存出来才看得到 —— 中间那一拍 FSM 已经在 D_IDLE
+            //    重新起了一份计划, 于是 old_preg_of() 会把**已经被冲掉**的指令当成在途,
+            //    拿它那个已经变 FREE 的 dst_preg 去释放 (症状: 释放了 FREE 态的 pN)。
+            //    放在这里 = 保证"记的账"永远不晚于"用它的人"。
+            if (ret_flush_q) begin
+                log_evt($sformatf("FLUSH n_ret=%0d n_inst=%0d (都归零重来)", n_ret, n_inst));
+                lap_base = n_inst;
+                n_ret    = n_inst;
+                tb_cptr  = 6'd0;
+                tb_cmsb  = 1'b0;
+                // AMT 不因冲刷而变 (它只反映已退休的映射) —— 这正是"恢复靠整表覆盖"的底气。
+                // RAT 则**必须**整表覆盖回架构映射: 被冲掉的那些写者没了 (§6 的约定 4)。
+                for (int l = 0; l < 32; l = l + 1) ref_rat[l] = ref_amt[l];
+            end
+
             // ---- 结算上一拍摆上口的派遣 (与状态机走到哪个分支无关!) ----
             // ⚠️ 这一步**必须**独立于状态路径: 有一次派遣自己引出的 csr_inflight 会把
             //    状态机顶回 IDLE, 结算若只写在 D_REQ 分支里, 那次派遣就永远记不上账
@@ -870,13 +1105,14 @@ module tb_rtu_rob;
             if (ren_flush) begin
                 // 冲刷: 挂着的编号由 DUT 在 FLUSH_2 放回, 模型里一并清掉
                 h_gotv = 3'd0; pl_n = 0; cp_n = 0; commit_pending = 1'b0;
-                d_arm = 1'b0;
+                d_arm = 1'b0; al_arm = 1'b0;
                 dstate = D_IDLE;
             end else begin
                 case (dstate)
                     D_IDLE: begin
                         if (!disp_stall) begin
                             gen_plan();                 // 第一份计划
+                            al_arm = 1'b1;              // 请求这拍结束的 posedge 采编号
                             dstate = D_REQ;
                         end
                     end
@@ -889,16 +1125,32 @@ module tb_rtu_rob;
                             pl_n = 0; h_gotv = 3'd0;
                             dstate = D_IDLE;
                         end else begin
-                        // (b) 再锁存**本份**计划拿到的编号
-                        h_got[0] = alloc_vld0 ? alloc0 : 7'd0;
-                        h_got[1] = alloc_vld1 ? alloc1 : 7'd0;
-                        h_got[2] = alloc_vld2 ? alloc2 : 7'd0;
-                        h_gotv   = {alloc_vld2, alloc_vld1, alloc_vld0};
+                        // (b) 取**上一拍 posedge 采下来的那份**编号 (见 al_arm)
+                        h_got[0] = s_got[0];
+                        h_got[1] = s_got[1];
+                        h_got[2] = s_got[2];
+                        h_gotv   = s_gotv;
+                        // (c) **现在**才算 old_preg: 要 (i) 上一份计划的账已经结完
+                        //     (②在 disp_step 开头, 本分支之前), (ii) 本份计划的 dst_preg
+                        //     刚锁存好 —— 两者只有在这一拍同时成立。放在 gen_plan 里算
+                        //     会看到一份还没入账的在途流 (单测台的 old_preg 就是这么错的)。
+                        for (int k = 0; k < 3; k = k + 1) begin
+                            pl_opreg[k] = old_preg_of(k);
+                            pl_src[k]   = g_op_src;
+                            pl_srcidx[k]= g_op_idx;
+                        end
                         d_arm  = 1'b1;
                         dstate = D_DISP;
                         end
                     end
                     default: begin                     // D_DISP: 本拍把派遣摆在口上
+                        // [不变量] 确认过的车道, 编号必须正好走到 ALLOC ——
+                        // 停在 WF_ALLOC 说明派遣没被认领, 已经是 ARCH/FREE 说明握手错位。
+                        for (int k = 0; k < 3; k = k + 1)
+                            if (acc_q[k] && (pl_lreg[k] != 5'd0) &&
+                                (dut.u_preg.st[h_got[k]] !== `RTU_P_ALLOC))
+                                err($sformatf("派出的车道编号不在 ALLOC 态: 车道 %0d p%0d st=%0d",
+                                              k, h_got[k], dut.u_preg.st[h_got[k]]));
                         cp_n       = pl_n;             // 留给下一拍结算
                         cp_got[0]  = h_got[0];
                         cp_got[1]  = h_got[1];
@@ -909,14 +1161,18 @@ module tb_rtu_rob;
                             cp_rfwe[k]=pl_rfwe[k]; cp_flg[k]=pl_flg[k]; cp_opreg[k]=pl_opreg[k];
                             cp_s1[k]=pl_s1[k];     cp_ca[k]=pl_ca[k];   cp_cop[k]=pl_cop[k];
                             cp_cimm[k]=pl_cimm[k]; cp_sqi[k]=pl_sqi[k]; cp_val[k]=pl_val[k];
+                            cp_src[k]=pl_src[k];   cp_srcidx[k]=pl_srcidx[k];
                         end
                         commit_pending = 1'b1;
                         if (disp_stall) begin
                             pl_n = 0; dstate = D_IDLE; // stall 时不再往下发
                         end else begin
                             gen_plan();                // 下一份 (下一拍在 D_REQ 里请求)
-                            dstate = D_REQ;
-                        end
+                            al_arm = 1'b1;             // ⚠️ 这里**也要**上膛!
+                            dstate = D_REQ;            //    流水式推进 (D_DISP→D_REQ) 时不经过
+                        end                            //    D_IDLE, 漏了这一行就会一直用**上一份**
+                                                       //    计划的编号 (踩过: 症状是反复拿同一个
+                                                       //    早已变 ARCH 的编号, 一路顶到双份发出)
                     end
                 endcase
             end
@@ -970,6 +1226,20 @@ module tb_rtu_rob;
         rptr_msb_prev = dut.u_rob.rptr_msb;
         pop_prev      = ret_cnt_q;   // 用 posedge 锁存的那份 (DUT 边沿上用的就是它)
 
+        // ---------- 4a2) ROB 占用数 == 参考流在途条数 ----------
+        // 派遣记账与退休记账的**总账**: 只要有一笔记错 (多记/漏记), 这里当场发散。
+        // ⚠️ DUT 在派遣那个 posedge 就建表项, 参考流要下一拍才记账 —— 中间那一拍
+        //    要把 `commit_pending` 挂着的条数算进来, 否则从第一拍起就误报。
+        begin
+            integer pend;
+            pend = 0;
+            if (commit_pending)
+                pend = {2'b0, acc_q[0]} + {2'b0, acc_q[1]} + {2'b0, acc_q[2]};
+            if (dut.u_rob.occ_q !== (n_inst - n_ret + pend))
+                err($sformatf("ROB 占用数不符: DUT=%0d, 参考流在途=%0d (n_inst=%0d n_ret=%0d pend=%0d)",
+                              dut.u_rob.occ_q, n_inst - n_ret, n_inst, n_ret, pend));
+        end
+
         // ---------- 4b) 退休指针: DUT 的 {msb,rptr} 必须等于"本圈已退休条数" ----------
         // 这是把参考流与 DUT 的退休位置直接钉在一起的不变量 (带本圈基准, 免得把
         // 全局指令号与圈内位置混在一起)。它一旦不发散, 后面那些 iid/完成信号
@@ -997,6 +1267,23 @@ module tb_rtu_rob;
             end
         end
         end
+
+        // ---------- 活性: 队头完成了却迟迟不退 ----------
+        // ⚠️ 必须排在**记账之后**: 这里问的是"现在的那个队头"。放在 check_cycle 里
+        //    量的是上一拍的头 —— 某一拍正好把在途的都退完时, n_ret 还落在后面, 于是
+        //    把"已经退干净了"误判成"卡住" (踩过)。冲刷窗口用 DUT 自己的口径
+        //    (beu_mask == flushing, 含"这一拍正在发起冲刷"), 而不是 TB 的 fl_state
+        //    —— 后者少盖一拍, 会把正当的冲刷窗口算成卡住。
+        if (!beu_mask && !ret_iflush_q && (n_ret < n_inst)) begin
+            if (x_cmp[n_ret] && !flg_of(n_ret)[`RTU_FLG_STORE] && !int_pending)
+                head_wait = head_wait + 1;
+            else head_wait = 0;
+            if (head_wait > 8) begin
+                err($sformatf("指令 %0d 早就完成却不退休", n_ret));
+                head_wait = 0;
+            end
+        end else head_wait = 0;
+
     endtask
 
     task automatic gen_complete;
@@ -1011,6 +1298,11 @@ module tb_rtu_rob;
                 span = n_ready - n_ret;
                 pick = n_ret + ({$urandom} % span);
                 if (x_cmp[pick]) continue;
+                // ⚠️ **分支必须先把解析结果写回表项, 才能报完成** (§6.1 的 resolve/cmplt 次序)。
+                //    否则会出现"完成信号先到、resolve 后到, 而这条正好在这拍退休" ——
+                //    ROB 判退用的是**边沿前**的表项, 于是它按"没误预测"退掉, 重定向就丢了。
+                //    真机里 BEU 也是同拍出结果+完成, 不存在"完成了还没解析"的分支。
+                if (x_flg[pick][`RTU_FLG_BRANCH] && !x_rsv[pick]) continue;
                 case (done_cnt)
                     0: begin cv0=1; ci0=x_iid[pick]; end
                     1: begin cv1=1; ci1=x_iid[pick]; end
@@ -1042,6 +1334,7 @@ module tb_rtu_rob;
                 rsv_taken = {$urandom} % 2;
                 rsv_misp  = (({$urandom} % 100) < 60);
                 rsv_tgt   = {$urandom};
+                log_evt($sformatf("RESV inst=%0d iid=%0d misp=%b tgt=%08x", pick, x_iid[pick], rsv_misp, rsv_tgt));
                 x_rsv[pick] = 1'b1;
                 x_tkn[pick] = rsv_taken;
                 x_msp[pick] = rsv_misp;
@@ -1063,6 +1356,11 @@ module tb_rtu_rob;
             ex_vld   = 1'b1;
             ex_iid   = x_iid[pick];
             ex_cause = 5'd2 + ({$urandom} % 10);
+            // ⚠️ 同步异常的 cause 不能撞上 `RTU_CAUSE_MTIP` (=7): DUT 的 trap_cause 是
+            //    二选一 (trap_hit ? expt_cause : MTIP), 参考模型只能靠这个值区分
+            //    "同步异常"和"取中断"。撞上就会把一次同步异常当成中断 (n_ret = n_inst,
+            //    整条流抹掉)。换一个等价的非 7 值, 覆盖度不变。
+            if (ex_cause == `RTU_CAUSE_MTIP) ex_cause = 5'd12;
             ex_tval  = {$urandom};
             x_exc[pick] = 1'b1;
             x_ec[pick]  = ex_cause;
@@ -1078,6 +1376,7 @@ module tb_rtu_rob;
         int nd;
         begin
             @(negedge clk);
+            int_seen = 1'b0;
 
             check_cycle();      // 用"上一拍驱动的输入 + 本拍输出"检查
 
@@ -1086,6 +1385,16 @@ module tb_rtu_rob;
             disp_step();
 
             ref_retire();       // 本拍的退休 / 提交 / 冲刷
+
+            if (trace_on && ($time > 550) && ($time < 660))
+                $display("    DBG@%0t live_vld=%b retq=%b n_ret=%0d n_inst=%0d rptr=%0d pop=%0d w0v=%b w0c=%b w1v=%b w1c=%b st=%0d trig=%b trap=%b int=%b ok=%b%b%b ip=%b rdy0=%b sqst=%b exv=%b exiid=%0d w0iid=%0d",
+                         $time, {cmv2,cmv1,cmv0}, ret_vld_q, n_ret, n_inst,
+                         dut.u_rob.rptr, dut.u_rob.pop_n,
+                         dut.u_rob.win_q0[`RTU_E_VLD], dut.u_rob.win_q0[`RTU_E_CMPLT],
+                         dut.u_rob.win_q1[`RTU_E_VLD], dut.u_rob.win_q1[`RTU_E_CMPLT],
+                         dut.u_flush.st_q, dut.u_commit.flush_trig, dut.u_commit.trap_hit,
+                         dut.u_commit.int_take, dut.u_commit.ok0, dut.u_commit.ok1, dut.u_commit.ok2,
+                         int_pending, sq_rdy0, sq_stall, ex_vld, ex_iid, dut.u_rob.win_iid0);
 
             check_after_retire();   // 指针位置 / iid 约定 (必须在记账之后比)
 
@@ -1096,7 +1405,12 @@ module tb_rtu_rob;
             gen_complete();
             gen_resolve();
             gen_expt();
-            int_pending = allow_int && (({$urandom} % 100) < 5);
+            // 中断请求按**电平**建模: 置起来之后一直保持到被取走 —— 真机的 mip.MTIP
+            // 就是这样, 不会自己消失 (早先按 5% 随机脉冲建模, 跑到最后经常一次都
+            // 没被取到, 验收里的"中断覆盖"随机地过不了)。
+            if (!allow_int)        int_pending = 1'b0;
+            else if (int_seen)     int_pending = 1'b0;
+            else if (!int_pending) int_pending = (({$urandom} % 100) < 20);
             sq_rdy0 = (({$urandom} % 100) < 90);
             sq_rdy1 = (({$urandom} % 100) < 90);
             sq_rdy2 = (({$urandom} % 100) < 90);
@@ -1130,7 +1444,10 @@ module tb_rtu_rob;
 
         for (int a = 0; a < 4096; a = a + 1) csr_file[a] = {$urandom};
         for (int p = 0; p < 96;   p = p + 1) pf[p] = {$urandom};
-        for (int l = 0; l < 32;   l = l + 1) ref_amt[l] = l[6:0];
+        for (int l = 0; l < 32;   l = l + 1) begin
+            ref_amt[l] = l[6:0];
+            ref_rat[l] = l[6:0];       // RAT 初值 = 架构映射
+        end
 
         $display("==================================================");
         $display("  RTU 单元 TB: seed=%0d 目标指令数=%0d", seed, n_target);
