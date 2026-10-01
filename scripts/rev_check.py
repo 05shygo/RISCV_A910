@@ -54,6 +54,7 @@ class Mut(object):
     def __init__(self, mid, name):
         self.mid, self.name = mid, name
         self.file = None
+        self.build = "core"          # core = 整核; unit = 单元单测台 (obj_unit_rtu)
         self.tests = []
         self.note = ""
         self.before = None
@@ -104,6 +105,8 @@ def parse_manifest(path):
             continue                      # 文件头注释
         elif s.startswith("file:"):
             cur.file = s.split(":", 1)[1].strip()
+        elif s.startswith("build:"):
+            cur.build = s.split(":", 1)[1].strip()
         elif s.startswith("tests:"):
             cur.tests = s.split(":", 1)[1].split()
         elif s.startswith("note:"):
@@ -190,13 +193,49 @@ def env_clean():
     return e
 
 
-def build(tag):
+UNIT_SIMV = os.path.join(ROOT, "obj_unit_rtu", "simv")
+
+
+def build(tag, kind="core"):
     log = os.path.join(LOG_DIR, "build_%s.log" % tag)
+    if kind == "unit":
+        # 只编不跑: rtu-unit 那条规则会顺带跑仿真, 这里只要 simv。
+        # ⚠️ 必须**先删掉 simv**: 本机的文件时间戳会漂到未来 (make 会警告
+        #    "has modification time NNN s in the future"), 于是 `make` 认为
+        #    simv 比刚改过的 RTL 还新, 直接 "Nothing to be done" —— 变异一条也
+        #    没进仿真, 四条全部"幸存"(实测踩过)。
+        if os.path.exists(UNIT_SIMV):
+            os.unlink(UNIT_SIMV)
+        # ⚠️ 目标名必须是**绝对路径**: Makefile 里是 `$(PWD)/obj_unit_rtu/simv`,
+        #    写成相对名 make 会报 "No rule to make target"。
+        cmd = ["make", UNIT_SIMV]
+    else:
+        cmd = ["make", "IFU=" + IFU, "BUILD_DIR=" + BUILD_DIR, "build"]
     with open(log, "w") as fh:
-        rc = subprocess.call(
-            ["make", "IFU=" + IFU, "BUILD_DIR=" + BUILD_DIR, "build"],
-            cwd=ROOT, stdout=fh, stderr=subprocess.STDOUT, env=env_clean())
+        rc = subprocess.call(cmd, cwd=ROOT, stdout=fh,
+                             stderr=subprocess.STDOUT, env=env_clean())
     return rc
+
+
+def run_unit(tag, seed=12345678, ninstr=200):
+    """单元单测台。判据与整核同构: 不过 -> 非 0 退出 (TB 末尾 $fatal)。
+    抓到的签名 = 任意一条 *** FAIL (逐拍比对/不变量/覆盖)。"""
+    log = os.path.join(LOG_DIR, "%s_rtu_unit.log" % tag)
+    args = [UNIT_SIMV, "+vcs+lic+wait", "+SEED=%d" % seed,
+            "+NINSTR=%d" % ninstr, "-exitstatus", "-l", log]
+    subprocess.call(args, cwd=ROOT,
+                    stdout=open(os.devnull, "w"), stderr=subprocess.STDOUT,
+                    env=env_clean())
+    txt = open(log, encoding="utf-8", errors="replace").read() if os.path.exists(log) else ""
+    return classify_unit(txt), txt, log
+
+
+def classify_unit(txt):
+    if "ALL PASS" in txt:
+        return "PASS"
+    if "*** FAIL" in txt or "ERRORS" in txt:
+        return "TestPoint"
+    return "UNKNOWN"
 
 
 def link_images(test):
@@ -318,13 +357,18 @@ def main():
 
     # ---- 1) 未变异基线: 每个用到的用例都必须 PASS ----
     all_tests = sorted({t for m in muts for t in m.tests})
+    kinds = sorted({m.build for m in muts})
     print("\n[基线] 未变异, 确认这些用例本身是过的: %s" % " ".join(all_tests))
-    if build("base") != 0:
-        print("基线编译失败, 退出"); return 2
     base = {}
     bad = []
+    for k in kinds:
+        if build("base_" + k, k) != 0:
+            print("基线编译失败 (%s), 退出" % k); return 2
     for t in all_tests:
-        res, txt, _ = run_test(t, "base")
+        if t == "rtu_unit":
+            res, txt, _ = run_unit("base")
+        else:
+            res, txt, _ = run_test(t, "base")
         base[t] = (res, metrics(txt or ""))
         print("   %-14s %s" % (t, res))
         if res != "PASS":
@@ -383,13 +427,16 @@ def run_mutations(muts, base):
         t0 = time.time()
         orig = apply_mut(m)
         try:
-            if build(m.mid) != 0:
+            if build(m.mid, m.build) != 0:
                 rows.append((m, {t: "BUILD_FAIL" for t in m.tests}, 0))
                 print("      编译失败 —— 变异本身不合法, 记 BUILD_FAIL")
                 continue
             results = {}
             for t in m.tests:
-                res, txt, _ = run_test(t, m.mid)
+                if t == "rtu_unit":
+                    res, txt, _ = run_unit(m.mid)
+                else:
+                    res, txt, _ = run_test(t, m.mid)
                 if t in BENCH_TESTS:
                     # 预测器类: 判据是指标有没有动
                     moved = metrics(txt or "") if txt else []

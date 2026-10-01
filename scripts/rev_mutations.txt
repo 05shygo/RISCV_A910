@@ -389,3 +389,74 @@ BEFORE
 <<<AFTER
   assign bht_wr_buf_sel_updt_index[6:0] = cur_cur_pc[9:4];
 AFTER
+
+
+# ---------------------------------------------------------------------------
+# R. 退休单元 (mySoC/rtu/rtl/*.v) —— 判据是独立单测台 tb/unit/tb_rtu_rob.sv
+#
+#    `build: unit` 让驱动走 "make obj_unit_rtu/simv" + 直接跑单元 simv。
+#    单测台不看整核的 Test Point Pass, 它自己的签名是文件里的 `*** FAIL`
+#    (逐拍比对 / 硬不变量 / 覆盖) 加上末尾的 `$fatal` -> 非 0 退出。
+#    这几条守的都是"整核 difftest 里只表现成某条指令结果不对、根本定位不到"的机制。
+# ---------------------------------------------------------------------------
+
+### R01 rtu_old_preg_gate_dropped
+file:  mySoC/rtu/rtl/RTU_commit.v
+build: unit
+tests: rtu_unit
+note:  退休释放 `old_preg` 时的 `>= 32` 门控 (D2 里标"最容易漏的一行")。
+       p0..p31 是 x0..x31 的**初始映射, 永不回收** —— 拿掉门控,
+       第一次写 x1 就把 p1 放回自由池, 之后某个 x1 的读者拿到别人的数据。
+       单测台抓它的判据: "释放了架构寄存器 p0..p31" + 空闲计数/AMT 立刻发散。
+<<<BEFORE
+    assign ret_free_vld = wr_eff & { (old2[6:5] != 2'b00),
+                                     (old1[6:5] != 2'b00),
+                                     (old0[6:5] != 2'b00) };
+BEFORE
+<<<AFTER
+    assign ret_free_vld = wr_eff;
+AFTER
+
+### R02 rtu_flush_keeps_alloc
+file:  mySoC/rtu/rtl/RTU_preg.v
+build: unit
+tests: rtu_unit
+note:  冲刷 (FLUSH_2) 要把非 ARCH 的编号全部放回 FREE —— 这是"被冲掉的指令
+       占着的编号不能永久泄漏"的唯一出口。把这一条去掉, 自由池只进不出,
+       真核里几十次误预测之后 preg_short 卡死派遣 (单测台里也能量到:
+       空闲计数与真实 FREE 数立刻差开)。
+<<<BEFORE
+                nst[i] = (st[i] == `RTU_P_ARCH) ? `RTU_P_ARCH : `RTU_P_FREE;
+BEFORE
+<<<AFTER
+                nst[i] = st[i];
+AFTER
+
+### R03 rtu_flush_keeps_expt
+file:  mySoC/rtu/rtl/RTU.v
+build: unit
+tests: rtu_unit
+note:  冲刷 T+1 拍清 `expt_entry.vld`。不清的话, 被冲掉的那条异常会**留在
+       单槽里**, 等下一次有指令走到队头时凭空陷入 (tval/cause 全是上一条的)。
+       单测台抓它的判据: "凭空陷入: 指令 N 没注入异常" / 陷阱 cause 不符。
+<<<BEFORE
+        .expt_clr       (expt_clr),
+BEFORE
+<<<AFTER
+        .expt_clr       (1'b0),
+AFTER
+
+### R04 rtu_retire_width_ignores_trap
+file:  mySoC/rtu/rtl/RTU_commit.v
+build: unit
+tests: rtu_unit
+note:  退休宽度: 陷阱只退到它自己为止 (pop_n=1), 取中断那一拍退 0。
+       去掉这两个特判, ROB 会越过陷阱那条继续往外退 (指针与提交脉冲当场错位),
+       而且后面那些指令是"不该退休的被退了", 架构状态直接错。
+       单测台抓它的判据: "retire_cnt 与提交脉冲不符" / "陷阱那拍应只退到它为止"。
+<<<BEFORE
+    assign pop_n      = int_take ? 2'd0 : trap_hit ? 2'd1 : pop_pre;
+BEFORE
+<<<AFTER
+    assign pop_n      = pop_pre;
+AFTER
