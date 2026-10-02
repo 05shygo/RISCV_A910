@@ -161,7 +161,9 @@ wire        rtu_resolve_taken;
 wire        rtu_resolve_mispred;
 wire [31:0] rtu_resolve_target;
 wire        rtu_int_pending;
-wire        rtu_ifu_flush;             // ← RTU 实例驱动 (陷阱/中断/mret/误预测退休)
+wire        rtu_ifu_flush;             // ← RTU 实例驱动 (陷阱/中断/mret; D13 后误预测不发)
+wire        rtu_core_redirect;         // ← RTU 实例驱动: 核内重定向事件 (四类源都算)
+wire        beu_redirect_vld;          // → RTU: EX 级真的发出误预测重定向的那一拍
 wire        rtu_ifu_chgflw_vld;
 wire [31:0] rtu_ifu_chgflw_pc;
 wire        wb_irq_safe;               // 给 difftest: 这一拍是不是"取中断的沿"
@@ -266,12 +268,19 @@ end
 // 时序与改动前**同拍**: 指令在 MEM 那拍报异常/完成, 下一拍 (它的 WB 拍) 是
 // 退休判决拍 —— 与旧的 `wb_exc` 落在同一拍, 所以周期数不变。
 // ---------------------------------------------------------------------------
-// 重定向: 同步异常 / 中断入口 / mret / 误预测退休, 四者都要求"跳到别处 +
-// 冲掉年轻指令"。由 RTU 的慢路状态机在退休拍发出 (§6.3 ⑨), 单拍脉冲。
-// 误预测**也要**走这一路: 从 BEU 的执行级快路重定向到这条分支退休之间,
-// 前端已经派出若干条"拿着未恢复的 RAT 改名"的指令, 必须一起冲掉并从真实
-// 目标重取 —— 详见 §6.3 ⑨ 的长注。
-wire redirect    = rtu_ifu_flush;
+// 核内重定向事件: 同步异常 / 中断入口 / mret / **误预测退休**, 四者都要求
+// "冲掉年轻指令"(冲 IF_ID/ID_EX/EX_MEM、按掉 store 写使能、CSR 静默、训练门控)。
+// 由 RTU 的慢路状态机在退休拍发出, 单拍脉冲。
+//
+// ⚠️ **D13 (2026-10-02): 这一根与"重启前端"分开了。**
+//    以前 `redirect = rtu_ifu_flush`, 一根干两件事。D13 之后两者对**误预测**取值不同:
+//      * `rtu_core_redirect` (本根) —— 误预测**仍然要拉**: 后端与 IDU 里更年轻的指令
+//        必须冲掉, 而且它按着 store 的写使能 (见下面的 mem_ram_we)。
+//      * `rtu_ifu_flush` / `rtu_ifu_chgflw_vld` —— 误预测**不再拉**: 前端在 BEU 的
+//        执行级重定向那拍就已经被送到真实目标, 再重启一次就是"重取两次"(阶段 1
+//        实测 +4.66% 周期)。配套的是 `beu_redirect_vld` → RTU 把派遣从那一拍起冻住。
+//    合成一根的症状: 错误路径的 store 会写进内存 (mem_ram_we 的 ~redirect 失效)。
+wire redirect    = rtu_core_redirect;
 wire [31:0] redirect_pc = rtu_ifu_chgflw_pc;
 
 // 有效的寄存器写使能: 陷阱指令不写 rd(非对齐 load 的 rf_we=1 必须按掉),
@@ -897,6 +906,14 @@ assign branched = mispredict;
 assign iu_ifu_chgflw_vld = mispredict & ~redirect & ~rtu_beu_flush_chgflw_mask;
 assign iu_ifu_chgflw_pc  = actual_npc;
 
+// D13: 把"EX 级**真的**发出了误预测重定向"告诉 RTU。它据此把一个锁存位置起,
+// 与冲刷窗口一起把派遣一直冻到 F2 —— 否则前端会在"重定向到该分支退休"之间
+// 派出若干条拿着**未恢复的 RAT** 改名出来的指令, 只能在退休时冲掉、再从同一个
+// 目标重取一次 (阶段 1 实测 +4.66% 周期)。
+// ⚠️ 冻结窗口的另一半 — "误预测退休时不再重启前端" — 在 RTU_flush 里 (D13 ②)。
+//    只做这一半不做那一半, 就只是把重取推迟, 白花冻结。
+assign beu_redirect_vld = iu_ifu_chgflw_vld;
+
 // ===================== BHT 训练反馈 =====================
 // 一条条件分支在 EX 解析出结果就回送一次, 不论预测对错 —— 方向表靠这个训练,
 // 只报误预测的话预测正确的分支永远学不到. 用 ex_npc_op==BRANCH 而不是
@@ -1335,12 +1352,15 @@ RTU u_rtu (
     .csr_mepc        (csr_mepc),
 
     // ===================== 输出 =====================
-    // ---- 前端重定向 (陷阱/中断/mret/误预测退休) ----
+    // ---- 前端重定向 (陷阱/中断/mret; D13 后误预测不发) ----
     .rtu_ifu_flush      (rtu_ifu_flush),
     .rtu_ifu_chgflw_vld (rtu_ifu_chgflw_vld),
     .rtu_ifu_chgflw_pc  (rtu_ifu_chgflw_pc),
-    // ---- BEU: 冲刷窗口里屏蔽再发重定向 ----
+    // ---- 核内重定向事件 (四类源都算, 含误预测) —— 驱动上面的 `redirect` ----
+    .rtu_core_redirect  (rtu_core_redirect),
+    // ---- BEU: 冲刷窗口里屏蔽再发重定向 + D13 的"EX 真的发了重定向"回执 ----
     .rtu_beu_flush_chgflw_mask (rtu_beu_flush_chgflw_mask),
+    .beu_redirect_vld   (beu_redirect_vld),
     // ---- 重命名级: 阶段 1 只消费派遣停顿与派遣回执 ----
     .rtu_disp_stall (rtu_disp_stall),
     .rtu_disp_vld0  (rtu_disp_vld0),

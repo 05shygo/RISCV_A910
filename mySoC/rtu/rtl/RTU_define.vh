@@ -40,10 +40,12 @@
 `define RTU_ROB_FULL_TH (`RTU_ROB_DEPTH - `RTU_ROB_RSV)   // 占用 >= 60 即 full
 
 // ---- flush 相关 (D11) ----
-`define RTU_FLUSH_LAT   2           // 冲刷状态机拍数: F1 -> F2 -> IDLE
+// ⚠️ 2026-10-02: F1/F2 合成一拍 ⇒ 状态数从 3 降到 2 (IDLE -> F1 -> IDLE),
+//    派遣冻结 3 拍 -> 2 拍, CoreMark 实测 +1.48%。见 RTU_flush.v 的 FSM 长注。
+`define RTU_FLUSH_LAT   1           // 冲刷状态机拍数 (F1 那一级); 全部动作都在这拍
 `define RTU_FSM_IDLE    2'd0
 `define RTU_FSM_F1      2'd1
-`define RTU_FSM_F2      2'd2
+`define RTU_FSM_F2      2'd2        // ⚠️ **已废弃**: 合成一拍后不再使用 (留着只占编码, 无人引用)
 
 // ---- disp_flags 的位序 (§6.1, 5 位) ----
 `define RTU_FLG_BRANCH  0

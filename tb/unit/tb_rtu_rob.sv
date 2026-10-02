@@ -89,6 +89,7 @@ module tb_rtu_rob;
     wire [31:0]  ifu_trn_pc;
     wire [24:0]  ifu_trn_chk;
     wire         backend_flush;
+    wire         core_redirect;
     wire [6:0]   beu_retire_iid;
     wire         beu_mask;
     wire         disp_stall;
@@ -160,11 +161,20 @@ module tb_rtu_rob;
         .preg_rdata0(prdata0), .preg_rdata1(prdata1), .preg_rdata2(prdata2),
         .rtu_csr_src_rdata(csrsrc_rdata),
         .csr_trap_vector(csr_tvec), .csr_mepc(csr_mepc_i),
+        // D13: EX 级误预测重定向的通知 (核心侧 = iu_ifu_chgflw_vld)。
+        // ⚠️ **本台恒 0** —— 它是 BEU↔RTU 之间的"执行级"事件, 而本台是纯退休级
+        //    激励, 没有"某条分支在 EX 解析出误预测"这个概念。所以:
+        //    * 恒 0 ⇒ mispred_pend 恒 0 ⇒ 本台行为与加这根线之前**逐位一致**;
+        //    * **代价: 新增的"冻结窗口提前"这一段在本台没有覆盖**。它由整核的
+        //      difftest + 47 用例 + CoreMark 指令数守 (见 doc §7 阶段 4a-②)。
+        //    真要在这里测, 得让本台能"脉冲一下、并保证之后必定有一次冲刷", 那是
+        //    另一件事 (记在 §7 的待办里)。
+        .beu_redirect_vld(1'b0),
         .rtu_ifu_flush(ifu_flush), .rtu_ifu_chgflw_vld(ifu_chg_vld),
         .rtu_ifu_chgflw_pc(ifu_chg_pc),
         .rtu_ifu_train_vld(ifu_trn_vld), .rtu_ifu_train_pc(ifu_trn_pc),
         .rtu_ifu_train_chk(ifu_trn_chk), .rtu_ifu_train_taken(ifu_trn_taken),
-        .rtu_backend_flush(backend_flush),
+        .rtu_backend_flush(backend_flush), .rtu_core_redirect(core_redirect),
         .rtu_beu_retire_iid(beu_retire_iid), .rtu_beu_flush_chgflw_mask(beu_mask),
         .rtu_disp_stall(disp_stall),
         .rtu_ren_recover_vld(ren_recover_vld), .rtu_ren_recover_map(ren_recover_map),
@@ -329,6 +339,9 @@ module tb_rtu_rob;
 
     logic [31:0] ret_epc_q = 32'd0, ret_tval_q = 32'd0;
     logic        ret_mret_q = 1'b0, ret_iflush_q = 1'b0, ret_bflush_q = 1'b0;
+    logic        ret_ifu_vld_q = 1'b0;   // D13: DUT 这一拍有没有重启前端
+    logic [223:0] ret_rmap_q;            // 恢复广播的锁存 (F1/F2 合并后只维持一拍)
+    logic        ret_rvld_q = 1'b0;
     logic [31:0] ret_ipc_q = 32'd0;
     logic [2:0]  ret_sw_q = 3'd0;
     logic [8:0]  ret_sqid_q = 9'd0;
@@ -365,8 +378,23 @@ module tb_rtu_rob;
         ret_flush_q  <= ren_flush;
         ret_epc_q    <= trap_epc;    ret_tval_q <= trap_tval;
         ret_mret_q   <= mret_vld;
-        ret_iflush_q <= ifu_chg_vld; ret_ipc_q  <= ifu_chg_pc;
+        // D13: `ret_iflush_q` 的口径 = "**触发了一次冲刷**" ⇒ 用 `core_redirect`
+        //      (= 退休拍的 flush_trig, 四类源都算)。
+        //      ⚠️ 改前它与 `ifu_chg_vld` 是**同一根** (那时误预测也拉前端重定向,
+        //      两者逐位相同), 所以本台下游 (冲刷时间线 / beu_mask / 误预测目标检查)
+        //      都拿它当"有没有冲刷"。D13 之后两者对误预测取值不同 —— 若这里还接
+        //      `ifu_chg_vld`, 检查 #4 (误预测重定向目标) 会**静默变成空检查**
+        //      (n_misp 永远 0), 不再报错也不再验证。
+        ret_iflush_q <= core_redirect;
+        // 反向的那一半: DUT 到底有没有重启前端。只有误预测时它必须为 0 (见守卫)。
+        ret_ifu_vld_q <= (ifu_flush | ifu_chg_vld);
+        ret_ipc_q  <= ifu_chg_pc;
         ret_bflush_q <= backend_flush;
+        // 2026-10-02 (F1/F2 合成一拍): 恢复广播现在只维持一拍, 而"要跟模型比"的
+        // ref_amt 要到**下一次负沿的 ref_retire() 之后**才含本拍退休 ⇒ 广播的
+        // 内容必须先锁存, 到下一拍再比 —— 否则就是"锁存的 vs 实时的"两帧混用。
+        ret_rmap_q   <= ren_recover_map;
+        ret_rvld_q   <= ren_recover_vld;
         ret_sw_q     <= {store_vld2, store_vld1, store_vld0};
         ret_sqid_q   <= {store_sqid2, store_sqid1, store_sqid0};
         ret_csrwe_q  <= csr_we;      ret_csrrd_q <= csr_rd_we;
@@ -818,45 +846,66 @@ module tb_rtu_rob;
             // P+5 / P+15 / P+25 的负沿上可见。而"有没有触发"必须用锁存的 ret_iflush_q
             // (触发本身就是组合量, 读实时值会读到下一个事件)。
             //
-            // 于是状态号的含义: 1 = P+5 那拍 (T, 后端冲刷), 2 = P+15 那拍 (T+1, 重命名冲刷)。
-            // 触发分支放在最前 (不看 fl_state): DUT 的冲刷状态机是 IDLE→F1→F2→IDLE
-            // 三拍, 但一次冲刷走完的**下一个 posedge** 就允许再触发一次 —— 靠 fl_state
+            // 于是状态号的含义 (2026-10-02 F1/F2 合成一拍之后):
+            //   1 = P+5 那拍  (T+1, 后端冲刷 **与** 重命名恢复同拍)
+            //   2 = P+15 那拍 (T+2, 冲刷已结束 —— 顺便在这一拍比锁存下来的恢复广播)
+            // 触发分支放在最前 (不看 fl_state): DUT 的冲刷状态机是 IDLE→F1→IDLE
+            // 两拍, 但一次冲刷走完的**下一个 posedge** 就允许再触发一次 —— 靠 fl_state
             // 去括号会把这种背靠背的第二次漏掉, 窗口从此错位 (踩过: 72 条
             // "beu_flush_chgflw_mask 与冲刷窗口不符")。
             if (ret_iflush_q) begin
                 n_flush   = n_flush + 1;
                 head_wait = 0;
                 fl_state  = 1;
-                if (!backend_flush) err("冲刷 T 拍应有 rtu_backend_flush");
+                // 2026-10-02 (F1/F2 合成一拍): 后端冲刷与重命名恢复现在**同拍**,
+                // 都在 T+1 —— 所以这里一次把三条都要求上。
+                if (!backend_flush)   err("冲刷 T+1 拍应有 rtu_backend_flush");
+                if (!ren_flush)       err("冲刷 T+1 拍应有 rtu_ren_flush");
+                if (!ren_recover_vld) err("ren_flush 那拍必须同时给 recover_vld");
             end else case (fl_state)
                 0: begin
                     if (backend_flush || ren_flush)
                         err("没有触发却出现冲刷信号");
                 end
                 1: begin
-                    if (!ren_flush) err("冲刷 T+1 拍应有 rtu_ren_flush");
-                    if (!ren_recover_vld) err("ren_flush 那拍必须同时给 recover_vld");
-                    for (int l = 0; l < 32; l = l + 1)
-                        if (ren_recover_map[7*l +: 7] !== ref_amt[l]) begin
-                            err($sformatf("AMT[%0d] 广播不符: exp=%0d got=%0d",
-                                          l, ref_amt[l], ren_recover_map[7*l +: 7]));
-                            if (!log_dumped) dump_log();
-                        end
+                    if (backend_flush || ren_flush) err("冲刷 T+2 拍应该已经结束了");
+                    // 恢复广播的内容: 比的是**锁存的那份** (见 ret_rmap_q 的注释) ——
+                    // 到这一拍 ref_retire() 已经跑过, ref_amt 才是"含本拍退休"的值。
+                    if (ret_rvld_q)
+                        for (int l = 0; l < 32; l = l + 1)
+                            if (ret_rmap_q[7*l +: 7] !== ref_amt[l]) begin
+                                err($sformatf("AMT[%0d] 广播不符: exp=%0d got=%0d",
+                                              l, ref_amt[l], ret_rmap_q[7*l +: 7]));
+                                if (!log_dumped) dump_log();
+                            end
                     fl_state = 2;
                 end
                 default: begin
-                    if (backend_flush || ren_flush) err("冲刷 T+2 拍应该已经结束了");
+                    if (backend_flush || ren_flush) err("冲刷 T+3 拍应该已经结束了");
                     fl_state = 0;
                 end
             endcase
-            if ((fl_state != 0) && !disp_stall) err("冲刷窗口内 disp_stall 必须保持");
+            // ⚠️ 窗口检查只对 `fl_state == 1` (即检测到触发之后的**第一个负沿**, 落在
+            //    DUT 的 T+1 拍里) 生效 —— 那是新窗口 (T、T+1 两拍) 唯一能被负沿观察到的
+            //    一半。`fl_state == 2` 那拍已经是 T+2、`flushing` 早就该落了, 不能要求它
+            //    还高。(F1/F2 合成一拍之前窗口是 3 拍, 所以那时 `fl_state != 0` 成立。)
+            if ((fl_state == 1) && !disp_stall) err("冲刷窗口内 disp_stall 必须保持");
+
+            // ---------- D13 守卫 ----------
+            // 误预测的冲刷**不许**重启前端 (C910 的 FLUSH_IS 不碰 IFU): 前端在 BEU 的
+            // 执行级重定向那拍就已经被送到真实目标, 再重启一次就是"重取两次"。
+            // `!trap && !mret` 在这里等价于"只有误预测这一个源" (flush_src 的优先级)。
+            // ⚠️ 比的是**两个锁存值** (同一个 posedge 采的), 不是"锁存的 vs 实时的"
+            //    —— 本工程踩过"两帧混用 ⇒ 不可复现假失败"的坑 (经验 1)。
+            if (ret_iflush_q && !ret_trap_q && !ret_mret_q && ret_ifu_vld_q)
+                err("D13: 误预测冲刷不该拉 rtu_ifu_flush / rtu_ifu_chgflw_vld");
             // ⚠️ 不能拿 beu_mask 与 fl_state 逐拍相等: `beu_mask = flushing = flush_trig | ~idle`,
             //    而 `flush_trig` 是**组合**的提交级信号 —— 它在负沿上可能刚好为 1, 但 DUT
             //    在那个 posedge 用的输入已经被 TB 换掉, 状态机并不真的进 F1。逐拍相等会
             //    报一堆假失败 (踩过: 66 条)。
             //    有牙齿的两条: ① 窗口内必须保持; ② 窗口外只允许"这一拍确实在发起冲刷"
             //    时拉高 —— 那种情形下一拍一定能从锁存的触发脉冲或 DUT 的 FSM 上看出来。
-            if (((fl_state != 0) || ret_iflush_q) && !beu_mask)
+            if (((fl_state == 1) || ret_iflush_q) && !beu_mask)
                 err("冲刷窗口内 beu_mask 必须保持");
             // ⚠️ 只在一两拍上为 1 不算事: TB 在**负沿**换输入, 于是 `flush_trig` 这个
             //    组合量可能"前半拍为 1、后半拍(被 DUT 采样的那一刻)又变 0" —— 真核里
@@ -1126,7 +1175,16 @@ module tb_rtu_rob;
             // ⚠️ 这一步**必须**独立于状态路径: 有一次派遣自己引出的 csr_inflight 会把
             //    状态机顶回 IDLE, 结算若只写在 D_REQ 分支里, 那次派遣就永远记不上账
             //    —— 参考流是空的, 于是没有完成信号, CSR 槽再也放不掉 (踩过的死锁)。
-            if (commit_pending && !ren_flush) begin
+            //
+            // ⚠️ **2026-10-02 (F1/F2 合成一拍): 去掉这里的 `&& !ren_flush`。**
+            //    原先冲刷那拍丢弃挂起的派遣 ("DUT 的 FLUSH_2 会把它清掉"), 但那是
+            //    在 `ren_flush` 落在 T+2 时的假设。合并之后 `ren_flush` 提前到 T+1
+            //    —— 正好压在"上一拍摆上口的那次派遣"结算的前面, 于是把它**丢掉**,
+            //    而 DUT 在更早那个 posedge 就已经建了表项 (occ 记上了) ⇒
+            //    模型少记一条, "ROB 占用数"从此差开 (实测 44 条)。
+            //    **结算必须无条件做**: 只要 TB 摆上口时 disp_stall=0, DUT 就收了,
+            //    之后真的被冲刷掉的话, 由下面的 `n_ret = n_inst` 整表归零统一处理。
+            if (commit_pending) begin
                 nd = 0;
                 for (int k = 0; k < 3; k = k + 1) begin
                     if (acc_q[k]) nd = nd + 1;
@@ -1138,7 +1196,7 @@ module tb_rtu_rob;
 
             if (ren_flush) begin
                 // 冲刷: 挂着的编号由 DUT 在 FLUSH_2 放回, 模型里一并清掉
-                h_gotv = 3'd0; pl_n = 0; cp_n = 0; commit_pending = 1'b0;
+                h_gotv = 3'd0; pl_n = 0; cp_n = 0;
                 d_arm = 1'b0; al_arm = 1'b0;
                 dstate = D_IDLE;
             end else begin

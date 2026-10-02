@@ -468,3 +468,26 @@ BEFORE
 <<<AFTER
     assign pop_n      = pop_pre;
 AFTER
+
+### R05 rtu_mispred_flushes_ifu
+file:  mySoC/rtu/rtl/RTU_flush.v
+build: unit
+tests: rtu_unit
+note:  D13: 误预测的慢路冲刷**不许重启前端** —— 前端在 BEU 的执行级重定向那拍
+       就已经被送到真实目标 (且派遣从那一拍起冻到 F2, 不会有拿未恢复 RAT 改名的
+       指令), 退休时再重启一次就是"重取两次", 阶段 1 实测代价 +4.66% 周期。
+       这个变异是**性能**变异 (拿掉它功能仍对, 只是变慢), 所以整核 difftest 抓不到
+       —— 靠单测台新增的 D13 守卫抓: "误预测冲刷不该拉 rtu_ifu_flush /
+       rtu_ifu_chgflw_vld"。
+       ⚠️ 配套的另一半 (RTU.v 里 `mispred_pend` 进 disp_stall) **今天的单测台抓不到**:
+       本台把 `beu_redirect_vld` 恒接 0 (没有"EX 级解析出误预测"这个概念), 所以
+       拿掉那一项本台行为逐位不变; 而它在阶段 1 的读法 A 下也不产生错误数据
+       (恒等映射) ⇒ 整核也抓不到。它由阶段 3 (真重命名) 的用例守。
+<<<BEFORE
+    assign ifu_flush       = flush_trig & ~is_mispred_flush;
+    assign ifu_chgflw_vld  = flush_trig & ~is_mispred_flush;
+BEFORE
+<<<AFTER
+    assign ifu_flush       = flush_trig;
+    assign ifu_chgflw_vld  = flush_trig;
+AFTER

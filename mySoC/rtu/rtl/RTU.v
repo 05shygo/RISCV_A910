@@ -109,6 +109,12 @@ module RTU (
     input  wire [31:0] csr_rdata,           // 组合读: 地址见 rtu_csr_addr
     input  wire        int_pending,         // 已按 mstatus/mie/mip 屏蔽过
 
+    // ===================== BEU -> RTU (D13) =====================
+    // EX 级**真的发出**误预测重定向的那一拍 (mycpu.v 里就是 iu_ifu_chgflw_vld)。
+    // 只用于置"未决快路重定向"锁存位 —— 把派遣冻结的窗口从"执行级重定向那拍"
+    // 拉起来, 直到 F2; 并且它是"误预测不再重启前端"(D13 ②)的依据。
+    input  wire        beu_redirect_vld,
+
     // ===================== §6.1 物理寄存器堆读口 (A1) =====================
     input  wire [31:0] preg_rdata0,         // <- PRF[rtu_preg_raddr0]
     input  wire [31:0] preg_rdata1,
@@ -130,6 +136,12 @@ module RTU (
 
     // ===================== §6.2 后端冲刷 (D11 的 FLUSH_1) =====================
     output wire        rtu_backend_flush,
+
+    // ===================== §6.2 核内重定向事件 (D13 新增) =====================
+    // "本拍 RTU 在重定向", 四类源**都算**(含误预测)。mycpu.v 用它驱动 `redirect`
+    // (冲 IF_ID/ID_EX/EX_MEM、按掉 store 写使能、CSR 静默、训练门控)。
+    // ⚠️ 与 rtu_ifu_flush **必须在顶层分开接**: D13 之后两者对误预测取值不同。
+    output wire        rtu_core_redirect,
 
     // ===================== §6.2 BEU: D1 的最旧门控 + 冲刷屏蔽 =====================
     output wire [6:0]  rtu_beu_retire_iid,
@@ -207,6 +219,7 @@ module RTU (
     //    所以这里一次性把跨模块的网线全列出来, 后面只赋值/连接, 不再插声明。
     // =======================================================================
     wire        flushing;                    // 冲刷窗口 (含 T 拍)
+    wire        mispred_pend;                // D13: 有未决快路重定向 (T_ex+1 .. F2)
     wire        fsm_busy;
     wire        flush_lvl;                   // FLUSH_2 脉冲
     wire        expt_clr;                    // FLUSH_1: 清 expt_entry
@@ -532,8 +545,11 @@ module RTU (
         .flush_src      (flush_src),
         .flush_pc       (flush_pc),
         .amt_flat       (amt_flat),
+        .beu_redirect_vld(beu_redirect_vld),
         .fsm_busy       (fsm_busy),
         .flushing       (flushing),
+        .mispred_pend   (mispred_pend),
+        .core_redirect  (rtu_core_redirect),
         .backend_flush  (backend_flush),
         .expt_clr       (expt_clr),
         .flush_lvl      (flush_lvl),
@@ -553,11 +569,15 @@ module RTU (
     assign rtu_ren_recover_map       = ren_recover_map;
 
     // =======================================================================
-    // 派遣停顿 —— 只依赖寄存器 (P8): ROB 占用计数、preg 空闲计数、CSR 在途、冲刷窗口
+    // 派遣停顿 —— 只依赖寄存器 (P8): ROB 占用计数、preg 空闲计数、CSR 在途、
+    // 冲刷窗口、未决快路重定向 (D13)
     // =======================================================================
     assign preg_short = (free_cnt < {5'b0, ren_preg_req});
 
-    assign rtu_disp_stall = rob_full | preg_short | csr_inflight | flushing;
+    // ⚠️ mispred_pend 是**寄存器** (见 RTU_flush) —— P8 要求这一项不许把
+    //    beu_redirect_vld 组合进来 (那会造出"EX 控制锥 -> 前端捕获使能"的新长链,
+    //    而 r3 的绑定路径正是 ex_csr_op -> U_ID_EX/*_reg/CE 那一族)。
+    assign rtu_disp_stall = rob_full | preg_short | csr_inflight | flushing | mispred_pend;
 
     // =======================================================================
     // 其余提交点副作用与 retire 计数
