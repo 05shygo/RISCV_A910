@@ -527,3 +527,22 @@ BEFORE
     assign ifu_flush       = flush_trig;
     assign ifu_chgflw_vld  = flush_trig;
 AFTER
+
+### R07 rtu_train_fifo_dropped
+file:  mySoC/rtu/rtl/RTU_commit.v
+build: unit
+tests: rtu_unit
+note:  D1.1 的训练 FIFO: 退休窗口里 2~3 条控制转移必须**排队逐条训练**, 而不是只发
+       最老那条、把其余静默丢掉 (丢的是方向表的学习机会 —— 功能全对, 只体现为预测器
+       学偏, 整核 difftest 与跑分**都看不出来**)。
+       这条变异把"入队"掐掉 = 退回 D1.1 之前的行为。
+       单测台判据: "应当报重训练却没报" (期望队列里还压着条目, 而 DUT 不再吐) 或
+       队头字段不符。单元台自带多分支窗口 (每 ~48 条指令来一轮 6 条连续控制转移的
+       自动爆发), 所以**默认就会**被激励到 —— 收尾还会检查"一窗 ≥2 条"是否真的
+       发生过, 没发生直接判失败。
+<<<BEFORE
+    wire [2:0]  push_en = tr & ~(bp ? (3'b001 << tr_old) : 3'b000);
+BEFORE
+<<<AFTER
+    wire [2:0]  push_en = 3'b000;   // 变异: 不进队 (= 只发最老那条)
+AFTER

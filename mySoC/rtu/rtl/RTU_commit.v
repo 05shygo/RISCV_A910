@@ -355,7 +355,10 @@ module RTU_commit (
     assign commit_value2 = w2_csr ? csr_rdata : preg_rdata2;
 
     // -----------------------------------------------------------------------
-    // 退休点重训练 (阶段 4b): 取窗口里**程序序最老**的那条控制转移
+    // 退休点重训练 (阶段 4b) + 训练 FIFO (D1.1 ①, 2026-10-02)
+    //
+    // 训练源 = 退休窗口里的控制转移, **按程序序逐条发出** (窗口里有多条时由下面的
+    // FIFO 排队, 不再丢)。
     //
     // 为什么搬到这里 (计划 §7-4b): 乱序下分支是**乱序完成/解析**的, 留在 EX 级训练
     // 会把 GHR 按乱序顺序推、方向表被静默带偏。这与"重定向必须最旧"是同一个约束
@@ -373,30 +376,178 @@ module RTU_commit (
     //   * `train_chk` 用表项里那份 (取指时打包、随指令走完整条流水),
     //     而不是 EX 当拍现读的 chk —— 后者在乱序下可能属于**另一条**指令。
     //
-    // ⚠️⚠️ **只有一个训练口, 3 发射落地前必须处理**: 同一窗口里出现 2 条以上控制
-    //     转移时, 这里只发出**最老**的那条, 其余的**静默丢掉**训练 (C910 是 3 个
-    //     退休训练口). 1 发射的 5 级顺序核里窗口最多一条分支 ⇒ 恒等价、测不出来;
-    //     3 发射下最多丢 2 条。IFU 那边 `u_bht/u_btb` 也只有单 `upd_vld` 口,
-    //     所以这是个**两头都要改**的活 (RTU 加训练 FIFO 或按宽度节流 + IFU 加口),
-    //     属"阶段 3 乱序落地"清单, 见 doc/rtu_plan_zh.md §7-4b 的注。
-    // -----------------------------------------------------------------------
+    // =======================================================================
+    // 退休窗口三槽各自的"控制转移现场"
+    // =======================================================================
+    // ⚠️ 先声明再用 (本仓有"先用后声明造 1 位隐式线网"的前科, §9 R7):
     wire tr0 = commit_vld[0] & w0_br;
     wire tr1 = commit_vld[1] & w1_br;
     wire tr2 = commit_vld[2] & w2_br;
+    wire [2:0]  tr    = { tr2, tr1, tr0 };          // 哪几槽是控制转移 (程序序)
+    wire        any_tr= |tr;
+    wire [2:0]  tr_jal  = { w2_jal,  w1_jal,  w0_jal  };
+    wire [2:0]  tr_jalr = { w2_jalr, w1_jalr, w0_jalr };
+    // 三分类互斥 (条件分支 = is_branch & ~jal & ~jalr), 与 EX 的
+    // `iu_btb_is_cond/is_jal/is_jalr` 同集合 —— BTB 靠它选"写哪一类"。
+    wire [2:0]  tr_cnd  = tr & ~tr_jal & ~tr_jalr;
 
-    assign train_vld   = tr0 | tr1 | tr2;
-    assign train_pc    = tr0 ? win0[`RTU_E_PC]   : tr1 ? win1[`RTU_E_PC]   : win2[`RTU_E_PC];
+    // =======================================================================
+    // 训练 FIFO (D1.1 ①, 2026-10-02)
+    //
+    // **为什么加它**: 退休窗口有 3 槽, 里面**可能同时有 2~3 条控制转移**
+    //   (`beq; jal; beq` 相邻三条, 前面被 sq_stall/冲刷之类卡一下, 解卡后一起退)。
+    //   训练口只有一路, 原来只发最老那条、其余**静默丢掉** ⇒ 方向表学不到它们。
+    //   ⚠️ 这在**单发射核里就会发生** —— 同拍退休是 ROB 窗口宽度决定的, 与分支
+    //      执行单元有几个无关 ⇒ 不等乱序也该修。
+    //
+    // **为什么"排队晚几拍再训练"是对的** (整套做法的前提): 训练写的是**表项里那份
+    //   `chk` 快照**索引到的位置 (BHT: pc + ghr 快照; TAGE: 再加 fpred; BTB: pc),
+    //   与**当前**的 GHR/预测器状态无关 ⇒ 晚几拍写进去命中的还是同一格, 逐位相同。
+    //   所以 FIFO 只改"何时写", 不改"写什么"。
+    //
+    // **时序**: 队列空时"最老那条直通"(零延迟) —— 保证"一窗一条"这个常见情形的
+    //   行为与加 FIFO 之前**逐位相同** (CoreMark 的账不受影响)。
+    // **顺序**: FIFO 序 = 程序序。**溢出**: 丢最年轻的并内部计数 (`tr_ovf_cnt`,
+    //   不上端口; TB 用层次引用看)。
+    // ⚠️ 冲刷**不清**队列: 里面装的是**已退休**分支的架构事实, 更年轻的指令被冲掉
+    //    不影响它们。
+    // ⚠️ 深度 4 的依据: 每拍最多进 3 条、出 1 条 ⇒ 最坏净增 2/拍, 要连续两拍
+    //    "一窗三条控制转移"才溢出 (即 6 条相邻的控制转移)。改深度要同步改
+    //    `q_*`/`nq_*` 的数组下标范围与 `TR_D`。
+    // =======================================================================
+    localparam TR_D = 4;
+
+    reg  [2:0]  q_cnt;
+    reg  [31:0] q_pc  [0:TR_D-1];
+    reg  [31:0] q_tgt [0:TR_D-1];
+    reg  [24:0] q_chk [0:TR_D-1];
+    reg         q_tkn [0:TR_D-1];
+    reg         q_cnd [0:TR_D-1];
+    reg         q_jal [0:TR_D-1];
+    reg         q_jlr [0:TR_D-1];
+
+    reg  [2:0]  nq_cnt;
+    reg  [31:0] nq_pc  [0:TR_D-1];
+    reg  [31:0] nq_tgt [0:TR_D-1];
+    reg  [24:0] nq_chk [0:TR_D-1];
+    reg         nq_tkn [0:TR_D-1];
+    reg         nq_cnd [0:TR_D-1];
+    reg         nq_jal [0:TR_D-1];
+    reg         nq_jlr [0:TR_D-1];
+
+    // 直通: 队列空 + 本拍有控制转移 ⇒ 最老那条当拍就走 (不占队列, 零延迟)
+    wire [1:0]  tr_old = tr[0] ? 2'd0 : tr[1] ? 2'd1 : 2'd2;
+    wire        bp     = (q_cnt == 3'd0) & any_tr;
+    wire        pop    = (q_cnt != 3'd0);                 // 队非空 ⇒ 每拍吐一条
+
+    // 进队列的: 除"直通那条"之外的其余控制转移
+    wire [2:0]  push_en = tr & ~(bp ? (3'b001 << tr_old) : 3'b000);
+
+    // 输出 (直通取窗口里最老的; 否则取队头 q_*[0])
+    wire [1:0]  osel = bp ? tr_old : 2'd0;
+    assign train_vld    = bp | pop;
+    assign train_pc     = bp ? ((osel == 2'd0) ? win0[`RTU_E_PC]     :
+                                (osel == 2'd1) ? win1[`RTU_E_PC]     : win2[`RTU_E_PC])     : q_pc[0];
     // `TARGET` 是 BEU 在解析那拍写回表项的真实后继 PC (= EX 的 `actual_npc`),
     // 也就是原来 `iu_btb_target` 的驱动源。不跳的条件分支它就是 pc+4 ——
     // BTB 的"不跳"训练用不上目标, 由 upd_taken 决定写不写。
-    assign train_target= tr0 ? win0[`RTU_E_TARGET]: tr1 ? win1[`RTU_E_TARGET]: win2[`RTU_E_TARGET];
-    assign train_chk   = tr0 ? win0[`RTU_E_CHK]  : tr1 ? win1[`RTU_E_CHK]  : win2[`RTU_E_CHK];
-    assign train_taken = tr0 ? win0[`RTU_E_TAKEN]: tr1 ? win1[`RTU_E_TAKEN]: win2[`RTU_E_TAKEN];
-    // 三分类互斥 (条件分支 = is_branch & ~jal & ~jalr), 与 EX 的
-    // `iu_btb_is_cond/is_jal/is_jalr` 同集合 —— BTB 靠它选"写哪一类"。
-    assign train_is_jal  = tr0 ? w0_jal  : tr1 ? w1_jal  : w2_jal;
-    assign train_is_jalr = tr0 ? w0_jalr : tr1 ? w1_jalr : w2_jalr;
-    assign train_is_cond = (tr0 ? w0_br  : tr1 ? w1_br  : w2_br)
-                         & ~train_is_jal & ~train_is_jalr;
+    assign train_target = bp ? ((osel == 2'd0) ? win0[`RTU_E_TARGET] :
+                                (osel == 2'd1) ? win1[`RTU_E_TARGET] : win2[`RTU_E_TARGET]) : q_tgt[0];
+    assign train_chk    = bp ? ((osel == 2'd0) ? win0[`RTU_E_CHK]    :
+                                (osel == 2'd1) ? win1[`RTU_E_CHK]    : win2[`RTU_E_CHK])    : q_chk[0];
+    assign train_taken  = bp ? ((osel == 2'd0) ? win0[`RTU_E_TAKEN]  :
+                                (osel == 2'd1) ? win1[`RTU_E_TAKEN]  : win2[`RTU_E_TAKEN])  : q_tkn[0];
+    assign train_is_jal = bp ? tr_jal[osel]  : q_jal[0];
+    assign train_is_jalr= bp ? tr_jalr[osel] : q_jlr[0];
+    assign train_is_cond= bp ? tr_cnd[osel]  : q_cnd[0];
+
+    // ---------------- 队列的下一拍 ----------------
+    reg  [2:0]  n_acc;            // 本拍要进队列的条数 (0..3)
+    reg  [5:0]  acc_sel;          // 紧凑化之后, 第 j 条对应哪条车道 (3 × 2bit)
+    reg  [31:0] a_pc  [0:2];      // 按紧凑序排好的待入队数据
+    reg  [31:0] a_tgt [0:2];
+    reg  [24:0] a_chk [0:2];
+    reg         a_tkn [0:2];
+    reg         a_cnd [0:2];
+    reg         a_jal [0:2];
+    reg         a_jlr [0:2];
+
+    integer k, j;
+
+    always @(*) begin
+        // ① 紧凑化: 把"要进队列的车道"按程序序压成 0,1,2 号
+        // ⚠️ `acc_sel` 必须**无条件先清 0**: 它在 n_acc==0 那几档不被赋值, 不初始化
+        //    综合会推出一排锁存器 (仿真看不出来 —— n_push==0 时它根本不被使用)。
+        n_acc   = 3'd0;
+        acc_sel = 6'd0;
+        if (push_en[0]) begin acc_sel[2*n_acc +: 2] = 2'd0; n_acc = n_acc + 3'd1; end
+        if (push_en[1]) begin acc_sel[2*n_acc +: 2] = 2'd1; n_acc = n_acc + 3'd1; end
+        if (push_en[2]) begin acc_sel[2*n_acc +: 2] = 2'd2; n_acc = n_acc + 3'd1; end
+        for (j = 0; j < 3; j = j + 1) begin
+            a_pc [j] = (acc_sel[2*j +: 2] == 2'd0) ? win0[`RTU_E_PC]     :
+                       (acc_sel[2*j +: 2] == 2'd1) ? win1[`RTU_E_PC]     : win2[`RTU_E_PC];
+            a_tgt[j] = (acc_sel[2*j +: 2] == 2'd0) ? win0[`RTU_E_TARGET] :
+                       (acc_sel[2*j +: 2] == 2'd1) ? win1[`RTU_E_TARGET] : win2[`RTU_E_TARGET];
+            a_chk[j] = (acc_sel[2*j +: 2] == 2'd0) ? win0[`RTU_E_CHK]    :
+                       (acc_sel[2*j +: 2] == 2'd1) ? win1[`RTU_E_CHK]    : win2[`RTU_E_CHK];
+            a_tkn[j] = (acc_sel[2*j +: 2] == 2'd0) ? win0[`RTU_E_TAKEN]  :
+                       (acc_sel[2*j +: 2] == 2'd1) ? win1[`RTU_E_TAKEN]  : win2[`RTU_E_TAKEN];
+            a_cnd[j] = tr_cnd [acc_sel[2*j +: 2]];
+            a_jal[j] = tr_jal [acc_sel[2*j +: 2]];
+            a_jlr[j] = tr_jalr[acc_sel[2*j +: 2]];
+        end
+    end
+
+    // 队列腾出的位置 (pop 之后) 与放得下的条数
+    wire [2:0] n_cnp = pop ? (q_cnt - 3'd1) : q_cnt;
+    wire [2:0] space = 3'd4 - n_cnp;
+    wire [2:0] n_push= (n_acc <= space) ? n_acc : space;
+    wire [2:0] n_drop= n_acc - n_push;
+
+    always @(*) begin
+        // ② 下一拍: 前 n_cnp 项来自"pop 之后的残余", 接着放本拍接受的, 剩下清 0
+        //    (pop 是 0/1, 残余的源下标就是 k + pop)
+        for (k = 0; k < TR_D; k = k + 1) begin
+            if (k < n_cnp) begin
+                nq_pc [k] = q_pc [k + pop];  nq_tgt[k] = q_tgt[k + pop];
+                nq_chk[k] = q_chk[k + pop];  nq_tkn[k] = q_tkn[k + pop];
+                nq_cnd[k] = q_cnd[k + pop];  nq_jal[k] = q_jal[k + pop];
+                nq_jlr[k] = q_jlr[k + pop];
+            end else if (k < (n_cnp + n_push)) begin
+                nq_pc [k] = a_pc [k - n_cnp]; nq_tgt[k] = a_tgt[k - n_cnp];
+                nq_chk[k] = a_chk[k - n_cnp]; nq_tkn[k] = a_tkn[k - n_cnp];
+                nq_cnd[k] = a_cnd[k - n_cnp]; nq_jal[k] = a_jal[k - n_cnp];
+                nq_jlr[k] = a_jlr[k - n_cnp];
+            end else begin
+                nq_pc [k] = 32'd0; nq_tgt[k] = 32'd0; nq_chk[k] = 25'd0;
+                nq_tkn[k] = 1'b0;  nq_cnd[k] = 1'b0;  nq_jal[k] = 1'b0; nq_jlr[k] = 1'b0;
+            end
+        end
+        nq_cnt = n_cnp + n_push;
+    end
+
+    always @(posedge cpu_clk or posedge cpu_rst) begin
+        if (cpu_rst) begin
+            q_cnt <= 3'd0;
+            for (k = 0; k < TR_D; k = k + 1) begin
+                q_pc[k] <= 32'd0; q_tgt[k] <= 32'd0; q_chk[k] <= 25'd0;
+                q_tkn[k] <= 1'b0; q_cnd[k] <= 1'b0; q_jal[k] <= 1'b0; q_jlr[k] <= 1'b0;
+            end
+        end else begin
+            q_cnt <= nq_cnt;
+            for (k = 0; k < TR_D; k = k + 1) begin
+                q_pc[k] <= nq_pc[k]; q_tgt[k] <= nq_tgt[k]; q_chk[k] <= nq_chk[k];
+                q_tkn[k] <= nq_tkn[k]; q_cnd[k] <= nq_cnd[k];
+                q_jal[k] <= nq_jal[k]; q_jlr[k] <= nq_jlr[k];
+            end
+        end
+    end
+
+    // 溢出计数: 只给 TB/调试看 (层次引用), **不上端口** (§6 契约不动)
+    reg [7:0] tr_ovf_cnt;
+    always @(posedge cpu_clk or posedge cpu_rst) begin
+        if (cpu_rst)     tr_ovf_cnt <= 8'd0;
+        else if (|n_drop) tr_ovf_cnt <= tr_ovf_cnt + {5'b0, n_drop};
+    end
 
 endmodule

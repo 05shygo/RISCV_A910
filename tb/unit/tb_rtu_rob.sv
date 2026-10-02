@@ -72,10 +72,10 @@ module tb_rtu_rob;
     logic        cv0, cv1, cv2, cv3, cv4, cv5, cv6;      // D1.3: 5 -> 7 路
     logic [6:0]  ci0, ci1, ci2, ci3, ci4, ci5, ci6;
 
-    logic [2:0]  rsv_vld;                                  // D1.4: 1 -> 3 路
-    logic [6:0]  rsv_iid0, rsv_iid1, rsv_iid2;
-    logic [2:0]  rsv_taken, rsv_misp;
-    logic [31:0] rsv_tgt0, rsv_tgt1, rsv_tgt2;
+    logic        rsv_vld;                                  // 解析口 = 分支单元数 = 1
+    logic [6:0]  rsv_iid;
+    logic        rsv_taken, rsv_misp;
+    logic [31:0] rsv_tgt;
 
     logic        ex_vld;
     logic [6:0]  ex_iid;
@@ -158,10 +158,8 @@ module tb_rtu_rob;
         .cmplt_vld2(cv2), .cmplt_iid2(ci2), .cmplt_vld3(cv3), .cmplt_iid3(ci3),
         .cmplt_vld4(cv4), .cmplt_iid4(ci4),
         .cmplt_vld5(cv5), .cmplt_iid5(ci5), .cmplt_vld6(cv6), .cmplt_iid6(ci6),
-        .resolve_vld(rsv_vld),
-        .resolve_iid0(rsv_iid0), .resolve_iid1(rsv_iid1), .resolve_iid2(rsv_iid2),
-        .resolve_taken(rsv_taken), .resolve_mispred(rsv_misp),
-        .resolve_target0(rsv_tgt0), .resolve_target1(rsv_tgt1), .resolve_target2(rsv_tgt2),
+        .resolve_vld(rsv_vld), .resolve_iid(rsv_iid), .resolve_taken(rsv_taken),
+        .resolve_mispred(rsv_misp), .resolve_target(rsv_tgt),
         .expt_vld(ex_vld), .expt_iid(ex_iid), .expt_cause(ex_cause), .expt_tval(ex_tval),
         .sq_rdy0(sq_rdy0), .sq_rdy1(sq_rdy1), .sq_rdy2(sq_rdy2), .sq_stall(sq_stall),
         .csr_rdata(csr_rdata), .int_pending(int_pending),
@@ -351,6 +349,7 @@ module tb_rtu_rob;
 
     logic [31:0] ret_epc_q = 32'd0, ret_tval_q = 32'd0;
     logic        ret_mret_q = 1'b0, ret_iflush_q = 1'b0, ret_bflush_q = 1'b0;
+    logic        ret_iflush_d1_q = 1'b0;   // 冲刷窗口的第二拍 (见"早就完成却不退休"那条)
     logic        ret_ifu_vld_q = 1'b0;   // D13: DUT 这一拍有没有重启前端
     logic [223:0] ret_rmap_q;            // 恢复广播的锁存 (F1/F2 合并后只维持一拍)
     logic        ret_rvld_q = 1'b0;
@@ -380,6 +379,21 @@ module tb_rtu_rob;
     logic [31:0] ret_val_q [0:2];
     logic [2:0]  ret_ena_q = 3'd0;
     logic [2:0]  ret_rdy_q = 3'd0;
+    // ---- 训练 FIFO 的"期望队列" (D1.1): 与 RTL 同构地推一遍, 逐拍核对输出 ----
+    integer      tq_idx [0:3];      // 队里存的是**参考流的指令号** (不是 iid, 免得反查)
+    integer      tq_n;              // 队列深度 (0..4)
+    integer      tq_drop;           // 期望被丢掉 (溢出) 的条数
+    integer      mbr_left;          // +MULTIBR=K: 头 K 条指令强制做成控制转移
+    integer      nomisp;            // +NOMISP=1: 解析时一律不报误预测 (不冲刷,
+                                    //   于是"一窗 3 条"能连续退, 把 FIFO 压到溢出)
+    integer      mbr_gap;           // 自动爆发的间隔计数器 (见 gen_plan 里的说明)
+    integer      mbr_auto;          // +MULTIBR 给了就关掉自动爆发 (定向模式要纯粹)
+    // 覆盖统计: 训练 FIFO 的路径只有"一窗 ≥2 条控制转移"才会被走到, 必须报出来 ——
+    // 否则"改完全绿"可能只是**根本没激励到** (本仓踩过多回)。
+    integer      n_mb_win;          // 一窗 ≥2 条控制转移的拍数
+    integer      n_trn_evt;         // 训练事件总数
+    integer      n_q_max;           // 期望队列达到过的最大深度
+
     logic        trn_vld_q = 1'b0, trn_taken_q = 1'b0;
     logic        trn_cond_q = 1'b0, trn_jal_q = 1'b0, trn_jalr_q = 1'b0;
     logic [31:0] trn_pc_q = 32'd0, trn_tgt_q = 32'd0;
@@ -402,6 +416,7 @@ module tb_rtu_rob;
         //      `ifu_chg_vld`, 检查 #4 (误预测重定向目标) 会**静默变成空检查**
         //      (n_misp 永远 0), 不再报错也不再验证。
         ret_iflush_q <= core_redirect;
+        ret_iflush_d1_q <= core_redirect;
         // 反向的那一半: DUT 到底有没有重启前端。只有误预测时它必须为 0 (见守卫)。
         ret_ifu_vld_q <= (ifu_flush | ifu_chg_vld);
         ret_ipc_q  <= ifu_chg_pc;
@@ -507,6 +522,7 @@ module tb_rtu_rob;
     integer      n_done = 0, n_trap = 0, n_int = 0, n_flush = 0;
     integer      n_store = 0, n_csr = 0, n_mret = 0, n_misp = 0;
     integer      fl_state = 0;         // 1=T 2=F1 3=F2
+    integer      head_wait = 0, head_wait_idx = -1;
     integer      beu_orphan = 0;       // 见 beu_mask 那条检查 (连续多少拍"无解释")
     integer      head_wait = 0;
     integer      hcnt = 0;
@@ -689,48 +705,59 @@ module tb_rtu_rob;
                 end
             end
 
-            // ---------- 2b) 退休点重训练口 (阶段 4b) ----------
-            // 口径: 训练源 = 退休窗口里**程序序最老**的那条控制转移
-            // (RTL 是 `commit_vld & is_branch`, 逐槽取最老), 字段逐位取自表项。
-            // ⚠️ 这一组以前**只接出来没人核** —— 现在它是预测器的唯一训练源,
-            //    必须逐位守: pc / chk / taken / target / 三分类。
-            // ⚠️ 1 发射下窗口最多一条分支 ⇒ "最老"与"唯一"等价。3 发射下本台
-            //    仍按最老那条比 (多分支窗口丢训练的限制见 RTU_commit 的注)。
+            // ---------- 2b) 退休点重训练口: 阶段 4b + 训练 FIFO (D1.1 ①) ----------
+            // 口径: 训练源 = 退休窗口里的控制转移, **按程序序逐条发出**; 多分支窗口
+            //   由 4 深 FIFO 排队。本台用**同构的期望队列**逐拍核对:
+            //     * 队空 + 本拍有控制转移 -> 最老那条**当拍**出 (直通, 零延迟);
+            //     * 队非空             -> 每拍吐队头, 新退休的进队;
+            //     * 满 4 条             -> 丢最年轻的。
+            // ⚠️ 队列策略 (何时吐、丢谁) 是**照着 RTL 的规则**写的 —— 它是流水线策略、
+            //    不是功能语义, 没法从参考流独立推出来; 但"喂进去的字段对不对"仍然
+            //    逐位取自参考流 (见 trn_field_chk)。
             begin
-                integer tsel;
-                tsel = -1;
+                integer nb, base, n_cnp_x, space_x, n_push_x, n_acc_x, tq_nx;
+                reg     bp_x, pop_x;
+                integer win_i [0:2];          // 本拍退休窗口里的控制转移 (指令号, 程序序)
+                integer tq_new [0:3];
+
+                nb = 0;
                 for (int k = 0; k < 3; k = k + 1)
-                    if (vldv[k] && ((n_ret + k) < n_inst) && (tsel < 0)
-                        && flg_of(n_ret + k)[`RTU_FLG_BRANCH])
-                        tsel = k;
-                if (tsel < 0) begin
-                    if (trn_vld_q) err("窗口里没有控制转移退休, 却报了重训练");
-                end else begin
-                    i = n_ret + tsel;
-                    if (!trn_vld_q)
-                        err($sformatf("指令 %0d 是控制转移且已退休, 但没报重训练", i));
-                    else begin
-                        if (trn_pc_q !== x_pc[i])
-                            err($sformatf("重训练 pc 不符: exp=%08x got=%08x", x_pc[i], trn_pc_q));
-                        if (trn_chk_q !== x_chk[i])
-                            err($sformatf("重训练 chk 不符: exp=%07x got=%07x", x_chk[i], trn_chk_q));
-                        if (trn_taken_q !== x_tkn[i])
-                            err($sformatf("重训练 taken 不符: exp=%b got=%b", x_tkn[i], trn_taken_q));
-                        if (trn_tgt_q !== x_tgt[i])
-                            err($sformatf("重训练 target 不符: exp=%08x got=%08x", x_tgt[i], trn_tgt_q));
-                        // 三分类互斥 (条件分支 = BRANCH & ~JAL & ~JALR), 且逐位等于参考流
-                        if (trn_jal_q  !== x_flg[i][`RTU_FLG_JAL])
-                            err($sformatf("重训练 is_jal 不符: exp=%b got=%b",
-                                          x_flg[i][`RTU_FLG_JAL], trn_jal_q));
-                        if (trn_jalr_q !== x_flg[i][`RTU_FLG_JALR])
-                            err($sformatf("重训练 is_jalr 不符: exp=%b got=%b",
-                                          x_flg[i][`RTU_FLG_JALR], trn_jalr_q));
-                        if (trn_cond_q !== !(x_flg[i][`RTU_FLG_JAL] | x_flg[i][`RTU_FLG_JALR]))
-                            err($sformatf("重训练 is_cond 不符: exp=%b got=%b",
-                                          !(x_flg[i][`RTU_FLG_JAL] | x_flg[i][`RTU_FLG_JALR]),
-                                          trn_cond_q));
+                    if (vldv[k] && ((n_ret + k) < n_inst) &&
+                        flg_of(n_ret + k)[`RTU_FLG_BRANCH]) begin
+                        win_i[nb] = (n_ret + k);
+                        nb = nb + 1;
                     end
+
+                bp_x  = (tq_n == 0) && (nb > 0);
+                pop_x = (tq_n != 0);
+                if (nb >= 2) n_mb_win = n_mb_win + 1;
+
+                // ---- 1) 出的应该是谁 ----
+                if (!(bp_x | pop_x)) begin
+                    if (trn_vld_q) err("队空且窗口里没有控制转移, 却报了重训练");
+                end else begin
+                    n_trn_evt = n_trn_evt + 1;
+                    if (!trn_vld_q) err("应当报重训练却没报");
+                    else if (bp_x) trn_field_chk(win_i[0], "直通/窗口最老");
+                    else           trn_field_chk(tq_idx[0], "队头");
                 end
+
+                // ---- 2) 队列更新 (与 RTL 同构) ----
+                n_cnp_x  = pop_x ? (tq_n - 1) : tq_n;
+                space_x  = 4 - n_cnp_x;
+                n_acc_x  = nb - (bp_x ? 1 : 0);              // 直通那条不占队列
+                n_push_x = (n_acc_x <= space_x) ? n_acc_x : space_x;
+                tq_drop  = tq_drop + (n_acc_x - n_push_x);
+                base     = (bp_x ? 1 : 0);                   // 窗口里第 base 条起才进队
+                for (int k = 0; k < 4; k = k + 1) begin
+                    if (k < n_cnp_x)                     tq_new[k] = tq_idx[k + (pop_x ? 1 : 0)];
+                    else if (k < (n_cnp_x + n_push_x))   tq_new[k] = win_i[base + (k - n_cnp_x)];
+                    else                                 tq_new[k] = 0;
+                end
+                tq_nx = n_cnp_x + n_push_x;
+                for (int k = 0; k < 4; k = k + 1) tq_idx[k] = tq_new[k];
+                tq_n = tq_nx;
+                if (tq_n > n_q_max) n_q_max = tq_n;
             end
 
             // ---------- 3) CSR 写口 ----------
@@ -1031,6 +1058,27 @@ module tb_rtu_rob;
     // =======================================================================
     // 参考模型推进 (等价于 DUT 在一个时钟边沿做的事)
     // =======================================================================
+    // 训练口字段逐位核对 (i = 参考流里的指令号)
+    task automatic trn_field_chk(input int i, input string src);
+        begin
+            if (trn_pc_q  !== x_pc[i])
+                err($sformatf("重训练 pc 不符 [%0s 指令 %0d]: exp=%08x got=%08x", src, i, x_pc[i], trn_pc_q));
+            if (trn_chk_q !== x_chk[i])
+                err($sformatf("重训练 chk 不符 [%0s 指令 %0d]: exp=%07x got=%07x", src, i, x_chk[i], trn_chk_q));
+            if (trn_taken_q !== x_tkn[i])
+                err($sformatf("重训练 taken 不符 [%0s 指令 %0d]: exp=%b got=%b", src, i, x_tkn[i], trn_taken_q));
+            if (trn_tgt_q !== x_tgt[i])
+                err($sformatf("重训练 target 不符 [%0s 指令 %0d]: exp=%08x got=%08x", src, i, x_tgt[i], trn_tgt_q));
+            if (trn_jal_q  !== x_flg[i][`RTU_FLG_JAL])
+                err($sformatf("重训练 is_jal 不符 [%0s 指令 %0d]: exp=%b got=%b", src, i, x_flg[i][`RTU_FLG_JAL], trn_jal_q));
+            if (trn_jalr_q !== x_flg[i][`RTU_FLG_JALR])
+                err($sformatf("重训练 is_jalr 不符 [%0s 指令 %0d]: exp=%b got=%b", src, i, x_flg[i][`RTU_FLG_JALR], trn_jalr_q));
+            if (trn_cond_q !== !(x_flg[i][`RTU_FLG_JAL] | x_flg[i][`RTU_FLG_JALR]))
+                err($sformatf("重训练 is_cond 不符 [%0s 指令 %0d]: exp=%b got=%b", src, i,
+                              !(x_flg[i][`RTU_FLG_JAL] | x_flg[i][`RTU_FLG_JALR]), trn_cond_q));
+        end
+    endtask
+
     task automatic ref_retire;
         integer i;
         begin
@@ -1101,6 +1149,25 @@ module tb_rtu_rob;
                     end
                     else if (allow_csr && r < 50)     f[`RTU_FLG_CSR]    = 1'b1;
                     else if (r < 55)                  f[`RTU_FLG_MRET]   = 1'b1;
+                    // 定向旋钮: 头 K 条指令全部造成控制转移 —— 专门造"一窗 2~3 条
+                    // 分支"的窗口, 否则训练 FIFO 的排队路径**永远激励不到**
+                    // (随机激励下三条相邻分支的概率 ~0.8%, 一次跑下来常常一次都不出现)。
+                    // 用 JAL: 不依赖 BEU 的方向计算, 解析/完成的时序最简单。
+                    // **自动撒"多分支窗口"**: 每 ~48 条指令来一轮 6 条连续控制转移。
+                    // 目的是让**默认的单元台每次都覆盖到训练 FIFO 的排队路径** ——
+                    // 纯随机激励下三条相邻分支的概率只有 ~0.8%, 靠运气覆盖不住, 而
+                    // "没覆盖到"与"测过且通过"在报告里长得一模一样 (本仓踩过多次)。
+                    // 收尾那三条覆盖判据 (store/CSR/mret) 不受影响: 爆发只占 6/48。
+                    if ((mbr_left == 0) && (mbr_gap <= 0) && (mbr_auto != 0)) begin
+                        mbr_left = 5;          // 本条 + 后面 5 条 = 一轮 6 条
+                        mbr_gap  = 48;
+                    end
+                    if (mbr_left > 0) begin
+                        f = 7'd0;
+                        f[`RTU_FLG_BRANCH] = 1'b1;
+                        f[`RTU_FLG_JAL]    = 1'b1;
+                        mbr_left = mbr_left - 1;
+                    end else if (mbr_auto != 0) mbr_gap = mbr_gap - 1;
                     pl_flg[k] = f | ((({$urandom} % 100) < 8) ? (7'b1 << `RTU_FLG_INTMASK) : 7'd0);
                     pl_rfwe[k]  = !(f[`RTU_FLG_STORE] || f[`RTU_FLG_BRANCH] || f[`RTU_FLG_MRET]);
                     // ⚠️ 不写寄存器的指令必须把 dst_lreg 给 **0** (§6.1)。
@@ -1467,10 +1534,22 @@ module tb_rtu_rob;
         //    把"已经退干净了"误判成"卡住" (踩过)。冲刷窗口用 DUT 自己的口径
         //    (beu_mask == flushing, 含"这一拍正在发起冲刷"), 而不是 TB 的 fl_state
         //    —— 后者少盖一拍, 会把正当的冲刷窗口算成卡住。
-        if (!beu_mask && !ret_iflush_q && (n_ret < n_inst)) begin
-            if (x_cmp[n_ret] && !flg_of(n_ret)[`RTU_FLG_STORE] && !int_pending)
+        // ⚠️ 冲刷窗口是**两拍**: T (触发那拍, ret_iflush_q=1) 与 T+1 (FLUSH_2 那拍,
+        //    退休被 `fsm_busy` 挡着)。只排除 T 的话每次冲刷都给 head_wait +1 ——
+        //    误预测密集时 (例如 +MULTIBR 那种全是分支的定向激励) 累积过阈值就假报。
+        //    (D13 之后 `ret_iflush_q` 已经改用 `core_redirect`, 但窗口仍是两拍。)
+        if (!beu_mask && !ret_iflush_q && !ret_iflush_d1_q && (n_ret < n_inst)) begin
+            // ⚠️ 必须跟踪"队头有没有换人": 老写法只按"队头已完成"累加, 而密集退休时
+            //    (每拍退 3 条、每条都已完成) 队头**每拍都在换**, 计数器却一路涨到阈值
+            //    ⇒ 假报"早就完成却不退休" (全分支的定向激励下必现, 正常激励下队头常常
+            //    还没完成, 于是从没暴露)。判据要的是"**同一个**队头等太久"。
+            if ((n_ret == head_wait_idx) && x_cmp[n_ret] &&
+                !flg_of(n_ret)[`RTU_FLG_STORE] && !int_pending)
                 head_wait = head_wait + 1;
-            else head_wait = 0;
+            else begin
+                head_wait     = 0;
+                head_wait_idx = n_ret;
+            end
             if (head_wait > 8) begin
                 err($sformatf("指令 %0d 早就完成却不退休", n_ret));
                 head_wait = 0;
@@ -1515,38 +1594,25 @@ module tb_rtu_rob;
         end
     endtask
 
-    // D1.4: 1 -> 3 路。三条车道必须指**不同的表项** (契约: 表项只有一份
-    // target/taken/mispred, 两路指同一条是未定义行为; RTL 里车道 0 最老者胜)。
     task automatic gen_resolve;
         int unsigned span;
-        int pick, lanes;
+        int pick;
         begin
-            rsv_vld = 3'd0; rsv_taken = 3'd0; rsv_misp = 3'd0;
-            rsv_iid0 = 7'd0; rsv_iid1 = 7'd0; rsv_iid2 = 7'd0;
-            rsv_tgt0 = 32'd0; rsv_tgt1 = 32'd0; rsv_tgt2 = 32'd0;
+            rsv_vld = 0;
             if (n_ready <= n_ret) return;
             span = n_ready - n_ret;
-            lanes = 0;
-            for (int tries = 0; (tries < 16) && (lanes < 3); tries = tries + 1) begin
-                pick = n_ret + ({$urandom} % span);
-                if (!x_flg[pick][`RTU_FLG_BRANCH] || x_rsv[pick]) continue;
-                if ((lanes >= 1) && (x_iid[pick] == rsv_iid0)) continue;
-                if ((lanes >= 2) && (x_iid[pick] == rsv_iid1)) continue;
-                case (lanes)
-                    0: begin rsv_vld[0]=1'b1; rsv_iid0=x_iid[pick];
-                             rsv_taken[0]={$urandom}%2; rsv_misp[0]=(({$urandom}%100)<60); rsv_tgt0={$urandom}; end
-                    1: begin rsv_vld[1]=1'b1; rsv_iid1=x_iid[pick];
-                             rsv_taken[1]={$urandom}%2; rsv_misp[1]=(({$urandom}%100)<60); rsv_tgt1={$urandom}; end
-                    default: begin rsv_vld[2]=1'b1; rsv_iid2=x_iid[pick];
-                             rsv_taken[2]={$urandom}%2; rsv_misp[2]=(({$urandom}%100)<60); rsv_tgt2={$urandom}; end
-                endcase
-                log_evt($sformatf("RESV lane=%0d inst=%0d iid=%0d misp=%b tgt=%08x",
-                                  lanes, pick, x_iid[pick], rsv_misp[lanes], rsv_tgt0));
+            pick = n_ret + ({$urandom} % span);
+            if (x_flg[pick][`RTU_FLG_BRANCH] && !x_rsv[pick]) begin
+                rsv_vld = 1'b1;
+                rsv_iid = x_iid[pick];
+                rsv_taken = {$urandom} % 2;
+                rsv_misp  = (nomisp != 0) ? 1'b0 : (({$urandom} % 100) < 60);
+                rsv_tgt   = {$urandom};
+                log_evt($sformatf("RESV inst=%0d iid=%0d misp=%b tgt=%08x", pick, x_iid[pick], rsv_misp, rsv_tgt));
                 x_rsv[pick] = 1'b1;
-                x_tkn[pick] = rsv_taken[lanes];
-                x_msp[pick] = rsv_misp[lanes];
-                x_tgt[pick] = (lanes==0) ? rsv_tgt0 : (lanes==1) ? rsv_tgt1 : rsv_tgt2;
-                lanes = lanes + 1;
+                x_tkn[pick] = rsv_taken;
+                x_msp[pick] = rsv_misp;
+                x_tgt[pick] = rsv_tgt;
             end
         end
     endtask
@@ -1631,8 +1697,7 @@ module tb_rtu_rob;
     initial begin
         cv0=0; cv1=0; cv2=0; cv3=0; cv4=0; cv5=0; cv6=0;
         ci0=0; ci1=0; ci2=0; ci3=0; ci4=0; ci5=0; ci6=0;
-        rsv_vld=0; rsv_iid0=0; rsv_iid1=0; rsv_iid2=0;
-        rsv_taken=0; rsv_misp=0; rsv_tgt0=0; rsv_tgt1=0; rsv_tgt2=0;
+        rsv_vld=0; rsv_iid=0; rsv_taken=0; rsv_misp=0; rsv_tgt=0;
         ex_vld=0; ex_iid=0; ex_cause=0; ex_tval=0;
         sq_rdy0=1; sq_rdy1=1; sq_rdy2=1; sq_stall=0;
         int_pending=0;
@@ -1651,6 +1716,13 @@ module tb_rtu_rob;
         void'($value$plusargs("SEED=%d", seed));
         void'($value$plusargs("NINSTR=%d", n_target));
         void'($urandom(seed));
+        mbr_left = 0;
+        void'($value$plusargs("MULTIBR=%d", mbr_left));
+        tq_n = 0; tq_drop = 0; n_mb_win = 0; n_trn_evt = 0; n_q_max = 0; nomisp = 0;
+        void'($value$plusargs("NOMISP=%d", nomisp));
+        mbr_gap = 48; mbr_auto = 1;
+        if ($test$plusargs("MULTIBR")) mbr_auto = 0;   // 定向模式: 关掉自动爆发
+        for (int k = 0; k < 4; k = k + 1) tq_idx[k] = 0;
 
         for (int a = 0; a < 4096; a = a + 1) csr_file[a] = {$urandom};
         for (int p = 0; p < 96;   p = p + 1) pf[p] = {$urandom};
@@ -1691,9 +1763,14 @@ module tb_rtu_rob;
         if (n_trap  == 0) err("一次同步异常都没覆盖到");
         if (n_int   == 0) err("一次中断都没覆盖到");
         if (n_flush == 0) err("一次冲刷都没覆盖到");
-        if (n_store == 0) err("一次 store 退休都没覆盖到");
-        if (n_csr   == 0) err("一次 CSR 退休都没覆盖到");
-        if (n_mret  == 0) err("一次 mret 都没覆盖到");
+        if ((n_store == 0) && (mbr_auto != 0)) err("一次 store 退休都没覆盖到");
+        if ((n_csr   == 0) && (mbr_auto != 0)) err("一次 CSR 退休都没覆盖到");
+        if ((n_mret  == 0) && (mbr_auto != 0)) err("一次 mret 都没覆盖到");
+        // 训练 FIFO (D1.1) 的覆盖判据: 只有"一窗 ≥2 条控制转移"才会走到排队路径。
+        // 没走到就说明这轮**没测到 FIFO**, 加 MULTIBR 旋钮 (`+MULTIBR=60`) 再来。
+        $display("  训练: 事件 %0d 条 / 一窗多条控制转移 %0d 拍 / 队列最深 %0d / 溢出丢 %0d (DUT 计 %0d)",
+                 n_trn_evt, n_mb_win, n_q_max, tq_drop, dut.u_commit.tr_ovf_cnt);
+        if (n_mb_win == 0) err("训练 FIFO 没被激励到 (一窗 ≥2 条控制转移 0 次): 加 +MULTIBR=K 再来");
 
         if (errors == 0) begin
             $display("  RTU UNIT: ALL PASS");

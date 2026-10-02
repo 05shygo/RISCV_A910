@@ -135,18 +135,14 @@ module RTU (
     // 控制转移在 EX 解析出结果时写回表项。**A8**: 分支的"完成"不能早于它的
     // "解析" (同拍或 resolve 更早) —— 否则它会在两拍之间走到队头、按"没误预测"
     // 正常退休, 这次重定向就**永久丢掉**了。
-    // ---- D1.4 (2026-10-02): 1 路 -> 3 路 (三发射下最多三条分支同拍解析) ----
-    // ⚠️ 多路命中同一条表项时**车道 0 (程序序最老) 胜** —— 表项只有一份
-    //    target/taken/mispred, 同时写两条是未定义; 契约上不允许, 这里把口径写死。
-    input  wire [2:0]  resolve_vld,         // 每路: 本拍该路有一条控制转移解析出结果
-    input  wire [6:0]  resolve_iid0,        // 车道 0 (最老) 是哪条 (按 iid 寻址)
-    input  wire [6:0]  resolve_iid1,        // 车道 1
-    input  wire [6:0]  resolve_iid2,        // 车道 2
-    input  wire [2:0]  resolve_taken,       // 每路: 实际方向; JAL/JALR 恒 1
-    input  wire [2:0]  resolve_mispred,     // 每路: 预测错了 (退休时触发冲刷)
-    input  wire [31:0] resolve_target0,     // 车道 0 的真实后继 PC (退休点重训练要用)
-    input  wire [31:0] resolve_target1,
-    input  wire [31:0] resolve_target2,
+    // ⚠️ **解析口 = 分支执行单元数, 不是发射宽度** (2026-10-02: D1.4 曾按发射宽度
+    //    做成 3 路, 同一天收回 1 路 —— 本核 1 个 BEU, 一拍最多一条进 EX)。
+    //    要加路数时按"将来有几个分支单元"定, 并同步 `RTU_RESOLVE_PORTS`。
+    input  wire        resolve_vld,         // 本拍有一条控制转移解析出结果
+    input  wire [6:0]  resolve_iid,         // 是哪条 (按 iid 寻址)
+    input  wire        resolve_taken,       // 实际方向; JAL/JALR 恒 1
+    input  wire        resolve_mispred,     // 预测错了 (退休时触发冲刷)
+    input  wire [31:0] resolve_target,      // 真实后继 PC (退休点重训练要用)
 
     // ===================== §6.1 异常 (ID/EX/MEM 的检出点, 老级优先) =====================
     // 只有一路收集口 (D9): 级间天然是"老级优先" (MEM > EX > ID), 被丢掉的年轻异常
@@ -315,7 +311,7 @@ module RTU (
         if (`RTU_CMPLT_PORTS != 7) begin : g_cmplt_ports_mismatch
             RTU_CMPLT_PORTS_MUST_MATCH_RTU_define_vh u_err();
         end
-        if (`RTU_RESOLVE_PORTS != 3) begin : g_resolve_ports_mismatch
+        if (`RTU_RESOLVE_PORTS != 1) begin : g_resolve_ports_mismatch
             RTU_RESOLVE_PORTS_MUST_MATCH_RTU_define_vh u_err();
         end
     endgenerate
@@ -426,14 +422,10 @@ module RTU (
         .cmplt_iid5         (cmplt_iid5),
         .cmplt_iid6         (cmplt_iid6),
         .resolve_vld        (resolve_vld),
-        .resolve_iid0       (resolve_iid0),
-        .resolve_iid1       (resolve_iid1),
-        .resolve_iid2       (resolve_iid2),
+        .resolve_iid        (resolve_iid),
         .resolve_taken      (resolve_taken),
         .resolve_mispred    (resolve_mispred),
-        .resolve_target0    (resolve_target0),
-        .resolve_target1    (resolve_target1),
-        .resolve_target2    (resolve_target2),
+        .resolve_target     (resolve_target),
         .pop_n              (pop_n),
         .flush_lvl          (flush_lvl),
         .rtu_beu_retire_iid (rtu_beu_retire_iid),
