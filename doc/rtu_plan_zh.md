@@ -1212,19 +1212,31 @@ input [2:0]  disp0_sq_id;
 //    组内出现第二条 `is_csr` 时，把它截到下一拍再发（连同它后面的指令）。
 //
 
-// —— 完成（来自各执行单元 / LSU），p = 0..4 ——
+// —— 完成（来自各执行单元 / LSU），p = 0..6 ——（D1.3，2026-10-02：5 -> 7 路）
+//    口 0..2 = ALU0/1/2、3 = BEU、4 = MUL/DIV、**5 = LSU 读、6 = LSU 写**。
+//    ⚠️ 顺序核里 load/store 也走口 0（同一个 MEM 级），5/6 是留给乱序的通道 ——
+//       挤一个口会把完成速率钉在 1/拍。
 input        cmplt_vld0;  input [6:0] cmplt_iid0;
 input        cmplt_vld1;  input [6:0] cmplt_iid1;
 input        cmplt_vld2;  input [6:0] cmplt_iid2;
 input        cmplt_vld3;  input [6:0] cmplt_iid3;
 input        cmplt_vld4;  input [6:0] cmplt_iid4;
+input        cmplt_vld5;  input [6:0] cmplt_iid5;
+input        cmplt_vld6;  input [6:0] cmplt_iid6;
 
 // —— 解析结果（来自 BEU，分支/JAL/JALR 解出时写回表项）——
-input        resolve_vld;
-input [6:0]  resolve_iid;
-input        resolve_taken;
-input        resolve_mispred;
-input [31:0] resolve_target;
+//    （D1.4，2026-10-02：1 -> 3 路，三发射下最多三条分支同拍解析）
+//    ⚠️ 每路自带 target/taken/mispred。**多路命中同一条表项是未定义**（表项只有
+//       一份），RTL 里按"车道 0（程序序最老）胜"实现；契约上不允许这么发。
+input [2:0]  resolve_vld;
+input [6:0]  resolve_iid0;
+input [6:0]  resolve_iid1;
+input [6:0]  resolve_iid2;
+input [2:0]  resolve_taken;
+input [2:0]  resolve_mispred;
+input [31:0] resolve_target0;
+input [31:0] resolve_target1;
+input [31:0] resolve_target2;
 //
 // ⚠️ **A8（2026-10-01 补，单测台挖出来的）**：**分支的"完成"不能早于它的"解析"**
 //    （`cmplt_vld` 与 `resolve_vld` 同拍、或 resolve 更早）。
@@ -2254,15 +2266,27 @@ entry 起在 `RETIRE` 态（`ct_rtu_pst_preg_entry.v:236` `reset_lifecycle_state
 ⚠️ **每加一路 = 64 个 7 位比较器 + 表项里多一级或门**，而"完成总线 5 路 × 64 项比较"
 已经被 §4.2 点名为阶段 3 的 Fmax 风险 ⇒ 这是个时序/吞吐取舍，不是越多越好。
 ⚠️ 那个宏**全仓只有定义、没有任何引用**：真正的路数硬编码在 `RTU.v` 的端口表
-（`cmplt_vld0..4` / `cmplt_iid0..4`）和 `RTU_ROB.v:44-50`。改路数要同时改这三处，
+（`cmplt_vld0..6` / `cmplt_iid0..6`）和 `RTU_ROB.v:44-53`。改路数要同时改这三处，
 **只改宏不会有任何效果**（正好是 §9 R7 那类"静默不生效"的坑）。
+
+> ✅ **2026-10-02 已落地：7 路**（用户定案：3 ALU + BEU + MUL/DIV + **LSU 读 / LSU 写分开**）。
+> 三处同改（宏 / `RTU.v` 端口表 / `RTU_ROB.v` 的表项匹配 + 影子窗口）+ `mycpu.v` 空闲口接零
+> + 单元台驱动。**顺手把那个"只改宏不生效"的坑堵上**：`RTU.v` 里加了 generate 期的路数自检
+> （宏与端口表不一致就 elaborate 失败，见下）。
+> ⚠️ **没验证到**：单发射核里口 5/6 恒零 ⇒ 新口的功能在整核里**测不出**，
+> 由单元台（`gen_complete` 已扩到 7 路）守。
 
 **D1.4 解析口只有 1 路**
 
 `RTU_ROB.v:53` 单 `resolve_vld`。若发射级会有多条分支同拍解析，要么加到 N 路，
 要么在 BEU 侧仲裁后串行发。
 
-> 📌 **2026-10-02 已定案（用户与 IQ 侧对齐）：完成口 7 路、解析口 3 路。**
+> ✅ **2026-10-02 已落地：3 路**（`resolve_vld[2:0]` + 每路自带 iid/taken/mispred/target）。
+> RTL 侧的取值口径写死为"**多路命中同一条表项时车道 0（最老）胜**"。
+> 整核里车道 1/2 恒零（单发射）⇒ 新路的匹配逻辑在整核里**测不出**，由单元台守
+> （`gen_resolve` 现在每拍最多发 3 条不同的分支）。
+>
+> 📌 **2026-10-02 定案（用户与 IQ 侧对齐）：完成口 7 路、解析口 3 路。**
 > 7 = 3 ALU + BEU + MULDIV + **LSU 读 + LSU 写分开**；3 = 三发射下最多三条分支同拍解析。
 > 落地要**同时**改三处（宏 / `RTU.v` 端口表 / `RTU_ROB.v` 的表项匹配与影子窗口），
 > 另加 `mycpu.v` 的空闲口接零与单元台驱动 —— 只改宏不会有任何效果（§9 R7 那类坑）。
