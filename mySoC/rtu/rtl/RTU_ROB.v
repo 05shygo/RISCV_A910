@@ -41,20 +41,28 @@ module RTU_ROB (
     input  wire [`RTU_E_W-1:0] disp_data1,
     input  wire [`RTU_E_W-1:0] disp_data2,
 
-    // ---- 完成 (5 路) ----
-    input  wire [4:0]          cmplt_vld,
+    // ---- 完成 (7 路, D1.3) ----
+    input  wire [6:0]          cmplt_vld,
     input  wire [6:0]          cmplt_iid0,
     input  wire [6:0]          cmplt_iid1,
     input  wire [6:0]          cmplt_iid2,
     input  wire [6:0]          cmplt_iid3,
     input  wire [6:0]          cmplt_iid4,
+    input  wire [6:0]          cmplt_iid5,
+    input  wire [6:0]          cmplt_iid6,
 
-    // ---- 解析结果 (BEU) ----
-    input  wire                resolve_vld,
-    input  wire [6:0]          resolve_iid,
-    input  wire                resolve_taken,
-    input  wire                resolve_mispred,
-    input  wire [31:0]         resolve_target,
+    // ---- 解析结果 (BEU, 3 路, D1.4) ----
+    // ⚠️ 多路命中同一条表项时**车道 0 (最老) 胜** —— 表项只有一份 target/taken/
+    //    mispred。契约上不允许两路指同一条, 这里把口径写死。
+    input  wire [2:0]          resolve_vld,
+    input  wire [6:0]          resolve_iid0,
+    input  wire [6:0]          resolve_iid1,
+    input  wire [6:0]          resolve_iid2,
+    input  wire [2:0]          resolve_taken,
+    input  wire [2:0]          resolve_mispred,
+    input  wire [31:0]         resolve_target0,
+    input  wire [31:0]         resolve_target1,
+    input  wire [31:0]         resolve_target2,
 
     // ---- 退休 (来自 RTU_commit) / 冲刷 ----
     input  wire [1:0]          pop_n,
@@ -145,9 +153,18 @@ module RTU_ROB (
                     || (cmplt_vld[1] && (cmplt_iid1[5:0] == IDX) && (cmplt_iid1[6] == rob_q[gi][`RTU_E_WRAP]))
                     || (cmplt_vld[2] && (cmplt_iid2[5:0] == IDX) && (cmplt_iid2[6] == rob_q[gi][`RTU_E_WRAP]))
                     || (cmplt_vld[3] && (cmplt_iid3[5:0] == IDX) && (cmplt_iid3[6] == rob_q[gi][`RTU_E_WRAP]))
-                    || (cmplt_vld[4] && (cmplt_iid4[5:0] == IDX) && (cmplt_iid4[6] == rob_q[gi][`RTU_E_WRAP]));
+                    || (cmplt_vld[4] && (cmplt_iid4[5:0] == IDX) && (cmplt_iid4[6] == rob_q[gi][`RTU_E_WRAP]))
+                    || (cmplt_vld[5] && (cmplt_iid5[5:0] == IDX) && (cmplt_iid5[6] == rob_q[gi][`RTU_E_WRAP]))
+                    || (cmplt_vld[6] && (cmplt_iid6[5:0] == IDX) && (cmplt_iid6[6] == rob_q[gi][`RTU_E_WRAP]));
 
-        wire e_res = resolve_vld && (resolve_iid[5:0] == IDX) && (resolve_iid[6] == rob_q[gi][`RTU_E_WRAP]);
+        // 解析 (3 路): 命中 + **车道 0 最老者胜**的取值
+        wire e_res0 = resolve_vld[0] && (resolve_iid0[5:0] == IDX) && (resolve_iid0[6] == rob_q[gi][`RTU_E_WRAP]);
+        wire e_res1 = resolve_vld[1] && (resolve_iid1[5:0] == IDX) && (resolve_iid1[6] == rob_q[gi][`RTU_E_WRAP]);
+        wire e_res2 = resolve_vld[2] && (resolve_iid2[5:0] == IDX) && (resolve_iid2[6] == rob_q[gi][`RTU_E_WRAP]);
+        wire e_res  = e_res0 | e_res1 | e_res2;
+        wire [31:0] e_rtgt = e_res0 ? resolve_target0 : e_res1 ? resolve_target1 : resolve_target2;
+        wire        e_rtkn = e_res0 ? resolve_taken[0]  : e_res1 ? resolve_taken[1]  : resolve_taken[2];
+        wire        e_rms  = e_res0 ? resolve_mispred[0]: e_res1 ? resolve_mispred[1]: resolve_mispred[2];
 
         // 本项这一拍被退休弹出 (见 RTU_ROB_entry 的 pop_en 注释)。
         // 距离用模 64 减法算, 于是回绕天然正确; pop_n 在 0 时全部为 0。
@@ -166,9 +183,9 @@ module RTU_ROB (
             .reload_data   ({`RTU_E_W{1'b0}}),
             .cmplt_hit     (e_cmplt),
             .resolve_hit   (e_res),
-            .resolve_taken (resolve_taken),
-            .resolve_mispred(resolve_mispred),
-            .resolve_target(resolve_target),
+            .resolve_taken (e_rtkn),
+            .resolve_mispred(e_rms),
+            .resolve_target(e_rtgt),
             .flush_clr     (flush_lvl),
             .entry_q       (rob_q[gi]),
             .entry_d       (rob_d[gi])
@@ -190,21 +207,48 @@ module RTU_ROB (
                    || (cmplt_vld[1] && (cmplt_iid1[5:0]==win_idx0) && (cmplt_iid1[6]==win_q0[`RTU_E_WRAP]))
                    || (cmplt_vld[2] && (cmplt_iid2[5:0]==win_idx0) && (cmplt_iid2[6]==win_q0[`RTU_E_WRAP]))
                    || (cmplt_vld[3] && (cmplt_iid3[5:0]==win_idx0) && (cmplt_iid3[6]==win_q0[`RTU_E_WRAP]))
-                   || (cmplt_vld[4] && (cmplt_iid4[5:0]==win_idx0) && (cmplt_iid4[6]==win_q0[`RTU_E_WRAP]));
+                   || (cmplt_vld[4] && (cmplt_iid4[5:0]==win_idx0) && (cmplt_iid4[6]==win_q0[`RTU_E_WRAP]))
+                   || (cmplt_vld[5] && (cmplt_iid5[5:0]==win_idx0) && (cmplt_iid5[6]==win_q0[`RTU_E_WRAP]))
+                   || (cmplt_vld[6] && (cmplt_iid6[5:0]==win_idx0) && (cmplt_iid6[6]==win_q0[`RTU_E_WRAP]));
     wire win_cmplt1 = (cmplt_vld[0] && (cmplt_iid0[5:0]==win_idx1) && (cmplt_iid0[6]==win_q1[`RTU_E_WRAP]))
                    || (cmplt_vld[1] && (cmplt_iid1[5:0]==win_idx1) && (cmplt_iid1[6]==win_q1[`RTU_E_WRAP]))
                    || (cmplt_vld[2] && (cmplt_iid2[5:0]==win_idx1) && (cmplt_iid2[6]==win_q1[`RTU_E_WRAP]))
                    || (cmplt_vld[3] && (cmplt_iid3[5:0]==win_idx1) && (cmplt_iid3[6]==win_q1[`RTU_E_WRAP]))
-                   || (cmplt_vld[4] && (cmplt_iid4[5:0]==win_idx1) && (cmplt_iid4[6]==win_q1[`RTU_E_WRAP]));
+                   || (cmplt_vld[4] && (cmplt_iid4[5:0]==win_idx1) && (cmplt_iid4[6]==win_q1[`RTU_E_WRAP]))
+                   || (cmplt_vld[5] && (cmplt_iid5[5:0]==win_idx1) && (cmplt_iid5[6]==win_q1[`RTU_E_WRAP]))
+                   || (cmplt_vld[6] && (cmplt_iid6[5:0]==win_idx1) && (cmplt_iid6[6]==win_q1[`RTU_E_WRAP]));
     wire win_cmplt2 = (cmplt_vld[0] && (cmplt_iid0[5:0]==win_idx2) && (cmplt_iid0[6]==win_q2[`RTU_E_WRAP]))
                    || (cmplt_vld[1] && (cmplt_iid1[5:0]==win_idx2) && (cmplt_iid1[6]==win_q2[`RTU_E_WRAP]))
                    || (cmplt_vld[2] && (cmplt_iid2[5:0]==win_idx2) && (cmplt_iid2[6]==win_q2[`RTU_E_WRAP]))
                    || (cmplt_vld[3] && (cmplt_iid3[5:0]==win_idx2) && (cmplt_iid3[6]==win_q2[`RTU_E_WRAP]))
-                   || (cmplt_vld[4] && (cmplt_iid4[5:0]==win_idx2) && (cmplt_iid4[6]==win_q2[`RTU_E_WRAP]));
+                   || (cmplt_vld[4] && (cmplt_iid4[5:0]==win_idx2) && (cmplt_iid4[6]==win_q2[`RTU_E_WRAP]))
+                   || (cmplt_vld[5] && (cmplt_iid5[5:0]==win_idx2) && (cmplt_iid5[6]==win_q2[`RTU_E_WRAP]))
+                   || (cmplt_vld[6] && (cmplt_iid6[5:0]==win_idx2) && (cmplt_iid6[6]==win_q2[`RTU_E_WRAP]));
 
-    wire win_res0 = resolve_vld && (resolve_iid[5:0]==win_idx0) && (resolve_iid[6]==win_q0[`RTU_E_WRAP]);
-    wire win_res1 = resolve_vld && (resolve_iid[5:0]==win_idx1) && (resolve_iid[6]==win_q1[`RTU_E_WRAP]);
-    wire win_res2 = resolve_vld && (resolve_iid[5:0]==win_idx2) && (resolve_iid[6]==win_q2[`RTU_E_WRAP]);
+    // 解析: 与阵列同样的"车道 0 最老者胜"
+    wire win_res00 = resolve_vld[0] && (resolve_iid0[5:0]==win_idx0) && (resolve_iid0[6]==win_q0[`RTU_E_WRAP]);
+    wire win_res10 = resolve_vld[1] && (resolve_iid1[5:0]==win_idx0) && (resolve_iid1[6]==win_q0[`RTU_E_WRAP]);
+    wire win_res20 = resolve_vld[2] && (resolve_iid2[5:0]==win_idx0) && (resolve_iid2[6]==win_q0[`RTU_E_WRAP]);
+    wire win_res01 = resolve_vld[0] && (resolve_iid0[5:0]==win_idx1) && (resolve_iid0[6]==win_q1[`RTU_E_WRAP]);
+    wire win_res11 = resolve_vld[1] && (resolve_iid1[5:0]==win_idx1) && (resolve_iid1[6]==win_q1[`RTU_E_WRAP]);
+    wire win_res21 = resolve_vld[2] && (resolve_iid2[5:0]==win_idx1) && (resolve_iid2[6]==win_q1[`RTU_E_WRAP]);
+    wire win_res02 = resolve_vld[0] && (resolve_iid0[5:0]==win_idx2) && (resolve_iid0[6]==win_q2[`RTU_E_WRAP]);
+    wire win_res12 = resolve_vld[1] && (resolve_iid1[5:0]==win_idx2) && (resolve_iid1[6]==win_q2[`RTU_E_WRAP]);
+    wire win_res22 = resolve_vld[2] && (resolve_iid2[5:0]==win_idx2) && (resolve_iid2[6]==win_q2[`RTU_E_WRAP]);
+    wire win_res0 = win_res00 | win_res10 | win_res20;
+    wire win_res1 = win_res01 | win_res11 | win_res21;
+    wire win_res2 = win_res02 | win_res12 | win_res22;
+
+    // 影子窗口的解析取值 (与阵列同一口径: 车道 0 最老者胜)
+    wire [31:0] win_rtgt0 = win_res00 ? resolve_target0 : win_res10 ? resolve_target1 : resolve_target2;
+    wire [31:0] win_rtgt1 = win_res01 ? resolve_target0 : win_res11 ? resolve_target1 : resolve_target2;
+    wire [31:0] win_rtgt2 = win_res02 ? resolve_target0 : win_res12 ? resolve_target1 : resolve_target2;
+    wire        win_rtkn0 = win_res00 ? resolve_taken[0]   : win_res10 ? resolve_taken[1]   : resolve_taken[2];
+    wire        win_rtkn1 = win_res01 ? resolve_taken[0]   : win_res11 ? resolve_taken[1]   : resolve_taken[2];
+    wire        win_rtkn2 = win_res02 ? resolve_taken[0]   : win_res12 ? resolve_taken[1]   : resolve_taken[2];
+    wire        win_rms0  = win_res00 ? resolve_mispred[0] : win_res10 ? resolve_mispred[1] : resolve_mispred[2];
+    wire        win_rms1  = win_res01 ? resolve_mispred[0] : win_res11 ? resolve_mispred[1] : resolve_mispred[2];
+    wire        win_rms2  = win_res02 ? resolve_mispred[0] : win_res12 ? resolve_mispred[1] : resolve_mispred[2];
 
     wire [`RTU_E_W-1:0] win_d0, win_d1, win_d2;
 
@@ -213,8 +257,8 @@ module RTU_ROB (
         .disp_en(1'b0), .disp_data({`RTU_E_W{1'b0}}), .pop_en(1'b0),
         .reload_en(win_rld0), .reload_data(rob_d[rld_idx0]),
         .cmplt_hit(win_cmplt0), .resolve_hit(win_res0),
-        .resolve_taken(resolve_taken), .resolve_mispred(resolve_mispred),
-        .resolve_target(resolve_target),
+        .resolve_taken(win_rtkn0), .resolve_mispred(win_rms0),
+        .resolve_target(win_rtgt0),
         .flush_clr(flush_lvl), .entry_q(win_q0), .entry_d(win_d0)
     );
 
@@ -223,8 +267,8 @@ module RTU_ROB (
         .disp_en(1'b0), .disp_data({`RTU_E_W{1'b0}}), .pop_en(1'b0),
         .reload_en(win_rld1), .reload_data(rob_d[rld_idx1]),
         .cmplt_hit(win_cmplt1), .resolve_hit(win_res1),
-        .resolve_taken(resolve_taken), .resolve_mispred(resolve_mispred),
-        .resolve_target(resolve_target),
+        .resolve_taken(win_rtkn1), .resolve_mispred(win_rms1),
+        .resolve_target(win_rtgt1),
         .flush_clr(flush_lvl), .entry_q(win_q1), .entry_d(win_d1)
     );
 
@@ -233,8 +277,8 @@ module RTU_ROB (
         .disp_en(1'b0), .disp_data({`RTU_E_W{1'b0}}), .pop_en(1'b0),
         .reload_en(win_rld2), .reload_data(rob_d[rld_idx2]),
         .cmplt_hit(win_cmplt2), .resolve_hit(win_res2),
-        .resolve_taken(resolve_taken), .resolve_mispred(resolve_mispred),
-        .resolve_target(resolve_target),
+        .resolve_taken(win_rtkn2), .resolve_mispred(win_rms2),
+        .resolve_target(win_rtgt2),
         .flush_clr(flush_lvl), .entry_q(win_q2), .entry_d(win_d2)
     );
 

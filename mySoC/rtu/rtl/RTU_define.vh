@@ -20,9 +20,20 @@
 `define RTU_RETIRE_W    3           // 每拍退休宽度
 `define RTU_NUM_PREG    96          // 物理寄存器数
 `define RTU_PREG_W      7           // log2(NUM_PREG)
-`define RTU_ARCH_PREG   32          // p0..p31 = x0..x31 初始映射, 永不释放
+// ⚠️ 2026-10-02: 原来这里还有一个 `RTU_ARCH_PREG 32`, 注释写的是
+//    "p0..p31 = x0..x31 初始映射, 永不释放"。D1.2 之后初始映射**会被回收**
+//    (位置随改名漂移), 那句话不再成立; 而这个宏**全仓零引用** —— 留着只会
+//    误导人, 故删除。需要 "32 个架构寄存器" 这个数时用 `RTU_NUM_LREG`。
 `define RTU_NUM_LREG    32
-`define RTU_CMPLT_PORTS 5           // ALU0/1/2 + BEU + MUL/DIV/LSU 汇总
+// ---- 完成口 / 解析口的路数 (D1.3 / D1.4, 2026-10-02 定案) ----
+// 完成口 7 = 3×ALU + BEU + MUL/DIV + **LSU 读 + LSU 写分开**
+//   (改前是 5: MUL/DIV 与 LSU 挤在一个口上)
+// 解析口 3 = 三发射下最多三条分支同拍解析
+// ⚠️ 这两个宏**必须与端口表一致**, 但 Verilog 的扁平端口表没法由宏生成 ——
+//    所以 RTU.v 里配了一个 generate 期的路数自检 (路数对不上就 elaborate 失败),
+//    免得出现"改了宏没生效"那类静默错 (§9 R7)。
+`define RTU_CMPLT_PORTS   7
+`define RTU_RESOLVE_PORTS 3
 
 // ---- preg 四态 (D2) ----
 // 两拍分配: T 拍优先编码选中 FREE→WF_ALLOC, T+1 派遣确认 WF_ALLOC→ALLOC。

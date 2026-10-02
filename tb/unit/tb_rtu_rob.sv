@@ -69,13 +69,13 @@ module tb_rtu_rob;
     logic [6:0]  d0_flg, d1_flg, d2_flg;   // 7 位: 2026-10-02 加 JAL/JALR (阶段 4b)
     logic [2:0]  d0_sqid, d1_sqid, d2_sqid;
 
-    logic        cv0, cv1, cv2, cv3, cv4;
-    logic [6:0]  ci0, ci1, ci2, ci3, ci4;
+    logic        cv0, cv1, cv2, cv3, cv4, cv5, cv6;      // D1.3: 5 -> 7 路
+    logic [6:0]  ci0, ci1, ci2, ci3, ci4, ci5, ci6;
 
-    logic        rsv_vld;
-    logic [6:0]  rsv_iid;
-    logic        rsv_taken, rsv_misp;
-    logic [31:0] rsv_tgt;
+    logic [2:0]  rsv_vld;                                  // D1.4: 1 -> 3 路
+    logic [6:0]  rsv_iid0, rsv_iid1, rsv_iid2;
+    logic [2:0]  rsv_taken, rsv_misp;
+    logic [31:0] rsv_tgt0, rsv_tgt1, rsv_tgt2;
 
     logic        ex_vld;
     logic [6:0]  ex_iid;
@@ -157,8 +157,11 @@ module tb_rtu_rob;
         .cmplt_vld0(cv0), .cmplt_iid0(ci0), .cmplt_vld1(cv1), .cmplt_iid1(ci1),
         .cmplt_vld2(cv2), .cmplt_iid2(ci2), .cmplt_vld3(cv3), .cmplt_iid3(ci3),
         .cmplt_vld4(cv4), .cmplt_iid4(ci4),
-        .resolve_vld(rsv_vld), .resolve_iid(rsv_iid), .resolve_taken(rsv_taken),
-        .resolve_mispred(rsv_misp), .resolve_target(rsv_tgt),
+        .cmplt_vld5(cv5), .cmplt_iid5(ci5), .cmplt_vld6(cv6), .cmplt_iid6(ci6),
+        .resolve_vld(rsv_vld),
+        .resolve_iid0(rsv_iid0), .resolve_iid1(rsv_iid1), .resolve_iid2(rsv_iid2),
+        .resolve_taken(rsv_taken), .resolve_mispred(rsv_misp),
+        .resolve_target0(rsv_tgt0), .resolve_target1(rsv_tgt1), .resolve_target2(rsv_tgt2),
         .expt_vld(ex_vld), .expt_iid(ex_iid), .expt_cause(ex_cause), .expt_tval(ex_tval),
         .sq_rdy0(sq_rdy0), .sq_rdy1(sq_rdy1), .sq_rdy2(sq_rdy2), .sq_stall(sq_stall),
         .csr_rdata(csr_rdata), .int_pending(int_pending),
@@ -1481,7 +1484,7 @@ module tb_rtu_rob;
         int     pick;
         int unsigned span;
         begin
-            cv0=0; cv1=0; cv2=0; cv3=0; cv4=0;
+            cv0=0; cv1=0; cv2=0; cv3=0; cv4=0; cv5=0; cv6=0;
             done_cnt = 0;
             for (int tries = 0; tries < 12; tries = tries + 1) begin
                 if (n_ready <= n_ret) break;
@@ -1498,37 +1501,52 @@ module tb_rtu_rob;
                     1: begin cv1=1; ci1=x_iid[pick]; end
                     2: begin cv2=1; ci2=x_iid[pick]; end
                     3: begin cv3=1; ci3=x_iid[pick]; end
-                    default: begin cv4=1; ci4=x_iid[pick]; end
+                    4: begin cv4=1; ci4=x_iid[pick]; end
+                    5: begin cv5=1; ci5=x_iid[pick]; end
+                    default: begin cv6=1; ci6=x_iid[pick]; end
                 endcase
                 x_cmp[pick] = 1'b1;
                 // 完成的同时把结果写进物理寄存器堆 (模拟执行单元写 PRF)
                 if (x_rfwe[pick] && (x_lreg[pick] != 5'd0) && !x_flg[pick][`RTU_FLG_CSR])
                     pf[x_dpr[pick]] = x_val[pick];
                 done_cnt = done_cnt + 1;
-                if (done_cnt == 5) break;
+                if (done_cnt == 7) break;      // D1.3: 一拍最多 7 条完成
             end
         end
     endtask
 
+    // D1.4: 1 -> 3 路。三条车道必须指**不同的表项** (契约: 表项只有一份
+    // target/taken/mispred, 两路指同一条是未定义行为; RTL 里车道 0 最老者胜)。
     task automatic gen_resolve;
         int unsigned span;
-        int pick;
+        int pick, lanes;
         begin
-            rsv_vld = 0;
+            rsv_vld = 3'd0; rsv_taken = 3'd0; rsv_misp = 3'd0;
+            rsv_iid0 = 7'd0; rsv_iid1 = 7'd0; rsv_iid2 = 7'd0;
+            rsv_tgt0 = 32'd0; rsv_tgt1 = 32'd0; rsv_tgt2 = 32'd0;
             if (n_ready <= n_ret) return;
             span = n_ready - n_ret;
-            pick = n_ret + ({$urandom} % span);
-            if (x_flg[pick][`RTU_FLG_BRANCH] && !x_rsv[pick]) begin
-                rsv_vld = 1'b1;
-                rsv_iid = x_iid[pick];
-                rsv_taken = {$urandom} % 2;
-                rsv_misp  = (({$urandom} % 100) < 60);
-                rsv_tgt   = {$urandom};
-                log_evt($sformatf("RESV inst=%0d iid=%0d misp=%b tgt=%08x", pick, x_iid[pick], rsv_misp, rsv_tgt));
+            lanes = 0;
+            for (int tries = 0; (tries < 16) && (lanes < 3); tries = tries + 1) begin
+                pick = n_ret + ({$urandom} % span);
+                if (!x_flg[pick][`RTU_FLG_BRANCH] || x_rsv[pick]) continue;
+                if ((lanes >= 1) && (x_iid[pick] == rsv_iid0)) continue;
+                if ((lanes >= 2) && (x_iid[pick] == rsv_iid1)) continue;
+                case (lanes)
+                    0: begin rsv_vld[0]=1'b1; rsv_iid0=x_iid[pick];
+                             rsv_taken[0]={$urandom}%2; rsv_misp[0]=(({$urandom}%100)<60); rsv_tgt0={$urandom}; end
+                    1: begin rsv_vld[1]=1'b1; rsv_iid1=x_iid[pick];
+                             rsv_taken[1]={$urandom}%2; rsv_misp[1]=(({$urandom}%100)<60); rsv_tgt1={$urandom}; end
+                    default: begin rsv_vld[2]=1'b1; rsv_iid2=x_iid[pick];
+                             rsv_taken[2]={$urandom}%2; rsv_misp[2]=(({$urandom}%100)<60); rsv_tgt2={$urandom}; end
+                endcase
+                log_evt($sformatf("RESV lane=%0d inst=%0d iid=%0d misp=%b tgt=%08x",
+                                  lanes, pick, x_iid[pick], rsv_misp[lanes], rsv_tgt0));
                 x_rsv[pick] = 1'b1;
-                x_tkn[pick] = rsv_taken;
-                x_msp[pick] = rsv_misp;
-                x_tgt[pick] = rsv_tgt;
+                x_tkn[pick] = rsv_taken[lanes];
+                x_msp[pick] = rsv_misp[lanes];
+                x_tgt[pick] = (lanes==0) ? rsv_tgt0 : (lanes==1) ? rsv_tgt1 : rsv_tgt2;
+                lanes = lanes + 1;
             end
         end
     endtask
@@ -1611,8 +1629,10 @@ module tb_rtu_rob;
     endtask
 
     initial begin
-        cv0=0; cv1=0; cv2=0; cv3=0; cv4=0; ci0=0; ci1=0; ci2=0; ci3=0; ci4=0;
-        rsv_vld=0; rsv_iid=0; rsv_taken=0; rsv_misp=0; rsv_tgt=0;
+        cv0=0; cv1=0; cv2=0; cv3=0; cv4=0; cv5=0; cv6=0;
+        ci0=0; ci1=0; ci2=0; ci3=0; ci4=0; ci5=0; ci6=0;
+        rsv_vld=0; rsv_iid0=0; rsv_iid1=0; rsv_iid2=0;
+        rsv_taken=0; rsv_misp=0; rsv_tgt0=0; rsv_tgt1=0; rsv_tgt2=0;
         ex_vld=0; ex_iid=0; ex_cause=0; ex_tval=0;
         sq_rdy0=1; sq_rdy1=1; sq_rdy2=1; sq_stall=0;
         int_pending=0;

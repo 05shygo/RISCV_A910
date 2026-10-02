@@ -1357,12 +1357,22 @@ RTU u_rtu (
     .cmplt_vld2 (1'b0), .cmplt_iid2 (7'd0),
     .cmplt_vld3 (1'b0), .cmplt_iid3 (7'd0),
     .cmplt_vld4 (1'b0), .cmplt_iid4 (7'd0),
+    // D1.3: 口 5/6 = LSU 读/写。单发射核里 load/store 也走完成口 0 (MEM 级),
+    // 这两路留给 IQ 接进来时按功能单元拆开用。
+    .cmplt_vld5 (1'b0), .cmplt_iid5 (7'd0),
+    .cmplt_vld6 (1'b0), .cmplt_iid6 (7'd0),
     // ---- §6.1 解析结果 (BEU, EX 级) ----
-    .resolve_vld    (rtu_resolve_vld),
-    .resolve_iid    (ex_iid),
-    .resolve_taken  (rtu_resolve_taken),
-    .resolve_mispred(rtu_resolve_mispred),
-    .resolve_target (rtu_resolve_target),
+    // D1.4: 解析口 1 -> 3 路。**单发射核只用车道 0** (程序序最老的那条),
+    // 车道 1/2 恒零 —— 三发射 + IQ 接进来时再由发射级按车道填。
+    .resolve_vld    ({2'b00, rtu_resolve_vld}),
+    .resolve_iid0   (ex_iid),
+    .resolve_iid1   (7'd0),
+    .resolve_iid2   (7'd0),
+    .resolve_taken  ({2'b00, rtu_resolve_taken}),
+    .resolve_mispred({2'b00, rtu_resolve_mispred}),
+    .resolve_target0(rtu_resolve_target),
+    .resolve_target1(32'd0),
+    .resolve_target2(32'd0),
     // ---- §6.1 异常 (MEM 级; 一级流水内天然"老级优先", 见 §6.3 ④) ----
     .expt_vld   (rtu_expt_vld),
     .expt_iid   (mem_iid),

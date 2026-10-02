@@ -110,7 +110,9 @@ module RTU (
     input  wire [6:0]  disp2_flags,         // 车道 2 的 flags (位序同车道 0)
     input  wire [2:0]  disp2_sq_id,         // 车道 2 的存储队列槽号
 
-    // ===================== §6.1 完成 (p = 0..4, 来自各执行单元) =====================
+    // ===================== §6.1 完成 (p = 0..6, 来自各执行单元) =====================
+    // D1.3 (2026-10-02): 5 -> 7 路。口 5/6 分给 LSU 读/写 —— 顺序核里 load 与 store
+    // 不会同拍完成, 但乱序下两者各有独立通道, 挤一个口会把完成速率钉在 1/拍。
     // **按 iid 寻址**: 表项里只存回绕位, iid 由派遣回执 (`rtu_disp_iid*`) 发给
     // 重命名级、随指令走到完成级再报回来 (§6.3 ⑪)。不要试图"从退休指针现推"。
     input  wire        cmplt_vld0,          // 完成口 0 有结果
@@ -123,16 +125,28 @@ module RTU (
     input  wire [6:0]  cmplt_iid3,          // 口 3 的 iid
     input  wire        cmplt_vld4,          // 完成口 4 有结果
     input  wire [6:0]  cmplt_iid4,          // 口 4 的 iid
+    // ---- D1.3 (2026-10-02): 5 路 -> 7 路, LSU 读/写分开 ----
+    input  wire        cmplt_vld5,          // 完成口 5: LSU 读 (load)
+    input  wire [6:0]  cmplt_iid5,
+    input  wire        cmplt_vld6,          // 完成口 6: LSU 写 (store)
+    input  wire [6:0]  cmplt_iid6,
 
     // ===================== §6.1 解析结果 (BEU) =====================
     // 控制转移在 EX 解析出结果时写回表项。**A8**: 分支的"完成"不能早于它的
     // "解析" (同拍或 resolve 更早) —— 否则它会在两拍之间走到队头、按"没误预测"
     // 正常退休, 这次重定向就**永久丢掉**了。
-    input  wire        resolve_vld,         // 本拍有一条控制转移解析出结果
-    input  wire [6:0]  resolve_iid,         // 是哪条 (按 iid 寻址)
-    input  wire        resolve_taken,       // 实际方向; JAL/JALR 恒 1
-    input  wire        resolve_mispred,     // 预测错了 (退休时触发冲刷)
-    input  wire [31:0] resolve_target,      // 真实后继 PC (退休点重训练要用)
+    // ---- D1.4 (2026-10-02): 1 路 -> 3 路 (三发射下最多三条分支同拍解析) ----
+    // ⚠️ 多路命中同一条表项时**车道 0 (程序序最老) 胜** —— 表项只有一份
+    //    target/taken/mispred, 同时写两条是未定义; 契约上不允许, 这里把口径写死。
+    input  wire [2:0]  resolve_vld,         // 每路: 本拍该路有一条控制转移解析出结果
+    input  wire [6:0]  resolve_iid0,        // 车道 0 (最老) 是哪条 (按 iid 寻址)
+    input  wire [6:0]  resolve_iid1,        // 车道 1
+    input  wire [6:0]  resolve_iid2,        // 车道 2
+    input  wire [2:0]  resolve_taken,       // 每路: 实际方向; JAL/JALR 恒 1
+    input  wire [2:0]  resolve_mispred,     // 每路: 预测错了 (退休时触发冲刷)
+    input  wire [31:0] resolve_target0,     // 车道 0 的真实后继 PC (退休点重训练要用)
+    input  wire [31:0] resolve_target1,
+    input  wire [31:0] resolve_target2,
 
     // ===================== §6.1 异常 (ID/EX/MEM 的检出点, 老级优先) =====================
     // 只有一路收集口 (D9): 级间天然是"老级优先" (MEM > EX > ID), 被丢掉的年轻异常
@@ -292,6 +306,21 @@ module RTU (
 );
 
     // =======================================================================
+    // 路数自检 (D1.3/D1.4): 宏与端口表必须同改。
+    // ⚠️ 扁平端口表没法由宏生成 (A4), 而"改了宏没生效"正是 §9 R7 那类**静默错** ——
+    //    这里的 generate 分支只在路数对不上时被 elaborate, 里面故意例化一个
+    //    不存在的模块 ⇒ 编译期直接失败, 而不是"改了宏、跑起来没变化"。
+    // =======================================================================
+    generate
+        if (`RTU_CMPLT_PORTS != 7) begin : g_cmplt_ports_mismatch
+            RTU_CMPLT_PORTS_MUST_MATCH_RTU_define_vh u_err();
+        end
+        if (`RTU_RESOLVE_PORTS != 3) begin : g_resolve_ports_mismatch
+            RTU_RESOLVE_PORTS_MUST_MATCH_RTU_define_vh u_err();
+        end
+    endgenerate
+
+    // =======================================================================
     // 内部连线 —— **全部前置声明**。
     // ⚠️ 本仓有"先用后声明造 1 位隐式线网"的前科 (cpu/sim/rtl_patch/README.md,
     //    以及 §9 的 R7): 症状是语义静默错、只报 PCWM-W 警告, 不报错。
@@ -387,17 +416,24 @@ module RTU (
         .disp_data0         (disp_data0),
         .disp_data1         (disp_data1),
         .disp_data2         (disp_data2),
-        .cmplt_vld          ({cmplt_vld4, cmplt_vld3, cmplt_vld2, cmplt_vld1, cmplt_vld0}),
+        .cmplt_vld          ({cmplt_vld6, cmplt_vld5, cmplt_vld4, cmplt_vld3,
+                              cmplt_vld2, cmplt_vld1, cmplt_vld0}),
         .cmplt_iid0         (cmplt_iid0),
         .cmplt_iid1         (cmplt_iid1),
         .cmplt_iid2         (cmplt_iid2),
         .cmplt_iid3         (cmplt_iid3),
         .cmplt_iid4         (cmplt_iid4),
+        .cmplt_iid5         (cmplt_iid5),
+        .cmplt_iid6         (cmplt_iid6),
         .resolve_vld        (resolve_vld),
-        .resolve_iid        (resolve_iid),
+        .resolve_iid0       (resolve_iid0),
+        .resolve_iid1       (resolve_iid1),
+        .resolve_iid2       (resolve_iid2),
         .resolve_taken      (resolve_taken),
         .resolve_mispred    (resolve_mispred),
-        .resolve_target     (resolve_target),
+        .resolve_target0    (resolve_target0),
+        .resolve_target1    (resolve_target1),
+        .resolve_target2    (resolve_target2),
         .pop_n              (pop_n),
         .flush_lvl          (flush_lvl),
         .rtu_beu_retire_iid (rtu_beu_retire_iid),
