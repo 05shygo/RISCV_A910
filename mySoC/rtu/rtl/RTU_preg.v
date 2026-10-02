@@ -8,15 +8,24 @@
 //   FREE --(优先编码选中, T)--> WF_ALLOC --(派遣确认, T+1)--> ALLOC
 //                                    \--(没派成/被冲刷)--------> FREE
 //   ALLOC --(退休且写回)--> ARCH        ALLOC --(陷阱那条)--> FREE
-//   ARCH  --(退休释放 old_preg && >=32)--> FREE
+//   ARCH  --(退休且 old_preg != dst_preg)--> FREE
 //   冲刷: 非 ARCH 全部回 FREE (一拍并行, 每个 preg 各看各的, 不用扫描)
 //
 // ⚠️ `WF_ALLOC` 不是多余的簿记: 96 位三端口优先编码器是 7 级左右的组合深度,
 //    直接串在"派遣 → 分配 → 更新状态"这条链上会把派遣拍压垮 (§4.2 的 P3)。
 //    C910 也是切成两拍 (`ct_rtu_pst_preg_entry.v:288-295`)。
-// ⚠️ `p0..p31` 永不进自由池 —— 退休释放 old_preg 时必须判 `>= 32`,
-//    否则第一次写 x1 就把初始映射 p1 放回池子 (D2 里标"最容易漏的一行",
-//    本核把它放在**调用方** RTU.v 一处判, 免得观察口与池子两处判得不一致)。
+//
+// ⚠️ **2026-10-02 (D1.2): 自由池是全部 96 项, 不再钉在 p32..p95。**
+//    改之前: reset 把 p0..p31 置 ARCH 且**永不回收** ⇒ 每个"搬过家"的 lreg 都
+//    额外占着一个回不来的格子, 池子收敛到 33 (= 64 − ≤31 个被顶掉的初始映射)。
+//    顺序核无所谓, 乱序要的就是深窗口 —— 参考核 free_list 只有 32 项却挂在 64 项
+//    ROB 后面, §4 不变量 2 批评的正是这件事。
+//    现在照 C910: 初始映射的那一项起在 RETIRE 态, 被顶掉就 RETIRE → RELEASE →
+//    DEALLOC 回池子 (那边 `ct_rtu_pst_preg_entry.v:236` 的
+//    `reset_mapped ? RETIRE : DEALLOC`)。⇒ 池子恒 64、架构项恒 32,
+//    §4 不变量 4 的口径**原样成立** (探针不用改)。
+//    ⚠️ 释放**判在调用方** (RTU_commit 的 `old_preg != dst_preg`), 免得观察口与
+//       池子两处判得不一致 —— 就是 D2 里那条"最容易漏的一行"。
 //
 // 空闲计数用**加减计数器**而不是 popcount: disp_stall 要喂给前端的捕获使能,
 // 而 IF_ID 捕获本来就在 500 条最差路径里 (§4.2 的 P8)。计数器只被寄存器事件驱动。
@@ -40,7 +49,7 @@ module RTU_preg (
     // ---- 退休 ----
     input  wire [2:0]  ret_arch_vld,     // dst_preg -> ARCH (+ AMT 写)
     input  wire [2:0]  ret_kill_vld,     // 陷阱那条: 分配过但没写的 dst_preg -> FREE
-    input  wire [2:0]  ret_free_vld,     // old_preg (已判 >=32) -> FREE
+    input  wire [2:0]  ret_free_vld,     // old_preg (调用方已判 != dst_preg) -> FREE
     input  wire [6:0]  ret_dst_preg0, ret_dst_preg1, ret_dst_preg2,
     input  wire [6:0]  ret_old_preg0, ret_old_preg1, ret_old_preg2,
     input  wire [4:0]  ret_dst_lreg0, ret_dst_lreg1, ret_dst_lreg2,
@@ -104,29 +113,29 @@ module RTU_preg (
     //    ✅ 已机器核对 (一次性 TB, 未进仓库): 随机 / 小池 / 单点 / 边界定向 +
     //       req_lane 全扫下, 三路编号 / alloc_vld / 候选池 / sel_oh 与**原始版**
     //       (enc_lo/enc_hi 优先链 + 二进制往返) 逐位相同。
-    //    ⚠️ 该等价性的前提是 `free_vec[31:0] ≡ 0`。现在这条不再靠"p0..p31 恒 ARCH"
-    //       那条不变量兜着 —— 池子经 `PREG_HI_MSK` 掩过, 低段**结构上**进不来。
+    //    ⚠️ 该等价性的前提是 `free_vec[31:0] ≡ 0` (低段全是初始映射、没被顶掉过)。
+    //       改前的版本靠 `PREG_HI_MSK` 把低段**结构上**挡在窗口外; D1.2 之后窗口是
+    //       整个 [0,95], 前提回到"阶段 1 的低段恒 ARCH"这条不变量上 —— 由整核探针
+    //       (`tb/tb_miniRV_dpi.sv` 的 "ARCH 项数 == 32") 与逐位等价 TB 守着。
     // -----------------------------------------------------------------------
-
-    // p32..p95 的窗口。p0..p31 是 x0..x31 的初始映射, 永不进自由池 (D2)。
-    // ⚠️ 这里**显式**掩出来, 而不是靠"它们恒为 ARCH"这条不变量兜着: 池子向量从
-    //    源头就不含低段, 于是 cand0 / 三路扫描 / 计数器三处天然同式, 不用再逐处
-    //    论证"那个状态不可达"。合法域里 `|cand0` 与不掩时逐位相同。
-    localparam [95:0] PREG_HI_MSK = {64'hFFFF_FFFF_FFFF_FFFF, 32'd0};
 
     // 独热 → 7 位编号的**位掩码**: BM{k} 里为 1 的那些位 = "编号的第 k 位是 1" 的
     // preg。于是 `|(sel_oh & BM{k})` 就是答案的第 k 位 —— 7 个 AND-OR, 既没有优先
     // 逻辑, 也不用把编号切来切去。
-    // 窗口是 p32..p95, 所以高 64 位是"以 p32 为最低位"的周期图案:
-    //   位0 周期2 / 位1 周期4 / 位2 周期8 / 位3 周期16 / 位4 周期32 /
-    //   位5 = 窗口低半 (p32..p63) / 位6 = 窗口高半 (p64..p95)。
-    localparam [95:0] PREG_BM0 = {64'hAAAA_AAAA_AAAA_AAAA, 32'd0};
-    localparam [95:0] PREG_BM1 = {64'hCCCC_CCCC_CCCC_CCCC, 32'd0};
-    localparam [95:0] PREG_BM2 = {64'hF0F0_F0F0_F0F0_F0F0, 32'd0};
-    localparam [95:0] PREG_BM3 = {64'hFF00_FF00_FF00_FF00, 32'd0};
-    localparam [95:0] PREG_BM4 = {64'hFFFF_0000_FFFF_0000, 32'd0};
-    localparam [95:0] PREG_BM5 = {64'h0000_0000_FFFF_FFFF, 32'd0};
-    localparam [95:0] PREG_BM6 = {64'hFFFF_FFFF_0000_0000, 32'd0};
+    // ⚠️ 2026-10-02 (D1.2): 窗口从 p32..p95 扩到**全 96 项**, 于是图案从"以 p32 为
+    //    最低位的 64 位周期"变回"以 p0 为最低位的 96 位周期": 低 32 位不再是 0。
+    //    高 64 位与改前**逐位相同** (32 是 2/4/8/16/32 的公倍数, 周期图案在窗口里
+    //    对齐) —— 这正是"阶段 1 一位不变"的一半理由; 另一半是低段恒 ARCH ⇒
+    //    `sel_oh` 落不进低段。
+    //      位0 周期2 / 位1 周期4 / 位2 周期8 / 位3 周期16 / 位4 周期32 /
+    //      位5 = p32..p63 (全表里唯一一段 bit5=1 的) / 位6 = p64..p95。
+    localparam [95:0] PREG_BM0 = 96'hAAAA_AAAA_AAAA_AAAA_AAAA_AAAA;
+    localparam [95:0] PREG_BM1 = 96'hCCCC_CCCC_CCCC_CCCC_CCCC_CCCC;
+    localparam [95:0] PREG_BM2 = 96'hF0F0_F0F0_F0F0_F0F0_F0F0_F0F0;
+    localparam [95:0] PREG_BM3 = 96'hFF00_FF00_FF00_FF00_FF00_FF00;
+    localparam [95:0] PREG_BM4 = 96'hFFFF_0000_FFFF_0000_FFFF_0000;
+    localparam [95:0] PREG_BM5 = 96'h0000_0000_FFFF_FFFF_0000_0000;
+    localparam [95:0] PREG_BM6 = 96'hFFFF_FFFF_0000_0000_0000_0000;
 
     wire [95:0] free_vec;
     genvar      gv;
@@ -142,8 +151,13 @@ module RTU_preg (
     assign req_lane[1] = (ren_preg_req > 2'd1) && (ren_preg_req_lreg1 != 5'd0);
     assign req_lane[2] = (ren_preg_req > 2'd2) && (ren_preg_req_lreg2 != 5'd0);
 
-    // 可分配池 (p32..p95 之外恒 0)
-    wire [95:0] free_hi = free_vec & PREG_HI_MSK;
+    // 可分配池 = 全表里处于 FREE 的那些。
+    // ⚠️ 2026-10-02 (D1.2): 窗口是**全部 96 项**, 不再是 p32..p95 —— 初始映射被顶掉
+    //    之后也回池子、位置随改名漂移, 低段不是"只属于 x0..x31"的保留区了。
+    //    (改前这里是 `free_vec & PREG_HI_MSK`, 靠掩码把低段**结构上**挡在窗口外;
+    //     现在那条保证改由"阶段 1 低段恒 ARCH"这条不变量提供: free_vec[31:0] ≡ 0
+    //     ⇒ 本式与掩过时逐位相同。)
+    wire [95:0] free_pool = free_vec;
 
     // -----------------------------------------------------------------------
     // "某一位的上方/下方有没有空闲" —— 显式的 Kogge-Stone 平衡树, 6 级翻满 64 位
@@ -157,10 +171,11 @@ module RTU_preg (
     //    "深度可控"的那条路。ARM Enyo 的 DetectedOne/DetectedMulti
     //    (`enyo_is_vxq_free_list.sv:771-794`) 就是这个思想; 这里用移位写法表达同一
     //    棵树 (更短, 也不用给本仓引入没先例的二维线网数组)。
-    // ⚠️ 低树会往下卷, 输入必须是**已经掩过窗口**的 `free_hi` (p32 以下恒 0);
-    //    高树往上卷, 天然碰不到低段。
+    // ⚠️ 两棵树都在**全 96 位**上翻 (D1.2 之后窗口就是全表): 低树左移会从右端
+    //    移入 0、高树右移会从左端移入 0, 于是"边界之外没有空闲"这件事由移位自带,
+    //    不需要掩码。改前低段是保留区、必须靠 `PREG_HI_MSK` 兜; 现在不用了。
     // -----------------------------------------------------------------------
-    wire [95:0] fu1  = free_hi >> 1;
+    wire [95:0] fu1  = free_pool >> 1;
     wire [95:0] fu2  = fu1  | (fu1  >> 1);
     wire [95:0] fu4  = fu2  | (fu2  >> 2);
     wire [95:0] fu8  = fu4  | (fu4  >> 4);
@@ -168,7 +183,7 @@ module RTU_preg (
     wire [95:0] fu32 = fu16 | (fu16 >> 16);
     wire [95:0] fu64 = fu32 | (fu32 >> 32);
 
-    wire [95:0] fd1  = free_hi << 1;
+    wire [95:0] fd1  = free_pool << 1;
     wire [95:0] fd2  = fd1  | (fd1  << 1);
     wire [95:0] fd4  = fd2  | (fd2  << 2);
     wire [95:0] fd8  = fd4  | (fd4  << 4);
@@ -179,9 +194,9 @@ module RTU_preg (
     // ⚠️ 第 0/1 路的掩码在**末端**, 不在第 1 路的扫描输入上 —— 两条扫描并行
     //    (ARM `enyo_is_vxq_free_list.sv:349` 的写法)。见上面 ① 的长注。
     //    一位独热 = 自己 & ~(自己上方/下方有别人)。
-    wire [95:0] sel0_oh = free_hi & ~fu64;                // 最高
-    wire [95:0] sel1_oh = (free_hi & ~fd64) & ~sel0_oh;   // 最低 —— 与 sel0 并行
-    wire [95:0] v1      = free_hi & ~sel0_oh;
+    wire [95:0] sel0_oh = free_pool & ~fu64;                // 最高
+    wire [95:0] sel1_oh = (free_pool & ~fd64) & ~sel0_oh;   // 最低 —— 与 sel0 并行
+    wire [95:0] v1      = free_pool & ~sel0_oh;
 
     // 第 2 路 (次高) 挂在第 0 路后面: 先去最高再找最高; 第 1 路的掩码仍在末端
     wire [95:0] vu1  = v1 >> 1;
@@ -196,7 +211,7 @@ module RTU_preg (
     // ⚠️ 先把每个候选池声明出来再用 —— 本仓有"先用后声明造 1 位隐式线网"的前科
     //    (cpu/sim/rtl_patch/README.md 与 §9 的 R7), 症状是**语义静默错**而不是报错。
     wire [95:0] v2    = v1 & ~sel1_oh;   // = 池子去掉前两路已选中的 (第 2 路的候选域)
-    wire [95:0] cand0 = free_hi;
+    wire [95:0] cand0 = free_pool;
     wire [95:0] cand1 = v1;
     wire [95:0] cand2 = v2;
 
@@ -267,7 +282,7 @@ module RTU_preg (
     // 而 `ret_kill_vld` 是 trap 门过的 ⇒ 下面的转移把 `p_<lreg>` 标成 FREE,
     // 而 AMT 仍指着它。阶段 1 没有消费者 (ren_preg_req 恒 0 ⇒ preg_short 恒假),
     // **功能上看不出来**; 但它永久破坏"ARCH 项数 == 32", 而空闲计数每次冲刷都按
-    // `64 − arch_hi_cnt` 重算、状态表却不复原 —— 阶段 2 一开真重命名就两边对不上。
+    // `96 − 全表 ARCH` 重算、状态表却不复原 —— 阶段 2 一开真重命名就两边对不上。
     //
     // ⚠️ 计数器必须用**同一个条件**: `n_freed` 原来无条件把 `ret_kill_vld` 加进去,
     //    门了状态却不门计数, 就是"账目慢慢偏"那类 bug。
@@ -330,7 +345,9 @@ module RTU_preg (
 
     always @(posedge cpu_clk or posedge cpu_rst) begin
         if (cpu_rst) begin
-            // p0..p31 = x0..x31 的初始映射; p32..p95 = FREE
+            // p0..p31 = x0..x31 的初始映射 (D1.2 之后它们**可被回收**: 谁被顶掉谁
+            // 回池子, 位置随改名漂移); p32..p95 = FREE。
+            // 对照 C910 `ct_rtu_pst_preg_entry.v:236`: `reset_mapped ? RETIRE : DEALLOC`。
             for (i = 0; i < 32; i = i + 1) st[i] <= `RTU_P_ARCH;
             for (i = 32; i < 96; i = i + 1) st[i] <= `RTU_P_FREE;
         end else begin
@@ -376,24 +393,26 @@ module RTU_preg (
     wire [3:0] n_alloc = {3'b0, rtu_preg_alloc_vld0} + {3'b0, rtu_preg_alloc_vld1}
                        + {3'b0, rtu_preg_alloc_vld2};
 
-    // 冲刷后还在池子外的只有 ARCH: p0..p31 恒 ARCH (32 个), 高段里 retired 过的映射
-    // 仍是 ARCH —— `st[i] == ARCH ? ARCH : FREE` 那一条把它们留下了。所以自由数
-    // **不是** 64 而是 64 − (p32..p95 里 ARCH 的个数)。写死 64 会永久高报, 于是
-    // `preg_short` 迟一拍才拦, 重命名级按高报的数发请求却拿不满编号 (§6.0 的承诺
-    // "编号在 T+1 拍仍然有效"就破了)。
+    // 冲刷后还在池子外的只有 ARCH: 初始映射那 32 项、以及任何 retired 过的映射 ——
+    // `st[i] == ARCH ? ARCH : FREE` 那一条把它们留下了。所以自由数**不是** 96 而是
+    // `96 − 全表 ARCH 数`。写死 96 会永久高报, 于是 `preg_short` 迟一拍才拦,
+    // 重命名级按高报的数发请求却拿不满编号 (§6.0 的承诺 "编号在 T+1 拍仍然有效"就破了)。
     wire [95:0] arch_vec;
     generate
         for (gv = 0; gv < 96; gv = gv + 1) begin : g_arch
             assign arch_vec[gv] = (st[gv] == `RTU_P_ARCH);
         end
     endgenerate
-    // ⚠️ 只数 p32..p95。用位选而不是掩码常量: 掩码写反 (拼接是高位在前) 会去数
-    //    p0..p31 —— 那 32 个恒为 ARCH, 症状是自由数恒低 30 上下, 看着像固定偏移。
-    wire [6:0] arch_hi_cnt = $countones(arch_vec[95:32]);
+    // ⚠️ 数**全表** 96 项 (D1.2)。改前这里是 `arch_vec[95:32]` 配常量 64 —— 那套写法
+    //    把"p0..p31 恒 ARCH"当成了结构事实; 现在初始映射会被顶掉, 不成立了。
+    //    阶段 1 里两者逐位同值: 低 32 项恒 ARCH ⇒ `96 − (32 + 高段)` == `64 − 高段`。
+    wire [6:0] arch_cnt = $countones(arch_vec);
 
     always @(posedge cpu_clk or posedge cpu_rst) begin
+        // ⚠️ 复位值必须是**常数** 64 (= 96 − 32 项初始映射): 那一拍 st[] 在真实
+        //    上电时是 X, `96 − arch_cnt` 会算出 X 并永久留在计数器里。
         if (cpu_rst)          free_cnt_q <= 7'd64;
-        else if (flush_lvl)   free_cnt_q <= 7'd64 - arch_hi_cnt;
+        else if (flush_lvl)   free_cnt_q <= 7'd96 - arch_cnt;
         else                  free_cnt_q <= free_cnt_q + {3'b0, n_freed} - {3'b0, n_alloc};
     end
 

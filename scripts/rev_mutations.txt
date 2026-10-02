@@ -437,21 +437,28 @@ BEFORE
     wire [2:0] kill_hit = ret_kill_vld;
 AFTER
 
-### R01 rtu_old_preg_gate_dropped
+### R01 rtu_init_map_not_recycled
 file:  mySoC/rtu/rtl/RTU_commit.v
 build: unit
 tests: rtu_unit
-note:  退休释放 `old_preg` 时的 `>= 32` 门控 (D2 里标"最容易漏的一行")。
-       p0..p31 是 x0..x31 的**初始映射, 永不回收** —— 拿掉门控,
-       第一次写 x1 就把 p1 放回自由池, 之后某个 x1 的读者拿到别人的数据。
-       单测台抓它的判据: "释放了架构寄存器 p0..p31" + 空闲计数/AMT 立刻发散。
+note:  **D1.2 的回退变异**: 把"被顶掉的映射就回收"改回 D1.2 之前的 `old_preg >= 32`。
+       D1.2 之前 p0..p31 是 x0..x31 的初始映射且**永不回收** ⇒ 每个"搬过家"的 lreg
+       都额外占着一个回不来的格子, 自由池收敛到 33 (64 − ≤31); 顺序核无所谓, 乱序要的
+       就是深窗口 —— 3 发射下 64 项 ROB 根本填不满 (参考核被 §4 不变量 2 批评的正是这件事)。
+       ⚠️ 这条变异是**新判据的锚**: D1.2 之前的 R01 断言的是"低段不许回收", 改完之后
+       那条判据连同它的前提一起作废, 于是把它**反过来**钉住新行为。
+       单测台抓它的判据: "释放脉冲不符" (低段编号被顶掉时应当发释放脉冲而它没有) ——
+       单元台的参考模型现在按 `old != dst` 算期望值, 所以只要有 lreg 的当前映射落在
+       低段 (单元台从 x0..x31 的初始映射起步, 必然发生), 注入后立刻红。
 <<<BEFORE
+    assign ret_free_vld = wr_eff & { (old2 != ret_dst_preg2),
+                                     (old1 != ret_dst_preg1),
+                                     (old0 != ret_dst_preg0) };
+BEFORE
+<<<AFTER
     assign ret_free_vld = wr_eff & { (old2[6:5] != 2'b00),
                                      (old1[6:5] != 2'b00),
                                      (old0[6:5] != 2'b00) };
-BEFORE
-<<<AFTER
-    assign ret_free_vld = wr_eff;
 AFTER
 
 ### R02 rtu_flush_keeps_alloc

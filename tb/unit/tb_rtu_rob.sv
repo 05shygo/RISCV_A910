@@ -22,9 +22,12 @@
 // 证明"RTL 等于它自己"。参考模型是纯行为描述, 与 RTL 结构无关。
 //
 // 另有几条硬不变量 (每拍):
-//   * 分配器给出的编号两两不同、都 >= 32、且不在占用态;
-//   * 释放脉冲必须逐位等于"该指令真写了 rd 且 old_preg >= 32"; 释放的编号必须等于 old_preg;
-//   * 空闲计数 == 64 - 占用数 (饱和到 3);
+//   * 分配器给出的编号两两不同、且给出时必是 FREE 态;
+//     (⚠️ 2026-10-02 D1.2: 原来还有一条"都 >= 32"—— 初始映射可以被顶掉回收之后,
+//      低段编号会被再分配, 那条禁则连同它的前提一起作废)
+//   * 释放脉冲必须逐位等于"该指令真写了 rd 且 old_preg != dst_preg"; 释放的编号必须等于 old_preg;
+//     (原来判的是 `old_preg >= 32`; D1.2 之后初始映射也回收, 判据换成"别释放同拍刚转 ARCH 的那个")
+//   * 空闲计数 == 全表 FREE 的个数 (饱和到 3);
 //   * 冲刷时间线严格 T(重定向+冻结) / T+1(backend_flush) / T+2(ren_flush+AMT) / T+3 放开;
 //   * AMT 广播逐位等于参考模型自己维护的架构映射表。
 //
@@ -646,8 +649,11 @@ module tb_rtu_rob;
                             n_store = n_store + 1;
                         end
                         // 释放 old_preg: 脉冲与编号都必须逐位一致
+                        // ⚠️ 2026-10-02 (D1.2): 判据从 `old >= 32` 换成 `old != dst`。
+                        //    初始映射 p0..p31 **被顶掉时就回收** (照 C910 的
+                        //    RETIRE → RELEASE → DEALLOC), 所以低段编号也会被释放。
                         exp_free_k = (x_rfwe[i] && (x_lreg[i] != 5'd0) &&
-                                      (x_opr[i] >= 7'd32) && !trap_this);
+                                      (x_opr[i] != x_dpr[i]) && !trap_this);
                         begin
                             logic       fv_k;
                             logic [6:0] fp_k;
@@ -659,7 +665,14 @@ module tb_rtu_rob;
                             if (fv_k && (fp_k !== x_opr[i]))
                                 err($sformatf("指令 %0d 释放的编号不符: exp=%0d got=%0d",
                                               i, x_opr[i], fp_k));
-                            if (fv_k && (fp_k < 7'd32)) err("释放了架构寄存器 p0..p31");
+                            // ⚠️ 2026-10-02 (D1.2): 原来这里禁的是 `fp_k < 32`
+                            //    ("释放了架构寄存器 p0..p31")。现在初始映射**允许**回收,
+                            //    所以改禁"释放的编号 == 同拍刚转 ARCH 的那个编号" ——
+                            //    那会让同一个编号同拍既转 ARCH 又回 FREE, 状态表被 arch
+                            //    抢走而计数器照加, 是 RTU_commit 那条 `!=` 门控守的东西。
+                            if (fv_k && (fp_k === x_dpr[i]))
+                                err($sformatf("释放的编号 p%0d 与同拍转 ARCH 的 dst_preg 相同 (指令 %0d)",
+                                              fp_k, i));
                             // 纯 DUT 侧: 释放的编号在 DUT 的池子里绝不该是 FREE 态
                             // (它是"被替换掉的架构映射", 一定处于 ARCH/ALLOC)。
                             if (fv_k && (st_snap_q[2*fp_k +: 2] === 2'd0)) begin
@@ -831,9 +844,10 @@ module tb_rtu_rob;
                 err($sformatf("分配器给出非 FREE 的 p%0d (st=%0d)", alloc1, dut.u_preg.st[alloc1]));
             if (alloc_vld2 && (dut.u_preg.st[alloc2] !== 2'd0))
                 err($sformatf("分配器给出非 FREE 的 p%0d (st=%0d)", alloc2, dut.u_preg.st[alloc2]));
-            if (alloc_vld0 && (alloc0 < 7'd32)) err("分配器给出架构寄存器");
-            if (alloc_vld1 && (alloc1 < 7'd32)) err("分配器给出架构寄存器");
-            if (alloc_vld2 && (alloc2 < 7'd32)) err("分配器给出架构寄存器");
+            // ⚠️ 2026-10-02 (D1.2): 原来这里禁 `alloc < 32` ("分配器给出架构寄存器")。
+            //    现在初始映射被顶掉后会回池子, 低段编号**可以被再分配** —— 这条禁则
+            //    连同它守的那个前提一起作废; 真正的保证是上面那条 "给出的编号必须是
+            //    FREE 态" (结构性的, 与编号落在哪一段无关)。
             if (alloc_vld0 && alloc_vld1 && (alloc0 == alloc1)) err("两路分配撞车");
             if (alloc_vld0 && alloc_vld2 && (alloc0 == alloc2)) err("两路分配撞车");
             if (alloc_vld1 && alloc_vld2 && (alloc1 == alloc2)) err("两路分配撞车");
@@ -869,20 +883,22 @@ module tb_rtu_rob;
 
 
             // ---------- 6b) 空闲计数 == 池子里真 FREE 的个数 ----------
-            // 纯 DUT 侧自洽: 编号总数 96, p0..p31 恒为初始映射且永不回收, 所以
-            // "还剩几个可用" 就是高段里 FREE 的个数。这条是 §6.0 对重命名级的承诺
-            // (剩余可用数), 高报会让对面按高报的数发请求却拿不满编号。
+            // 纯 DUT 侧自洽: 编号总数 96, "还剩几个可用" 就是全表 FREE 的个数。
+            // 这条是 §6.0 对重命名级的承诺 (剩余可用数), 高报会让对面按高报的数发
+            // 请求却拿不满编号。
+            // ⚠️ 2026-10-02 (D1.2): 原来只数高段 [32,96) —— 那是"p0..p31 永不回收"
+            //    时代的写法; 现在初始映射会被顶掉, 低段也会进池子, 必须数全表。
             begin
                 integer fcnt, fpre;
                 fcnt = 0; fpre = 0;
-                for (int q = 32; q < 96; q = q + 1) begin
+                for (int q = 0; q < 96; q = q + 1) begin
                     if (dut.u_preg.st[q] === `RTU_P_FREE) fcnt = fcnt + 1;
                     if (st_snap_q[2*q +: 2] === `RTU_P_FREE) fpre = fpre + 1;
                 end
                 if (dut.u_preg.free_cnt !== fcnt[6:0]) begin
                     string chg;
                     chg = "";
-                    for (int q = 32; q < 96; q = q + 1)
+                    for (int q = 0; q < 96; q = q + 1)
                         if (st_snap_q[2*q +: 2] !== dut.u_preg.st[q])
                             chg = {chg, $sformatf(" p%0d:%0d>%0d", q,
                                                   st_snap_q[2*q +: 2], dut.u_preg.st[q])};

@@ -263,18 +263,33 @@ module RTU_commit (
     assign ret_dst_lreg1 = lreg1;
     assign ret_dst_lreg2 = lreg2;
 
-    // ⚠️ 最容易漏的一行: p0..p31 是 x0..x31 的初始映射, 永不回收 (D2)。
-    //    这里判 `>= 32`, 且只在"这条真的分配过 preg"时才放 (wr_eff)。
-    //    反例: 不判的话第一次写 x1 就把初始映射 p1 放回自由池。
+    // ⚠️ 最容易漏的一行 (D2 / D1.2): "被顶掉的映射"什么时候回自由池。
+    //    判据是 `old_preg != dst_preg`, **不是** `old_preg >= 32`。两件事分开看:
+    //
+    //    * **阶段 1** (恒等映射 `dst = old = p_<lreg>`): 恒假 ⇒ 一位不动。
+    //      老判据 `>= 32` 在恒等映射下同样恒假 —— 这正是它当年被写成 `>= 32` 的
+    //      真实意图: "别把刚转成 ARCH 的那个编号又放回池子"。
+    //    * **阶段 2** (真重命名): `old` 来自 RAT 的活编号 (ARCH 或 ALLOC 态),
+    //      `dst` 来自 FREE 池 (分配那一刻必是 FREE) ⇒ 必然不等 ⇒ 恒真。
+    //      于是**初始映射 p0..p31 被顶掉时也会回收** (照 C910: 初始映射的 entry
+    //      起在 RETIRE 态, 被顶掉走 RETIRE -> RELEASE -> DEALLOC 回池子),
+    //      自由池恒 64, 而不是收敛到 33。
+    //
+    // ⚠️ 为什么非要留一条判据 (而不是干脆 `ret_free_vld = wr_eff`):
+    //    若 `old == dst`, 同一个编号会**同拍**被写两次 —— `ret_arch_vld` 把它转
+    //    ARCH、`ret_free_vld` 又把它放回 FREE。状态表的优先级让 ARCH 赢, 但
+    //    `n_freed` 计数器照样 +1 ⇒ **账目与状态表当场对不上** (正是 §7 读法 A
+    //    那条"必须配套的微调"的同一个坑, 只是换了个方向)。
+    //
     //    (中间网线必须先声明再用 —— 双重 part-select `win2[..][6:5]` 是非法语法,
     //     而漏声明会退化成 1 位隐式线网, 症状是静默错。)
     wire [6:0] old0 = win0[`RTU_E_OLD_PREG];
     wire [6:0] old1 = win1[`RTU_E_OLD_PREG];
     wire [6:0] old2 = win2[`RTU_E_OLD_PREG];
 
-    assign ret_free_vld = wr_eff & { (old2[6:5] != 2'b00),
-                                     (old1[6:5] != 2'b00),
-                                     (old0[6:5] != 2'b00) };
+    assign ret_free_vld = wr_eff & { (old2 != ret_dst_preg2),
+                                     (old1 != ret_dst_preg1),
+                                     (old0 != ret_dst_preg0) };
 
     // -----------------------------------------------------------------------
     // 提交点副作用
