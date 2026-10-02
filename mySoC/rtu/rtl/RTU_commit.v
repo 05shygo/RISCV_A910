@@ -123,19 +123,23 @@ module RTU_commit (
     output wire [31:0]         commit_value1,
     output wire [31:0]         commit_value2,
 
-    // ---- 退休点重训练 (阶段 4b 的接口, 现在就把线接出来) ----
+    // ---- 退休点重训练 (阶段 4b, 2026-10-02 接上) ----
     output wire                train_vld,
     output wire [31:0]         train_pc,
+    output wire [31:0]         train_target,   // = 表项的 TARGET (真实后继 PC, BTB 用)
     output wire [24:0]         train_chk,
-    output wire                train_taken
+    output wire                train_taken,
+    output wire                train_is_cond,
+    output wire                train_is_jal,
+    output wire                train_is_jalr
 );
 
     // -----------------------------------------------------------------------
     // 字段展开
     // -----------------------------------------------------------------------
-    wire [4:0]  f0 = win0[`RTU_E_FLAGS];
-    wire [4:0]  f1 = win1[`RTU_E_FLAGS];
-    wire [4:0]  f2 = win2[`RTU_E_FLAGS];
+    wire [6:0]  f0 = win0[`RTU_E_FLAGS];
+    wire [6:0]  f1 = win1[`RTU_E_FLAGS];
+    wire [6:0]  f2 = win2[`RTU_E_FLAGS];
 
     wire        w0_vld   = win0[`RTU_E_VLD];
     wire        w1_vld   = win1[`RTU_E_VLD];
@@ -156,6 +160,13 @@ module RTU_commit (
     wire        w0_br    = f0[`RTU_FLG_BRANCH];
     wire        w1_br    = f1[`RTU_FLG_BRANCH];
     wire        w2_br    = f2[`RTU_FLG_BRANCH];
+    // 控制转移的三分类 (阶段 4b): 条件分支 = BRANCH & ~JAL & ~JALR
+    wire        w0_jal   = f0[`RTU_FLG_JAL];
+    wire        w1_jal   = f1[`RTU_FLG_JAL];
+    wire        w2_jal   = f2[`RTU_FLG_JAL];
+    wire        w0_jalr  = f0[`RTU_FLG_JALR];
+    wire        w1_jalr  = f1[`RTU_FLG_JALR];
+    wire        w2_jalr  = f2[`RTU_FLG_JALR];
 
     wire        w0_misp  = win0[`RTU_E_MISPRED];
     wire        w1_misp  = win1[`RTU_E_MISPRED];
@@ -329,7 +340,30 @@ module RTU_commit (
     assign commit_value2 = w2_csr ? csr_rdata : preg_rdata2;
 
     // -----------------------------------------------------------------------
-    // 退休点重训练 (取最老的一条分支)
+    // 退休点重训练 (阶段 4b): 取窗口里**程序序最老**的那条控制转移
+    //
+    // 为什么搬到这里 (计划 §7-4b): 乱序下分支是**乱序完成/解析**的, 留在 EX 级训练
+    // 会把 GHR 按乱序顺序推、方向表被静默带偏。这与"重定向必须最旧"是同一个约束
+    // 的两面。顺带修掉错误路径训练 (EX 那份只有 `~stall & ~redirect` 两道门)。
+    //
+    // 口径对齐 (与搬走之前的 EX 级逐条对照过, 为的是 §7-4c 的等价性证据。
+    // 实测: branch_bench 57344 条条件分支里误预测 2988 → 2990 (差 2 条),
+    // 指令数逐位一致 —— 差的那些是"训练晚 2~3 拍"期间被再次取到的极少数分支,
+    // 属训练时机的固有代价, 不是数据错):
+    //   * 用 `commit_vld` 而**不是** `write_vld` —— 陷阱那条 (`ena=0`, 只报不写)
+    //     原来在 EX 就已经训练过一次, 这里保持同口径。**有意**不"顺手改对"。
+    //   * `train_taken` 直接用表项的 `TAKEN`: `rtu_resolve_taken` 对条件分支是
+    //     实际方向、对 JAL/JALR 恒 1 (mycpu.v), 与 EX 的
+    //     `(npc_op==BRANCH) ? ex_br_taken : 1'b1` 同值。
+    //   * `train_chk` 用表项里那份 (取指时打包、随指令走完整条流水),
+    //     而不是 EX 当拍现读的 chk —— 后者在乱序下可能属于**另一条**指令。
+    //
+    // ⚠️⚠️ **只有一个训练口, 3 发射落地前必须处理**: 同一窗口里出现 2 条以上控制
+    //     转移时, 这里只发出**最老**的那条, 其余的**静默丢掉**训练 (C910 是 3 个
+    //     退休训练口). 1 发射的 5 级顺序核里窗口最多一条分支 ⇒ 恒等价、测不出来;
+    //     3 发射下最多丢 2 条。IFU 那边 `u_bht/u_btb` 也只有单 `upd_vld` 口,
+    //     所以这是个**两头都要改**的活 (RTU 加训练 FIFO 或按宽度节流 + IFU 加口),
+    //     属"阶段 3 乱序落地"清单, 见 doc/rtu_plan_zh.md §7-4b 的注。
     // -----------------------------------------------------------------------
     wire tr0 = commit_vld[0] & w0_br;
     wire tr1 = commit_vld[1] & w1_br;
@@ -337,7 +371,17 @@ module RTU_commit (
 
     assign train_vld   = tr0 | tr1 | tr2;
     assign train_pc    = tr0 ? win0[`RTU_E_PC]   : tr1 ? win1[`RTU_E_PC]   : win2[`RTU_E_PC];
+    // `TARGET` 是 BEU 在解析那拍写回表项的真实后继 PC (= EX 的 `actual_npc`),
+    // 也就是原来 `iu_btb_target` 的驱动源。不跳的条件分支它就是 pc+4 ——
+    // BTB 的"不跳"训练用不上目标, 由 upd_taken 决定写不写。
+    assign train_target= tr0 ? win0[`RTU_E_TARGET]: tr1 ? win1[`RTU_E_TARGET]: win2[`RTU_E_TARGET];
     assign train_chk   = tr0 ? win0[`RTU_E_CHK]  : tr1 ? win1[`RTU_E_CHK]  : win2[`RTU_E_CHK];
     assign train_taken = tr0 ? win0[`RTU_E_TAKEN]: tr1 ? win1[`RTU_E_TAKEN]: win2[`RTU_E_TAKEN];
+    // 三分类互斥 (条件分支 = is_branch & ~jal & ~jalr), 与 EX 的
+    // `iu_btb_is_cond/is_jal/is_jalr` 同集合 —— BTB 靠它选"写哪一类"。
+    assign train_is_jal  = tr0 ? w0_jal  : tr1 ? w1_jal  : w2_jal;
+    assign train_is_jalr = tr0 ? w0_jalr : tr1 ? w1_jalr : w2_jalr;
+    assign train_is_cond = (tr0 ? w0_br  : tr1 ? w1_br  : w2_br)
+                         & ~train_is_jal & ~train_is_jalr;
 
 endmodule

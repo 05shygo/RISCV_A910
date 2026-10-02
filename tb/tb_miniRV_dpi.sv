@@ -87,6 +87,55 @@ module tb_miniRV_dpi;
     mtime_d1 <= dut.u_bridge.mtime;
   end
 
+  // ---------------------------------------------------------------------------
+  // RTU 不变量: **架构态 (ARCH) 的 preg 永远不该被 kill** (doc/rtu_plan_zh.md
+  // §7 读法 A 的"必须配套的一处 RTL 微调" / §4 不变量 4 的那条精神)
+  //
+  // 为什么要在**整核**里单独守这一条: 阶段 1 是恒等映射 (dst_preg == p_<lreg>),
+  // 而 `p_<lreg>` 处于 ARCH 态 —— 一条**写寄存器又陷进去**的指令会把
+  // `ret_kill_vld` 拉高 (陷阱那条"分配过但没写"), 若 RTU_preg 不门掉 ARCH,
+  // `p_<lreg>` 就被标成 FREE 而 AMT 仍指着它。
+  // 这个 bug 在整核里**没有任何消费者**(`ren_preg_req` 恒 0 ⇒ `preg_short` 恒假),
+  // difftest 全绿、47 用例全过 —— 但它永久破坏"ARCH 项数 == 32", 到阶段 2 一开
+  // 真重命名就两边对不上。**单元台也抓不到**: 那边的 dst_preg 来自分配器,
+  // 被 kill 的必然是 ALLOC 态。⇒ 只有这一条探针能守。
+  //
+  // 采样: `always @(posedge)` 读到的是**边沿前**的值, 而 `ret_kill_vld` /
+  // `ret_dst_preg*` 都是组合的 —— 两者是同一帧, 正是"这个边沿要做的那次 kill"。
+  // 复现方式 (反向验证): 把 RTU_preg 里 kill 分支的 `kill_hit` 换回
+  // `ret_kill_vld`, 跑任意带陷阱的用例 (asm/trap.S) 立刻炸。
+  // ---------------------------------------------------------------------------
+  // 判据是**结果**不是输入: 阶段 1 的恒等映射下 `ret_kill_vld` **本来就会**
+  // 对着 ARCH 态拉起 (RTU_commit 只看 "陷阱 & rf_we & rd!=0"), 真正要守的是
+  // "它**没有**把架构态改掉" —— 也就是 §4 不变量 4: ARCH 项数恒 == 32。
+  // 数输入信号 (ret_kill_vld) 会把正常情形误判成错 (第一版就是这么写的, 当场误报)。
+  // 全表计数只在"可能改变项数"的事件后一拍做: 每拍都数的话 CoreMark 要多跑
+  // ~1e9 次循环比较, 白拖慢仿真 (误预测冲刷 ~16.7 万次 × 96 就够密了)。
+  // synopsys translate_off
+  reg         rtu_evt_q;
+  integer     rtu_gi;
+  integer     rtu_arch_cnt;
+  always @(posedge clk) begin
+    if (rst) begin
+      rtu_evt_q <= 1'b0;
+    end else begin
+      // 本边沿将要发生的事: kill / 冲刷 (两者是唯一能改变 ARCH 项数的路径)
+      rtu_evt_q <= dut.Core_cpu.u_rtu.u_preg.ret_kill_vld[0]
+                 | dut.Core_cpu.u_rtu.u_preg.ret_kill_vld[1]
+                 | dut.Core_cpu.u_rtu.u_preg.ret_kill_vld[2]
+                 | dut.Core_cpu.u_rtu.u_preg.flush_lvl;
+      if (rtu_evt_q) begin          // 边沿已过, st 是本边沿之后的值
+        rtu_arch_cnt = 0;
+        for (rtu_gi = 0; rtu_gi < 96; rtu_gi = rtu_gi + 1)
+          if (dut.Core_cpu.u_rtu.u_preg.st[rtu_gi] == 2'd3) rtu_arch_cnt = rtu_arch_cnt + 1;
+        if (rtu_arch_cnt != 32)
+          $fatal(1, "[RTU 不变量] t=%0t ARCH 项数 = %0d (应为 32) —— preg 状态表被写坏",
+                 $time, rtu_arch_cnt);
+      end
+    end
+  end
+  // synopsys translate_on
+
   // Difftest: called every cycle, but the golden model only advances on cycles
   // where the DUT reports a valid writeback commit (see dpi/dpi_shim.c).
   // 定时器中断挂起位: 直接采 DUT 内部【它自己正在用的那一级寄存信号】,

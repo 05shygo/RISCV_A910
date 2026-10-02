@@ -406,7 +406,36 @@ AFTER
 #    单测台不看整核的 Test Point Pass, 它自己的签名是文件里的 `*** FAIL`
 #    (逐拍比对 / 硬不变量 / 覆盖) 加上末尾的 `$fatal` -> 非 0 退出。
 #    这几条守的都是"整核 difftest 里只表现成某条指令结果不对、根本定位不到"的机制。
+#
+#    ⚠️ R06 是**例外**: 它由**整核** (+ 一条不变量探针) 守, 单测台反而抓不到。
+#    详见那条自己的 note。
 # ---------------------------------------------------------------------------
+
+### R06 rtu_kill_arch_gate_dropped
+file:  mySoC/rtu/rtl/RTU_preg.v
+tests: trap
+note:  陷阱那条的 kill ("分配出去但没写的 dst_preg 回 FREE") 必须门掉 ARCH 态。
+       阶段 1 是恒等映射 (dst_preg == p_<lreg>, 处于 ARCH), 一条**写寄存器又陷进去**
+       的指令会让 RTU_commit 拉 `ret_kill_vld`; 不门的话 p_<lreg> 被标成 FREE
+       而 AMT 仍指着它 ⇒ 永久破坏 "ARCH 项数 == 32", 阶段 2 一开真重命名,
+       状态表与空闲计数就对不上 (空闲计数每次冲刷按 64−arch_hi_cnt 重算, 表却不复原)。
+       ⚠️ **为什么这条与众不同 (两条常规防线同时失明)**:
+         * 单测台抓不到 —— 那边的 dst_preg 来自分配器, 被 kill 的必然是 ALLOC 态,
+           门控是惰性的 (R01~R05 那套激励一位不变);
+         * 整核 difftest 也抓不到 —— 阶段 1 里 `ren_preg_req` 恒 0, `preg_short` 恒假,
+           这个损坏**没有任何消费者**, 功能全对。
+       ⇒ 只能靠 `tb/tb_miniRV_dpi.sv` 里直接守不变量本身的那条探针
+         (`[RTU 不变量] ARCH 项数 == 32`, 在 kill/冲刷后一拍做全表计数)。
+       实测: 注入后 `make run TEST=trap IFU=2` 在 t=1.9us 就报
+       "ARCH 项数 = 31 (应为 32)"。
+<<<BEFORE
+    wire [2:0] kill_hit = { ret_kill_vld[2] & not_arch_vec[ret_dst_preg2],
+                            ret_kill_vld[1] & not_arch_vec[ret_dst_preg1],
+                            ret_kill_vld[0] & not_arch_vec[ret_dst_preg0] };
+BEFORE
+<<<AFTER
+    wire [2:0] kill_hit = ret_kill_vld;
+AFTER
 
 ### R01 rtu_old_preg_gate_dropped
 file:  mySoC/rtu/rtl/RTU_commit.v

@@ -166,6 +166,20 @@ wire        rtu_core_redirect;         // ← RTU 实例驱动: 核内重定向�
 wire        beu_redirect_vld;          // → RTU: EX 级真的发出误预测重定向的那一拍
 wire        rtu_ifu_chgflw_vld;
 wire [31:0] rtu_ifu_chgflw_pc;
+// 阶段 4b: 退休点重训练口 (RTU 实例驱动 → ifu2 的 rtu_train_*)。
+// ⚠️ **必须在这里显式声明位宽** —— 8 根里只有 vld 是 1 位, 其余是 32/32/25 位。
+//    漏声明它们会变成 **1 位隐式线网** (VCS 只报 IWNF 警告, 不报错), 训练数据被
+//    静默截成最低位: 功能全对 (预测器只影响准确率)、difftest 全绿, 但方向表被
+//    灌进垃圾。这就是 §9 的 R7 与 `cpu/sim/rtl_patch/README.md` 记的那个坑。
+//    (2026-10-02 真踩到了: 加完接线后 compile.log 里 8 条 IWNF。)
+wire        rtu_ifu_train_vld;
+wire [31:0] rtu_ifu_train_pc;
+wire [31:0] rtu_ifu_train_target;
+wire [24:0] rtu_ifu_train_chk;
+wire        rtu_ifu_train_taken;
+wire        rtu_ifu_train_is_cond;
+wire        rtu_ifu_train_is_jal;
+wire        rtu_ifu_train_is_jalr;
 wire        wb_irq_safe;               // 给 difftest: 这一拍是不是"取中断的沿"
 wire        rtu_csr_we;                // 退休拍: CSR 写使能 (含"这条真要写"的口径)
 wire [11:0] rtu_csr_addr;              // 退休拍: CSR 地址 (读口 2 与写口共用)
@@ -408,21 +422,26 @@ rv32ifu2_top #(
     .idu_accept_num(if_accept ? 2'd1 : 2'd0),
     .iu_chgflw_vld (iu_ifu_chgflw_vld),
     .iu_chgflw_pc  (iu_ifu_chgflw_pc),
-    .iu_bht_check_vld     (iu_bht_check_vld),
-    .iu_cur_pc            (iu_cur_pc),
-    .iu_bht_condbr_taken  (iu_bht_condbr_taken),
-    .iu_bht_pred          (iu_bht_pred),
-    .iu_chk_idx           (iu_chk_idx),
-`ifdef USE_IFU2
-    .iu_btb_update_vld    (iu_btb_update_vld),
-    .iu_btb_cur_pc        (iu_btb_cur_pc),
-    .iu_btb_taken         (iu_btb_taken),
-    .iu_btb_target        (iu_btb_target),
-    .iu_btb_is_cond       (iu_btb_is_cond),
-    .iu_btb_is_jal        (iu_btb_is_jal),
-    .iu_btb_is_jalr       (iu_btb_is_jalr),
+    // ---- 训练口: 数据来自**退休窗口** (阶段 4b, 2026-10-02) ----
+    // 原来那一组 EX 级训练信号 (iu_bht_check_vld / iu_cur_pc / iu_chk_idx /
+    // iu_btb_update_vld / iu_btb_cur_pc / iu_btb_target / iu_btb_is_jal / is_jalr)
+    // 在**本例化里已经全部不用** —— rv32ifu2_top 的端口已随之删掉。
+    // ⚠️ 但它们的 `assign` 在上面**保留着**: 下面那个 `ifu_subsys` (IFU=1, 遗留
+    //    的 C910 派生前端) 还在消费同一组网线, 仍是 EX 级训练。
+    //    ⇒ 已知缺口: **IFU=1 下训练没搬** (它慢 10~15 倍, 不是乱序的目标配置)。
+    .rtu_train_vld        (rtu_ifu_train_vld),
+    .rtu_train_pc         (rtu_ifu_train_pc),
+    .rtu_train_target     (rtu_ifu_train_target),
+    .rtu_train_chk        (rtu_ifu_train_chk),
+    .rtu_train_taken      (rtu_ifu_train_taken),
+    .rtu_train_is_cond    (rtu_ifu_train_is_cond),
+    .rtu_train_is_jal     (rtu_ifu_train_is_jal),
+    .rtu_train_is_jalr    (rtu_ifu_train_is_jalr),
+    // ---- 下面这三个**留在 EX**(不是训练口): 重定向当拍现算 ghr_restore 与
+    //      RAS 指针要用当拍值, 换成退休点会把 GHR/RAS 修到别的指令的快照上 ----
     .iu_btb_chk           (iu_btb_chk),
-`endif
+    .iu_btb_taken         (iu_btb_taken),
+    .iu_btb_is_cond       (iu_btb_is_cond),
     .rtu_flush     (rtu_ifu_flush),
     .rtu_chgflw_vld(rtu_ifu_chgflw_vld),
     .rtu_chgflw_pc (rtu_ifu_chgflw_pc),
@@ -915,6 +934,20 @@ assign iu_ifu_chgflw_pc  = actual_npc;
 assign beu_redirect_vld = iu_ifu_chgflw_vld;
 
 // ===================== BHT 训练反馈 =====================
+// ⚠️⚠️ **2026-10-02 阶段 4b: 这一整块对 `rv32ifu2_top` 已经不再生效。**
+//    训练源已改由退休窗口驱动 (`rtu_ifu_train_*` → ifu2 的 `rtu_train_*`,
+//    见上面 u_ifu_subsys 的例化), 理由见 doc/rtu_plan_zh.md §7-4b:
+//    乱序下分支是乱序完成/解析的, EX 级训练会把 GHR 按乱序顺序推、方向表被
+//    静默带偏; 而且下面这些门控**挡不住错误路径**的分支。
+//    这里**保留**是因为 `ifu_subsys` (IFU=1, 遗留的 C910 派生前端) 还在消费
+//    同一组网线 —— 它的训练口形状不同 (bht_check_vld/chk_idx), 没跟着搬。
+//    ⇒ **已知缺口: IFU=1 下训练仍在 EX**。IFU=1 慢 10~15 倍, 不是乱序的目标
+//      配置; 哪天真要用它跑乱序, 这块必须一起搬 (或直接退役 IFU=1)。
+//    ⚠️ `iu_btb_chk / iu_btb_taken / iu_btb_is_cond` **三个仍属 EX**, 不是遗留:
+//       ifu2 在**重定向当拍**用它们现算 ghr_restore / RAS 指针 (见
+//       rv32ifu2_top.v 的 GHR 段), 换成退休点会修到别的指令的快照上。
+//
+// 下面这一组只服务 `ifu_subsys`:
 // 一条条件分支在 EX 解析出结果就回送一次, 不论预测对错 —— 方向表靠这个训练,
 // 只报误预测的话预测正确的分支永远学不到. 用 ex_npc_op==BRANCH 而不是
 // ex_br_taken: 不跳的分支同样要训练.
@@ -1256,6 +1289,12 @@ wire        id_is_cf     = (id_npc_op == `NPC_SEL_BRANCH) |
                            (id_npc_op == `NPC_SEL_JAL)    |
                            (id_npc_op == `NPC_SEL_ALU);
 wire        id_irq_safe  = ~id_ram_we & ~id_csr_we;   // 只进 flags 的 intmask 位
+// 控制转移的三分类 (阶段 4b): BTB 的 `upd_cond/upd_jal/upd_jalr` 要它。
+// 原来这是 EX 当拍从 ex_npc_op/ex_is_jump/ex_is_jalr 现算的; 搬到退休点之后
+// 必须随指令存进 ROB 表项 (RTU_FLG_JAL / RTU_FLG_JALR), 否则表项里只剩
+// 一位 `is_branch`, 分不出"写哪一类"。本核 JALR 走 `NPC_SEL_ALU` (同 ex_is_jalr)。
+wire        id_is_jal    = (id_npc_op == `NPC_SEL_JAL);
+wire        id_is_jalr   = (id_npc_op == `NPC_SEL_ALU);
 // A6d: **不写寄存器时必须给 0**。给非 0 的垃圾 rd (store 的那几位本来是立即数)
 // 会让 RTU 按"要写 rd"去记账, 退休时 wr_eff 又不成立 ⇒ 编号静默泄漏。
 wire [4:0]  id_dst_lreg  = id_rf_we ? id_inst[11:7] : 5'd0;
@@ -1295,20 +1334,22 @@ RTU u_rtu (
     //    0 而不是 uimm5, 且只在 CSR 文件比对那一步炸)。
     .disp0_csr_op   (id_inst[14:12]),
     .disp0_csr_imm  (id_inst[19:15]),
-    .disp0_flags    ({id_is_mret, id_is_csr, id_irq_safe, id_ram_we, id_is_cf}),
+    // 7 位 (2026-10-02 加 JAL/JALR 两位, 见 RTU_define.vh 的 RTU_FLG_*)
+    .disp0_flags    ({id_is_jalr, id_is_jal, id_is_mret, id_is_csr,
+                      id_irq_safe, id_ram_we, id_is_cf}),
     .disp0_sq_id    (3'd0),
 
     .disp1_vld (1'b0), .disp1_pc (32'd0), .disp1_chk (25'd0),
     .disp1_dst_lreg (5'd0), .disp1_rf_we (1'b0),
     .disp1_dst_preg (7'd0), .disp1_old_preg (7'd0), .disp1_src1_preg (7'd0),
     .disp1_csr_addr (12'd0), .disp1_csr_op (3'd0), .disp1_csr_imm (5'd0),
-    .disp1_flags (5'd0), .disp1_sq_id (3'd0),
+    .disp1_flags (7'd0), .disp1_sq_id (3'd0),
 
     .disp2_vld (1'b0), .disp2_pc (32'd0), .disp2_chk (25'd0),
     .disp2_dst_lreg (5'd0), .disp2_rf_we (1'b0),
     .disp2_dst_preg (7'd0), .disp2_old_preg (7'd0), .disp2_src1_preg (7'd0),
     .disp2_csr_addr (12'd0), .disp2_csr_op (3'd0), .disp2_csr_imm (5'd0),
-    .disp2_flags (5'd0), .disp2_sq_id (3'd0),
+    .disp2_flags (7'd0), .disp2_sq_id (3'd0),
 
     // ---- §6.1 完成: 从 MEM 级报 (见文件头 ②) ----
     .cmplt_vld0 (rtu_cmplt_vld), .cmplt_iid0 (mem_iid),
@@ -1356,6 +1397,20 @@ RTU u_rtu (
     .rtu_ifu_flush      (rtu_ifu_flush),
     .rtu_ifu_chgflw_vld (rtu_ifu_chgflw_vld),
     .rtu_ifu_chgflw_pc  (rtu_ifu_chgflw_pc),
+    // ---- 退休点重训练 (阶段 4b): 送到上面 ifu2 的 `rtu_train_*` ----
+    // ⚠️ 这 8 根**必须两头都接**: 只接消费侧 (ifu2) 不接生产侧 (u_rtu), 线就是
+    //    悬空的 Z, `Z & is_cond` = X ⇒ 训练一次都不会发生。症状**只体现在跑分上**
+    //    (branch_bench 方向准确率 92% → 15%, CoreMark 15M 拍跑不完),
+    //    difftest 全绿、单测台全绿、编译只报 IWNF/PCWM 警告。
+    //    (2026-10-02 真踩了: 先漏声明变成 1 位隐式线网, 补了声明又漏了这半边。)
+    .rtu_ifu_train_vld     (rtu_ifu_train_vld),
+    .rtu_ifu_train_pc      (rtu_ifu_train_pc),
+    .rtu_ifu_train_target  (rtu_ifu_train_target),
+    .rtu_ifu_train_chk     (rtu_ifu_train_chk),
+    .rtu_ifu_train_taken   (rtu_ifu_train_taken),
+    .rtu_ifu_train_is_cond (rtu_ifu_train_is_cond),
+    .rtu_ifu_train_is_jal  (rtu_ifu_train_is_jal),
+    .rtu_ifu_train_is_jalr (rtu_ifu_train_is_jalr),
     // ---- 核内重定向事件 (四类源都算, 含误预测) —— 驱动上面的 `redirect` ----
     .rtu_core_redirect  (rtu_core_redirect),
     // ---- BEU: 冲刷窗口里屏蔽再发重定向 + D13 的"EX 真的发了重定向"回执 ----

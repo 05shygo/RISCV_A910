@@ -8,6 +8,12 @@
 //   §6.0 物理寄存器分配握手 (两拍语义)   §6.1 输入   §6.2 输出
 //   §6.3 时序与边角约定 (冲刷时间线 / disp_stall 只依赖寄存器 / CSR 完成时机)
 //
+// 📌 **每个端口都有注释, 而且注释里顺带标了它属于哪条契约条目**
+//    (A1 读口 / A6b 的 ena 口径 / A6c 的 funct3 原样 / A6d 的 dst_lreg 给 0 /
+//     A7 一拍一条 CSR / A8 完成不早于解析 / D13 的重定向分家) ——
+//    接线的人**只看这个文件就能接对**, 不必先读完 doc/rtu_plan_zh.md 的 2000 行。
+//    所以改端口时注释要跟着改, 别让它变成假的。
+//
 // 端口风格: 扁平编号 (xxx0/xxx1/xxx2 = 程序序, 0 最老), 与前端 idu_inst0/1/2_*
 // 同风格 —— 本仓与蓝本 C910 都没有 SV unpacked array 端口的先例, 而 Fmax 验收
 // 要在 Vivado 上过, 不该拿新语法当第一次综合实验 (§6 的 A4)。
@@ -22,194 +28,267 @@
 //   RTU_iid_cmp   iid 年龄比较 (**只给异常收集用**, 不许接进重定向链, D12)
 // ---------------------------------------------------------------------------
 module RTU (
-    input  wire        cpu_clk,
-    input  wire        cpu_rst,
+    input  wire        cpu_clk,             // 时钟
+    input  wire        cpu_rst,             // 复位, 高有效
 
-    // ===================== §6.0 物理寄存器分配握手 =====================
-    input  wire [1:0]  ren_preg_req,        // 0..3, 车道 0..n-1 是本次的请求者
-    input  wire [4:0]  ren_preg_req_lreg0,  // 判 x0 用: lreg==0 的那一路不给编号
-    input  wire [4:0]  ren_preg_req_lreg1,
-    input  wire [4:0]  ren_preg_req_lreg2,
-    output wire [6:0]  rtu_preg_alloc0,     // 给下一拍用的编号 (T 拍给, T+1 拍仍有效)
-    output wire [6:0]  rtu_preg_alloc1,
-    output wire [6:0]  rtu_preg_alloc2,
-    output wire        rtu_preg_alloc_vld0,
-    output wire        rtu_preg_alloc_vld1,
-    output wire        rtu_preg_alloc_vld2,
-    output wire [1:0]  rtu_preg_free_cnt,   // 剩余可用数 (饱和: 3 == ">=3")
+    // ===================== §6.0 物理寄存器分配握手 (两拍语义) =====================
+    // 自由池与 96 位优先编码器都在 RTU 侧, 所以是"你要、我给"。车道语义**写死**:
+    // `ren_preg_req = n` 表示**车道 0..n-1 是本次的请求者**, 车道 n..2 是 don't-care。
+    // 时序: T 拍你发请求 → RTU 当拍把编号放到 `rtu_preg_alloc*` (选中项进 WF_ALLOC);
+    // T+1 拍你把编号随指令下发, RTU 才把它推到 ALLOC。
+    // ⇒ **`rtu_preg_alloc*` 是给下一拍用的**, 同一拍内不要拿它再去组合 `disp_*`。
+    input  wire [1:0]  ren_preg_req,        // 本拍要几个新 preg (0..3)
+    input  wire [4:0]  ren_preg_req_lreg0,  // 请求 0 的 dst 逻辑寄存器 (判 x0 用)
+    input  wire [4:0]  ren_preg_req_lreg1,  // 请求 1 的 —— lreg==0 的那一路不给编号
+    input  wire [4:0]  ren_preg_req_lreg2,  // 请求 2 的
+    output wire [6:0]  rtu_preg_alloc0,     // 车道 0 分到的物理寄存器号
+    output wire [6:0]  rtu_preg_alloc1,     // 车道 1 分到的
+    output wire [6:0]  rtu_preg_alloc2,     // 车道 2 分到的
+    output wire        rtu_preg_alloc_vld0, // 车道 0 真的分到了 (lreg==0 或池子不够 -> 0)
+    output wire        rtu_preg_alloc_vld1, // 车道 1 同上
+    output wire        rtu_preg_alloc_vld2, // 车道 2 同上
+    output wire [1:0]  rtu_preg_free_cnt,   // 剩余可用数, 饱和到 3 (3 == ">= 3")
 
-    // ===================== §6.1 派遣 (k = 0/1/2 = 程序序) =====================
-    input  wire        disp0_vld,
-    input  wire [31:0] disp0_pc,
-    input  wire [24:0] disp0_chk,
-    input  wire [4:0]  disp0_dst_lreg,
-    input  wire        disp0_rf_we,
-    input  wire [6:0]  disp0_dst_preg,
-    input  wire [6:0]  disp0_old_preg,
-    input  wire [6:0]  disp0_src1_preg,
-    input  wire [11:0] disp0_csr_addr,
-    input  wire [2:0]  disp0_csr_op,
-    input  wire [4:0]  disp0_csr_imm,
-    input  wire [4:0]  disp0_flags,         // {is_mret, is_csr, intmask, is_store, is_branch}
-    input  wire [2:0]  disp0_sq_id,
+    // ===================== §6.1 派遣 (k = 0/1/2 = 程序序, 0 最老) =====================
+    //
+    // 硬约定 (完整版见 doc/rtu_plan_zh.md §6.1):
+    //   * 一拍最多 3 条, 且必须是**程序序的前缀** —— 允许少于 3 条, 不允许跳号;
+    //   * 派遣必须等 `rtu_disp_stall == 0`;
+    //   * **A6d**: `rf_we == 0` 时 `_dst_lreg` **必须给 0**。给非 0 的垃圾 rd
+    //     (store 的那几位本来是立即数), RTU 会按"要写 rd"去分配编号, 而退休时
+    //     `wr_eff` 又不成立 ⇒ 那个编号既不转 ARCH 也不释放, **静默泄漏**;
+    //   * **A6b**: `_rf_we` 必须与写回级的 `wb_rf_we` 同源 —— difftest 连 `ena`
+    //     本身都比, `addi x0,...` 的 `rf_we=1` 与 `rd=x0` 是两件事;
+    //   * **A6c**: `_csr_op` 要 **funct3 原样** (001/010/011 = RW/RS/RC,
+    //     101/110/111 = RWI/RSI/RCI)。喂 `Control.v` 译出来的两位码会让
+    //     `csrrwi` 被当成寄存器形式, 拿 rs1 的垃圾值当源;
+    //   * **A7**: **一拍最多一条 CSR**。CSR 的 addr/op/imm/src1 抽成了**单槽**,
+    //     装不下第二条 —— 这条**只能由重命名级/IDU 保证** (组内出现第二条时
+    //     把它连同后面的指令截到下一拍), RTU 这侧挡不住;
+    //   * `_flags` 的位序见 RTU_define.vh 的 `RTU_FLG_*`。
+    //
+    // 下面三组 (0/1/2) 的 12 个字段**逐字同义**, 只是车道号不同。
+    input  wire        disp0_vld,           // 车道 0 (最老) 有一条真指令且这一拍离开 ID
+    input  wire [31:0] disp0_pc,            // 它的 PC
+    input  wire [24:0] disp0_chk,           // 前端预测快照 (取指时打包, 随指令走 → 进表项)
+    input  wire [4:0]  disp0_dst_lreg,      // 目标逻辑寄存器 (不写寄存器时给 0, 见 A6d)
+    input  wire        disp0_rf_we,         // 真的要写 rd (= difftest 的 ena)
+    input  wire [6:0]  disp0_dst_preg,      // 分到的新物理号 ← §6.0 的 rtu_preg_alloc0
+    input  wire [6:0]  disp0_old_preg,      // 被它替换掉的映射 ← 重命名级的 RAT
+    input  wire [6:0]  disp0_src1_preg,     // rs1 的物理号 (**只有 CSR 指令有意义**)
+    input  wire [11:0] disp0_csr_addr,      // CSR 地址 (**只有 CSR 指令有意义**)
+    input  wire [2:0]  disp0_csr_op,        // CSR funct3 原样 (A6c)
+    input  wire [4:0]  disp0_csr_imm,       // csrrwi 系列的 uimm5 (csr_op[2]=1 时有效)
+    input  wire [6:0]  disp0_flags,         // {is_jalr, is_jal, is_mret, is_csr, intmask, is_store, is_branch}
+    input  wire [2:0]  disp0_sq_id,         // 存储队列槽号 (LSU 在派遣时分配, RTU 只存不解释)
 
-    input  wire        disp1_vld,
-    input  wire [31:0] disp1_pc,
-    input  wire [24:0] disp1_chk,
-    input  wire [4:0]  disp1_dst_lreg,
-    input  wire        disp1_rf_we,
-    input  wire [6:0]  disp1_dst_preg,
-    input  wire [6:0]  disp1_old_preg,
-    input  wire [6:0]  disp1_src1_preg,
-    input  wire [11:0] disp1_csr_addr,
-    input  wire [2:0]  disp1_csr_op,
-    input  wire [4:0]  disp1_csr_imm,
-    input  wire [4:0]  disp1_flags,
-    input  wire [2:0]  disp1_sq_id,
+    input  wire        disp1_vld,           // 车道 1 (居中) 有一条真指令
+    input  wire [31:0] disp1_pc,            // 车道 1 的 PC
+    input  wire [24:0] disp1_chk,           // 车道 1 的前端快照
+    input  wire [4:0]  disp1_dst_lreg,      // 车道 1 的目标逻辑寄存器 (不写时给 0)
+    input  wire        disp1_rf_we,         // 车道 1 真的要写 rd
+    input  wire [6:0]  disp1_dst_preg,      // 车道 1 的新物理号 ← rtu_preg_alloc1
+    input  wire [6:0]  disp1_old_preg,      // 车道 1 替换掉的映射
+    input  wire [6:0]  disp1_src1_preg,     // 车道 1 的 rs1 物理号 (只有 CSR 有意义)
+    input  wire [11:0] disp1_csr_addr,      // 车道 1 的 CSR 地址
+    input  wire [2:0]  disp1_csr_op,        // 车道 1 的 CSR funct3 原样
+    input  wire [4:0]  disp1_csr_imm,       // 车道 1 的 uimm5
+    input  wire [6:0]  disp1_flags,         // 车道 1 的 flags (位序同车道 0)
+    input  wire [2:0]  disp1_sq_id,         // 车道 1 的存储队列槽号
 
-    input  wire        disp2_vld,
-    input  wire [31:0] disp2_pc,
-    input  wire [24:0] disp2_chk,
-    input  wire [4:0]  disp2_dst_lreg,
-    input  wire        disp2_rf_we,
-    input  wire [6:0]  disp2_dst_preg,
-    input  wire [6:0]  disp2_old_preg,
-    input  wire [6:0]  disp2_src1_preg,
-    input  wire [11:0] disp2_csr_addr,
-    input  wire [2:0]  disp2_csr_op,
-    input  wire [4:0]  disp2_csr_imm,
-    input  wire [4:0]  disp2_flags,
-    input  wire [2:0]  disp2_sq_id,
+    input  wire        disp2_vld,           // 车道 2 (最年轻) 有一条真指令
+    input  wire [31:0] disp2_pc,            // 车道 2 的 PC
+    input  wire [24:0] disp2_chk,           // 车道 2 的前端快照
+    input  wire [4:0]  disp2_dst_lreg,      // 车道 2 的目标逻辑寄存器 (不写时给 0)
+    input  wire        disp2_rf_we,         // 车道 2 真的要写 rd
+    input  wire [6:0]  disp2_dst_preg,      // 车道 2 的新物理号 ← rtu_preg_alloc2
+    input  wire [6:0]  disp2_old_preg,      // 车道 2 替换掉的映射
+    input  wire [6:0]  disp2_src1_preg,     // 车道 2 的 rs1 物理号 (只有 CSR 有意义)
+    input  wire [11:0] disp2_csr_addr,      // 车道 2 的 CSR 地址
+    input  wire [2:0]  disp2_csr_op,        // 车道 2 的 CSR funct3 原样
+    input  wire [4:0]  disp2_csr_imm,       // 车道 2 的 uimm5
+    input  wire [6:0]  disp2_flags,         // 车道 2 的 flags (位序同车道 0)
+    input  wire [2:0]  disp2_sq_id,         // 车道 2 的存储队列槽号
 
-    // ===================== §6.1 完成 (p = 0..4) =====================
-    input  wire        cmplt_vld0, input wire [6:0] cmplt_iid0,
-    input  wire        cmplt_vld1, input wire [6:0] cmplt_iid1,
-    input  wire        cmplt_vld2, input wire [6:0] cmplt_iid2,
-    input  wire        cmplt_vld3, input wire [6:0] cmplt_iid3,
-    input  wire        cmplt_vld4, input wire [6:0] cmplt_iid4,
+    // ===================== §6.1 完成 (p = 0..4, 来自各执行单元) =====================
+    // **按 iid 寻址**: 表项里只存回绕位, iid 由派遣回执 (`rtu_disp_iid*`) 发给
+    // 重命名级、随指令走到完成级再报回来 (§6.3 ⑪)。不要试图"从退休指针现推"。
+    input  wire        cmplt_vld0,          // 完成口 0 有结果
+    input  wire [6:0]  cmplt_iid0,          // 口 0 完成的是哪条 ({wrap, 6 位索引})
+    input  wire        cmplt_vld1,          // 完成口 1 有结果
+    input  wire [6:0]  cmplt_iid1,          // 口 1 的 iid
+    input  wire        cmplt_vld2,          // 完成口 2 有结果
+    input  wire [6:0]  cmplt_iid2,          // 口 2 的 iid
+    input  wire        cmplt_vld3,          // 完成口 3 有结果
+    input  wire [6:0]  cmplt_iid3,          // 口 3 的 iid
+    input  wire        cmplt_vld4,          // 完成口 4 有结果
+    input  wire [6:0]  cmplt_iid4,          // 口 4 的 iid
 
     // ===================== §6.1 解析结果 (BEU) =====================
-    input  wire        resolve_vld,
-    input  wire [6:0]  resolve_iid,
-    input  wire        resolve_taken,
-    input  wire        resolve_mispred,
-    input  wire [31:0] resolve_target,
+    // 控制转移在 EX 解析出结果时写回表项。**A8**: 分支的"完成"不能早于它的
+    // "解析" (同拍或 resolve 更早) —— 否则它会在两拍之间走到队头、按"没误预测"
+    // 正常退休, 这次重定向就**永久丢掉**了。
+    input  wire        resolve_vld,         // 本拍有一条控制转移解析出结果
+    input  wire [6:0]  resolve_iid,         // 是哪条 (按 iid 寻址)
+    input  wire        resolve_taken,       // 实际方向; JAL/JALR 恒 1
+    input  wire        resolve_mispred,     // 预测错了 (退休时触发冲刷)
+    input  wire [31:0] resolve_target,      // 真实后继 PC (退休点重训练要用)
 
     // ===================== §6.1 异常 (ID/EX/MEM 的检出点, 老级优先) =====================
-    input  wire        expt_vld,
-    input  wire [6:0]  expt_iid,
-    input  wire [4:0]  expt_cause,
-    input  wire [31:0] expt_tval,
+    // 只有一路收集口 (D9): 级间天然是"老级优先" (MEM > EX > ID), 被丢掉的年轻异常
+    // 不会丢信息 —— 它随流水逐级锁存, 下一拍还会从下一级报到。RTU 侧只留最旧的一条。
+    // `mtval` 由**检出级**装好送进来 (非法指令给指令字 / 访存故障给地址 / 取指故障给 PC),
+    // RTU 不再重算。
+    input  wire        expt_vld,            // 本拍有一级检出异常
+    input  wire [6:0]  expt_iid,            // 是哪条 (按 iid 寻址, 用来判最旧)
+    input  wire [4:0]  expt_cause,          // 异常号 (**不含** mcause 的中断位, 见 §6.3 ⑫)
+    input  wire [31:0] expt_tval,           // mtval, 由检出级装好
 
     // ===================== §6.1 存储队列 / CSR / 中断 =====================
-    input  wire        sq_rdy0,             // 退休窗口第 k 槽的 store 数据就绪
-    input  wire        sq_rdy1,
-    input  wire        sq_rdy2,
-    input  wire        sq_stall,            // 存储队列满/下游忙 -> 压退休宽度
-    input  wire [31:0] csr_rdata,           // 组合读: 地址见 rtu_csr_addr
-    input  wire        int_pending,         // 已按 mstatus/mie/mip 屏蔽过
+    input  wire        sq_rdy0,             // 退休槽 0 的 store **数据已就绪** ⇒ 才允许它退休
+    input  wire        sq_rdy1,             // 退休槽 1 的 store 数据就绪
+    input  wire        sq_rdy2,             // 退休槽 2 的 store 数据就绪
+    input  wire        sq_stall,            // 队列满/下游忙 -> **压退休宽度** (与中断共用 commit_mask)
+    input  wire [31:0] csr_rdata,           // CSR 组合读出的旧值 (地址见 rtu_csr_addr)
+    input  wire        int_pending,         // 有中断待取 (**已按 mstatus/mie/mip 屏蔽过**)
 
     // ===================== BEU -> RTU (D13) =====================
     // EX 级**真的发出**误预测重定向的那一拍 (mycpu.v 里就是 iu_ifu_chgflw_vld)。
     // 只用于置"未决快路重定向"锁存位 —— 把派遣冻结的窗口从"执行级重定向那拍"
     // 拉起来, 直到 F2; 并且它是"误预测不再重启前端"(D13 ②)的依据。
-    input  wire        beu_redirect_vld,
+    // ⚠️ 必须**锁存** (不能直接组合进 disp_stall): P8 要求 disp_stall 只依赖寄存器。
+    input  wire        beu_redirect_vld,    // 本拍 EX 发出了误预测重定向
 
     // ===================== §6.1 物理寄存器堆读口 (A1) =====================
-    input  wire [31:0] preg_rdata0,         // <- PRF[rtu_preg_raddr0]
-    input  wire [31:0] preg_rdata1,
-    input  wire [31:0] preg_rdata2,
-    input  wire [31:0] rtu_csr_src_rdata,   // <- PRF[rtu_csr_src_raddr]
+    // 退休级要按**物理号**取数: difftest 要比对提交值, CSR 指令要读 rs1 的源操作数。
+    // 地址由本模块的 `rtu_preg_raddr*` / `rtu_csr_src_raddr` 给出。
+    input  wire [31:0] preg_rdata0,         // ← PRF[rtu_preg_raddr0] (退休槽 0 的结果)
+    input  wire [31:0] preg_rdata1,         // ← PRF[rtu_preg_raddr1]
+    input  wire [31:0] preg_rdata2,         // ← PRF[rtu_preg_raddr2]
+    input  wire [31:0] rtu_csr_src_rdata,   // ← PRF[rtu_csr_src_raddr] (在途 CSR 的 rs1)
 
     // ===================== §6.1 重定向目标的来源 (A6) =====================
-    input  wire [31:0] csr_trap_vector,
-    input  wire [31:0] csr_mepc,
+    input  wire [31:0] csr_trap_vector,     // 陷阱/中断的目标 (mtvec + cause<<2, 已解算)
+    input  wire [31:0] csr_mepc,            // mret 的目标
 
-    // ===================== §6.2 前端: 陷阱/中断/mret/误预测的重定向 =====================
-    output wire        rtu_ifu_flush,
-    output wire        rtu_ifu_chgflw_vld,
-    output wire [31:0] rtu_ifu_chgflw_pc,
-    output wire        rtu_ifu_train_vld,   // 退休点重训练 (阶段 4b 接上)
-    output wire [31:0] rtu_ifu_train_pc,
-    output wire [24:0] rtu_ifu_train_chk,
-    output wire        rtu_ifu_train_taken,
+    // ===================== §6.2 前端: 陷阱/中断/mret 的重定向 =====================
+    // ⚠️ **误预测不走这三根** (D13): 前端在 EX 那拍就被 BEU 直接送到真实目标了,
+    // 退休时再重启一次就是"重取两次"。误预测的"核内冲刷"由 rtu_core_redirect 出。
+    output wire        rtu_ifu_flush,       // 重启前端 (与下面那根同拍同值)
+    output wire        rtu_ifu_chgflw_vld,  // 前端重定向有效
+    output wire [31:0] rtu_ifu_chgflw_pc,   // 目标二选一: 陷阱/中断→trap_vector, mret→mepc
+    // ---- 退休点重训练 (阶段 4b, 2026-10-02 接上) ----
+    // 数据源 = ROB 表项里的 `pc / target / chk / actual_taken`, **不是** EX 当拍那份。
+    // 为什么搬: 乱序下分支是乱序完成/解析的, EX 级训练会把 GHR 按乱序顺序推。
+    //   * `_taken` 对条件分支是实际方向, 对 JAL/JALR 恒 1;
+    //   * `_is_cond/_is_jal/_is_jalr` 三分类**互斥** (条件分支 = is_branch & ~jal & ~jalr),
+    //     BTB 靠它决定写哪一类 —— 原来由 EX 的 npc_op 现算。
+    // ⚠️ 只有**一路**训练口 (取退休窗口里最老的那条控制转移)。1 发射下窗口里最多
+    //    一条分支, 恒等价; 3 发射落地时同一窗口可能有 2 条以上 —— 见 RTU_commit
+    //    末尾的说明。
+    output wire        rtu_ifu_train_vld,   // 本拍有一条控制转移退休, 值得训练
+    output wire [31:0] rtu_ifu_train_pc,    // 它的 PC
+    output wire [31:0] rtu_ifu_train_target,// 真实后继 PC (= 表项 TARGET, BTB 的 upd_target)
+    output wire [24:0] rtu_ifu_train_chk,   // 表项里那份 chk (BHT 取 GHR / TAGE 取 fpred)
+    output wire        rtu_ifu_train_taken, // 实际方向 (条件分支才看它)
+    output wire        rtu_ifu_train_is_cond,// 是条件分支 (方向表**只**认这一类)
+    output wire        rtu_ifu_train_is_jal, // 是 JAL
+    output wire        rtu_ifu_train_is_jalr,// 是 JALR
 
     // ===================== §6.2 后端冲刷 (D11 的 FLUSH_1) =====================
-    output wire        rtu_backend_flush,
+    // 单拍脉冲 (T+1): 冲发射队列/执行级/存储队列。**误预测也要拉** ——
+    // 后端 (ID_EX 往后) 与 IDU 里那些更年轻的指令必须冲掉, 别因为"D13 不重启前端"
+    // 就把它一起删了。
+    output wire        rtu_backend_flush,   // 单拍脉冲 (T+1), 四类冲刷都拉
 
     // ===================== §6.2 核内重定向事件 (D13 新增) =====================
     // "本拍 RTU 在重定向", 四类源**都算**(含误预测)。mycpu.v 用它驱动 `redirect`
     // (冲 IF_ID/ID_EX/EX_MEM、按掉 store 写使能、CSR 静默、训练门控)。
     // ⚠️ 与 rtu_ifu_flush **必须在顶层分开接**: D13 之后两者对误预测取值不同。
-    output wire        rtu_core_redirect,
+    //    合成一根的症状是"错误路径的 store 写进内存", 不是慢。
+    output wire        rtu_core_redirect,   // = 退休拍的 flush_trig (T 拍, 单拍)
 
     // ===================== §6.2 BEU: D1 的最旧门控 + 冲刷屏蔽 =====================
-    output wire [6:0]  rtu_beu_retire_iid,
-    output wire        rtu_beu_flush_chgflw_mask,
+    output wire [6:0]  rtu_beu_retire_iid,  // ROB 的 pop iid —— ⚠️ **不再是门控用的**
+                                            //   (D12 改口径后比的是"上一次已发出的重定向的
+                                            //    iid", 那是 BEU 侧自己的寄存器)。
+                                            //   留着只当 debug 观察口, 别为它设计逻辑。
+    output wire        rtu_beu_flush_chgflw_mask, // 慢路冲刷期间屏蔽 BEU 再发重定向
+                                            //   (从 T 拍起、T+1 结束; 漏了会让两次
+                                            //    重定向打架)
 
     // ===================== §6.2 重命名级 =====================
-    output wire        rtu_disp_stall,
-    output wire        rtu_ren_recover_vld,
-    output wire [223:0] rtu_ren_recover_map, // 32 x 7bit AMT
-    output wire        rtu_ren_flush,
-    output wire [6:0]  rtu_ren_free_preg0,   // 观察口 (自由池在 RTU 侧)
-    output wire [6:0]  rtu_ren_free_preg1,
-    output wire [6:0]  rtu_ren_free_preg2,
-    output wire        rtu_ren_free_vld0,
-    output wire        rtu_ren_free_vld1,
-    output wire        rtu_ren_free_vld2,
-    // 派遣回执 (§6.2, 2026-10-01 新增): 本拍真进了 ROB 的车道拿到的 iid。
-    // 重命名级必须把它随指令带进流水线 —— cmplt_iid / resolve_iid 是按 iid 寻址的,
-    // 而 RTU 表项里只存回绕位, 编号只有分配者知道 (§6.3 ⑪)。
-    output wire        rtu_disp_vld0,
-    output wire        rtu_disp_vld1,
-    output wire        rtu_disp_vld2,
-    output wire [6:0]  rtu_disp_iid0,
-    output wire [6:0]  rtu_disp_iid1,
-    output wire [6:0]  rtu_disp_iid2,
+    // 分工: 重命名级维护**投机 RAT**; RTU 维护**架构映射表 AMT**。RTU 不碰你的 RAT,
+    // 只在该覆盖时给你一份完整映射。
+    output wire        rtu_disp_stall,      // 停派遣: ROB 满 / preg 不足 / CSR 在途 /
+                                            //   冲刷窗口 / 未决快路重定向
+                                            //   ⚠️ 只依赖寄存器 (P8); 消费时必须
+                                            //   "停前端 + 给 EX 灌气泡"成对拉
+    output wire        rtu_ren_recover_vld, // 恢复映射有效 (与 _map 同拍)
+    output wire [223:0] rtu_ren_recover_map,// 32 × 7bit AMT, `[7*l +: 7]` = x_l 的映射
+                                            //   只反映**已退休**的映射 (D1/D2)
+    output wire        rtu_ren_flush,       // 重命名级自身清空 (T+1 拍, 与下面 recover 同拍)
+    output wire [6:0]  rtu_ren_free_preg0,  // 退休槽 0 释放掉的物理号 (**观察口**:
+    output wire [6:0]  rtu_ren_free_preg1,  //   自由池在 RTU 侧, 不需要重命名级回收)
+    output wire [6:0]  rtu_ren_free_preg2,  // 退休槽 2 释放掉的物理号
+    output wire        rtu_ren_free_vld0,   // 槽 0 真的释放了一个 (>= 32 才放)
+    output wire        rtu_ren_free_vld1,   // 槽 1 同上
+    output wire        rtu_ren_free_vld2,   // 槽 2 同上
+    // ---- 派遣回执: 本拍**真进了 ROB** 的车道拿到的 iid ----
+    // 你**必须**把它随指令带进流水线: `cmplt_iid` / `resolve_iid` 是按 iid 寻址的,
+    // 而 RTU 表项里只存回绕位 —— 编号只有分配者知道 (§6.3 ⑪)。
+    output wire        rtu_disp_vld0,       // 车道 0 真的进了 ROB (已扣掉冲刷窗口)
+    output wire        rtu_disp_vld1,       // 车道 1 同上
+    output wire        rtu_disp_vld2,       // 车道 2 同上
+    output wire [6:0]  rtu_disp_iid0,       // 车道 0 的 iid = {wrap, 6 位索引}
+    output wire [6:0]  rtu_disp_iid1,       // 车道 1 的 iid
+    output wire [6:0]  rtu_disp_iid2,       // 车道 2 的 iid
 
     // ===================== §6.2 物理寄存器堆访问 (A1) =====================
-    output wire [6:0]  rtu_preg_raddr0,      // = 退休槽 k 的 dst_preg
-    output wire [6:0]  rtu_preg_raddr1,
-    output wire [6:0]  rtu_preg_raddr2,
-    output wire [6:0]  rtu_csr_src_raddr,    // = 在途 CSR 指令的 src1_preg
-    output wire        rtu_csr_rd_we,        // CSR 的 rd 结果在退休当拍写回
-    output wire [6:0]  rtu_csr_rd_addr,
-    output wire [31:0] rtu_csr_rd_wdata,     // = CSR 旧值
+    output wire [6:0]  rtu_preg_raddr0,     // 退休槽 0 的 dst_preg (difftest 按它取值)
+    output wire [6:0]  rtu_preg_raddr1,     // 退休槽 1 的 dst_preg
+    output wire [6:0]  rtu_preg_raddr2,     // 退休槽 2 的 dst_preg
+    output wire [6:0]  rtu_csr_src_raddr,   // 在途 CSR 指令的 src1_preg (读 rs1 用)
+    output wire        rtu_csr_rd_we,       // CSR 的 rd 结果**退休当拍**才产生, 这时才写
+    output wire [6:0]  rtu_csr_rd_addr,     // 写哪个物理号 (= 该 CSR 指令的 dst_preg)
+    output wire [31:0] rtu_csr_rd_wdata,    // 写什么 (= CSR 旧值, 三种 op 都一样)
 
     // ===================== §6.2 提交点副作用 =====================
-    output wire        rtu_store_vld0,
-    output wire        rtu_store_vld1,
-    output wire        rtu_store_vld2,
-    output wire [2:0]  rtu_store_sq_id0,
-    output wire [2:0]  rtu_store_sq_id1,
-    output wire [2:0]  rtu_store_sq_id2,
-    output wire        rtu_csr_we,
-    output wire [11:0] rtu_csr_addr,         // 一个口两种用: 组合读地址 + 写地址
-    output wire [31:0] rtu_csr_wdata,
-    output wire        rtu_trap_vld,         // 同步异常或中断 (两者都写 mepc/mcause/mtval)
-    output wire        rtu_mret_vld,
-    output wire [31:0] rtu_trap_epc,
-    output wire [31:0] rtu_trap_tval,
-    output wire [4:0]  rtu_trap_cause,
-    output wire [1:0]  rtu_retire_cnt,       // 0..3 (被中断 squash 的那条不计)
+    output wire        rtu_store_vld0,      // 退休槽 0 是一条**要提交**的 store
+    output wire        rtu_store_vld1,      // 退休槽 1 是要提交的 store
+    output wire        rtu_store_vld2,      // 退休槽 2 是要提交的 store
+    output wire [2:0]  rtu_store_sq_id0,    // 槽 0 的队列号 (取自表项里的 disp0_sq_id)
+    output wire [2:0]  rtu_store_sq_id1,    // 槽 1 的队列号
+    output wire [2:0]  rtu_store_sq_id2,    // 槽 2 的队列号
+    output wire        rtu_csr_we,          // CSR 写使能 (已按 op 与 rs1!=x0 判过)
+    output wire [11:0] rtu_csr_addr,        // 一个口两种用: 组合读地址 + 写地址
+    output wire [31:0] rtu_csr_wdata,       // CSR 新值 (退休级现算, 见 §6.3 ⑩)
+    output wire        rtu_trap_vld,        // 同步异常或中断 (两者都写 mepc/mcause/mtval)
+    output wire        rtu_mret_vld,        // 本拍退休的是一条 mret
+    output wire [31:0] rtu_trap_epc,        // 写入 mepc 的值 (= 队头那条的 PC)
+    output wire [31:0] rtu_trap_tval,       // 写入 mtval 的值 (中断时为 0)
+    output wire [4:0]  rtu_trap_cause,      // 写入 mcause 的异常号 (**5 位, 中断位由消费方补**)
+    output wire [1:0]  rtu_retire_cnt,      // 本拍退休条数 0..3 (被中断 squash 的那条不计)
 
     // ===================== §6.2 difftest / debug =====================
-    output wire        dbg_commit_vld0,
-    output wire        dbg_commit_vld1,
-    output wire        dbg_commit_vld2,
-    output wire [31:0] dbg_commit_pc0,
-    output wire [31:0] dbg_commit_pc1,
-    output wire [31:0] dbg_commit_pc2,
-    output wire        dbg_commit_ena0,      // 陷阱那条: vld=1 但 ena=0 (§4.5)
-    output wire        dbg_commit_ena1,
-    output wire        dbg_commit_ena2,
-    output wire [4:0]  dbg_commit_reg0,
-    output wire [4:0]  dbg_commit_reg1,
-    output wire [4:0]  dbg_commit_reg2,
-    output wire [31:0] dbg_commit_value0,    // 摘自 preg_rdata*, CSR 那条换成 CSR 旧值
-    output wire [31:0] dbg_commit_value1,
-    output wire [31:0] dbg_commit_value2
+    // 交付脉冲口径 (§6.3 ⑥, **不许改**, 改了 difftest 立刻失步):
+    //   同步异常那条**发**脉冲 (ena 强 0); 被中断 squash 的那条**不发** (也不计 cnt);
+    //   mret 正常发。消费方还要把 `have_inst` 或上 `rtu_trap_vld` (见 §7 的 C3)。
+    output wire        dbg_commit_vld0,     // 退休槽 0 要交付给 difftest
+    output wire        dbg_commit_vld1,     // 退休槽 1 要交付
+    output wire        dbg_commit_vld2,     // 退休槽 2 要交付
+    output wire [31:0] dbg_commit_pc0,      // 槽 0 的 PC (逐条比对, 错一位就炸)
+    output wire [31:0] dbg_commit_pc1,      // 槽 1 的 PC
+    output wire [31:0] dbg_commit_pc2,      // 槽 2 的 PC
+    output wire        dbg_commit_ena0,      // 槽 0 是否真的写 rd (陷阱那条: vld=1 但 ena=0)
+    output wire        dbg_commit_ena1,      // 槽 1 同上
+    output wire        dbg_commit_ena2,      // 槽 2 同上
+    output wire [4:0]  dbg_commit_reg0,      // 槽 0 写的逻辑寄存器号
+    output wire [4:0]  dbg_commit_reg1,      // 槽 1 的
+    output wire [4:0]  dbg_commit_reg2,      // 槽 2 的
+    output wire [31:0] dbg_commit_value0,    // 槽 0 的结果 (摘自 preg_rdata0; CSR 那条换成旧值)
+    output wire [31:0] dbg_commit_value1,    // 槽 1 的结果
+    output wire [31:0] dbg_commit_value2     // 槽 2 的结果
 );
 
     // =======================================================================
@@ -481,8 +560,12 @@ module RTU (
         .commit_value2  (dbg_commit_value2),
         .train_vld      (rtu_ifu_train_vld),
         .train_pc       (rtu_ifu_train_pc),
+        .train_target   (rtu_ifu_train_target),
         .train_chk      (rtu_ifu_train_chk),
-        .train_taken    (rtu_ifu_train_taken)
+        .train_taken    (rtu_ifu_train_taken),
+        .train_is_cond  (rtu_ifu_train_is_cond),
+        .train_is_jal   (rtu_ifu_train_is_jal),
+        .train_is_jalr  (rtu_ifu_train_is_jalr)
     );
 
     assign dbg_commit_vld0 = commit_vld[0];

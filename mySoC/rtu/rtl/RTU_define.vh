@@ -47,30 +47,38 @@
 `define RTU_FSM_F1      2'd1
 `define RTU_FSM_F2      2'd2        // ⚠️ **已废弃**: 合成一拍后不再使用 (留着只占编码, 无人引用)
 
-// ---- disp_flags 的位序 (§6.1, 5 位) ----
+// ---- disp_flags 的位序 (§6.1, 7 位) ----
 `define RTU_FLG_BRANCH  0
 `define RTU_FLG_STORE   1
 `define RTU_FLG_INTMASK 2
 `define RTU_FLG_CSR     3
 `define RTU_FLG_MRET    4
+// ⚠️ JAL/JALR 两位是 **2026-10-02 为阶段 4b 加的** (原来 5 位)。
+//    BTB 的训练口要 `upd_cond / upd_jal / upd_jalr` 三分类, 而 `is_branch` 只有
+//    "是不是控制转移"这一位 —— 原来这个分类是 EX 当拍从 `ex_npc_op/ex_is_jump/
+//    ex_is_jalr` 现算的, 搬到退休点之后必须由表项提供。
+//    三分类互斥: 条件分支 = BRANCH & ~JAL & ~JALR (本核 JALR 走 `NPC_SEL_ALU`)。
+`define RTU_FLG_JAL     5
+`define RTU_FLG_JALR    6
 
-// ---- ROB 表项位域 (122 bit, D4) ----
+// ---- ROB 表项位域 (124 bit, D4) ----
 // 布局与 D4 的表格逐行对应; 表项模块的拼接顺序必须与这里一致。
-//   [121] vld   [120] cmplt  [119] wrap  [118:87] pc    [86:55] target
-//   [54:30] chk [29:25] dst_lreg [24:18] dst_preg [17:11] old_preg [10:6] flags
+//   [123] vld   [122] cmplt  [121] wrap  [120:89] pc   [88:57] target
+//   [56:32] chk [31:27] dst_lreg [26:20] dst_preg [19:13] old_preg [12:6] flags
 //   [5] rf_we   [4] actual_taken [3] mispred [2:0] sq_id
 // 为什么不存完整 iid: iid = {wrap, 本表项固定索引}, 索引是常量 (§4.3 第 2 条)。
-`define RTU_E_W        122
-`define RTU_E_VLD      121
-`define RTU_E_CMPLT    120
-`define RTU_E_WRAP     119
-`define RTU_E_PC       118:87
-`define RTU_E_TARGET   86:55
-`define RTU_E_CHK      54:30
-`define RTU_E_DST_LREG 29:25
-`define RTU_E_DST_PREG 24:18
-`define RTU_E_OLD_PREG 17:11
-`define RTU_E_FLAGS    10:6
+// ⚠️ 2026-10-02: 122 → 124 —— flags 由 5 位扩到 7 位 (加 JAL/JALR, 见上)。
+`define RTU_E_W        124
+`define RTU_E_VLD      123
+`define RTU_E_CMPLT    122
+`define RTU_E_WRAP     121
+`define RTU_E_PC       120:89
+`define RTU_E_TARGET   88:57
+`define RTU_E_CHK      56:32
+`define RTU_E_DST_LREG 31:27
+`define RTU_E_DST_PREG 26:20
+`define RTU_E_OLD_PREG 19:13
+`define RTU_E_FLAGS    12:6
 `define RTU_E_RF_WE    5
 `define RTU_E_TAKEN    4
 `define RTU_E_MISPRED  3

@@ -63,7 +63,7 @@ module tb_rtu_rob;
     logic [11:0] d0_ca, d1_ca, d2_ca;
     logic [2:0]  d0_cop, d1_cop, d2_cop;
     logic [4:0]  d0_cimm, d1_cimm, d2_cimm;
-    logic [4:0]  d0_flg, d1_flg, d2_flg;
+    logic [6:0]  d0_flg, d1_flg, d2_flg;   // 7 位: 2026-10-02 加 JAL/JALR (阶段 4b)
     logic [2:0]  d0_sqid, d1_sqid, d2_sqid;
 
     logic        cv0, cv1, cv2, cv3, cv4;
@@ -86,8 +86,9 @@ module tb_rtu_rob;
     wire         ifu_flush, ifu_chg_vld;
     wire [31:0]  ifu_chg_pc;
     wire         ifu_trn_vld, ifu_trn_taken;
-    wire [31:0]  ifu_trn_pc;
+    wire [31:0]  ifu_trn_pc, ifu_trn_target;
     wire [24:0]  ifu_trn_chk;
+    wire         ifu_trn_is_cond, ifu_trn_is_jal, ifu_trn_is_jalr;
     wire         backend_flush;
     wire         core_redirect;
     wire [6:0]   beu_retire_iid;
@@ -173,7 +174,11 @@ module tb_rtu_rob;
         .rtu_ifu_flush(ifu_flush), .rtu_ifu_chgflw_vld(ifu_chg_vld),
         .rtu_ifu_chgflw_pc(ifu_chg_pc),
         .rtu_ifu_train_vld(ifu_trn_vld), .rtu_ifu_train_pc(ifu_trn_pc),
+        .rtu_ifu_train_target(ifu_trn_target),
         .rtu_ifu_train_chk(ifu_trn_chk), .rtu_ifu_train_taken(ifu_trn_taken),
+        .rtu_ifu_train_is_cond(ifu_trn_is_cond),
+        .rtu_ifu_train_is_jal(ifu_trn_is_jal),
+        .rtu_ifu_train_is_jalr(ifu_trn_is_jalr),
         .rtu_backend_flush(backend_flush), .rtu_core_redirect(core_redirect),
         .rtu_beu_retire_iid(beu_retire_iid), .rtu_beu_flush_chgflw_mask(beu_mask),
         .rtu_disp_stall(disp_stall),
@@ -214,7 +219,8 @@ module tb_rtu_rob;
     logic [31:0] x_val [0:MAXI-1];
     logic [4:0]  x_lreg[0:MAXI-1];
     logic        x_rfwe[0:MAXI-1];
-    logic [4:0]  x_flg [0:MAXI-1];
+    logic [6:0]  x_flg [0:MAXI-1];
+    logic [24:0] x_chk [0:MAXI-1];     // 取指时的 chk 快照 —— 训练口要回送它
     logic [6:0]  x_dpr [0:MAXI-1];
     logic [6:0]  x_opr [0:MAXI-1];
     logic [6:0]  x_iid [0:MAXI-1];
@@ -273,7 +279,7 @@ module tb_rtu_rob;
     logic [31:0] pl_pc   [0:2];
     logic [24:0] pl_chk  [0:2];
     logic        pl_rfwe [0:2];
-    logic [4:0]  pl_flg  [0:2];
+    logic [6:0]  pl_flg  [0:2];
     logic [6:0]  pl_opreg[0:2];
     logic [6:0]  pl_s1   [0:2];
     logic [11:0] pl_ca   [0:2];
@@ -295,7 +301,7 @@ module tb_rtu_rob;
     logic [31:0] cp_pc   [0:2];
     logic [24:0] cp_chk  [0:2];
     logic        cp_rfwe [0:2];
-    logic [4:0]  cp_flg  [0:2];
+    logic [6:0]  cp_flg  [0:2];
     logic [6:0]  cp_opreg[0:2];
     logic [6:0]  cp_s1   [0:2];
     logic [11:0] cp_ca   [0:2];
@@ -368,6 +374,10 @@ module tb_rtu_rob;
     logic [31:0] ret_val_q [0:2];
     logic [2:0]  ret_ena_q = 3'd0;
     logic [2:0]  ret_rdy_q = 3'd0;
+    logic        trn_vld_q = 1'b0, trn_taken_q = 1'b0;
+    logic        trn_cond_q = 1'b0, trn_jal_q = 1'b0, trn_jalr_q = 1'b0;
+    logic [31:0] trn_pc_q = 32'd0, trn_tgt_q = 32'd0;
+    logic [24:0] trn_chk_q = 25'd0;
     logic        ret_ipend_q = 1'b0;
     logic [31:0] ret_csrrdata_q = 32'd0, ret_csrsrc_q = 32'd0;
     always @(posedge clk) begin
@@ -390,6 +400,16 @@ module tb_rtu_rob;
         ret_ifu_vld_q <= (ifu_flush | ifu_chg_vld);
         ret_ipc_q  <= ifu_chg_pc;
         ret_bflush_q <= backend_flush;
+        // 阶段 4b: 退休点重训练口。⚠️ 这一组以前**只接出来、没人核** —— 现在
+        // 它是预测器的唯一训练源了, 必须有守卫 (见 check_cycle 的 2b)。
+        trn_vld_q   <= ifu_trn_vld;
+        trn_pc_q    <= ifu_trn_pc;
+        trn_tgt_q   <= ifu_trn_target;
+        trn_chk_q   <= ifu_trn_chk;
+        trn_taken_q <= ifu_trn_taken;
+        trn_cond_q  <= ifu_trn_is_cond;
+        trn_jal_q   <= ifu_trn_is_jal;
+        trn_jalr_q  <= ifu_trn_is_jalr;
         // 2026-10-02 (F1/F2 合成一拍): 恢复广播现在只维持一拍, 而"要跟模型比"的
         // ref_amt 要到**下一次负沿的 ref_retire() 之后**才含本拍退休 ⇒ 广播的
         // 内容必须先锁存, 到下一拍再比 —— 否则就是"锁存的 vs 实时的"两帧混用。
@@ -534,7 +554,7 @@ module tb_rtu_rob;
         end
     endtask
 
-    function automatic logic [4:0] flg_of(input integer i);
+    function automatic logic [6:0] flg_of(input integer i);
         begin flg_of = x_flg[i]; end
     endfunction
 
@@ -649,6 +669,50 @@ module tb_rtu_rob;
                                 if (!log_dumped3) begin dump_log(); log_dumped3 = 1'b1; end
                             end
                         end
+                    end
+                end
+            end
+
+            // ---------- 2b) 退休点重训练口 (阶段 4b) ----------
+            // 口径: 训练源 = 退休窗口里**程序序最老**的那条控制转移
+            // (RTL 是 `commit_vld & is_branch`, 逐槽取最老), 字段逐位取自表项。
+            // ⚠️ 这一组以前**只接出来没人核** —— 现在它是预测器的唯一训练源,
+            //    必须逐位守: pc / chk / taken / target / 三分类。
+            // ⚠️ 1 发射下窗口最多一条分支 ⇒ "最老"与"唯一"等价。3 发射下本台
+            //    仍按最老那条比 (多分支窗口丢训练的限制见 RTU_commit 的注)。
+            begin
+                integer tsel;
+                tsel = -1;
+                for (int k = 0; k < 3; k = k + 1)
+                    if (vldv[k] && ((n_ret + k) < n_inst) && (tsel < 0)
+                        && flg_of(n_ret + k)[`RTU_FLG_BRANCH])
+                        tsel = k;
+                if (tsel < 0) begin
+                    if (trn_vld_q) err("窗口里没有控制转移退休, 却报了重训练");
+                end else begin
+                    i = n_ret + tsel;
+                    if (!trn_vld_q)
+                        err($sformatf("指令 %0d 是控制转移且已退休, 但没报重训练", i));
+                    else begin
+                        if (trn_pc_q !== x_pc[i])
+                            err($sformatf("重训练 pc 不符: exp=%08x got=%08x", x_pc[i], trn_pc_q));
+                        if (trn_chk_q !== x_chk[i])
+                            err($sformatf("重训练 chk 不符: exp=%07x got=%07x", x_chk[i], trn_chk_q));
+                        if (trn_taken_q !== x_tkn[i])
+                            err($sformatf("重训练 taken 不符: exp=%b got=%b", x_tkn[i], trn_taken_q));
+                        if (trn_tgt_q !== x_tgt[i])
+                            err($sformatf("重训练 target 不符: exp=%08x got=%08x", x_tgt[i], trn_tgt_q));
+                        // 三分类互斥 (条件分支 = BRANCH & ~JAL & ~JALR), 且逐位等于参考流
+                        if (trn_jal_q  !== x_flg[i][`RTU_FLG_JAL])
+                            err($sformatf("重训练 is_jal 不符: exp=%b got=%b",
+                                          x_flg[i][`RTU_FLG_JAL], trn_jal_q));
+                        if (trn_jalr_q !== x_flg[i][`RTU_FLG_JALR])
+                            err($sformatf("重训练 is_jalr 不符: exp=%b got=%b",
+                                          x_flg[i][`RTU_FLG_JALR], trn_jalr_q));
+                        if (trn_cond_q !== !(x_flg[i][`RTU_FLG_JAL] | x_flg[i][`RTU_FLG_JALR]))
+                            err($sformatf("重训练 is_cond 不符: exp=%b got=%b",
+                                          !(x_flg[i][`RTU_FLG_JAL] | x_flg[i][`RTU_FLG_JALR]),
+                                          trn_cond_q));
                     end
                 end
             end
@@ -999,15 +1063,26 @@ module tb_rtu_rob;
             n = {$urandom} % 4;
             pl_n = n;
             for (int k = 0; k < 3; k = k + 1) begin
-                logic [4:0] f;
-                f = 5'd0;
+                logic [6:0] f;
+                int         rs;
+                f = 7'd0;
                 if (k < n) begin
                     r = {$urandom} % 100;
                     if (allow_store && r < 20)        f[`RTU_FLG_STORE]  = 1'b1;
-                    else if (allow_branch && r < 40)  f[`RTU_FLG_BRANCH] = 1'b1;
+                    else if (allow_branch && r < 40)  begin
+                        f[`RTU_FLG_BRANCH] = 1'b1;
+                        // 三分类 (阶段 4b): 条件分支 / JAL / JALR 互斥。
+                        // 这三位要**穿过 ROB 表项**再喂训练口的 upd_cond/jal/jalr,
+                        // 所以三样都得给到 —— 全给条件分支的话, "类型位存得对/取得对"
+                        // 这件事在单元台上没人守 (整核 difftest 也守不住: 存错了
+                        // 只是预测器学偏, 功能仍对)。
+                        rs = {$urandom} % 3;
+                        if      (rs == 1) f[`RTU_FLG_JAL]  = 1'b1;
+                        else if (rs == 2) f[`RTU_FLG_JALR] = 1'b1;
+                    end
                     else if (allow_csr && r < 50)     f[`RTU_FLG_CSR]    = 1'b1;
                     else if (r < 55)                  f[`RTU_FLG_MRET]   = 1'b1;
-                    pl_flg[k] = f | ((({$urandom} % 100) < 8) ? (5'b1 << `RTU_FLG_INTMASK) : 5'd0);
+                    pl_flg[k] = f | ((({$urandom} % 100) < 8) ? (7'b1 << `RTU_FLG_INTMASK) : 7'd0);
                     pl_rfwe[k]  = !(f[`RTU_FLG_STORE] || f[`RTU_FLG_BRANCH] || f[`RTU_FLG_MRET]);
                     // ⚠️ 不写寄存器的指令必须把 dst_lreg 给 **0** (§6.1)。
                     //    给它一个非 0 的垃圾值, RTU 就会按"这条要写 rd"去申请/分配 preg;
@@ -1123,6 +1198,7 @@ module tb_rtu_rob;
                 i = n_inst;
                 x_pc[i]=cp_pc[k];     x_val[i]=cp_val[k];   x_lreg[i]=cp_lreg[k];
                 x_rfwe[i]=cp_rfwe[k]; x_flg[i]=cp_flg[k];   x_sqi[i]=cp_sqi[k];
+                x_chk[i]=cp_chk[k];
                 // 不写寄存器的车道按契约摆 0 (§6.1 约定 5), 参考流也记 0 —— 这样
                 // "窗口逐字段等于参考流" 比的就是同一条线上的值。
                 x_dpr[i] = (cp_lreg[k] != 5'd0) ? cp_got[k] : 7'd0;
@@ -1287,16 +1363,22 @@ module tb_rtu_rob;
             else w = dut.u_rob.win_q2;
             ii = n_ret + k;
             if (w[`RTU_E_VLD] && (ii < n_inst) && (fl_state == 0)) begin
+                // ⚠️ `CHK` 与 `FLAGS` 是**派遣期**字段 (resolve 不改它们), 所以可以
+                //    无条件比 —— 2026-10-02 加进来: flags 里那两位新的控制转移类型
+                //    (JAL/JALR) 与 chk 都是训练口的输入, 存错一位整核看不出来。
                 if ((w[`RTU_E_DST_LREG] !== x_lreg[ii]) ||
                     (w[`RTU_E_DST_PREG] !== x_dpr[ii]) ||
                     (w[`RTU_E_OLD_PREG] !== x_opr[ii]) ||
                     (w[`RTU_E_RF_WE]    !== x_rfwe[ii]) ||
-                    (w[`RTU_E_PC]       !== x_pc[ii]))
-                    err($sformatf("窗口[%0d] 与参考流 inst=%0d 不符: lreg %0d/%0d dpr %0d/%0d opr %0d/%0d rfwe %b/%b pc %08x/%08x",
+                    (w[`RTU_E_PC]       !== x_pc[ii])  ||
+                    (w[`RTU_E_CHK]      !== x_chk[ii]) ||
+                    (w[`RTU_E_FLAGS]    !== x_flg[ii]))
+                    err($sformatf("窗口[%0d] 与参考流 inst=%0d 不符: lreg %0d/%0d dpr %0d/%0d opr %0d/%0d rfwe %b/%b pc %08x/%08x chk %07x/%07x flg %b/%b",
                                   k, ii,
                                   w[`RTU_E_DST_LREG], x_lreg[ii], w[`RTU_E_DST_PREG], x_dpr[ii],
                                   w[`RTU_E_OLD_PREG], x_opr[ii], w[`RTU_E_RF_WE], x_rfwe[ii],
-                                  w[`RTU_E_PC], x_pc[ii]));
+                                  w[`RTU_E_PC], x_pc[ii],
+                                  w[`RTU_E_CHK], x_chk[ii], w[`RTU_E_FLAGS], x_flg[ii]));
             end
         end
         // ---------- 4a) DUT 的 rptr 每拍只能前进 pop_n (除冲刷复位之外不许跳) ----------

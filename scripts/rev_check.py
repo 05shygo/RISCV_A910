@@ -286,7 +286,7 @@ def run_test(test, tag, cycles=DEF_CYCLES):
 
 
 def classify(txt):
-    """返回 'PASS' 或三种'被抓'签名之一"""
+    """返回 'PASS' 或几种'被抓'签名之一"""
     if "Timed out" in txt or "exceeded MAX_CYCLES" in txt:
         return "Timeout"
     if "Mismatch detected" in txt or "Diffrence" in txt:
@@ -295,6 +295,15 @@ def classify(txt):
         return "TestPoint"
     if "Test Point Pass" in txt:
         return "PASS"
+    # TB 侧 `$fatal` 的兜底签名 (VCS 打印 "Fatal: <file>, <line>: ...")。
+    # 为什么要它: TB 里除了 difftest 与计分那两条老路, 还有**不变量探针**也会
+    # $fatal —— 例如 tb_miniRV_dpi.sv 的 `[RTU 不变量] ARCH 项数 == 32`。
+    # 那些探测不到"某条指令结果不对", 只报一句自定义的话; 不认这个签名,
+    # 一条**确实被抓到**的变异会被记成 UNKNOWN/幸存 (R06 就是这么暴露的)。
+    # 判据仍是"仿真以非 0 退出", 与 run-all 同源; 反过来, 编译失败不会打印
+    # "Fatal:", 所以不会把"没跑起来"误判成被抓。
+    if "Fatal:" in txt:
+        return "Fatal"
     return "UNKNOWN"
 
 
@@ -305,7 +314,7 @@ def metrics(txt):
 def is_caught(res):
     """被抓 = 三种签名之一 (非 bench 用例), 或指标动了 (bench 用例)。
     PASS = 变异没被察觉; UNKNOWN = 仿真没跑起来/无 PASS 也无 fatal, 要人看。"""
-    return res in ("Mismatch", "TestPoint", "Timeout") or res.startswith("CAUGHT")
+    return res in ("Mismatch", "TestPoint", "Timeout", "Fatal") or res.startswith("CAUGHT")
 
 
 # --------------------------------------------------------------------------

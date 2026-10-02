@@ -218,27 +218,36 @@ module rv32ifu2_top #(
     input  wire         rtu_chgflw_vld,
     input  wire [ 31:0] rtu_chgflw_pc,
 
-    // ---- 分支预测器训练 (EX 级解析出控制转移时回送, 1 拍脉冲) ----
+    // ---- 分支预测器训练: **退休点**回送 (阶段 4b, 2026-10-02) ----
     //
-    // 不用 C910 那套 iu_bht_check_vld/chk_idx 回送: 那套只覆盖**条件分支**
-    // (jal/jalr 的目标学习完全缺失, 原设计里 jalr 从不写 BTB)。这里直接给
-    // "解析掉的指令是谁、什么类型、实际去了哪", BTB 自己就能分配/更新。
-    input  wire         iu_bht_check_vld,   // 保留给 Phase 2c 的 GHR 通路
-    input  wire [ 31:0] iu_cur_pc,
-    input  wire         iu_bht_condbr_taken,
-    input  wire         iu_bht_pred,
-    input  wire [ 24:0] iu_chk_idx,
-    input  wire         iu_btb_update_vld,
-    input  wire [ 31:0] iu_btb_cur_pc,
-    input  wire         iu_btb_taken,
-    input  wire [ 31:0] iu_btb_target,
-    input  wire         iu_btb_is_cond,
-    input  wire         iu_btb_is_jal,
-    input  wire         iu_btb_is_jalr,
+    // 口径: 一条控制转移**退休**时回送一次, 不论预测对错 —— 方向表靠这个训练,
+    // 只报误预测的话预测正确的分支永远学不到。
+    //
+    // ⚠️ 为什么数据来自退休点而不是 EX: 乱序下分支是**乱序完成/解析**的, EX 级训练
+    //    会把 GHR 按乱序顺序推、方向表被静默带偏 (计划 §7-4b)。搬走之前那一版的
+    //    EX 训练只有 `~stall & ~redirect` 两道门, 错误路径的分支也会训练。
+    //
+    // ⚠️ **不要把这些口与下面 `iu_*` 那三个合并**: `iu_btb_chk / iu_btb_taken /
+    //    iu_btb_is_cond` 是**双身份**的 —— 除了(原来的)BTB 训练, 还要在**重定向
+    //    当拍**现算 `ghr_restore` (见下面 GHR 那段) 并打拍存 RAS 指针
+    //    (`iu_red_ras_q`)。误预测重定向发生在 **EX**, 那三个必须是**当拍 EX 的值**;
+    //    把它们改成退休点驱动, GHR/RAS 就会被修到**另一条**指令的快照上
+    //    (症状: 一切看起来正常, 只是准确率缓慢变差)。
+    input  wire         rtu_train_vld,
+    input  wire [ 31:0] rtu_train_pc,
+    input  wire [ 31:0] rtu_train_target,   // 真实后继 PC (BTB 的 upd_target)
+    input  wire [ 24:0] rtu_train_chk,      // 表项里那份 chk (取指时打包, 随指令走全程)
+    input  wire         rtu_train_taken,    // 条件分支 = 实际方向; JAL/JALR 恒 1
+    input  wire         rtu_train_is_cond,  // 三分类互斥
+    input  wire         rtu_train_is_jal,
+    input  wire         rtu_train_is_jalr,
     // 该指令取指时的 GHR 快照 (随指令走, 就是 chk 里那份)。
     // 重定向时用它把 GHR 拨回"这条指令之前"再补上真实方向 —— 错误路径上那些
     // 块的 GHR 更新必须撤销, 否则一次误预测会污染很长一段的预测索引。
+    // ⚠️ 它只服务**重定向当拍**的修复 (EX 那份), 训练用的是上面的 rtu_train_chk。
     input  wire [ 24:0] iu_btb_chk,
+    input  wire         iu_btb_taken,       // 只服务 ghr_restore (重定向当拍)
+    input  wire         iu_btb_is_cond,     // 同上
 
     // ---- 状态 ----
     output wire         init_done,
@@ -406,13 +415,14 @@ rv32ifu2_btb #(
     .slot_jmp      (btb_jmp),
     .slot_target   (btb_target),
     .init_done     (btb_init_done),
-    .upd_vld       (iu_btb_update_vld),
-    .upd_pc        (iu_btb_cur_pc),
-    .upd_taken     (iu_btb_taken),
-    .upd_target    (iu_btb_target),
-    .upd_cond      (iu_btb_is_cond),
-    .upd_jal       (iu_btb_is_jal),
-    .upd_jalr      (iu_btb_is_jalr)
+    // 训练源 = 退休窗口 (§7-4b)。`upd_target` 直接用表项里的真实后继 PC。
+    .upd_vld       (rtu_train_vld),
+    .upd_pc        (rtu_train_pc),
+    .upd_taken     (rtu_train_taken),
+    .upd_target    (rtu_train_target),
+    .upd_cond      (rtu_train_is_cond),
+    .upd_jal       (rtu_train_is_jal),
+    .upd_jalr      (rtu_train_is_jalr)
 );
 
 // 方向: 条件分支问方向表 (gshare 或 TAGE, 见下面的 generate), JAL/JALR 恒 taken。
@@ -735,8 +745,9 @@ wire [GHR_W-1:0] ghr_restore = iu_btb_is_cond
 // IU 重定向打拍 (REDIRECT_PIPE, 见文件上半部分"重定向"那段的说明)
 //
 // ⚠️ ghr_restore 必须**在这里**取样打拍: 它由 iu_btb_is_cond / iu_btb_chk /
-//    iu_btb_taken 现算, 而那三个是**训练**用的当拍信号 (TAGE/BTB 在这一拍就要
-//    它们), 不能整体延迟。所以存的是"算好的恢复值"。
+//    iu_btb_taken 现算, 而那三个是**重定向当拍**的 EX 信号 (2026-10-02 阶段 4b
+//    之后它们**只**服务这条修复路径与 RAS —— 训练已改由 rtu_train_* 驱动),
+//    不能整体延迟。所以存的是"算好的恢复值"。
 // ⚠️ 同理 ras 存的是当拍的 chk 里的快照指针。
 // ---------------------------------------------------------------------------
 `ifdef REDIRECT_PIPE
@@ -900,10 +911,10 @@ rv32ifu2_ras #(
 // 方向表二选一。两者端口一一对应 (rd_pc/rd_ghr → 逐 slot 方向 + init_done,
 // 以及同一组训练脉冲), 所以这里只是一个 generate 开关。
 //
-// ⚠️ 两者都**只**由 iu_bht_check_vld 训练 (条件分支)。绝不能用 iu_btb_update_vld,
-//    那个还含 JAL/JALR —— 会给没有方向的分支教 "taken"。
-// ⚠️ TAGE 还要一位 upd_fpred: 预测当时方向表**原始**给出的方向。顶层**不能**拿
-//    iu_bht_pred 顶替 (那是 sl_taken, 被 btb_vld 门控过), 见 rv32ifu2_tage.v 头注释。
+// ⚠️ 两者都**只**由 `rtu_train_vld & rtu_train_is_cond` 训练 (条件分支)。绝不能用
+//    不带分类的 rtu_train_vld, 那个还含 JAL/JALR —— 会给没有方向的分支教 "taken"。
+// ⚠️ TAGE 还要一位 upd_fpred: 预测当时方向表**原始**给出的方向, 取自表项 chk 的
+//    CHK_FPRED 位 (原来取 EX 的 iu_btb_chk[CHK_FPRED])。见 rv32ifu2_tage.v 头注释。
 generate
 if (BP_PRED_MODE == 0) begin : g_gshare
     wire [ 7:0] bht_ctr;       // 4 slot × 2 bit 计数器
@@ -925,11 +936,14 @@ if (BP_PRED_MODE == 0) begin : g_gshare
         .rd_ghr    (ghr_q),          // [W2.4] 寄存的 GHR, 不再用当拍推进的 ghr_after
         .slot_ctr  (bht_ctr),
         .init_done (bht_init_done),
-        .upd_vld   (iu_bht_check_vld),
-        .upd_pc    (iu_cur_pc),
-        .upd_ghr   (iu_chk_idx[GHR_W-1:0]),
-        .upd_slot  (iu_cur_pc[3:2]),
-        .upd_taken (iu_bht_condbr_taken)
+        // ⚠️ `& rtu_train_is_cond`: 方向表**只**由条件分支训练。用不带分类的
+        //    `rtu_train_vld` 会给没有方向的 JAL/JALR 教 "taken" (搬走之前那条
+        //    `iu_bht_check_vld` 就是 `npc_op == BRANCH` 门过的, 口径必须一致)。
+        .upd_vld   (rtu_train_vld & rtu_train_is_cond),
+        .upd_pc    (rtu_train_pc),
+        .upd_ghr   (rtu_train_chk[GHR_W-1:0]),
+        .upd_slot  (rtu_train_pc[3:2]),
+        .upd_taken (rtu_train_taken)
     );
 end else begin : g_tage
     wire [ 3:0] tage_pred;
@@ -965,11 +979,11 @@ end else begin : g_tage
         .rd_ghr    (ghr_q),          // [W2.4] 寄存的 GHR, 不再用当拍推进的 ghr_after
         .slot_pred (tage_pred),
         .init_done (tage_init_done),
-        .upd_vld   (iu_bht_check_vld),
-        .upd_pc    (iu_cur_pc),
-        .upd_ghr   (iu_chk_idx[GHR_W-1:0]),
-        .upd_taken (iu_bht_condbr_taken),
-        .upd_fpred (iu_btb_chk[CHK_FPRED])
+        .upd_vld   (rtu_train_vld & rtu_train_is_cond),
+        .upd_pc    (rtu_train_pc),
+        .upd_ghr   (rtu_train_chk[GHR_W-1:0]),
+        .upd_taken (rtu_train_taken),
+        .upd_fpred (rtu_train_chk[CHK_FPRED])
     );
 end
 endgenerate
