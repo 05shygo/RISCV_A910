@@ -1,0 +1,5318 @@
+{
+ "bogus": [
+  [
+   "ct_idu_is_aiq",
+   "x_ct_idu_is_aiq",
+   "aiq_dp_issue_entry",
+   "aiq_dp_issue_entry"
+  ],
+  [
+   "ct_idu_is_aiq",
+   "x_ct_idu_is_aiq",
+   "forever_clk",
+   "forever_clk"
+  ],
+  [
+   "ct_idu_is_aiq",
+   "x_ct_idu_is_mult",
+   "aiq_dp_issue_entry",
+   "mult_dp_issue_entry"
+  ],
+  [
+   "ct_idu_is_aiq",
+   "x_ct_idu_is_mult",
+   "forever_clk",
+   "forever_clk"
+  ],
+  [
+   "ct_idu_is_aiq",
+   "x_ct_idu_is_div",
+   "aiq_dp_issue_entry",
+   "div_dp_issue_entry"
+  ],
+  [
+   "ct_idu_is_aiq",
+   "x_ct_idu_is_div",
+   "forever_clk",
+   "forever_clk"
+  ],
+  [
+   "ct_idu_is_lsiq",
+   "x_ct_idu_is_lsiq",
+   "forever_clk",
+   "forever_clk"
+  ],
+  [
+   "ct_idu_is_sdiq",
+   "x_ct_idu_is_sdiq",
+   "forever_clk",
+   "forever_clk"
+  ],
+  [
+   "ct_idu_is_biq",
+   "x_ct_idu_is_biq",
+   "biq_dp_issue_entry",
+   "biq_dp_issue_entry"
+  ],
+  [
+   "ct_idu_is_biq",
+   "x_ct_idu_is_biq",
+   "forever_clk",
+   "forever_clk"
+  ],
+  [
+   "ct_idu_rf_ctrl",
+   "x_ct_idu_rf_ctrl",
+   "forever_clk",
+   "forever_clk"
+  ],
+  [
+   "ct_idu_rf_dp",
+   "x_ct_idu_rf_dp",
+   "forever_clk",
+   "forever_clk"
+  ],
+  [
+   "ct_idu_rf_dp",
+   "x_ct_idu_rf_dp",
+   "idu_div_dst_vld",
+   "idu_div_dst_vld"
+  ],
+  [
+   "ct_idu_rf_prf_pregfile",
+   "x_ct_idu_rf_prf_pregfile",
+   "forever_clk",
+   "forever_clk"
+  ]
+ ],
+ "nets": {
+  "aiq_ctrl_1_left_updt": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_aiq",
+     "aiq_ctrl_1_left_updt"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "aiq_ctrl_1_left_updt"
+    ]
+   ]
+  },
+  "aiq_ctrl_full_updt": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_aiq",
+     "aiq_ctrl_full_updt"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "aiq_ctrl_full_updt"
+    ]
+   ]
+  },
+  "aiq_dp_issue_entry": {
+   "class": "??",
+   "width": null,
+   "comments": [],
+   "drivers": [],
+   "consumers": []
+  },
+  "aiq_dp_issue_read_data": {
+   "class": "INTERNAL",
+   "width": 62,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_aiq",
+     "aiq_dp_issue_read_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_dp",
+     "aiq_dp_issue_read_data"
+    ]
+   ]
+  },
+  "aiq_xx_issue_en": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_aiq",
+     "aiq_xx_issue_en"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_ctrl",
+     "aiq_xx_issue_en"
+    ],
+    [
+     "ct_idu_rf_dp",
+     "aiq_xx_issue_en"
+    ]
+   ]
+  },
+  "biq_ctrl_1_left_updt": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_biq",
+     "biq_ctrl_1_left_updt"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "biq_ctrl_1_left_updt"
+    ]
+   ]
+  },
+  "biq_ctrl_full_updt": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_biq",
+     "biq_ctrl_full_updt"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "biq_ctrl_full_updt"
+    ]
+   ]
+  },
+  "biq_dp_issue_entry": {
+   "class": "??",
+   "width": null,
+   "comments": [],
+   "drivers": [],
+   "consumers": []
+  },
+  "biq_dp_issue_read_data": {
+   "class": "INTERNAL",
+   "width": 62,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_biq",
+     "biq_dp_issue_read_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_dp",
+     "biq_dp_issue_read_data"
+    ]
+   ]
+  },
+  "biq_xx_issue_en": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_biq",
+     "biq_xx_issue_en"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_ctrl",
+     "biq_xx_issue_en"
+    ],
+    [
+     "ct_idu_rf_dp",
+     "biq_xx_issue_en"
+    ]
+   ]
+  },
+  "cpurst_b": {
+   "class": "TOP_INPUT",
+   "width": 0,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_id_ctrl",
+     "cpurst_b"
+    ],
+    [
+     "ct_idu_id_dp",
+     "cpurst_b"
+    ],
+    [
+     "ct_idu_ir_ctrl",
+     "cpurst_b"
+    ],
+    [
+     "ct_idu_ir_dp",
+     "cpurst_b"
+    ],
+    [
+     "ct_idu_ir_rt",
+     "cpurst_b"
+    ],
+    [
+     "ct_idu_is_ctrl",
+     "cpurst_b"
+    ],
+    [
+     "ct_idu_is_dp",
+     "cpurst_b"
+    ],
+    [
+     "ct_idu_is_aiq",
+     "cpurst_b"
+    ],
+    [
+     "ct_idu_is_aiq",
+     "cpurst_b"
+    ],
+    [
+     "ct_idu_is_aiq",
+     "cpurst_b"
+    ],
+    [
+     "ct_idu_is_lsiq",
+     "cpurst_b"
+    ],
+    [
+     "ct_idu_is_sdiq",
+     "cpurst_b"
+    ],
+    [
+     "ct_idu_is_biq",
+     "cpurst_b"
+    ],
+    [
+     "ct_idu_rf_ctrl",
+     "cpurst_b"
+    ],
+    [
+     "ct_idu_rf_dp",
+     "cpurst_b"
+    ]
+   ]
+  },
+  "ctrl_aiq_create0_en": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_aiq_create0_en"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_aiq",
+     "ctrl_aiq_create0_en"
+    ]
+   ]
+  },
+  "ctrl_aiq_create1_en": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_aiq_create1_en"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_aiq",
+     "ctrl_aiq_create1_en"
+    ]
+   ]
+  },
+  "ctrl_biq_create0_en": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_biq_create0_en"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_biq",
+     "ctrl_biq_create0_en"
+    ]
+   ]
+  },
+  "ctrl_biq_create1_en": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_biq_create1_en"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_biq",
+     "ctrl_biq_create1_en"
+    ]
+   ]
+  },
+  "ctrl_div_create0_en": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_div_create0_en"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_aiq",
+     "ctrl_aiq_create0_en"
+    ]
+   ]
+  },
+  "ctrl_div_create1_en": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_div_create1_en"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_aiq",
+     "ctrl_aiq_create1_en"
+    ]
+   ]
+  },
+  "ctrl_dp_dis_inst0_preg_vld": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_dp_dis_inst0_preg_vld"
+    ]
+   ],
+   "consumers": []
+  },
+  "ctrl_dp_dis_inst1_preg_vld": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_dp_dis_inst1_preg_vld"
+    ]
+   ],
+   "consumers": []
+  },
+  "ctrl_dp_dis_inst2_preg_vld": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_dp_dis_inst2_preg_vld"
+    ]
+   ],
+   "consumers": []
+  },
+  "ctrl_dp_dis_inst3_preg_vld": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_dp_dis_inst3_preg_vld"
+    ]
+   ],
+   "consumers": []
+  },
+  "ctrl_dp_id_stall": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_id_ctrl",
+     "ctrl_dp_id_stall"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_id_dp",
+     "ctrl_dp_id_stall"
+    ]
+   ]
+  },
+  "ctrl_dp_is_dis_aiq_create0_sel": {
+   "class": "INTERNAL",
+   "width": 1,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_dp_is_dis_aiq_create0_sel"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_dp",
+     "ctrl_dp_is_dis_aiq_create0_sel"
+    ]
+   ]
+  },
+  "ctrl_dp_is_dis_aiq_create1_sel": {
+   "class": "INTERNAL",
+   "width": 1,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_dp_is_dis_aiq_create1_sel"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_dp",
+     "ctrl_dp_is_dis_aiq_create1_sel"
+    ]
+   ]
+  },
+  "ctrl_dp_is_dis_biq_create0_sel": {
+   "class": "INTERNAL",
+   "width": 1,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_dp_is_dis_biq_create0_sel"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_dp",
+     "ctrl_dp_is_dis_biq_create0_sel"
+    ]
+   ]
+  },
+  "ctrl_dp_is_dis_biq_create1_sel": {
+   "class": "INTERNAL",
+   "width": 1,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_dp_is_dis_biq_create1_sel"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_dp",
+     "ctrl_dp_is_dis_biq_create1_sel"
+    ]
+   ]
+  },
+  "ctrl_dp_is_dis_div_create0_sel": {
+   "class": "INTERNAL",
+   "width": 1,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_dp_is_dis_div_create0_sel"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_dp",
+     "ctrl_dp_is_dis_div_create0_sel"
+    ]
+   ]
+  },
+  "ctrl_dp_is_dis_div_create1_sel": {
+   "class": "INTERNAL",
+   "width": 1,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_dp_is_dis_div_create1_sel"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_dp",
+     "ctrl_dp_is_dis_div_create1_sel"
+    ]
+   ]
+  },
+  "ctrl_dp_is_dis_lsiq_create0_sel": {
+   "class": "INTERNAL",
+   "width": 1,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_dp_is_dis_lsiq_create0_sel"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_dp",
+     "ctrl_dp_is_dis_lsiq_create0_sel"
+    ]
+   ]
+  },
+  "ctrl_dp_is_dis_lsiq_create1_sel": {
+   "class": "INTERNAL",
+   "width": 1,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_dp_is_dis_lsiq_create1_sel"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_dp",
+     "ctrl_dp_is_dis_lsiq_create1_sel"
+    ]
+   ]
+  },
+  "ctrl_dp_is_dis_mult_create0_sel": {
+   "class": "INTERNAL",
+   "width": 1,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_dp_is_dis_mult_create0_sel"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_dp",
+     "ctrl_dp_is_dis_mult_create0_sel"
+    ]
+   ]
+  },
+  "ctrl_dp_is_dis_mult_create1_sel": {
+   "class": "INTERNAL",
+   "width": 1,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_dp_is_dis_mult_create1_sel"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_dp",
+     "ctrl_dp_is_dis_mult_create1_sel"
+    ]
+   ]
+  },
+  "ctrl_dp_is_dis_sdiq_create0_sel": {
+   "class": "INTERNAL",
+   "width": 1,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_dp_is_dis_sdiq_create0_sel"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_dp",
+     "ctrl_dp_is_dis_sdiq_create0_sel"
+    ]
+   ]
+  },
+  "ctrl_dp_is_dis_sdiq_create1_sel": {
+   "class": "INTERNAL",
+   "width": 1,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_dp_is_dis_sdiq_create1_sel"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_dp",
+     "ctrl_dp_is_dis_sdiq_create1_sel"
+    ]
+   ]
+  },
+  "ctrl_dp_is_dis_stall": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_dp_is_dis_stall"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_dp",
+     "ctrl_dp_is_dis_stall"
+    ]
+   ]
+  },
+  "ctrl_dp_is_inst0_vld": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_dp_is_inst0_vld"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_dp",
+     "ctrl_dp_is_inst0_vld"
+    ]
+   ]
+  },
+  "ctrl_dp_is_inst1_vld": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_dp_is_inst1_vld"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_dp",
+     "ctrl_dp_is_inst1_vld"
+    ]
+   ]
+  },
+  "ctrl_dp_is_inst2_vld": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_dp_is_inst2_vld"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_dp",
+     "ctrl_dp_is_inst2_vld"
+    ]
+   ]
+  },
+  "ctrl_ir_inst2_vld": {
+   "class": "TOP_INPUT (unmarked, no internal driver)",
+   "width": 0,
+   "comments": [],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_id_ctrl",
+     "ctrl_ir_inst2_vld"
+    ]
+   ]
+  },
+  "ctrl_ir_pipedown": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_ctrl",
+     "ctrl_ir_pipedown"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_dp",
+     "ctrl_ir_pipedown"
+    ]
+   ]
+  },
+  "ctrl_ir_pipedown_inst0_vld": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_ctrl",
+     "ctrl_ir_pipedown_inst0_vld"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_ir_pipedown_inst0_vld"
+    ]
+   ]
+  },
+  "ctrl_ir_pipedown_inst1_vld": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_ctrl",
+     "ctrl_ir_pipedown_inst1_vld"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_ir_pipedown_inst1_vld"
+    ]
+   ]
+  },
+  "ctrl_ir_pipedown_inst2_vld": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_ctrl",
+     "ctrl_ir_pipedown_inst2_vld"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_ir_pipedown_inst2_vld"
+    ]
+   ]
+  },
+  "ctrl_ir_pre_dis_aiq_create0_en": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_ctrl",
+     "ctrl_ir_pre_dis_aiq_create0_en"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_ir_pre_dis_aiq_create0_en"
+    ]
+   ]
+  },
+  "ctrl_ir_pre_dis_aiq_create0_sel": {
+   "class": "INTERNAL",
+   "width": 1,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_ctrl",
+     "ctrl_ir_pre_dis_aiq_create0_sel"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_ir_pre_dis_aiq_create0_sel"
+    ]
+   ]
+  },
+  "ctrl_ir_pre_dis_aiq_create1_en": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_ctrl",
+     "ctrl_ir_pre_dis_aiq_create1_en"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_ir_pre_dis_aiq_create1_en"
+    ]
+   ]
+  },
+  "ctrl_ir_pre_dis_aiq_create1_sel": {
+   "class": "INTERNAL",
+   "width": 1,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_ctrl",
+     "ctrl_ir_pre_dis_aiq_create1_sel"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_ir_pre_dis_aiq_create1_sel"
+    ]
+   ]
+  },
+  "ctrl_ir_pre_dis_biq_create0_en": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_ctrl",
+     "ctrl_ir_pre_dis_biq_create0_en"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_ir_pre_dis_biq_create0_en"
+    ]
+   ]
+  },
+  "ctrl_ir_pre_dis_biq_create0_sel": {
+   "class": "INTERNAL",
+   "width": 1,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_ctrl",
+     "ctrl_ir_pre_dis_biq_create0_sel"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_ir_pre_dis_biq_create0_sel"
+    ]
+   ]
+  },
+  "ctrl_ir_pre_dis_biq_create1_en": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_ctrl",
+     "ctrl_ir_pre_dis_biq_create1_en"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_ir_pre_dis_biq_create1_en"
+    ]
+   ]
+  },
+  "ctrl_ir_pre_dis_biq_create1_sel": {
+   "class": "INTERNAL",
+   "width": 1,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_ctrl",
+     "ctrl_ir_pre_dis_biq_create1_sel"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_ir_pre_dis_biq_create1_sel"
+    ]
+   ]
+  },
+  "ctrl_ir_pre_dis_div_create0_en": {
+   "class": "TOP_INPUT (unmarked, no internal driver)",
+   "width": 0,
+   "comments": [],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_ir_pre_dis_div_create0_en"
+    ]
+   ]
+  },
+  "ctrl_ir_pre_dis_div_create0_sel": {
+   "class": "TOP_INPUT (unmarked, no internal driver)",
+   "width": 1,
+   "comments": [],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_ir_pre_dis_div_create0_sel"
+    ]
+   ]
+  },
+  "ctrl_ir_pre_dis_div_create1_en": {
+   "class": "TOP_INPUT (unmarked, no internal driver)",
+   "width": 0,
+   "comments": [],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_ir_pre_dis_div_create1_en"
+    ]
+   ]
+  },
+  "ctrl_ir_pre_dis_div_create1_sel": {
+   "class": "TOP_INPUT (unmarked, no internal driver)",
+   "width": 1,
+   "comments": [],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_ir_pre_dis_div_create1_sel"
+    ]
+   ]
+  },
+  "ctrl_ir_pre_dis_inst0_vld": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_ctrl",
+     "ctrl_ir_pre_dis_inst0_vld"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_ir_pre_dis_inst0_vld"
+    ]
+   ]
+  },
+  "ctrl_ir_pre_dis_inst1_vld": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_ctrl",
+     "ctrl_ir_pre_dis_inst1_vld"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_ir_pre_dis_inst1_vld"
+    ]
+   ]
+  },
+  "ctrl_ir_pre_dis_inst2_vld": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_ctrl",
+     "ctrl_ir_pre_dis_inst2_vld"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_ir_pre_dis_inst2_vld"
+    ]
+   ]
+  },
+  "ctrl_ir_pre_dis_lsiq_create0_en": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_ctrl",
+     "ctrl_ir_pre_dis_lsiq_create0_en"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_ir_pre_dis_lsiq_create0_en"
+    ]
+   ]
+  },
+  "ctrl_ir_pre_dis_lsiq_create0_sel": {
+   "class": "INTERNAL",
+   "width": 1,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_ctrl",
+     "ctrl_ir_pre_dis_lsiq_create0_sel"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_ir_pre_dis_lsiq_create0_sel"
+    ]
+   ]
+  },
+  "ctrl_ir_pre_dis_lsiq_create1_en": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_ctrl",
+     "ctrl_ir_pre_dis_lsiq_create1_en"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_ir_pre_dis_lsiq_create1_en"
+    ]
+   ]
+  },
+  "ctrl_ir_pre_dis_lsiq_create1_sel": {
+   "class": "INTERNAL",
+   "width": 1,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_ctrl",
+     "ctrl_ir_pre_dis_lsiq_create1_sel"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_ir_pre_dis_lsiq_create1_sel"
+    ]
+   ]
+  },
+  "ctrl_ir_pre_dis_mult_create0_en": {
+   "class": "TOP_INPUT (unmarked, no internal driver)",
+   "width": 0,
+   "comments": [],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_ir_pre_dis_mult_create0_en"
+    ]
+   ]
+  },
+  "ctrl_ir_pre_dis_mult_create0_sel": {
+   "class": "TOP_INPUT (unmarked, no internal driver)",
+   "width": 1,
+   "comments": [],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_ir_pre_dis_mult_create0_sel"
+    ]
+   ]
+  },
+  "ctrl_ir_pre_dis_mult_create1_en": {
+   "class": "TOP_INPUT (unmarked, no internal driver)",
+   "width": 0,
+   "comments": [],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_ir_pre_dis_mult_create1_en"
+    ]
+   ]
+  },
+  "ctrl_ir_pre_dis_mult_create1_sel": {
+   "class": "TOP_INPUT (unmarked, no internal driver)",
+   "width": 1,
+   "comments": [],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_ir_pre_dis_mult_create1_sel"
+    ]
+   ]
+  },
+  "ctrl_ir_pre_dis_pipedown2": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_ctrl",
+     "ctrl_ir_pre_dis_pipedown2"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_ir_pre_dis_pipedown2"
+    ]
+   ]
+  },
+  "ctrl_ir_pre_dis_sdiq_create0_en": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_ctrl",
+     "ctrl_ir_pre_dis_sdiq_create0_en"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_ir_pre_dis_sdiq_create0_en"
+    ]
+   ]
+  },
+  "ctrl_ir_pre_dis_sdiq_create0_sel": {
+   "class": "INTERNAL",
+   "width": 1,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_ctrl",
+     "ctrl_ir_pre_dis_sdiq_create0_sel"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_ir_pre_dis_sdiq_create0_sel"
+    ]
+   ]
+  },
+  "ctrl_ir_pre_dis_sdiq_create1_en": {
+   "class": "TOP_INPUT (unmarked, no internal driver)",
+   "width": 0,
+   "comments": [],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_ir_pre_dis_sdiq_create1_en"
+    ]
+   ]
+  },
+  "ctrl_ir_pre_dis_sdiq_create1_sel": {
+   "class": "INTERNAL",
+   "width": 1,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_ctrl",
+     "ctrl_ir_pre_dis_sdiq_create1_sel"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_ir_pre_dis_sdiq_create1_sel"
+    ]
+   ]
+  },
+  "ctrl_ir_stage_stall": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_ctrl",
+     "ctrl_ir_stage_stall"
+    ]
+   ],
+   "consumers": []
+  },
+  "ctrl_ir_stall": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_ctrl",
+     "ctrl_ir_stall"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_id_ctrl",
+     "ctrl_ir_stall"
+    ],
+    [
+     "ct_idu_ir_dp",
+     "ctrl_ir_stall"
+    ],
+    [
+     "ct_idu_ir_rt",
+     "ctrl_ir_stall"
+    ]
+   ]
+  },
+  "ctrl_is_inst2_vld": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_is_inst2_vld"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_ctrl",
+     "ctrl_is_inst2_vld"
+    ]
+   ]
+  },
+  "ctrl_is_stall": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_is_stall"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_ctrl",
+     "ctrl_is_stall"
+    ]
+   ]
+  },
+  "ctrl_lsiq_create0_en": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_lsiq_create0_en"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_lsiq",
+     "ctrl_lsiq_create0_en"
+    ]
+   ]
+  },
+  "ctrl_lsiq_create1_en": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_lsiq_create1_en"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_lsiq",
+     "ctrl_lsiq_create1_en"
+    ]
+   ]
+  },
+  "ctrl_mult_create0_en": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_mult_create0_en"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_aiq",
+     "ctrl_aiq_create0_en"
+    ]
+   ]
+  },
+  "ctrl_mult_create1_en": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_mult_create1_en"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_aiq",
+     "ctrl_aiq_create1_en"
+    ]
+   ]
+  },
+  "ctrl_rt_inst0_vld": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_ctrl",
+     "ctrl_rt_inst0_vld"
+    ]
+   ],
+   "consumers": []
+  },
+  "ctrl_rt_inst1_vld": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_ctrl",
+     "ctrl_rt_inst1_vld"
+    ]
+   ],
+   "consumers": []
+  },
+  "ctrl_rt_inst2_vld": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_ctrl",
+     "ctrl_rt_inst2_vld"
+    ]
+   ],
+   "consumers": []
+  },
+  "ctrl_sdiq_create0_en": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_sdiq_create0_en"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_dp",
+     "ctrl_sdiq_create0_en"
+    ],
+    [
+     "ct_idu_is_sdiq",
+     "ctrl_sdiq_create0_en"
+    ]
+   ]
+  },
+  "ctrl_sdiq_create1_en": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_sdiq_create1_en"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_dp",
+     "ctrl_sdiq_create1_en"
+    ],
+    [
+     "ct_idu_is_sdiq",
+     "ctrl_sdiq_create1_en"
+    ]
+   ]
+  },
+  "ctrl_xx_is_inst0_sel": {
+   "class": "INTERNAL",
+   "width": 1,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_ctrl",
+     "ctrl_xx_is_inst0_sel"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_id_ctrl",
+     "ctrl_xx_is_inst0_sel"
+    ],
+    [
+     "ct_idu_ir_ctrl",
+     "ctrl_xx_is_inst0_sel"
+    ],
+    [
+     "ct_idu_is_dp",
+     "ctrl_xx_is_inst0_sel"
+    ]
+   ]
+  },
+  "div_ctrl_1_left_updt": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_aiq",
+     "aiq_ctrl_1_left_updt"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "div_ctrl_1_left_updt"
+    ]
+   ]
+  },
+  "div_ctrl_full_updt": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_aiq",
+     "aiq_ctrl_full_updt"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "div_ctrl_full_updt"
+    ]
+   ]
+  },
+  "div_dp_issue_entry": {
+   "class": "??",
+   "width": null,
+   "comments": [],
+   "drivers": [],
+   "consumers": []
+  },
+  "div_dp_issue_read_data": {
+   "class": "INTERNAL",
+   "width": 62,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_aiq",
+     "aiq_dp_issue_read_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_dp",
+     "div_dp_issue_read_data"
+    ]
+   ]
+  },
+  "div_xx_issue_en": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_aiq",
+     "aiq_xx_issue_en"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_ctrl",
+     "div_xx_issue_en"
+    ],
+    [
+     "ct_idu_rf_dp",
+     "div_xx_issue_en"
+    ]
+   ]
+  },
+  "dp_aiq_create0_data": {
+   "class": "INTERNAL",
+   "width": 62,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_dp",
+     "dp_aiq_create0_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_aiq",
+     "dp_aiq_create0_data"
+    ]
+   ]
+  },
+  "dp_aiq_create1_data": {
+   "class": "INTERNAL",
+   "width": 62,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_dp",
+     "dp_aiq_create1_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_aiq",
+     "dp_aiq_create1_data"
+    ]
+   ]
+  },
+  "dp_biq_create0_data": {
+   "class": "INTERNAL",
+   "width": 119,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_dp",
+     "dp_biq_create0_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_biq",
+     "dp_biq_create0_data"
+    ]
+   ]
+  },
+  "dp_biq_create1_data": {
+   "class": "INTERNAL",
+   "width": 119,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_dp",
+     "dp_biq_create1_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_biq",
+     "dp_biq_create1_data"
+    ]
+   ]
+  },
+  "dp_ctrl_ir_inst0_ctrl_info": {
+   "class": "INTERNAL",
+   "width": 5,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_dp",
+     "dp_ctrl_ir_inst0_ctrl_info"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_ctrl",
+     "dp_ctrl_ir_inst0_ctrl_info"
+    ]
+   ]
+  },
+  "dp_ctrl_ir_inst0_dst_vld": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_dp",
+     "dp_ctrl_ir_inst0_dst_vld"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_ctrl",
+     "dp_ctrl_ir_inst0_dst_vld"
+    ]
+   ]
+  },
+  "dp_ctrl_ir_inst0_dst_x0": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_dp",
+     "dp_ctrl_ir_inst0_dst_x0"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_ctrl",
+     "dp_ctrl_ir_inst0_dst_x0"
+    ]
+   ]
+  },
+  "dp_ctrl_ir_inst1_ctrl_info": {
+   "class": "INTERNAL",
+   "width": 5,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_dp",
+     "dp_ctrl_ir_inst1_ctrl_info"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_ctrl",
+     "dp_ctrl_ir_inst1_ctrl_info"
+    ]
+   ]
+  },
+  "dp_ctrl_ir_inst1_dst_vld": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_dp",
+     "dp_ctrl_ir_inst1_dst_vld"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_ctrl",
+     "dp_ctrl_ir_inst1_dst_vld"
+    ]
+   ]
+  },
+  "dp_ctrl_ir_inst1_dst_x0": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_dp",
+     "dp_ctrl_ir_inst1_dst_x0"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_ctrl",
+     "dp_ctrl_ir_inst1_dst_x0"
+    ]
+   ]
+  },
+  "dp_ctrl_ir_inst2_ctrl_info": {
+   "class": "INTERNAL",
+   "width": 5,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_dp",
+     "dp_ctrl_ir_inst2_ctrl_info"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_ctrl",
+     "dp_ctrl_ir_inst2_ctrl_info"
+    ]
+   ]
+  },
+  "dp_ctrl_ir_inst2_dst_vld": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_dp",
+     "dp_ctrl_ir_inst2_dst_vld"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_ctrl",
+     "dp_ctrl_ir_inst2_dst_vld"
+    ]
+   ]
+  },
+  "dp_ctrl_ir_inst2_dst_x0": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_dp",
+     "dp_ctrl_ir_inst2_dst_x0"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_ctrl",
+     "dp_ctrl_ir_inst2_dst_x0"
+    ]
+   ]
+  },
+  "dp_ctrl_is_dis_inst2_ctrl_info": {
+   "class": "TOP_INPUT (unmarked, no internal driver)",
+   "width": 4,
+   "comments": [],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_ir_ctrl",
+     "dp_ctrl_is_dis_inst2_ctrl_info"
+    ]
+   ]
+  },
+  "dp_ctrl_is_inst0_dst_vld": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_dp",
+     "dp_ctrl_is_inst0_dst_vld"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "dp_ctrl_is_inst0_dst_vld"
+    ]
+   ]
+  },
+  "dp_ctrl_is_inst1_dst_vld": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_dp",
+     "dp_ctrl_is_inst1_dst_vld"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "dp_ctrl_is_inst1_dst_vld"
+    ]
+   ]
+  },
+  "dp_ctrl_is_inst2_dst_vld": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_dp",
+     "dp_ctrl_is_inst2_dst_vld"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "dp_ctrl_is_inst2_dst_vld"
+    ]
+   ]
+  },
+  "dp_div_create0_data": {
+   "class": "INTERNAL",
+   "width": 62,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_dp",
+     "dp_div_create0_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_aiq",
+     "dp_aiq_create0_data"
+    ]
+   ]
+  },
+  "dp_div_create1_data": {
+   "class": "INTERNAL",
+   "width": 62,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_dp",
+     "dp_div_create1_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_aiq",
+     "dp_aiq_create1_data"
+    ]
+   ]
+  },
+  "dp_id_pipedown_inst0_data": {
+   "class": "INTERNAL",
+   "width": 121,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_id_dp",
+     "dp_id_pipedown_inst0_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_dp",
+     "dp_id_pipedown_inst0_data"
+    ],
+    [
+     "ct_idu_ir_dp",
+     "dp_id_pipedown_inst1_data"
+    ],
+    [
+     "ct_idu_ir_dp",
+     "dp_id_pipedown_inst2_data"
+    ]
+   ]
+  },
+  "dp_id_pipedown_inst1_data": {
+   "class": "INTERNAL",
+   "width": 121,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_id_dp",
+     "dp_id_pipedown_inst1_data"
+    ]
+   ],
+   "consumers": []
+  },
+  "dp_id_pipedown_inst2_data": {
+   "class": "INTERNAL",
+   "width": 121,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_id_dp",
+     "dp_id_pipedown_inst2_data"
+    ]
+   ],
+   "consumers": []
+  },
+  "dp_ir_inst0_data": {
+   "class": "INTERNAL",
+   "width": 81,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_dp",
+     "dp_ir_inst0_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_dp",
+     "dp_ir_inst0_data"
+    ]
+   ]
+  },
+  "dp_ir_inst1_data": {
+   "class": "INTERNAL",
+   "width": 81,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_dp",
+     "dp_ir_inst1_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_dp",
+     "dp_ir_inst1_data"
+    ]
+   ]
+  },
+  "dp_ir_inst2_data": {
+   "class": "INTERNAL",
+   "width": 81,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_dp",
+     "dp_ir_inst2_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_dp",
+     "dp_ir_inst2_data"
+    ]
+   ]
+  },
+  "dp_lsiq_create0_data": {
+   "class": "INTERNAL",
+   "width": 67,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_dp",
+     "dp_lsiq_create0_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_lsiq",
+     "dp_lsiq_create0_data"
+    ]
+   ]
+  },
+  "dp_lsiq_create1_data": {
+   "class": "INTERNAL",
+   "width": 67,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_dp",
+     "dp_lsiq_create1_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_lsiq",
+     "dp_lsiq_create1_data"
+    ]
+   ]
+  },
+  "dp_mult_create0_data": {
+   "class": "INTERNAL",
+   "width": 62,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_dp",
+     "dp_mult_create0_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_aiq",
+     "dp_aiq_create0_data"
+    ]
+   ]
+  },
+  "dp_mult_create1_data": {
+   "class": "INTERNAL",
+   "width": 62,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_dp",
+     "dp_mult_create1_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_aiq",
+     "dp_aiq_create1_data"
+    ]
+   ]
+  },
+  "dp_prf_rf_pipe0_src0_preg": {
+   "class": "INTERNAL",
+   "width": 5,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "dp_prf_rf_pipe0_src0_preg"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_prf_pregfile",
+     "dp_prf_rf_pipe0_src0_preg"
+    ]
+   ]
+  },
+  "dp_prf_rf_pipe0_src1_preg": {
+   "class": "INTERNAL",
+   "width": 5,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "dp_prf_rf_pipe0_src1_preg"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_prf_pregfile",
+     "dp_prf_rf_pipe0_src1_preg"
+    ]
+   ]
+  },
+  "dp_prf_rf_pipe1_src0_preg": {
+   "class": "INTERNAL",
+   "width": 5,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "dp_prf_rf_pipe1_src0_preg"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_prf_pregfile",
+     "dp_prf_rf_pipe1_src0_preg"
+    ]
+   ]
+  },
+  "dp_prf_rf_pipe1_src1_preg": {
+   "class": "INTERNAL",
+   "width": 5,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "dp_prf_rf_pipe1_src1_preg"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_prf_pregfile",
+     "dp_prf_rf_pipe1_src1_preg"
+    ]
+   ]
+  },
+  "dp_prf_rf_pipe2_src0_preg": {
+   "class": "INTERNAL",
+   "width": 5,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "dp_prf_rf_pipe2_src0_preg"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_prf_pregfile",
+     "dp_prf_rf_pipe2_src0_preg"
+    ]
+   ]
+  },
+  "dp_prf_rf_pipe2_src1_preg": {
+   "class": "INTERNAL",
+   "width": 5,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "dp_prf_rf_pipe2_src1_preg"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_prf_pregfile",
+     "dp_prf_rf_pipe2_src1_preg"
+    ]
+   ]
+  },
+  "dp_prf_rf_pipe3_src0_preg": {
+   "class": "INTERNAL",
+   "width": 5,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "dp_prf_rf_pipe3_src0_preg"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_prf_pregfile",
+     "dp_prf_rf_pipe3_src0_preg"
+    ]
+   ]
+  },
+  "dp_prf_rf_pipe4_src0_preg": {
+   "class": "INTERNAL",
+   "width": 5,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "dp_prf_rf_pipe4_src0_preg"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_prf_pregfile",
+     "dp_prf_rf_pipe4_src0_preg"
+    ]
+   ]
+  },
+  "dp_prf_rf_pipe5_src0_preg": {
+   "class": "INTERNAL",
+   "width": 5,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "dp_prf_rf_pipe5_src0_preg"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_prf_pregfile",
+     "dp_prf_rf_pipe5_src0_preg"
+    ]
+   ]
+  },
+  "dp_prf_rf_pipe6_src0_preg": {
+   "class": "INTERNAL",
+   "width": 5,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "dp_prf_rf_pipe6_src0_preg"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_prf_pregfile",
+     "dp_prf_rf_pipe6_src0_preg"
+    ]
+   ]
+  },
+  "dp_prf_rf_pipe6_src1_preg": {
+   "class": "INTERNAL",
+   "width": 5,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "dp_prf_rf_pipe6_src1_preg"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_prf_pregfile",
+     "dp_prf_rf_pipe6_src1_preg"
+    ]
+   ]
+  },
+  "dp_rt_inst0_dst_preg": {
+   "class": "INTERNAL",
+   "width": 5,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_dp",
+     "dp_rt_inst0_dst_preg"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_rt",
+     "dp_rt_inst0_dst_preg"
+    ]
+   ]
+  },
+  "dp_rt_inst0_dst_reg": {
+   "class": "INTERNAL",
+   "width": 4,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_dp",
+     "dp_rt_inst0_dst_reg"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_rt",
+     "dp_rt_inst0_dst_reg"
+    ]
+   ]
+  },
+  "dp_rt_inst0_dst_vld": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_dp",
+     "dp_rt_inst0_dst_vld"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_rt",
+     "dp_rt_inst0_dst_vld"
+    ]
+   ]
+  },
+  "dp_rt_inst0_src0_reg": {
+   "class": "INTERNAL",
+   "width": 4,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_dp",
+     "dp_rt_inst0_src0_reg"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_rt",
+     "dp_rt_inst0_src0_reg"
+    ]
+   ]
+  },
+  "dp_rt_inst0_src0_vld": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_dp",
+     "dp_rt_inst0_src0_vld"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_rt",
+     "dp_rt_inst0_src0_vld"
+    ]
+   ]
+  },
+  "dp_rt_inst0_src1_reg": {
+   "class": "INTERNAL",
+   "width": 4,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_dp",
+     "dp_rt_inst0_src1_reg"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_rt",
+     "dp_rt_inst0_src1_reg"
+    ]
+   ]
+  },
+  "dp_rt_inst0_src1_vld": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_dp",
+     "dp_rt_inst0_src1_vld"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_rt",
+     "dp_rt_inst0_src1_vld"
+    ]
+   ]
+  },
+  "dp_rt_inst1_dst_preg": {
+   "class": "INTERNAL",
+   "width": 5,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_dp",
+     "dp_rt_inst1_dst_preg"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_rt",
+     "dp_rt_inst1_dst_preg"
+    ]
+   ]
+  },
+  "dp_rt_inst1_dst_reg": {
+   "class": "INTERNAL",
+   "width": 4,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_dp",
+     "dp_rt_inst1_dst_reg"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_rt",
+     "dp_rt_inst1_dst_reg"
+    ]
+   ]
+  },
+  "dp_rt_inst1_dst_vld": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_dp",
+     "dp_rt_inst1_dst_vld"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_rt",
+     "dp_rt_inst1_dst_vld"
+    ]
+   ]
+  },
+  "dp_rt_inst1_src0_reg": {
+   "class": "INTERNAL",
+   "width": 4,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_dp",
+     "dp_rt_inst1_src0_reg"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_rt",
+     "dp_rt_inst1_src0_reg"
+    ]
+   ]
+  },
+  "dp_rt_inst1_src0_vld": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_dp",
+     "dp_rt_inst1_src0_vld"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_rt",
+     "dp_rt_inst1_src0_vld"
+    ]
+   ]
+  },
+  "dp_rt_inst1_src1_reg": {
+   "class": "INTERNAL",
+   "width": 4,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_dp",
+     "dp_rt_inst1_src1_reg"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_rt",
+     "dp_rt_inst1_src1_reg"
+    ]
+   ]
+  },
+  "dp_rt_inst1_src1_vld": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_dp",
+     "dp_rt_inst1_src1_vld"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_rt",
+     "dp_rt_inst1_src1_vld"
+    ]
+   ]
+  },
+  "dp_rt_inst2_dst_preg": {
+   "class": "INTERNAL",
+   "width": 5,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_dp",
+     "dp_rt_inst2_dst_preg"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_rt",
+     "dp_rt_inst2_dst_preg"
+    ]
+   ]
+  },
+  "dp_rt_inst2_dst_reg": {
+   "class": "INTERNAL",
+   "width": 4,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_dp",
+     "dp_rt_inst2_dst_reg"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_rt",
+     "dp_rt_inst2_dst_reg"
+    ]
+   ]
+  },
+  "dp_rt_inst2_dst_vld": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_dp",
+     "dp_rt_inst2_dst_vld"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_rt",
+     "dp_rt_inst2_dst_vld"
+    ]
+   ]
+  },
+  "dp_rt_inst2_src0_reg": {
+   "class": "INTERNAL",
+   "width": 4,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_dp",
+     "dp_rt_inst2_src0_reg"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_rt",
+     "dp_rt_inst2_src0_reg"
+    ]
+   ]
+  },
+  "dp_rt_inst2_src0_vld": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_dp",
+     "dp_rt_inst2_src0_vld"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_rt",
+     "dp_rt_inst2_src0_vld"
+    ]
+   ]
+  },
+  "dp_rt_inst2_src1_reg": {
+   "class": "INTERNAL",
+   "width": 4,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_dp",
+     "dp_rt_inst2_src1_reg"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_rt",
+     "dp_rt_inst2_src1_reg"
+    ]
+   ]
+  },
+  "dp_rt_inst2_src1_vld": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_dp",
+     "dp_rt_inst2_src1_vld"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_rt",
+     "dp_rt_inst2_src1_vld"
+    ]
+   ]
+  },
+  "dp_sdiq_create0_data": {
+   "class": "INTERNAL",
+   "width": 7,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_dp",
+     "dp_sdiq_create0_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_sdiq",
+     "dp_sdiq_create0_data"
+    ]
+   ]
+  },
+  "dp_sdiq_create1_data": {
+   "class": "INTERNAL",
+   "width": 7,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_dp",
+     "dp_sdiq_create1_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_sdiq",
+     "dp_sdiq_create1_data"
+    ]
+   ]
+  },
+  "forever_clk": {
+   "class": "TOP_INPUT (unmarked, no internal driver)",
+   "width": 0,
+   "comments": [],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_ir_dp",
+     "forever_clk"
+    ],
+    [
+     "ct_idu_is_ctrl",
+     "forever_clk"
+    ],
+    [
+     "ct_idu_is_dp",
+     "forever_clk"
+    ]
+   ]
+  },
+  "forever_cpuclk": {
+   "class": "TOP_INPUT",
+   "width": 0,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_id_ctrl",
+     "forever_cpuclk"
+    ],
+    [
+     "ct_idu_id_dp",
+     "forever_cpuclk"
+    ]
+   ]
+  },
+  "id_inst0_vld": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_id_ctrl",
+     "id_inst0_vld"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_ctrl",
+     "ctrl_id_pipedown_inst0_vld"
+    ],
+    [
+     "ct_idu_ir_ctrl",
+     "ctrl_id_pipedown_inst1_vld"
+    ],
+    [
+     "ct_idu_ir_ctrl",
+     "ctrl_id_pipedown_inst2_vld"
+    ]
+   ]
+  },
+  "id_inst1_vld": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_id_ctrl",
+     "id_inst1_vld"
+    ]
+   ],
+   "consumers": []
+  },
+  "id_inst2_vld": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_id_ctrl",
+     "id_inst2_vld"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_aiq_dst_preg": {
+   "class": "TOP_OUTPUT",
+   "width": 5,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_aiq_dst_preg"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_aiq_iid": {
+   "class": "TOP_OUTPUT",
+   "width": 6,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_aiq_iid"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_aiq_rslt_sel": {
+   "class": "TOP_OUTPUT",
+   "width": 12,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_aiq_rslt_sel"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_aiq_sel": {
+   "class": "TOP_OUTPUT",
+   "width": 0,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_ctrl",
+     "idu_aiq_sel"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_aiq_src0": {
+   "class": "TOP_OUTPUT",
+   "width": 31,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_aiq_src0"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_aiq_src1": {
+   "class": "TOP_OUTPUT",
+   "width": 31,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_aiq_src1"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_biq_br_imme": {
+   "class": "TOP_OUTPUT",
+   "width": 31,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_biq_br_imme"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_biq_dst_preg": {
+   "class": "TOP_OUTPUT",
+   "width": 5,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_biq_dst_preg"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_biq_dst_vld": {
+   "class": "TOP_OUTPUT",
+   "width": 0,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_biq_dst_vld"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_biq_iid": {
+   "class": "TOP_OUTPUT",
+   "width": 6,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_biq_iid"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_biq_npc": {
+   "class": "TOP_OUTPUT",
+   "width": 31,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_biq_npc"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_biq_pc": {
+   "class": "TOP_OUTPUT",
+   "width": 31,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_biq_pc"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_biq_rslt_sel": {
+   "class": "TOP_OUTPUT",
+   "width": 5,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_biq_rslt_sel"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_biq_sel": {
+   "class": "TOP_OUTPUT",
+   "width": 0,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_ctrl",
+     "idu_biq_sel"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_biq_src0": {
+   "class": "TOP_OUTPUT",
+   "width": 31,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_biq_src0"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_biq_src1": {
+   "class": "TOP_OUTPUT",
+   "width": 31,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_biq_src1"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_biq_taken": {
+   "class": "TOP_OUTPUT",
+   "width": 0,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_biq_taken"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_div_dst_preg": {
+   "class": "TOP_OUTPUT",
+   "width": 5,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_div_dst_preg"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_div_dst_vld": {
+   "class": "??",
+   "width": null,
+   "comments": [],
+   "drivers": [],
+   "consumers": []
+  },
+  "idu_div_iid": {
+   "class": "TOP_OUTPUT",
+   "width": 6,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_div_iid"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_div_rslt_sel": {
+   "class": "TOP_OUTPUT",
+   "width": 3,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_div_rslt_sel"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_div_sel": {
+   "class": "TOP_OUTPUT",
+   "width": 0,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_ctrl",
+     "idu_div_sel"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_div_src0": {
+   "class": "TOP_OUTPUT",
+   "width": 31,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_div_src0"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_div_src1": {
+   "class": "TOP_OUTPUT",
+   "width": 31,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_div_src1"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_ifu_inst0_ready": {
+   "class": "TOP_OUTPUT",
+   "width": 0,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_id_ctrl",
+     "idu_ifu_inst0_ready"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_ifu_inst1_ready": {
+   "class": "TOP_OUTPUT",
+   "width": 0,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_id_ctrl",
+     "idu_ifu_inst1_ready"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_ifu_inst2_ready": {
+   "class": "TOP_OUTPUT",
+   "width": 0,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_id_ctrl",
+     "idu_ifu_inst2_ready"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_lsu_ld_iid": {
+   "class": "TOP_OUTPUT",
+   "width": 6,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_lsu_ld_iid"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_lsu_ld_inst_size": {
+   "class": "TOP_OUTPUT",
+   "width": 1,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_lsu_ld_inst_size"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_lsu_ld_lch_entry": {
+   "class": "TOP_OUTPUT",
+   "width": 7,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_lsu_ld_lch_entry"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_lsu_ld_offset": {
+   "class": "TOP_OUTPUT",
+   "width": 11,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_lsu_ld_offset"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_lsu_ld_offset_plus": {
+   "class": "TOP_OUTPUT",
+   "width": 12,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_lsu_ld_offset_plus"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_lsu_ld_oldest": {
+   "class": "TOP_OUTPUT",
+   "width": 0,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_lsu_ld_oldest"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_lsu_ld_preg": {
+   "class": "TOP_OUTPUT",
+   "width": 5,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_lsu_ld_preg"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_lsu_ld_sel": {
+   "class": "TOP_OUTPUT",
+   "width": 0,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_ctrl",
+     "idu_lsu_ld_sel"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_lsu_ld_sign_extend": {
+   "class": "TOP_OUTPUT",
+   "width": 0,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_lsu_ld_sign_extend"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_lsu_ld_src0": {
+   "class": "TOP_OUTPUT",
+   "width": 31,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_lsu_ld_src0"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_lsu_ld_unalign_2nd": {
+   "class": "TOP_OUTPUT",
+   "width": 0,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_lsu_ld_unalign_2nd"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_lsu_rf_pipe5_sdiq_entry": {
+   "class": "TOP_OUTPUT",
+   "width": 3,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_lsu_rf_pipe5_sdiq_entry"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_lsu_rf_pipe5_src0": {
+   "class": "TOP_OUTPUT",
+   "width": 31,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_lsu_rf_pipe5_src0"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_lsu_sdiq_sel": {
+   "class": "TOP_OUTPUT",
+   "width": 0,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_ctrl",
+     "idu_lsu_sdiq_sel"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_lsu_st_iid": {
+   "class": "TOP_OUTPUT",
+   "width": 6,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_lsu_st_iid"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_lsu_st_inst_size": {
+   "class": "TOP_OUTPUT",
+   "width": 1,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_lsu_st_inst_size"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_lsu_st_lch_entry": {
+   "class": "TOP_OUTPUT",
+   "width": 7,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_lsu_st_lch_entry"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_lsu_st_offset": {
+   "class": "TOP_OUTPUT",
+   "width": 11,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_lsu_st_offset"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_lsu_st_offset_plus": {
+   "class": "TOP_OUTPUT",
+   "width": 12,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_lsu_st_offset_plus"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_lsu_st_oldest": {
+   "class": "TOP_OUTPUT",
+   "width": 0,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_lsu_st_oldest"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_lsu_st_preg": {
+   "class": "TOP_OUTPUT",
+   "width": 5,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_lsu_st_preg"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_lsu_st_sdiq_entry": {
+   "class": "TOP_OUTPUT",
+   "width": 3,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_lsu_st_sdiq_entry"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_lsu_st_sel": {
+   "class": "TOP_OUTPUT",
+   "width": 0,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_ctrl",
+     "idu_lsu_st_sel"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_lsu_st_src0": {
+   "class": "TOP_OUTPUT",
+   "width": 31,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_lsu_st_src0"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_lsu_st_unalign_2nd": {
+   "class": "TOP_OUTPUT",
+   "width": 0,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_lsu_st_unalign_2nd"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_mult_dst_preg": {
+   "class": "TOP_OUTPUT",
+   "width": 5,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_mult_dst_preg"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_mult_iid": {
+   "class": "TOP_OUTPUT",
+   "width": 6,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_mult_iid"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_mult_rslt_sel": {
+   "class": "TOP_OUTPUT",
+   "width": 3,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_mult_rslt_sel"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_mult_sel": {
+   "class": "TOP_OUTPUT",
+   "width": 0,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_ctrl",
+     "idu_mult_sel"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_mult_src0": {
+   "class": "TOP_OUTPUT",
+   "width": 31,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_mult_src0"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_mult_src1": {
+   "class": "TOP_OUTPUT",
+   "width": 31,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_rf_dp",
+     "idu_mult_src1"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_rtu_ir_preg0_alloc_vld": {
+   "class": "TOP_OUTPUT",
+   "width": 0,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_ir_ctrl",
+     "idu_rtu_ir_preg0_alloc_vld"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_rtu_ir_preg1_alloc_vld": {
+   "class": "TOP_OUTPUT",
+   "width": 0,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_ir_ctrl",
+     "idu_rtu_ir_preg1_alloc_vld"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_rtu_ir_preg2_alloc_vld": {
+   "class": "TOP_OUTPUT",
+   "width": 0,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_ir_ctrl",
+     "idu_rtu_ir_preg2_alloc_vld"
+    ]
+   ],
+   "consumers": []
+  },
+  "idu_rtu_pst_preg_dealloc_mask": {
+   "class": "TOP_OUTPUT",
+   "width": 63,
+   "comments": [
+    "out"
+   ],
+   "drivers": [
+    [
+     "ct_idu_is_sdiq",
+     "idu_rtu_pst_preg_dealloc_mask"
+    ]
+   ],
+   "consumers": []
+  },
+  "ifu_idu_ib_inst0_data": {
+   "class": "TOP_INPUT",
+   "width": 96,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_id_dp",
+     "ifu_idu_ib_inst0_data"
+    ]
+   ]
+  },
+  "ifu_idu_ib_inst0_vld": {
+   "class": "TOP_INPUT",
+   "width": 0,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_id_ctrl",
+     "ifu_idu_ib_inst0_vld"
+    ]
+   ]
+  },
+  "ifu_idu_ib_inst1_data": {
+   "class": "TOP_INPUT",
+   "width": 96,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_id_dp",
+     "ifu_idu_ib_inst1_data"
+    ]
+   ]
+  },
+  "ifu_idu_ib_inst1_vld": {
+   "class": "TOP_INPUT",
+   "width": 0,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_id_ctrl",
+     "ifu_idu_ib_inst1_vld"
+    ]
+   ]
+  },
+  "ifu_idu_ib_inst2_data": {
+   "class": "TOP_INPUT",
+   "width": 96,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_id_dp",
+     "ifu_idu_ib_inst2_data"
+    ]
+   ]
+  },
+  "ifu_idu_ib_inst2_vld": {
+   "class": "TOP_INPUT",
+   "width": 0,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_id_ctrl",
+     "ifu_idu_ib_inst2_vld"
+    ]
+   ]
+  },
+  "iu_idu_ex2_pipe0_wb_preg_data": {
+   "class": "TOP_INPUT",
+   "width": 31,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_rf_prf_pregfile",
+     "iu_idu_ex2_pipe0_wb_preg_data"
+    ]
+   ]
+  },
+  "iu_idu_ex2_pipe0_wb_preg_dupx": {
+   "class": "TOP_INPUT",
+   "width": 6,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_ir_rt",
+     "iu_idu_ex2_pipe0_wb_preg_dupx"
+    ],
+    [
+     "ct_idu_is_dp",
+     "iu_idu_ex2_pipe0_wb_preg_dupx"
+    ],
+    [
+     "ct_idu_is_aiq",
+     "iu_idu_ex2_pipe0_wb_preg_dupx"
+    ],
+    [
+     "ct_idu_is_aiq",
+     "iu_idu_ex2_pipe0_wb_preg_dupx"
+    ],
+    [
+     "ct_idu_is_aiq",
+     "iu_idu_ex2_pipe0_wb_preg_dupx"
+    ],
+    [
+     "ct_idu_is_lsiq",
+     "iu_idu_ex2_pipe0_wb_preg_dupx"
+    ],
+    [
+     "ct_idu_is_sdiq",
+     "iu_idu_ex2_pipe0_wb_preg_dupx"
+    ],
+    [
+     "ct_idu_is_biq",
+     "iu_idu_ex2_pipe0_wb_preg_dupx"
+    ]
+   ]
+  },
+  "iu_idu_ex2_pipe0_wb_preg_expand": {
+   "class": "TOP_INPUT",
+   "width": 63,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_rf_prf_pregfile",
+     "iu_idu_ex2_pipe0_wb_preg_expand"
+    ]
+   ]
+  },
+  "iu_idu_ex2_pipe0_wb_preg_vld": {
+   "class": "TOP_INPUT",
+   "width": 0,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_rf_prf_pregfile",
+     "iu_idu_ex2_pipe0_wb_preg_vld"
+    ]
+   ]
+  },
+  "iu_idu_ex2_pipe0_wb_preg_vld_dupx": {
+   "class": "TOP_INPUT",
+   "width": 0,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_ir_rt",
+     "iu_idu_ex2_pipe0_wb_preg_vld_dupx"
+    ],
+    [
+     "ct_idu_is_dp",
+     "iu_idu_ex2_pipe0_wb_preg_vld_dupx"
+    ],
+    [
+     "ct_idu_is_aiq",
+     "iu_idu_ex2_pipe0_wb_preg_vld_dupx"
+    ],
+    [
+     "ct_idu_is_aiq",
+     "iu_idu_ex2_pipe0_wb_preg_vld_dupx"
+    ],
+    [
+     "ct_idu_is_aiq",
+     "iu_idu_ex2_pipe0_wb_preg_vld_dupx"
+    ],
+    [
+     "ct_idu_is_lsiq",
+     "iu_idu_ex2_pipe0_wb_preg_vld_dupx"
+    ],
+    [
+     "ct_idu_is_sdiq",
+     "iu_idu_ex2_pipe0_wb_preg_vld_dupx"
+    ],
+    [
+     "ct_idu_is_biq",
+     "iu_idu_ex2_pipe0_wb_preg_vld_dupx"
+    ]
+   ]
+  },
+  "iu_idu_ex2_pipe1_wb_preg_data": {
+   "class": "TOP_INPUT",
+   "width": 31,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_rf_prf_pregfile",
+     "iu_idu_ex2_pipe1_wb_preg_data"
+    ]
+   ]
+  },
+  "iu_idu_ex2_pipe1_wb_preg_dupx": {
+   "class": "TOP_INPUT",
+   "width": 6,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_ir_rt",
+     "iu_idu_ex2_pipe1_wb_preg_dupx"
+    ],
+    [
+     "ct_idu_is_dp",
+     "iu_idu_ex2_pipe1_wb_preg_dupx"
+    ],
+    [
+     "ct_idu_is_aiq",
+     "iu_idu_ex2_pipe1_wb_preg_dupx"
+    ],
+    [
+     "ct_idu_is_aiq",
+     "iu_idu_ex2_pipe1_wb_preg_dupx"
+    ],
+    [
+     "ct_idu_is_aiq",
+     "iu_idu_ex2_pipe1_wb_preg_dupx"
+    ],
+    [
+     "ct_idu_is_lsiq",
+     "iu_idu_ex2_pipe1_wb_preg_dupx"
+    ],
+    [
+     "ct_idu_is_sdiq",
+     "iu_idu_ex2_pipe1_wb_preg_dupx"
+    ],
+    [
+     "ct_idu_is_biq",
+     "iu_idu_ex2_pipe1_wb_preg_dupx"
+    ]
+   ]
+  },
+  "iu_idu_ex2_pipe1_wb_preg_expand": {
+   "class": "TOP_INPUT",
+   "width": 63,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_rf_prf_pregfile",
+     "iu_idu_ex2_pipe1_wb_preg_expand"
+    ]
+   ]
+  },
+  "iu_idu_ex2_pipe1_wb_preg_vld": {
+   "class": "TOP_INPUT",
+   "width": 0,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_rf_prf_pregfile",
+     "iu_idu_ex2_pipe1_wb_preg_vld"
+    ]
+   ]
+  },
+  "iu_idu_ex2_pipe1_wb_preg_vld_dupx": {
+   "class": "TOP_INPUT",
+   "width": 0,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_ir_rt",
+     "iu_idu_ex2_pipe1_wb_preg_vld_dupx"
+    ],
+    [
+     "ct_idu_is_dp",
+     "iu_idu_ex2_pipe1_wb_preg_vld_dupx"
+    ],
+    [
+     "ct_idu_is_aiq",
+     "iu_idu_ex2_pipe1_wb_preg_vld_dupx"
+    ],
+    [
+     "ct_idu_is_aiq",
+     "iu_idu_ex2_pipe1_wb_preg_vld_dupx"
+    ],
+    [
+     "ct_idu_is_aiq",
+     "iu_idu_ex2_pipe1_wb_preg_vld_dupx"
+    ],
+    [
+     "ct_idu_is_lsiq",
+     "iu_idu_ex2_pipe1_wb_preg_vld_dupx"
+    ],
+    [
+     "ct_idu_is_sdiq",
+     "iu_idu_ex2_pipe1_wb_preg_vld_dupx"
+    ],
+    [
+     "ct_idu_is_biq",
+     "iu_idu_ex2_pipe1_wb_preg_vld_dupx"
+    ]
+   ]
+  },
+  "lsiq_ctrl_1_left_updt": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_lsiq",
+     "lsiq_ctrl_1_left_updt"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "lsiq_ctrl_1_left_updt"
+    ]
+   ]
+  },
+  "lsiq_ctrl_full_updt": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_lsiq",
+     "lsiq_ctrl_full_updt"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "lsiq_ctrl_full_updt"
+    ]
+   ]
+  },
+  "lsiq_dp_pipe3_entry_read_data": {
+   "class": "INTERNAL",
+   "width": 59,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_lsiq",
+     "lsiq_dp_pipe3_entry_read_data"
+    ]
+   ],
+   "consumers": []
+  },
+  "lsiq_dp_pipe3_issue_entry": {
+   "class": "INTERNAL",
+   "width": 7,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_lsiq",
+     "lsiq_dp_pipe3_issue_entry"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_dp",
+     "lsiq_dp_pipe3_issue_entry"
+    ]
+   ]
+  },
+  "lsiq_dp_pipe3_issue_read_data": {
+   "class": "TOP_INPUT (unmarked, no internal driver)",
+   "width": 59,
+   "comments": [],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_rf_dp",
+     "lsiq_dp_pipe3_issue_read_data"
+    ]
+   ]
+  },
+  "lsiq_dp_pipe4_entry_read_data": {
+   "class": "INTERNAL",
+   "width": 59,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_lsiq",
+     "lsiq_dp_pipe4_entry_read_data"
+    ]
+   ],
+   "consumers": []
+  },
+  "lsiq_dp_pipe4_issue_entry": {
+   "class": "INTERNAL",
+   "width": 7,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_lsiq",
+     "lsiq_dp_pipe4_issue_entry"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_dp",
+     "lsiq_dp_pipe4_issue_entry"
+    ]
+   ]
+  },
+  "lsiq_dp_pipe4_issue_read_data": {
+   "class": "TOP_INPUT (unmarked, no internal driver)",
+   "width": 59,
+   "comments": [],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_rf_dp",
+     "lsiq_dp_pipe4_issue_read_data"
+    ]
+   ]
+  },
+  "lsiq_pipe3_entry_old": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_lsiq",
+     "lsiq_pipe3_entry_old"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_dp",
+     "lsiq_pipe3_entry_old"
+    ]
+   ]
+  },
+  "lsiq_pipe3_entry_unalign_2nd": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_lsiq",
+     "lsiq_pipe3_entry_unalign_2nd"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_dp",
+     "lsiq_pipe3_entry_unalign_2nd"
+    ]
+   ]
+  },
+  "lsiq_pipe4_entry_old": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_lsiq",
+     "lsiq_pipe4_entry_old"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_dp",
+     "lsiq_pipe4_entry_old"
+    ]
+   ]
+  },
+  "lsiq_pipe4_entry_unalign_2nd": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_lsiq",
+     "lsiq_pipe4_entry_unalign_2nd"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_dp",
+     "lsiq_pipe4_entry_unalign_2nd"
+    ]
+   ]
+  },
+  "lsiq_xx_pipe3_issue_en": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_lsiq",
+     "lsiq_rf_pipe3_issue_en"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_ctrl",
+     "lsiq_xx_pipe3_issue_en"
+    ],
+    [
+     "ct_idu_rf_dp",
+     "lsiq_xx_pipe3_issue_en"
+    ]
+   ]
+  },
+  "lsiq_xx_pipe4_issue_en": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_lsiq",
+     "lsiq_rf_pipe4_issue_en"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_ctrl",
+     "lsiq_xx_pipe4_issue_en"
+    ],
+    [
+     "ct_idu_rf_dp",
+     "lsiq_xx_pipe4_issue_en"
+    ]
+   ]
+  },
+  "lsu_idu_ex1_sdiq_entry": {
+   "class": "TOP_INPUT",
+   "width": 11,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_is_sdiq",
+     "lsu_idu_ex1_sdiq_entry"
+    ]
+   ]
+  },
+  "lsu_idu_ex1_sdiq_pop_vld": {
+   "class": "TOP_INPUT",
+   "width": 0,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_is_sdiq",
+     "lsu_idu_ex1_sdiq_pop_vld"
+    ]
+   ]
+  },
+  "lsu_idu_lq_full": {
+   "class": "TOP_INPUT",
+   "width": 7,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_is_lsiq",
+     "lsu_idu_lq_full"
+    ]
+   ]
+  },
+  "lsu_idu_lq_not_full": {
+   "class": "TOP_INPUT",
+   "width": 0,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_is_lsiq",
+     "lsu_idu_lq_not_full"
+    ]
+   ]
+  },
+  "lsu_idu_lsiq_pop0_vld": {
+   "class": "TOP_INPUT",
+   "width": 0,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_is_lsiq",
+     "lsu_idu_lsiq_pop0_vld"
+    ]
+   ]
+  },
+  "lsu_idu_lsiq_pop1_vld": {
+   "class": "TOP_INPUT",
+   "width": 0,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_is_lsiq",
+     "lsu_idu_lsiq_pop1_vld"
+    ]
+   ]
+  },
+  "lsu_idu_lsiq_pop_entry": {
+   "class": "TOP_INPUT",
+   "width": 7,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_is_lsiq",
+     "lsu_idu_lsiq_pop_entry"
+    ]
+   ]
+  },
+  "lsu_idu_lsiq_pop_vld": {
+   "class": "TOP_INPUT",
+   "width": 0,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_is_lsiq",
+     "lsu_idu_lsiq_pop_vld"
+    ]
+   ]
+  },
+  "lsu_idu_rb_full": {
+   "class": "TOP_INPUT",
+   "width": 7,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_is_lsiq",
+     "lsu_idu_rb_full"
+    ]
+   ]
+  },
+  "lsu_idu_rb_not_full": {
+   "class": "TOP_INPUT",
+   "width": 0,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_is_lsiq",
+     "lsu_idu_rb_not_full"
+    ]
+   ]
+  },
+  "lsu_idu_secd": {
+   "class": "TOP_INPUT",
+   "width": 7,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_is_lsiq",
+     "lsu_idu_secd"
+    ]
+   ]
+  },
+  "lsu_idu_sq_full": {
+   "class": "TOP_INPUT",
+   "width": 7,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_is_lsiq",
+     "lsu_idu_sq_full"
+    ]
+   ]
+  },
+  "lsu_idu_sq_not_full": {
+   "class": "TOP_INPUT",
+   "width": 0,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_is_lsiq",
+     "lsu_idu_sq_not_full"
+    ]
+   ]
+  },
+  "lsu_idu_wb_pipe3_wb_preg_data": {
+   "class": "TOP_INPUT",
+   "width": 31,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_rf_prf_pregfile",
+     "lsu_idu_wb_pipe3_wb_preg_data"
+    ]
+   ]
+  },
+  "lsu_idu_wb_pipe3_wb_preg_dupx": {
+   "class": "TOP_INPUT",
+   "width": 6,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_ir_rt",
+     "lsu_idu_wb_pipe3_wb_preg_dupx"
+    ],
+    [
+     "ct_idu_is_dp",
+     "lsu_idu_wb_pipe3_wb_preg_dupx"
+    ],
+    [
+     "ct_idu_is_aiq",
+     "lsu_idu_wb_pipe3_wb_preg_dupx"
+    ],
+    [
+     "ct_idu_is_aiq",
+     "lsu_idu_wb_pipe3_wb_preg_dupx"
+    ],
+    [
+     "ct_idu_is_aiq",
+     "lsu_idu_wb_pipe3_wb_preg_dupx"
+    ],
+    [
+     "ct_idu_is_lsiq",
+     "lsu_idu_wb_pipe3_wb_preg_dupx"
+    ],
+    [
+     "ct_idu_is_sdiq",
+     "lsu_idu_wb_pipe3_wb_preg_dupx"
+    ],
+    [
+     "ct_idu_is_biq",
+     "lsu_idu_wb_pipe3_wb_preg_dupx"
+    ]
+   ]
+  },
+  "lsu_idu_wb_pipe3_wb_preg_expand": {
+   "class": "TOP_INPUT",
+   "width": 63,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_rf_prf_pregfile",
+     "lsu_idu_wb_pipe3_wb_preg_expand"
+    ]
+   ]
+  },
+  "lsu_idu_wb_pipe3_wb_preg_vld": {
+   "class": "TOP_INPUT",
+   "width": 0,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_rf_prf_pregfile",
+     "lsu_idu_wb_pipe3_wb_preg_vld"
+    ]
+   ]
+  },
+  "lsu_idu_wb_pipe3_wb_preg_vld_dupx": {
+   "class": "TOP_INPUT",
+   "width": 0,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_ir_rt",
+     "lsu_idu_wb_pipe3_wb_preg_vld_dupx"
+    ],
+    [
+     "ct_idu_is_dp",
+     "lsu_idu_wb_pipe3_wb_preg_vld_dupx"
+    ],
+    [
+     "ct_idu_is_aiq",
+     "lsu_idu_wb_pipe3_wb_preg_vld_dupx"
+    ],
+    [
+     "ct_idu_is_aiq",
+     "lsu_idu_wb_pipe3_wb_preg_vld_dupx"
+    ],
+    [
+     "ct_idu_is_aiq",
+     "lsu_idu_wb_pipe3_wb_preg_vld_dupx"
+    ],
+    [
+     "ct_idu_is_lsiq",
+     "lsu_idu_wb_pipe3_wb_preg_vld_dupx"
+    ],
+    [
+     "ct_idu_is_sdiq",
+     "lsu_idu_wb_pipe3_wb_preg_vld_dupx"
+    ],
+    [
+     "ct_idu_is_biq",
+     "lsu_idu_wb_pipe3_wb_preg_vld_dupx"
+    ]
+   ]
+  },
+  "lsu_sdiq_has_in_sq_sdiq": {
+   "class": "TOP_INPUT (unmarked, no internal driver)",
+   "width": 3,
+   "comments": [],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_is_sdiq",
+     "lsu_sdiq_has_in_sq_sdiq"
+    ]
+   ]
+  },
+  "lsu_sdiq_has_in_sq_vld": {
+   "class": "TOP_INPUT",
+   "width": 0,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_is_sdiq",
+     "lsu_sdiq_has_in_sq_vld"
+    ]
+   ]
+  },
+  "lsu_sq_sdiq_unalign_sdiq": {
+   "class": "TOP_INPUT (unmarked, no internal driver)",
+   "width": 3,
+   "comments": [],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_is_sdiq",
+     "lsu_sq_sdiq_unalign_sdiq"
+    ]
+   ]
+  },
+  "lsu_sq_sdiq_unalign_vld": {
+   "class": "TOP_INPUT",
+   "width": 0,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_is_sdiq",
+     "lsu_sq_sdiq_unalign_vld"
+    ]
+   ]
+  },
+  "mult_ctrl_1_left_updt": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_aiq",
+     "aiq_ctrl_1_left_updt"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "mult_ctrl_1_left_updt"
+    ]
+   ]
+  },
+  "mult_ctrl_full_updt": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_aiq",
+     "aiq_ctrl_full_updt"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "mult_ctrl_full_updt"
+    ]
+   ]
+  },
+  "mult_dp_issue_entry": {
+   "class": "??",
+   "width": null,
+   "comments": [],
+   "drivers": [],
+   "consumers": []
+  },
+  "mult_dp_issue_read_data": {
+   "class": "INTERNAL",
+   "width": 62,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_aiq",
+     "aiq_dp_issue_read_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_dp",
+     "mult_dp_issue_read_data"
+    ]
+   ]
+  },
+  "mult_xx_issue_en": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_aiq",
+     "aiq_xx_issue_en"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_ctrl",
+     "mult_xx_issue_en"
+    ],
+    [
+     "ct_idu_rf_dp",
+     "mult_xx_issue_en"
+    ]
+   ]
+  },
+  "prf_dp_rf_pipe0_src0_data": {
+   "class": "INTERNAL",
+   "width": 31,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_rf_prf_pregfile",
+     "prf_dp_rf_pipe0_src0_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_dp",
+     "prf_dp_rf_pipe0_src0_data"
+    ]
+   ]
+  },
+  "prf_dp_rf_pipe0_src1_data": {
+   "class": "INTERNAL",
+   "width": 31,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_rf_prf_pregfile",
+     "prf_dp_rf_pipe0_src1_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_dp",
+     "prf_dp_rf_pipe0_src1_data"
+    ]
+   ]
+  },
+  "prf_dp_rf_pipe1_src0_data": {
+   "class": "INTERNAL",
+   "width": 31,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_rf_prf_pregfile",
+     "prf_dp_rf_pipe1_src0_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_dp",
+     "prf_dp_rf_pipe1_src0_data"
+    ]
+   ]
+  },
+  "prf_dp_rf_pipe1_src1_data": {
+   "class": "INTERNAL",
+   "width": 31,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_rf_prf_pregfile",
+     "prf_dp_rf_pipe1_src1_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_dp",
+     "prf_dp_rf_pipe1_src1_data"
+    ]
+   ]
+  },
+  "prf_dp_rf_pipe2_src0_data": {
+   "class": "INTERNAL",
+   "width": 31,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_rf_prf_pregfile",
+     "prf_dp_rf_pipe2_src0_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_dp",
+     "prf_dp_rf_pipe2_src0_data"
+    ]
+   ]
+  },
+  "prf_dp_rf_pipe2_src1_data": {
+   "class": "INTERNAL",
+   "width": 31,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_rf_prf_pregfile",
+     "prf_dp_rf_pipe2_src1_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_dp",
+     "prf_dp_rf_pipe2_src1_data"
+    ]
+   ]
+  },
+  "prf_dp_rf_pipe3_src0_data": {
+   "class": "INTERNAL",
+   "width": 31,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_rf_prf_pregfile",
+     "prf_dp_rf_pipe3_src0_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_dp",
+     "prf_dp_rf_pipe3_src0_data"
+    ]
+   ]
+  },
+  "prf_dp_rf_pipe4_src0_data": {
+   "class": "INTERNAL",
+   "width": 31,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_rf_prf_pregfile",
+     "prf_dp_rf_pipe4_src0_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_dp",
+     "prf_dp_rf_pipe4_src0_data"
+    ]
+   ]
+  },
+  "prf_dp_rf_pipe5_src0_data": {
+   "class": "INTERNAL",
+   "width": 31,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_rf_prf_pregfile",
+     "prf_dp_rf_pipe5_src0_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_dp",
+     "prf_dp_rf_pipe5_src0_data"
+    ]
+   ]
+  },
+  "prf_dp_rf_pipe6_src0_data": {
+   "class": "INTERNAL",
+   "width": 31,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_rf_prf_pregfile",
+     "prf_dp_rf_pipe6_src0_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_dp",
+     "prf_dp_rf_pipe6_src0_data"
+    ]
+   ]
+  },
+  "prf_dp_rf_pipe6_src1_data": {
+   "class": "INTERNAL",
+   "width": 31,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_rf_prf_pregfile",
+     "prf_dp_rf_pipe6_src1_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_dp",
+     "prf_dp_rf_pipe6_src1_data"
+    ]
+   ]
+  },
+  "rt_dp_inst0_rel_preg": {
+   "class": "INTERNAL",
+   "width": 5,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_rt",
+     "rt_dp_inst0_rel_preg"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_dp",
+     "rt_dp_inst0_rel_preg"
+    ]
+   ]
+  },
+  "rt_dp_inst0_src0_data": {
+   "class": "INTERNAL",
+   "width": 6,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_rt",
+     "rt_dp_inst0_src0_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_dp",
+     "rt_dp_inst0_src0_data"
+    ]
+   ]
+  },
+  "rt_dp_inst0_src1_data": {
+   "class": "INTERNAL",
+   "width": 6,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_rt",
+     "rt_dp_inst0_src1_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_dp",
+     "rt_dp_inst0_src1_data"
+    ]
+   ]
+  },
+  "rt_dp_inst0_src2_data": {
+   "class": "INTERNAL",
+   "width": 6,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_rt",
+     "rt_dp_inst0_src2_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_dp",
+     "rt_dp_inst0_src2_data"
+    ]
+   ]
+  },
+  "rt_dp_inst1_rel_preg": {
+   "class": "INTERNAL",
+   "width": 5,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_rt",
+     "rt_dp_inst1_rel_preg"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_dp",
+     "rt_dp_inst1_rel_preg"
+    ]
+   ]
+  },
+  "rt_dp_inst1_src0_data": {
+   "class": "INTERNAL",
+   "width": 6,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_rt",
+     "rt_dp_inst1_src0_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_dp",
+     "rt_dp_inst1_src0_data"
+    ]
+   ]
+  },
+  "rt_dp_inst1_src1_data": {
+   "class": "INTERNAL",
+   "width": 6,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_rt",
+     "rt_dp_inst1_src1_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_dp",
+     "rt_dp_inst1_src1_data"
+    ]
+   ]
+  },
+  "rt_dp_inst1_src2_data": {
+   "class": "INTERNAL",
+   "width": 6,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_rt",
+     "rt_dp_inst1_src2_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_dp",
+     "rt_dp_inst1_src2_data"
+    ]
+   ]
+  },
+  "rt_dp_inst2_rel_preg": {
+   "class": "INTERNAL",
+   "width": 5,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_rt",
+     "rt_dp_inst2_rel_preg"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_dp",
+     "rt_dp_inst2_rel_preg"
+    ]
+   ]
+  },
+  "rt_dp_inst2_src0_data": {
+   "class": "INTERNAL",
+   "width": 6,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_rt",
+     "rt_dp_inst2_src0_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_dp",
+     "rt_dp_inst2_src0_data"
+    ]
+   ]
+  },
+  "rt_dp_inst2_src1_data": {
+   "class": "INTERNAL",
+   "width": 6,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_rt",
+     "rt_dp_inst2_src1_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_dp",
+     "rt_dp_inst2_src1_data"
+    ]
+   ]
+  },
+  "rt_dp_inst2_src2_data": {
+   "class": "INTERNAL",
+   "width": 6,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_ir_rt",
+     "rt_dp_inst2_src2_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_ir_dp",
+     "rt_dp_inst2_src2_data"
+    ]
+   ]
+  },
+  "rtu_idu_alloc_preg0": {
+   "class": "TOP_INPUT",
+   "width": 5,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_ir_dp",
+     "rtu_idu_alloc_preg0"
+    ]
+   ]
+  },
+  "rtu_idu_alloc_preg0_vld": {
+   "class": "TOP_INPUT",
+   "width": 0,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_ir_ctrl",
+     "rtu_idu_alloc_preg0_vld"
+    ]
+   ]
+  },
+  "rtu_idu_alloc_preg1": {
+   "class": "TOP_INPUT",
+   "width": 5,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_ir_dp",
+     "rtu_idu_alloc_preg1"
+    ]
+   ]
+  },
+  "rtu_idu_alloc_preg1_vld": {
+   "class": "TOP_INPUT",
+   "width": 0,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_ir_ctrl",
+     "rtu_idu_alloc_preg1_vld"
+    ]
+   ]
+  },
+  "rtu_idu_alloc_preg2": {
+   "class": "TOP_INPUT",
+   "width": 5,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_ir_dp",
+     "rtu_idu_alloc_preg2"
+    ]
+   ]
+  },
+  "rtu_idu_alloc_preg2_vld": {
+   "class": "TOP_INPUT",
+   "width": 0,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_ir_ctrl",
+     "rtu_idu_alloc_preg2_vld"
+    ]
+   ]
+  },
+  "rtu_idu_rob_full": {
+   "class": "TOP_INPUT (unmarked, no internal driver)",
+   "width": 0,
+   "comments": [],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "rtu_idu_rob_full"
+    ]
+   ]
+  },
+  "rtu_idu_rob_inst0_iid": {
+   "class": "TOP_INPUT",
+   "width": 6,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_is_dp",
+     "rtu_idu_rob_inst0_iid"
+    ]
+   ]
+  },
+  "rtu_idu_rob_inst1_iid": {
+   "class": "TOP_INPUT",
+   "width": 6,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_is_dp",
+     "rtu_idu_rob_inst1_iid"
+    ]
+   ]
+  },
+  "rtu_idu_rob_inst2_iid": {
+   "class": "TOP_INPUT",
+   "width": 6,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_is_dp",
+     "rtu_idu_rob_inst2_iid"
+    ]
+   ]
+  },
+  "rtu_idu_rt_recover_preg": {
+   "class": "TOP_INPUT",
+   "width": 191,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_ir_rt",
+     "rtu_idu_rt_recover_preg"
+    ]
+   ]
+  },
+  "rtu_yy_xx_flush": {
+   "class": "TOP_INPUT",
+   "width": 0,
+   "comments": [
+    "in"
+   ],
+   "drivers": [],
+   "consumers": [
+    [
+     "ct_idu_ir_rt",
+     "rtu_yy_xx_flush"
+    ],
+    [
+     "ct_idu_is_ctrl",
+     "rtu_yy_xx_flush"
+    ],
+    [
+     "ct_idu_is_aiq",
+     "rtu_yy_xx_flush"
+    ],
+    [
+     "ct_idu_is_aiq",
+     "rtu_yy_xx_flush"
+    ],
+    [
+     "ct_idu_is_aiq",
+     "rtu_yy_xx_flush"
+    ],
+    [
+     "ct_idu_is_lsiq",
+     "rtu_yy_xx_flush"
+    ],
+    [
+     "ct_idu_is_sdiq",
+     "rtu_yy_xx_flush"
+    ],
+    [
+     "ct_idu_is_biq",
+     "rtu_yy_xx_flush"
+    ],
+    [
+     "ct_idu_rf_ctrl",
+     "rtu_yy_xx_flush"
+    ]
+   ]
+  },
+  "sdiq_create0_entry": {
+   "class": "INTERNAL (commented //in but has internal driver!)",
+   "width": 3,
+   "comments": [
+    "in"
+   ],
+   "drivers": [
+    [
+     "ct_idu_is_sdiq",
+     "sdiq_create0_entry"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_dp",
+     "sdiq_create0_entry"
+    ]
+   ]
+  },
+  "sdiq_create1_entry": {
+   "class": "INTERNAL (commented //in but has internal driver!)",
+   "width": 3,
+   "comments": [
+    "in"
+   ],
+   "drivers": [
+    [
+     "ct_idu_is_sdiq",
+     "sdiq_create1_entry"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_dp",
+     "sdiq_create1_entry"
+    ]
+   ]
+  },
+  "sdiq_ctrl_1_left_updt": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_sdiq",
+     "sdiq_ctrl_1_left_updt"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "sdiq_ctrl_1_left_updt"
+    ]
+   ]
+  },
+  "sdiq_ctrl_full_updt": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_sdiq",
+     "sdiq_ctrl_full_updt"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_is_ctrl",
+     "sdiq_ctrl_full_updt"
+    ]
+   ]
+  },
+  "sdiq_dp_issue_entry": {
+   "class": "INTERNAL",
+   "width": 3,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_sdiq",
+     "sdiq_dp_issue_entry"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_dp",
+     "sdiq_dp_issue_entry"
+    ]
+   ]
+  },
+  "sdiq_dp_issue_read_data": {
+   "class": "INTERNAL",
+   "width": 7,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_sdiq",
+     "sdiq_dp_issue_read_data"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_dp",
+     "sdiq_dp_issue_read_data"
+    ]
+   ]
+  },
+  "sdiq_xx_issue_en": {
+   "class": "INTERNAL",
+   "width": 0,
+   "comments": [],
+   "drivers": [
+    [
+     "ct_idu_is_sdiq",
+     "sdiq_issue_en"
+    ]
+   ],
+   "consumers": [
+    [
+     "ct_idu_rf_ctrl",
+     "sdiq_xx_issue_en"
+    ],
+    [
+     "ct_idu_rf_dp",
+     "sdiq_xx_issue_en"
+    ]
+   ]
+  }
+ }
+}
