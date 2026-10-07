@@ -1,0 +1,283 @@
+IDU ↔ RTU 对接待办 —— 组合环、以及需要 IDU 新增的端口
+================================================================================
+2026-10-07 写。对着两侧 RTL 逐条核过：
+  IDU = mySoC/idu_c910/rtl/ct_idu_top.sv（同事交付的 C910 移植版，34 模块）
+  RTU = mySoC/rtu/rtl/RTU.v（自研，契约在 doc/rtu_plan_zh.md §6）
+  范本 = open_riscv_2035/C910_RTL_FACTORY/gen_rtl/
+凡标了 文件:行号 的都是核过的；标"要核"的是还没定位到确切位置。
+
+
+================================================================================
+一、组合环：IDU 把 rtu_idu_alloc_preg*_vld 当"同拍许可"用
+================================================================================
+
+---- 问题（一句话）----------------------------------------------------------
+IDU 拿 RTU 给的 alloc vld 决定自己停不停，而这根 vld 又是 IDU 本拍请求的
+组合函数 —— 请求 → vld → 停顿 → 请求，绕成一个组合环。
+
+---- 环是怎么闭合的（三行）--------------------------------------------------
+
+1) IDU 的停顿链里有这根 vld（ct_idu_ir_ctrl.sv:246-254）：
+
+     assign ctrl_ir_preg_stall =
+          ir_inst0_vld && dp_ctrl_ir_inst0_dst_vld && !rtu_idu_alloc_preg0_vld
+       || ir_inst1_vld && dp_ctrl_ir_inst1_dst_vld && !rtu_idu_alloc_preg1_vld
+       || ir_inst2_vld && dp_ctrl_ir_inst2_dst_vld && !rtu_idu_alloc_preg2_vld;
+
+     assign ctrl_ir_stage_stall = ctrl_ir_preg_stall;
+     assign ctrl_ir_stall       = ir_inst0_vld && (ctrl_is_stall || ctrl_ir_stage_stall);
+
+   同一根 ctrl_ir_stall 又是 IR 级寄存器的使能（:193），并往上一路反压到
+   ID 级与 IFU（ct_idu_id_ctrl.sv 的 idu_ifu_inst*_ready）。
+
+2) 请求本身由停顿链决定（ct_idu_ir_ctrl.sv:259-262）：
+
+     assign idu_rtu_ir_preg0_alloc_vld = ir_inst0_vld
+                                         && !ctrl_ir_stall          ← 就是上面那根
+                                         && dp_ctrl_ir_inst0_dst_vld
+                                         && !dp_ctrl_ir_inst0_dst_x0;
+
+3) RTU 的 vld 是"本拍请求"的组合函数（RTU_preg.v:242-244）：
+
+     assign rtu_preg_alloc_vld0 = req_lane[0] & (|cand0);   // req_lane ← ren_preg_req
+
+   ren_preg_req 正是第 2 条那根请求数出来的。环闭合。
+
+---- 为什么不能靠"晚一拍再用"绕开 ------------------------------------------
+因为 IDU 是**同拍消费**编号的（ct_idu_ir_dp.sv:283-285）：
+
+     assign ir_inst0_dst_preg[5:0] =
+            {6{!ir_inst0_data[IR_DST_X0]}} & rtu_idu_alloc_preg0[5:0];
+
+编号同拍就进 RAT（ct_idu_ir_rt）并随指令进发射队列（路径如此；RAT 的写使能现在
+是悬空的，见 (4) 的先决条件）。所以 vld 必须在**同一拍**告诉它"这拍拿不拿得到"；
+拿不到就当场把 IR 级停住 —— 这是"池子空了立刻停"的机制，改成晚一拍等于晚一拍
+才发现池子空，会多派出指令（或派出拿不到号的指令）。
+
+⚠️ 注意这与 rtu_plan_zh.md §6.0 写的"T 拍你要、T+1 拍你用"**不是同一个相位**。
+§6.0 那句是给我们自己的重命名级定的口径；接 C910 IDU 时以 IDU 的"同拍取用"为准。
+
+---- C910 的做法：vld 与编号一起放进寄存器 ----------------------------------
+
+ct_rtu_pst_preg.v:7376-7393（alloc_preg0_vld / alloc_preg0[6:0] **都是寄存器**）：
+
+     always @(posedge alloc_preg_clk or negedge cpurst_b)
+     begin
+       if(!cpurst_b) begin
+         alloc_preg0_vld  <= 1'd0;
+         alloc_preg0[6:0] <= 7'd0;
+       end
+       else if(rtu_yy_xx_flush) begin          // 冲刷清掉
+         alloc_preg0_vld  <= 1'd0;
+         alloc_preg0[6:0] <= 7'd0;
+       end
+       else if(alloc_preg0_invalid) begin      // 空着、或 IDU 这拍要取走 -> 重填
+         alloc_preg0_vld  <= dealloc_preg0_vld;
+         alloc_preg0[6:0] <= dealloc_preg0[6:0];
+       end
+       else begin                              // 否则保持不动
+         alloc_preg0_vld  <= alloc_preg0_vld;
+         alloc_preg0[6:0] <= alloc_preg0[6:0];
+       end
+     end
+
+重填条件（ct_rtu_pst_preg.v:6995，另有 :7353 同形的项）：
+
+     assign alloc_preg0_invalid = (!alloc_preg0_vld
+                                   || idu_rtu_ir_preg0_alloc_vld ...);
+
+出口只是这根寄存器的组合扇出（:7460-7467）：
+
+     assign rtu_idu_alloc_preg0_vld  = alloc_preg0_vld;
+     assign rtu_idu_alloc_preg0[6:0] = alloc_preg0[6:0];
+
+于是整件事变成"**提前把号备在门口，谁要谁拿，拿走的下一拍补一个**"：
+
+  * vld 不再依赖本拍请求（只依赖上一拍的池子状态）⇒ 环路被寄存器打断；
+  * 值必须**常驻有效**：池子空时 vld=0，IDU 就停 —— 这正是 IDU 要的"同拍许可"；
+  * 号是谁的并不重要（自由池里的号彼此等价），所以"上一拍备的号给这一拍的指令"
+    在功能上是成立的；
+  * 附带好处：96 位优先编码器被摘出改名关键路径 —— 和我们 RTU 用 WF_ALLOC 打拍
+    是同一个动机（RTU_preg.v:8-14、§4.2 的 P3）。
+
+---- 对本核的两条落地路线（选一条）-------------------------------------------
+
+路线 A：照抄 C910 —— 适配层给"号 + vld"各加一级寄存器，
+        重填条件照 alloc_preg*_invalid 写（!vld || 本路请求）。
+  ⚠️ 号会晚一拍到 IDU，派遣回执也跟着晚一拍 ⇒ **必须同时把 WF_ALLOC 的回收
+     窗口从"晚一拍"放宽到"晚两拍以上"**（RTU_preg.v:359-390 的 wf_age：
+     晚两拍没人认领就把编号放回 FREE）。否则指令还攥着号，号已经被回收/重发。
+
+路线 B：只破环、不给号打拍 —— 许可改用**已寄存的** `rtu_preg_free_cnt`
+        在适配层合成（vld_k = 本路请求 & 池子够），编号路径保持组合。
+  ⇒ 环路同样断开（free_cnt 是寄存器），且不引入额外延迟；
+  ⇒ 但回收窗口仍是零余量，见下条。
+
+两条都要实测的一件事：**派遣回执必须在"选择拍 +2"之内到**（现在是 +1/+2 两拍
+容忍）。IDU 侧 IR 改名 → IS → IS 派发 才到 ROB（ct_idu_is_ctrl 的 is_dis_* 那一级），
+所以回执大概率落在 +2 或 +3。**这个数现在量不出来** —— 因为 IDU 顶层根本没有
+派遣记录端口（见第二节），等 Phase 3 补出来才能量。稳妥做法：先把回收年龄放宽。
+
+
+================================================================================
+二、RTU 需要 IDU 新增的端口
+================================================================================
+
+前提：RTU §6.1 要的"三路派遣记录"（每路 12 个字段 + vld）在 IDU 顶层
+**一个都不存在** —— 116 个端口里没有 rob_create*，也没有 pst_dis_inst*。
+C910 原版是 idu_rtu_rob_create0..3_{data[39:0], en, dp_en, gateclk_en}，
+4 路、打成一条 40 位总线。所以这不是"接线"，是
+**给 IDU 加端口 + 从 IS 派发级把字段引出来**（Phase 3 记的那件事）。
+
+⚠️ 有两根**连 C910 都没有、我们必须新造**的字段，别指望照抄：
+
+  * **pc**：C910 的表项里**不存 pc** —— 它靠 IU 里的一条 PC FIFO，退休时按序弹出
+    （ct_rtu_rob.v:355 `iu_rtu_pcfifo_pop0_data[47:0]`、:294 的
+    `rtu_iu_rob_read*_pcfifo_vld`），所以它的 40 位 create 总线里没有 pc。
+    而我们的 RTU 是**每条表项存 pc**（RTU_define.vh 的 `RTU_E_PC 120:89`，D8）。
+    ⇒ `disp*_pc` 必须由 IDU 在派遣当拍送出来（IDU 内部有，见下表），
+      或者改成 C910 那种 pcfifo 路线（那是改 RTU 的表项，不是加端口）。
+  * **chk**：见 (2)。
+
+
+(0) 不需要新增端口的（现成信号接上即可） -----------------------------------
+
+  RTU 侧端口                  ← IDU 侧现成的东西
+  ---------------------------+-------------------------------------------------
+  ren_preg_req[1:0]           ← 数 idu_rtu_ir_preg0/1/2_alloc_vld 的个数即得
+                                （IDU 是三路独立的请求 vld，见 ct_idu_ir_ctrl.sv:259）
+  ren_preg_req_lreg0/1/2      ← 适配层填**非零常量**即可：IDU 的请求已经排除了
+                                x0（条件里有 !..._dst_x0），而 RTU 只拿这三根
+                                判"是不是 x0 那一路"，不需要真的 lreg
+  rtu_preg_alloc0/1/2         → 接到 rtu_idu_alloc_preg0/1/2（位宽 6→7，见 (4)）
+  rtu_preg_alloc_vld0/1/2     → 接到 rtu_idu_alloc_preg0/1/2_vld（先看第一节的环）
+  rtu_disp_iid0/1/2[6:0]      → 接到 rtu_idu_rob_inst0/1/2_iid（7 位，天然对齐）
+  rtu_disp_stall              → 接到 rtu_idu_rob_full（两边都是"只依赖寄存器"的
+                                停派遣信号，C910 自己那根 rob_full 也是寄存器）
+  rtu_ren_flush +             → 合并接到 rtu_yy_xx_flush
+  rtu_backend_flush              （两边都是 T+1 那拍，正好同拍；
+                                  ⚠️ 别接 rtu_core_redirect，那是 T 拍，早一拍）
+  rtu_ren_recover_map[223:0]  → 接到 rtu_idu_rt_recover_preg（位宽 192→224，见 (4)）
+
+
+(1) 派遣记录：**每路 13 根 × 3 路 = 39 根新增端口** --------------------------
+
+  IDU 侧要加的端口（名字建议照 RTU §6.1 的叫法，k = 0/1/2 = 程序序，0 最老）：
+
+  端口名              位宽  IDU 里有没有现成的            作用
+  ------------------  ----  ----------------------------  ----------------------
+  idu_rtu_disp{k}_vld   1   有，但没往外引                这一拍车道 k 有一条真指令
+                            内部：IS 派发级               离开 ID、要进 ROB。
+                            ctrl_is_dis_inst{k}_vld       ⚠️ 必须与"真的进了 ROB"
+                                                          同源；RTU 拿它当派遣使能
+  idu_rtu_disp{k}_pc   32   有（内部现成，只是没往外引）  PC。IFU 那条 97 位包里
+                            ct_idu_id_dp.sv:25            就带着：ID_PC = 63，即
+                            （ID_PC = 63）                id_inst{k}_data[63:32]
+                                                          （C910 不往 RTU 送 pc，
+                                                          见上面的说明）
+  idu_rtu_disp{k}_           5  有（译码出 rd）           目标**逻辑**寄存器号。
+    dst_lreg                     ct_idu_id_decd.sv:19      ⚠️ A6d：不写寄存器时必须
+                                                          **给 0**，不许给垃圾 rd
+  idu_rtu_disp{k}_rf_we      1  有（dst_vld）             真的写 rd 吗（= difftest 的
+                                 id_decd.sv:18             ena）。⚠️ A6b：要与写回级
+                                                          同源，不能用 rd!=0 现推
+  idu_rtu_disp{k}_           7  有（就是它从 RTU 拿的号） 这一条分到的新物理号。
+    dst_preg                     ct_idu_ir_dp.sv:283-285   RTU 拿它把表项从 WF_ALLOC
+                                                          推到 ALLOC（按值匹配）
+  idu_rtu_disp{k}_           7  有（RAT 读口）            被它替换掉的旧映射。
+    old_preg                     ct_idu_ir_rt.sv:36/40/44   RTU 退休时按它释放编号
+                                 rt_dp_inst{k}_rel_preg     （old != dst 才释放）
+  idu_rtu_disp{k}_           7  有（RAT 读口）            rs1 的物理号。
+    src1_preg                    ct_idu_ir_rt.sv:38/42/46   **只有 CSR 指令有意义** ——
+                                 rt_dp_inst{k}_src1_data   退休级要读源操作数算 CSR 新值
+  idu_rtu_disp{k}_      12/3/5  有（译码指令域）           CSR 地址 / **funct3 原样** /
+    csr_addr/csr_op/                                        csrrwi 的 uimm5。
+    csr_imm                                               ⚠️ A6c：csr_op 要 funct3
+                                                          原样（001/010/011 与
+                                                          101/110/111），喂两位码会
+                                                          把 csrrwi 当寄存器形式
+  idu_rtu_disp{k}_flags      7  半数有，要新打包          位序见 RTU_define.vh 的
+                                内部是 inst_type[4:0]     RTU_FLG_*：
+                                （id_decd.sv:23，          {is_jalr, is_jal, is_mret,
+                                 [2]=BR [1]=LSU）           is_csr, intmask,
+                                 + 分散在 ir_decd /        is_store, is_branch}
+                                 rf_pipe*_decd 的 CSR/      现成的只有"是不是 BJU/LSU"
+                                 mret/JAL/JALR             这一层，load/store 的细分
+                                                          在 RF 级（idu_lsu_ld_sel /
+                                                          idu_lsu_st_sel），要往前引；
+                                                          intmask 要新算（要核）
+  idu_rtu_disp{k}_sq_id      3  有类似的名字，但**不是同一个东西**，也不是派遣点
+                                idu_lsu_st_sdiq_entry
+                                （ct_idu_top.sv:151，4 位，
+                                  发给 LSU）
+                                                          这条 store 在**存储队列**里的
+                                                          槽号，退休提交时用
+                                                          （RTU 只存不解释）。
+                                                          ⚠️ 三件事要分清：
+                                                          * IDU 那个 idu_lsu_st_sdiq_entry
+                                                            是它**自己的 SDIQ**（8 项，
+                                                            sdiq_entry_cnt 是 [2:0]），
+                                                            不是 LSU 的队列；
+                                                          * 而且它是**发射级**发给 LSU 的，
+                                                            RTU 要的是**派遣当拍**就存进
+                                                            ROB；
+                                                          * LSU 侧的存储队列是
+                                                            lsu_sq.sv 的 SQ_ENTRY = 6
+                                                            （3 位，正好对上 RTU 的
+                                                            [2:0]）；LSIQ_ENTRY = 12 是
+                                                            发射队列，与 sq_id 无关。
+                                                          ⇒ 要么把 SDIQ 分配提前到派遣点
+                                                          引出来（LSU 侧再做 SDIQ→SQ 的
+                                                          映射），要么由 LSU 在派遣当拍
+                                                          分配后回灌
+
+  ⚠️ A7（不是端口，是约束，必须 IDU 侧做到）：**一拍最多一条 CSR**。
+     RTU 的 CSR 地址/op/imm/src1 抽成了单槽，装不下第二条。组内出现第二条
+     is_csr 时，IDU 要把它连同它后面的指令截到下一拍再派（RTU 那侧挡不住）。
+
+
+(2) chk 旁路：**3 × 25 = 75 根新增端口** ------------------------------------
+
+  idu_rtu_disp{k}_chk[24:0]
+
+  作用：前端在取指时打包的预测快照（GHR/BTB/TAGE 那一套），RTU 存进 ROB 表项，
+  退休时用它去训练预测器 —— 这样"写哪一格"与退休时的预测器状态无关。
+  ⚠️ **IDU 现在完全没有这条路**：IFU 给它的 97 位包里只有
+  {taken[96], npc[95:64], pc[63:32], inst[31:0]}（ct_idu_id_dp.sv:22-26），
+  chk 不在包里 —— 我们的 ifu2 是把 chk 当**独立旁路**送出来的
+  （rv32ifu2_top.v:204/207/210 的 idu_inst0/1/2_chk[24:0]）。
+  所以不只"加端口"：要 (a) IDU 顶层加 3×25 输入，(b) 把它随指令锁进 IDU 的
+  流水线（ID → IR → IS → 派发），(c) 在派遣点引出来。
+  参考：现核里 chk 只走了 0 路，ifu2 的 inst1/inst2_chk 在 mycpu.v:417/420
+  是**悬空**的。
+
+
+(3) 位宽/路数要"改"而不是"加"的（Phase 2 已记账，这里只列全） -------------
+
+  项            IDU 现在       RTU         涉及端口
+  ------------  -----------    ----------  ----------------------------------
+  preg 位宽     6 位           7 位/96 项  rtu_idu_alloc_preg*（入）、
+                                          idu_rtu_disp*_dst_preg/old_preg/
+                                          src1_preg（出）
+  alloc 路数    3（C910 是 4） 3          一致，不用改
+  恢复表        192 = 32×6     224 = 32×7  rtu_idu_rt_recover_preg（入）
+  dealloc mask  64（C910 96）  无此口      idu_rtu_pst_preg_dealloc_mask（出）
+                                          —— RTU 侧没有对应输入：释放的所有权
+                                          在 RTU（退休时按 old != dst），这根线
+                                          要么丢弃（先确认 IDU 不靠它做内部
+                                          记账），要么补一个口；位宽也要 96
+  复位极性      cpurst_b 低有效 cpu_rst 高有效  适配层要反相
+
+
+(4) 一句话排序 --------------------------------------------------------------
+
+  Phase 2：位宽 6→7 / 恢复表 192→224 / （顺带把 RAT 表项的时钟接上，见下）
+  Phase 3：补 (1) 的 39 根派遣记录 + (2) 的 75 根 chk 旁路 + A7 的截断规则
+  Phase 4：适配层破环（第一节 A 或 B）+ 放宽 WF_ALLOC 回收窗口 + 接线
+
+  ⚠️ 先决条件（不修则以上都无从验证）：交付的 IDU 里 **RAT 表项没有时钟** ——
+  ct_idu_dep_reg_src2_entry 的 preg 挂在 write_clk 上（:238），而 write_clk 全目录
+  无驱动（交付里没有任何 gated_clk_cell），且 ct_idu_ir_rt.sv:137-149 的例化没连
+  forever_cpuclk；写使能 reg_write_en_arr（:113）与 reg_write_en（:205）互不相连。
+  ⇒ 改名表一个字都写不进去。冒烟台接常量输入，210 拍永远看不出来。
+================================================================================
