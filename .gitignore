@@ -38,6 +38,10 @@ obj_*/
 novas.fsdb
 novas.fsdb.*
 novas_dump.log
+# VCD: mySoC/lsu 的冒烟 TB (tb/unit/lsu/tb_lsu_load_test.sv) 里有
+# $dumpfile("load_test.vcd"), 路径是相对 CWD 的, 跑 `make lsu-unit` 会直接
+# 落在仓库根目录。它只是个波形文件, 不该入库。
+*.vcd
 ucli.key
 verdiLog/
 simv

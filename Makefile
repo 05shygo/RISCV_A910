@@ -51,15 +51,21 @@ BP ?= 1
 #   * mySoC/iu/rtl  执行单元 (ALU / 分支执行 / 乘除法)
 #   * mySoC/rtu/rtl 退休单元 (ROB/物理寄存器状态/异常/冲刷)
 #   * mySoC/ifu2/rtl, mySoC/ifu_rv32i/rtl  两款前端 (二选一)
+#   * mySoC/idu_c910/rtl  C910 移植的乱序多发射 IDU (重命名+发射队列+PRF)
+#   * mySoC/lsu/rtl  D-cache LSU (含 dcache/LFB/MSHR/VB/WMB/LQ/SQ)
+# ⚠️ 后两个目录是 **.sv**, 而上面的通配是 *.v —— 后缀不同, 不会被现有行捞到,
+#    必须单独列出来 (这是 C910 移植过来的文件, 保持了原来的 SystemVerilog 写法)。
 ifeq ($(IFU),2)
 VSRC := $(filter-out $(PWD)/mySoC/ifu_subsys.v, $(wildcard $(PWD)/mySoC/*.v)) \
         $(wildcard $(PWD)/mySoC/idu/rtl/*.v) $(wildcard $(PWD)/mySoC/iu/rtl/*.v) \
         $(wildcard $(PWD)/mySoC/rtu/rtl/*.v) \
+        $(wildcard $(PWD)/mySoC/idu_c910/rtl/*.sv) $(wildcard $(PWD)/mySoC/lsu/rtl/*.sv) \
         $(wildcard $(PWD)/mySoC/ifu2/rtl/*.v) $(PWD)/vsrc/$(RAM)
 else
 VSRC := $(wildcard $(PWD)/mySoC/*.v) \
         $(wildcard $(PWD)/mySoC/idu/rtl/*.v) $(wildcard $(PWD)/mySoC/iu/rtl/*.v) \
         $(wildcard $(PWD)/mySoC/rtu/rtl/*.v) \
+        $(wildcard $(PWD)/mySoC/idu_c910/rtl/*.sv) $(wildcard $(PWD)/mySoC/lsu/rtl/*.sv) \
         $(wildcard $(PWD)/mySoC/ifu_rv32i/rtl/*.v) $(PWD)/vsrc/$(RAM)
 endif
 # ⚠️ 头文件也必须当先决条件。原来只有 .v 在列表里, 于是**改 defines.vh 不会重编** ——
@@ -94,6 +100,25 @@ DEFINES += +define+ICACHE_OFF
 endif
 ifeq ($(BP),0)
 DEFINES += +define+BP_OFF
+endif
+
+# ---------------------------------------------------------------------------
+# mySoC/lsu 的 dcache 容量. 三选一, 必须定义**恰好一个** —— 这不是优化开关,
+# 是"定义了才有电路": ct_lsu_dcache_{data,tag,ld_tag,dirty}_array.sv 里的阵列
+# 例化整个包在 `ifdef DCACHE_1KB/2KB/4KB 里, 而 data_dout 这类输出 wire 只由
+# 那些例化的 Q 驱动。一个都不定义 ⇒ 阵列一片不例化 ⇒ 输出悬空 (Z), 整个 dcache
+# 读出来是 X (不会报错, 只是功能全错)。lsu_top 的 DCACHE_SIZE 参数默认 2048,
+# 与之配套的是 DCACHE_2KB, 两处必须一致。
+# ---------------------------------------------------------------------------
+ifndef DCACHE_SIZE
+DCACHE_SIZE := 2048
+endif
+ifeq ($(DCACHE_SIZE),1024)
+DEFINES += +define+DCACHE_1KB
+else ifeq ($(DCACHE_SIZE),4096)
+DEFINES += +define+DCACHE_4KB
+else
+DEFINES += +define+DCACHE_2KB
 endif
 
 # FSDB (Verdi) detection
@@ -221,6 +246,14 @@ $(ICACHE_CFG): FORCE
 $(BP_EN_CFG): FORCE
 	@mkdir -p $(BUILD_DIR)
 	@echo "$(BP)" | cmp -s - $@ || echo "$(BP)" > $@
+
+# dcache 容量同理: 它只派生 DEFINES (DCACHE_1KB/2KB/4KB), 三选一写错或漏定义
+# 都不会报错 —— 只会让 dcache 阵列一片不例化、输出悬空。给它自己的 stamp。
+DCACHE_CFG := $(BUILD_DIR)/.dcache_cfg
+
+$(DCACHE_CFG): FORCE
+	@mkdir -p $(BUILD_DIR)
+	@echo "$(DCACHE_SIZE)" | cmp -s - $@ || echo "$(DCACHE_SIZE)" > $@
 
 # ---------------------------------------------------------------------------
 # BP_* : 分支预测器表尺寸 (面积-准确率实验用)
@@ -366,7 +399,7 @@ $(BP_CFG): FORCE
 
 FORCE:
 
-$(SIMV): $(VSRC) $(VHDR) $(SVSRC) $(DPIC) $(CSRC_GM) $(IFU_CFG) $(LBUF_CFG) $(BP_CFG) $(ICACHE_CFG) $(BP_EN_CFG)
+$(SIMV): $(VSRC) $(VHDR) $(SVSRC) $(DPIC) $(CSRC_GM) $(IFU_CFG) $(LBUF_CFG) $(BP_CFG) $(ICACHE_CFG) $(BP_EN_CFG) $(DCACHE_CFG)
 	@mkdir -p $(BUILD_DIR)
 	$(VCS) $(VCS_FLAGS) $(VCS_FLAGS_EXTRA) $(INC) $(DEFINES) $(BP_DEFS) $(FSDB_VCS) -CFLAGS -DVCS \
 	  -CFLAGS -I$(PWD)/golden_model/include \
@@ -436,6 +469,54 @@ $(RTU_UNIT_SIMV): $(RTU_UNIT_SRC) $(RTU_UNIT_HDR) $(RTU_UNIT_TB)
 	$(VCS) $(VCS_FLAGS) $(INC) -top tb_rtu_rob -o $(RTU_UNIT_SIMV) \
 	  -Mdir=$(RTU_UNIT_BUILD)/csrc -l $(RTU_UNIT_BUILD)/compile.log \
 	  $(RTU_UNIT_SRC) $(RTU_UNIT_TB)
+
+# ---------------------------------------------------------------------------
+# C910 移植过来的两个单元 (Phase 1: 只要 elaborate 得过 + 上电不炸)
+#
+# 为什么要单开: 主构建里**没有任何模块例化** ct_idu_top / lsu_top, 而 VCS 只
+# elaborate 从 -top 可达的层次 —— 这两个顶层在主构建里只会被 "Parsing",
+# 内部的端口连接错误 (不存在端口名 / 位宽不符 / 未驱动网) 一个都查不出来。
+# 实测确认过: 修完 IDU 的一批端口错误, `make build` 依然 0 error。
+#
+#   make idu-unit                  # ct_idu_top 的 elaborate 冒烟
+#   make lsu-unit                  # lsu_top 的 load 冒烟 (同事自带 TB)
+#   make lsu-unit LSU_UNIT_ARGS=...
+#
+# ⚠️ 这两个台子**都不是功能验证**: 输入接常量/假 BIU, 无自检, store 路径零覆盖。
+#    它们的价值是"把 elaborate 错误逼出来", 别拿它们当回归。
+# ---------------------------------------------------------------------------
+IDU_UNIT_BUILD := $(PWD)/obj_unit_idu
+IDU_UNIT_SIMV  := $(IDU_UNIT_BUILD)/simv
+IDU_UNIT_SRC   := $(wildcard $(PWD)/mySoC/idu_c910/rtl/*.sv)
+IDU_UNIT_TB    := $(PWD)/tb/unit/tb_idu_c910.sv
+
+idu-unit: $(IDU_UNIT_SIMV)
+	@$(IDU_UNIT_SIMV) +vcs+lic+wait -exitstatus -l $(IDU_UNIT_BUILD)/sim.log
+
+# ⚠️ tb_idu_c910.sv 的 116 个端口连接是**生成的** —— 改了 ct_idu_top 的端口表
+#    就要重新生成, 否则 elaborate 报 "port not found" (这正是这个台子的用处)。
+#    生成器: scripts/gen_idu_smoke_tb.py
+$(IDU_UNIT_SIMV): $(IDU_UNIT_SRC) $(IDU_UNIT_TB)
+	@mkdir -p $(IDU_UNIT_BUILD)
+	$(VCS) $(VCS_FLAGS) $(INC) -top tb_idu_c910 -o $(IDU_UNIT_SIMV) \
+	  -Mdir=$(IDU_UNIT_BUILD)/csrc -l $(IDU_UNIT_BUILD)/compile.log \
+	  $(IDU_UNIT_SRC) $(IDU_UNIT_TB)
+
+LSU_UNIT_BUILD := $(PWD)/obj_unit_lsu
+LSU_UNIT_SIMV  := $(LSU_UNIT_BUILD)/simv
+LSU_UNIT_SRC   := $(wildcard $(PWD)/mySoC/lsu/rtl/*.sv)
+LSU_UNIT_TB    := $(PWD)/tb/unit/lsu/tb_lsu_load_test.sv
+LSU_UNIT_ARGS  ?=
+LSU_UNIT_DEFS  := +define+DCACHE_$(if $(filter 1024,$(DCACHE_SIZE)),1KB,$(if $(filter 4096,$(DCACHE_SIZE)),4KB,2KB))
+
+lsu-unit: $(LSU_UNIT_SIMV)
+	@$(LSU_UNIT_SIMV) +vcs+lic+wait -exitstatus $(LSU_UNIT_ARGS) -l $(LSU_UNIT_BUILD)/sim.log
+
+$(LSU_UNIT_SIMV): $(LSU_UNIT_SRC) $(LSU_UNIT_TB)
+	@mkdir -p $(LSU_UNIT_BUILD)
+	$(VCS) $(VCS_FLAGS) $(INC) $(LSU_UNIT_DEFS) -top tb_lsu_load_test -o $(LSU_UNIT_SIMV) \
+	  -Mdir=$(LSU_UNIT_BUILD)/csrc -l $(LSU_UNIT_BUILD)/compile.log \
+	  $(LSU_UNIT_SRC) $(LSU_UNIT_TB)
 
 run-all: build
 	@mkdir -p waveform

@@ -121,6 +121,13 @@ foreach d {idu/rtl iu/rtl rtu/rtl ifu2/rtl} {
         lappend src_files $f
     }
 }
+# C910 移植过来的 IDU 与自研 LSU 是 .sv（SystemVerilog），上面的 *.v 通配收不到，
+# 必须单独列 —— 漏了的症状同样是 Vivado 报 "module not found"。
+foreach d {idu_c910/rtl lsu/rtl} {
+    foreach f [lsort [glob -nocomplain [file join $ROOT mySoC {*}[split $d /] *.sv]]] {
+        lappend src_files $f
+    }
+}
 lappend src_files [file join $SP top_fmax.v]
 
 add_files -norecurse $src_files

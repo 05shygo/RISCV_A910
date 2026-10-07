@@ -1,16 +1,22 @@
 # 显式列 .v 与各子目录: 原来写的 `mySoC/*` 会把**目录**也喂给 verilator,
 # 而 wildcard 不递归、子目录里的 RTL 又收不到。
+# C910 移植过来的 IDU 与自研 LSU 是 .sv, 单独列（后缀不同, *.v 通配收不到）。
+# 它们目前还没有被核内任何模块例化, 加进来是为了让 verilator 也过一遍语法。
 VSRC = $(wildcard vsrc/ram.v mySoC/*.v mySoC/idu/rtl/*.v mySoC/iu/rtl/*.v \
                     mySoC/rtu/rtl/*.v \
+                    mySoC/idu_c910/rtl/*.sv mySoC/lsu/rtl/*.sv \
                     mySoC/ifu2/rtl/*.v mySoC/ifu_rv32i/rtl/*.v)
 CSRC = $(wildcard golden_model/*.c) $(wildcard golden_model/stage/*.c) $(wildcard golden_model/peripheral/*.c) $(wildcard csrc/*.c csrc/*.cpp)
 SIM_OPTS = --trace -Wno-lint -Wno-style -Wno-TIMESCALEMOD
 TEST = addi
 TESTFILE = meminit.bin
 PWD = $(shell pwd)
+# dcache 容量: 三选一, 必须定义恰好一个 —— 不定义的话 dcache 阵列一片不例化,
+# 输出悬空(不会报错, 只是功能全错)。与主 Makefile 的 DCACHE_SIZE 保持同义。
+DCACHE_DEF = +define+DCACHE_2KB
 
 build: $(VSRC) $(CSRC)
-	@verilator -cc --exe --build $(VSRC) --top-module miniRV_SoC $(CSRC) $(SIM_OPTS) +define+PATH=$(TESTFILE) -CFLAGS -DPATH=$(TESTFILE) -ImySoC -CFLAGS -I$(PWD)/golden_model/include
+	@verilator -cc --exe --build $(VSRC) --top-module miniRV_SoC $(CSRC) $(SIM_OPTS) +define+PATH=$(TESTFILE) $(DCACHE_DEF) -CFLAGS -DPATH=$(TESTFILE) -ImySoC -CFLAGS -I$(PWD)/golden_model/include
 	@mkdir -p waveform
 run: build
 	@ln -sf bin/$(TEST).bin $(TESTFILE)
