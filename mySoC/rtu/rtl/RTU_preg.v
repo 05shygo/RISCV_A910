@@ -2,14 +2,18 @@
 `include "RTU_define.vh"
 
 // ---------------------------------------------------------------------------
-// RTU_preg — 物理寄存器四态表 + 两拍分配 + 架构映射表 AMT (D2 / D3)。
+// RTU_preg — 物理寄存器四态表 + 分配握手 + 架构映射表 AMT (D2 / D3)。
 //
 // 四态 (每 preg 2 bit, 共 192 bit):
-//   FREE --(优先编码选中, T)--> WF_ALLOC --(派遣确认, T+1)--> ALLOC
-//                                    \--(没派成/被冲刷)--------> FREE
+//   FREE --(被 tap 选中补进"门房")--> WF_ALLOC --(派遣认领)--> ALLOC
 //   ALLOC --(退休且写回)--> ARCH        ALLOC --(陷阱那条)--> FREE
 //   ARCH  --(退休且 old_preg != dst_preg)--> FREE
 //   冲刷: 非 ARCH 全部回 FREE (一拍并行, 每个 preg 各看各的, 不用扫描)
+//
+// ⚠️ **2026-10-07: 分配握手改成 C910 的"门房保持寄存器"(tap), 年龄回收删除。**
+//    完整理由与验收口径见 doc/rtu_preg_alloc_plan_zh.md, 摘要在文件末尾。
+//    一句话: 号与许可都进寄存器(每路一份 tap), 消费者**当拍取走**, 取走即补下一个;
+//    池子在"补进 tap"那一刻就把号标成 WF_ALLOC, 之后只等派遣来认领。
 //
 // ⚠️ `WF_ALLOC` 不是多余的簿记: 96 位三端口优先编码器是 7 级左右的组合深度,
 //    直接串在"派遣 → 分配 → 更新状态"这条链上会把派遣拍压垮 (§4.2 的 P3)。
@@ -34,13 +38,13 @@ module RTU_preg (
     input  wire        cpu_clk,
     input  wire        cpu_rst,
 
-    // ---- §6.0 分配请求 (T 拍) ----
+    // ---- §6.0 分配请求 (当拍取走) ----
     input  wire [1:0]  ren_preg_req,
     input  wire [4:0]  ren_preg_req_lreg0,
     input  wire [4:0]  ren_preg_req_lreg1,
     input  wire [4:0]  ren_preg_req_lreg2,
 
-    // ---- 派遣确认 (T+1 拍) ----
+    // ---- 派遣认领 (号走到 ROB 那一拍, 与取走相隔任意拍) ----
     input  wire [2:0]  disp_vld,
     input  wire [6:0]  disp_dst_preg0,
     input  wire [6:0]  disp_dst_preg1,
@@ -57,7 +61,7 @@ module RTU_preg (
     // ---- 冲刷 (FLUSH_2) ----
     input  wire        flush_lvl,
 
-    // ---- 输出 ----
+    // ---- 输出 (2026-10-07 起都是**寄存值** = 门房 tap 里备着的号) ----
     output wire [6:0]  rtu_preg_alloc0,
     output wire [6:0]  rtu_preg_alloc1,
     output wire [6:0]  rtu_preg_alloc2,
@@ -71,12 +75,12 @@ module RTU_preg (
 
     reg  [1:0]  st [0:95];
     reg  [1:0]  nst[0:95];
-    // WF_ALLOC 的"年龄": 刚发出去那一拍是 0, 再等一拍变 1。
-    // ⚠️ 放回自由池**要等两拍**, 不能刚发出去没派成下一拍就收 —— §6.0 的握手本来
-    //    只留了一拍窗口, 但那样对"发出者晚半拍/晚一拍"零容忍: 编号一旦被放回,
-    //    优先编码器立刻可能把它发给别人, 而前一条指令还拿着它 (单测台就是这么撞上的)。
-    //    多等一拍只让自由池少一个编号一拍, 没有任何正确性代价。
-    reg  [95:0] wf_age;
+    // ---- 每路一份"门房"寄存器 (C910 `ct_rtu_pst_preg.v:7376-7393` 的 alloc_preg*) ----
+    // 它备着一个已经出池(WF_ALLOC)、等着被取走的号。消费者**当拍取走**;
+    // 取走(或空着)的那一拍边沿才补下一个。于是许可与编号都不依赖本拍请求
+    // ⇒ 与 IDU 停顿链之间的组合环断开 (那是本次改造的首要目的)。
+    reg  [6:0]  tap_num0, tap_num1, tap_num2;
+    reg         tap_vld0, tap_vld1, tap_vld2;
     reg  [6:0]  amt[0:31];
     reg  [6:0]  free_cnt_q;
 
@@ -108,10 +112,12 @@ module RTU_preg (
     //
     // ⚠️ 选中的顺序 (高 / 低 / 高) 与历次实现**逐位一致**, 别改: 改顺序不破坏
     //    任何不变量, 但会让回归波形与历史记录对不上。重构的验收判据永远是
-    //    "一位不变"。同理, 车道 0 不申请时它的候选位**仍然**被 `~sel0_oh` 排除在
-    //    外 (不把后面的请求往前挪) —— 这是 §6.0 的车道语义, 与 req_lane 无关。
+    //    "一位不变"。同理, 车道 0 不补号时它的候选位**仍然**被 `~sel0_oh` 排除在
+    //    外 (不把后面的选择往前挪) —— 这是 §6.0 的车道语义。改这些线的时候记住
+    //    门控源是 `pop_lane` (补号) 而不是"请求": 号是**提前备好的**,
+    //    与请求的相位已经解耦 (2026-10-07)。
     //    ✅ 已机器核对 (一次性 TB, 未进仓库): 随机 / 小池 / 单点 / 边界定向 +
-    //       req_lane 全扫下, 三路编号 / alloc_vld / 候选池 / sel_oh 与**原始版**
+    //       请求全扫下, 三路编号 / alloc_vld / 候选池 / sel_oh 与**原始版**
     //       (enc_lo/enc_hi 优先链 + 二进制往返) 逐位相同。
     //    ⚠️ 该等价性的前提是 `free_vec[31:0] ≡ 0` (低段全是初始映射、没被顶掉过)。
     //       改前的版本靠 `PREG_HI_MSK` 把低段**结构上**挡在窗口外; D1.2 之后窗口是
@@ -145,11 +151,33 @@ module RTU_preg (
         end
     endgenerate
 
-    // 车道是否要分配: 有请求 且 dst 不是 x0 (x0 不分配、不映射)
-    wire [2:0] req_lane;
-    assign req_lane[0] = (ren_preg_req > 2'd0) && (ren_preg_req_lreg0 != 5'd0);
-    assign req_lane[1] = (ren_preg_req > 2'd1) && (ren_preg_req_lreg1 != 5'd0);
-    assign req_lane[2] = (ren_preg_req > 2'd2) && (ren_preg_req_lreg2 != 5'd0);
+    // 本路本拍被**取走**: 消费者请求了这一路, 且 dst 不是 x0 (x0 不分配、不映射)。
+    // "请求即取走" 是 C910 的语义 —— 它那边 alloc_vld、RAT 写、进 IS 由同一个
+    // `!ctrl_ir_stall` 门控, 三者同拍 (`ct_idu_ir_ctrl.sv:259` / `ct_idu_ir_dp.sv:283`)。
+    wire [2:0] take_lane;
+    assign take_lane[0] = (ren_preg_req > 2'd0) && (ren_preg_req_lreg0 != 5'd0);
+    assign take_lane[1] = (ren_preg_req > 2'd1) && (ren_preg_req_lreg1 != 5'd0);
+    assign take_lane[2] = (ren_preg_req > 2'd2) && (ren_preg_req_lreg2 != 5'd0);
+
+    // 本路备着的那个号**本拍被派遣认领** —— 兜"没请求却把它派出去了"那种误用。
+    // 有它, 误用只会让本路提前补号, 不会把同一个号发两次 (静默撞号是大忌)。
+    // ⚠️ 必须门 `tap_vld`: 空 tap 的残值 0 会被 dst_preg=0 的 x0 车道蹭中。
+    wire tap_hit0 = tap_vld0 && ((disp_vld[0] && (disp_dst_preg0 == tap_num0))
+                              || (disp_vld[1] && (disp_dst_preg1 == tap_num0))
+                              || (disp_vld[2] && (disp_dst_preg2 == tap_num0)));
+    wire tap_hit1 = tap_vld1 && ((disp_vld[0] && (disp_dst_preg0 == tap_num1))
+                              || (disp_vld[1] && (disp_dst_preg1 == tap_num1))
+                              || (disp_vld[2] && (disp_dst_preg2 == tap_num1)));
+    wire tap_hit2 = tap_vld2 && ((disp_vld[0] && (disp_dst_preg0 == tap_num2))
+                              || (disp_vld[1] && (disp_dst_preg1 == tap_num2))
+                              || (disp_vld[2] && (disp_dst_preg2 == tap_num2)));
+
+    // 本拍要给哪几路**补号** (= 从这个边沿起, 把选中的 FREE 装进门房)。
+    // 池子的 WF_ALLOC 标记跟着它走, 不再跟着"本拍请求"走 —— 号一进 tap 就出池了。
+    wire [2:0] pop_lane;
+    assign pop_lane[0] = !tap_vld0 | take_lane[0] | tap_hit0;
+    assign pop_lane[1] = !tap_vld1 | take_lane[1] | tap_hit1;
+    assign pop_lane[2] = !tap_vld2 | take_lane[2] | tap_hit2;
 
     // 可分配池 = 全表里处于 FREE 的那些。
     // ⚠️ 2026-10-02 (D1.2): 窗口是**全部 96 项**, 不再是 p32..p95 —— 初始映射被顶掉
@@ -215,41 +243,51 @@ module RTU_preg (
     wire [95:0] cand1 = v1;
     wire [95:0] cand2 = v2;
 
-    // ⚠️ 每一路都必须**同时**用 `|candK` 门控, 三处 (sel_oh / alloc_vld* / 计数器的
+    // ⚠️ 每一路都必须**同时**用 `|candK` 门控, 三处 (g_selK / 装进门房 / 计数器的
     //    n_alloc) 逐位同式 —— 少一处就是"看着发出去了、账上没记"那类慢慢偏的 bug。
     //    旧实现里这条门控还兼着挡一个坑: `1<<sel` 在"没找到"时是 bit 0, 于是池子
     //    不够三路时第 2/3 路会把 **p0 置成 WF_ALLOC**, x0 的映射就没了。
     //    改成独热后 `sel*_oh` 找不到就是 0, 那个坑**结构上消失**了 —— 但门控本身
-    //    仍要留: 它守的是"发出去了"这个定义本身, 与编码形式无关。
-    wire [95:0] sel_oh = (sel0_oh & {96{req_lane[0] & (|cand0)}})
-                       | (sel1_oh & {96{req_lane[1] & (|cand1)}})
-                       | (sel2_oh & {96{req_lane[2] & (|cand2)}});
+    //    仍要留: 它守的是"这一路真拿到了号"这个定义本身, 与编码形式无关。
+    //    ⚠️ 2026-10-07: 门控源从 `req_lane` 换成 `pop_lane` —— 号**装进门房那一刻**
+    //       就出池 (标 WF_ALLOC), 而不是"被请求那一刻"。
+    wire [95:0] g_sel0 = sel0_oh & {96{pop_lane[0] & (|cand0)}};
+    wire [95:0] g_sel1 = sel1_oh & {96{pop_lane[1] & (|cand1)}};
+    wire [95:0] g_sel2 = sel2_oh & {96{pop_lane[2] & (|cand2)}};
+    wire [95:0] sel_oh = g_sel0 | g_sel1 | g_sel2;
 
     // 独热 -> 7 位编号: 第 k 位 = "选中的那一位, 它的编号第 k 位是 1" (见 PREG_BM*)。
-    // 一个都没选中时 7 位全 0, 与历次实现一致。
-    assign rtu_preg_alloc0 = { |(sel0_oh & PREG_BM6), |(sel0_oh & PREG_BM5),
-                               |(sel0_oh & PREG_BM4), |(sel0_oh & PREG_BM3),
-                               |(sel0_oh & PREG_BM2), |(sel0_oh & PREG_BM1),
-                               |(sel0_oh & PREG_BM0) };
-    assign rtu_preg_alloc1 = { |(sel1_oh & PREG_BM6), |(sel1_oh & PREG_BM5),
-                               |(sel1_oh & PREG_BM4), |(sel1_oh & PREG_BM3),
-                               |(sel1_oh & PREG_BM2), |(sel1_oh & PREG_BM1),
-                               |(sel1_oh & PREG_BM0) };
-    assign rtu_preg_alloc2 = { |(sel2_oh & PREG_BM6), |(sel2_oh & PREG_BM5),
-                               |(sel2_oh & PREG_BM4), |(sel2_oh & PREG_BM3),
-                               |(sel2_oh & PREG_BM2), |(sel2_oh & PREG_BM1),
-                               |(sel2_oh & PREG_BM0) };
-    assign rtu_preg_alloc_vld0 = req_lane[0] & (|cand0);
-    assign rtu_preg_alloc_vld1 = req_lane[1] & (|cand1);
-    assign rtu_preg_alloc_vld2 = req_lane[2] & (|cand2);
+    // 一个都没选中时 7 位全 0, 与历次实现一致。这是"这一拍要装进门房的号"。
+    wire [6:0] pop_num0 = { |(g_sel0 & PREG_BM6), |(g_sel0 & PREG_BM5),
+                            |(g_sel0 & PREG_BM4), |(g_sel0 & PREG_BM3),
+                            |(g_sel0 & PREG_BM2), |(g_sel0 & PREG_BM1),
+                            |(g_sel0 & PREG_BM0) };
+    wire [6:0] pop_num1 = { |(g_sel1 & PREG_BM6), |(g_sel1 & PREG_BM5),
+                            |(g_sel1 & PREG_BM4), |(g_sel1 & PREG_BM3),
+                            |(g_sel1 & PREG_BM2), |(g_sel1 & PREG_BM1),
+                            |(g_sel1 & PREG_BM0) };
+    wire [6:0] pop_num2 = { |(g_sel2 & PREG_BM6), |(g_sel2 & PREG_BM5),
+                            |(g_sel2 & PREG_BM4), |(g_sel2 & PREG_BM3),
+                            |(g_sel2 & PREG_BM2), |(g_sel2 & PREG_BM1),
+                            |(g_sel2 & PREG_BM0) };
+
+    // 出端口的是**门房寄存器的内容**, 不是本拍选出来的那个 —— 这一行就是"断环"本身:
+    // `rtu_preg_alloc*` / `_vld*` 与 `ren_preg_req` 之间不再有组合路径。
+    assign rtu_preg_alloc0     = tap_num0;
+    assign rtu_preg_alloc1     = tap_num1;
+    assign rtu_preg_alloc2     = tap_num2;
+    assign rtu_preg_alloc_vld0 = tap_vld0;
+    assign rtu_preg_alloc_vld1 = tap_vld1;
+    assign rtu_preg_alloc_vld2 = tap_vld2;
 
     // -----------------------------------------------------------------------
-    // 派遣确认 (T+1 拍)
+    // 派遣认领 (号走到 ROB 那一拍 —— 与"取走"相隔几拍**不定**, 见文件末尾长注)
     //
-    // 口径: **按"这个编号当前是不是 WF_ALLOC 态"判**, 而不是去比"上一拍发出去的
-    // 那个值"。两者在合法协议下等价 (WF_ALLOC 恰好就是上一拍发出去、还没落定的
-    // 那一批), 但按状态判**与相位无关** —— 派遣晚半拍/晚一拍都不会把编号误放回
-    // 自由池。踩过的坑: 早先按 pend 值比较, TB 侧相位对不齐时 DUT 会静默地把
+    // 口径: **按"这个编号当前是不是 WF_ALLOC 态"判**, 而不是去比"某一拍发出去的
+    // 那个值"。两者在合法协议下等价 (WF_ALLOC 恰好就是已经备出去、还没落定的
+    // 那一批), 但按状态判**与相位无关** —— 派遣早半拍/晚几拍都能认领上。
+    // 这正是 2026-10-07 删掉年龄回收的前提: 认领不依赖"多久之前发的"。
+    // 踩过的坑: 早先按 pend 值比较, TB 侧相位对不齐时 DUT 会静默地把
     // 编号放回 FREE, 而指令还拿着它 —— 自由池立刻放水。
     // -----------------------------------------------------------------------
     wire [95:0] hit_disp;      // 本拍派遣真正用到的编号 (独热)
@@ -270,6 +308,8 @@ module RTU_preg (
         end
     endgenerate
 
+    // ⚠️ 2026-10-07: 这两根是**观察口**, 没有任何消费者 —— 别把它当"回收路径"。
+    //    年龄回收已删 (§文件末尾), 号只由派遣认领或被冲刷清掉两条路。
     wire conf_alloc_any = |(is_wf &  hit_disp);
     wire conf_free_any  = |(is_wf & ~hit_disp);
 
@@ -332,9 +372,7 @@ module RTU_preg (
                          (ret_free_vld[0] && (ret_old_preg0 == i))) begin
                 nst[i] = `RTU_P_FREE;
             end else if (is_wf[i] &&  hit_disp[i]) begin
-                nst[i] = `RTU_P_ALLOC;          // 本拍被派出去了
-            end else if (is_wf[i] && !hit_disp[i] && wf_age[i]) begin
-                nst[i] = `RTU_P_FREE;           // 等满两拍都没派成 -> 回自由池
+                nst[i] = `RTU_P_ALLOC;          // 本拍被派出去了 (承下门房备着的号)
             end else if (sel_oh[i]) begin
                 nst[i] = `RTU_P_WFALLOC;
             end else begin
@@ -356,47 +394,56 @@ module RTU_preg (
     end
 
     // -----------------------------------------------------------------------
-    // WF_ALLOC 的年龄 (1 bit 够: 只区分"刚发出去那一拍"和"已经等了一拍")
+    // 门房 (tap) 更新 —— 本次改造的核心 (C910 `ct_rtu_pst_preg.v:7376-7393`)
     //
-    // ⚠️ 这个寄存器**曾经只有声明和读取、没有任何赋值** —— 于是 `nst` 里那条
-    //    "等满两拍没人认领就回 FREE" 永远不成立, 编号一旦被分配而没派成
-    //    (TB/重命名级在 T+1 那拍 stall), 就一直卡在 WF_ALLOC **直到下一次冲刷**。
-    //    单测台里冲刷频繁所以看不出来; 真核冲刷间隔上千拍, 自由池会被抽干
-    //    (free_cnt 掉到 0 → preg_short → 派遣永久停摆)。
-    //    时间线 (与 §6.0 的两拍握手对齐): 选中的那个 posedge 起 WF_ALLOC,
-    //    派遣确认在紧随的那个 posedge 采样; 再往后一拍还没人认领就回收。
+    //   * 只在 `pop_lane[k]` 时从池子选一个新号装进来; 选不到 (池子空) 就 vld=0;
+    //   * 不 pop 就**保持** —— 号一直备在门口, 谁要谁拿, 拿的早晚都不影响;
+    //   * 冲刷清空。必须清: 冲刷把池子里非 ARCH 的全部置 FREE, 门房里那个号
+    //     已经不在池子里了, 留着就是"备着一个池子认为空闲的号" (会被再选一次)。
+    //   * `pop_lane` 里为什么要有 `!tap_vld`: 空门房必须立刻补上, 否则消费者
+    //     要等下一拍才看得到 vld=1, 白白多停一拍。
+    //   * 为什么要有 `take_lane`: 号被取走了就得给下一个备一个新的 —— 否则门房
+    //     一直举着旧号, 下一个消费者拿到的还是它 (同一个号发两次)。
     // -----------------------------------------------------------------------
     always @(posedge cpu_clk or posedge cpu_rst) begin
-        if (cpu_rst) wf_age <= 96'd0;
-        else
-            for (i = 0; i < 96; i = i + 1)
-                wf_age[i] <= sel_oh[i]                     ? 1'b0 :   // 本拍刚发出去
-                             (is_wf[i] && !hit_disp[i])    ? 1'b1 :   // 等了一拍还没派成
-                                                             1'b0;
+        if (cpu_rst) begin
+            tap_vld0 <= 1'b0; tap_num0 <= 7'd0;
+            tap_vld1 <= 1'b0; tap_num1 <= 7'd0;
+            tap_vld2 <= 1'b0; tap_num2 <= 7'd0;
+        end else if (flush_lvl) begin
+            tap_vld0 <= 1'b0; tap_num0 <= 7'd0;
+            tap_vld1 <= 1'b0; tap_num1 <= 7'd0;
+            tap_vld2 <= 1'b0; tap_num2 <= 7'd0;
+        end else begin
+            if (pop_lane[0]) begin tap_vld0 <= (|g_sel0); tap_num0 <= pop_num0; end
+            if (pop_lane[1]) begin tap_vld1 <= (|g_sel1); tap_num1 <= pop_num1; end
+            if (pop_lane[2]) begin tap_vld2 <= (|g_sel2); tap_num2 <= pop_num2; end
+        end
     end
 
     // -----------------------------------------------------------------------
     // 空闲计数 (加减计数器, 不让 popcount 上路径)
     // -----------------------------------------------------------------------
-    wire [95:0] do_free_wf = is_wf & ~hit_disp & wf_age;
-    wire [1:0] n_cf = $countones(do_free_wf);             // 本拍放回自由池的个数 (0..3)
     // ⚠️ `kill_hit` **也要算进去**: 陷阱那条自己的 dst_preg 是 ALLOC -> FREE
     //    (它没写 rd), 漏了它每次陷阱都会让计数器少 1 —— 单测台里表现为
     //    "计数器恒低 1, 一直不回来" (踩过)。陷阱那拍 write_vld=0, 所以 kill 与
     //    arch/free 不会互相覆盖, 直接相加即可。 (最多 3+3+3 = 9, 用 4 位)
     // ⚠️ 这里用的是 `kill_hit` 而**不是** `ret_kill_vld` —— 状态转移上面门掉了
     //    ARCH, 计数必须同门 (见那段注释), 否则池子的账与状态表当场对不上。
+    // ⚠️ 2026-10-07: 去掉了"年龄回收"那一项 (n_cf) —— 号不再按年龄回收。
     wire [3:0] n_freed = {3'b0, ret_free_vld[0]} + {3'b0, ret_free_vld[1]}
-                       + {3'b0, ret_free_vld[2]} + {3'b0, n_cf}
+                       + {3'b0, ret_free_vld[2]}
                        + {3'b0, kill_hit[0]} + {3'b0, kill_hit[1]}
                        + {3'b0, kill_hit[2]};
-    wire [3:0] n_alloc = {3'b0, rtu_preg_alloc_vld0} + {3'b0, rtu_preg_alloc_vld1}
-                       + {3'b0, rtu_preg_alloc_vld2};
+    // ⚠️ 数的必须是**出池的次数** (= 装进门房的次数), 不是"本拍请求了几路" ——
+    //    号在装进 tap 那一刻就出池, 与请求的相位解耦。少记一次计数器就永久高报。
+    wire [3:0] n_alloc = {3'b0, (|g_sel0)} + {3'b0, (|g_sel1)} + {3'b0, (|g_sel2)};
 
     // 冲刷后还在池子外的只有 ARCH: 初始映射那 32 项、以及任何 retired 过的映射 ——
     // `st[i] == ARCH ? ARCH : FREE` 那一条把它们留下了。所以自由数**不是** 96 而是
-    // `96 − 全表 ARCH 数`。写死 96 会永久高报, 于是 `preg_short` 迟一拍才拦,
-    // 重命名级按高报的数发请求却拿不满编号 (§6.0 的承诺 "编号在 T+1 拍仍然有效"就破了)。
+    // `96 − 全表 ARCH 数`。写死 96 会永久高报, 于是消费者按高报的数发请求却拿不满编号。
+    // ⚠️ 2026-10-07: 除 ARCH 外, 门房备着的那 ≤3 个号也不在 FREE 里 ⇒ free_cnt 比
+    //    "还能发出去多少"少 ≤3。这是"提前备号"的固有代价 (C910 同样), 不是漏记。
     wire [95:0] arch_vec;
     generate
         for (gv = 0; gv < 96; gv = gv + 1) begin : g_arch
@@ -444,5 +491,42 @@ module RTU_preg (
             assign amt_flat[7*gv +: 7] = amt[gv];
         end
     endgenerate
+
+    // =======================================================================
+    // 分配握手 —— 为什么是"门房保持寄存器" (2026-10-07 改造, 完整版见
+    // doc/rtu_preg_alloc_plan_zh.md)
+    //
+    // 【改之前是什么】`rtu_preg_alloc*` / `_vld*` 是**本拍请求的组合函数**
+    //   (`alloc_vld = req_lane & |cand`)。配 §6.0 那句"T 拍你要、T+1 拍你用"时
+    //   自洽 —— 但我们自己的重命名级**根本还不存在**, 真正的消费者是 C910 IDU,
+    //   而它把 `rtu_idu_alloc_preg*_vld` 当**同拍许可**用, 并且反馈进它自己的
+    //   停顿链 (`ct_idu_ir_ctrl.sv:246-259`) ⇒
+    //        请求 → 我们的组合 vld → IDU 停顿 → 请求        **组合环**
+    //   C910 那侧没有这个环, 因为它的 alloc 寄存器**是寄存器**
+    //   (`ct_rtu_pst_preg.v:7376-7393`), vld 只依赖上一拍的池子状态。
+    //
+    // 【改之后是什么】每路一个 tap (号 + vld 都是寄存器):
+    //        池子 --(pop_lane)--> tap --> 消费者**当拍取走** --> 取走即补下一个
+    //   * 取走 = `take_lane` (消费者请求了这一路), 与 C910 的"请求即取走"同义;
+    //   * 池子在**装进 tap 那一刻**把号标 WF_ALLOC, 之后只等派遣认领;
+    //   * 许可与编号都不再依赖本拍请求 ⇒ 环断开 (这也让 96 位优先编码器
+    //     从"跨模块回到 IDU 的 RAT 写口"变成"到本模块的 tap 寄存器")。
+    //
+    // 【为什么把"年龄回收"删了】原来有一条 `WF_ALLOC 等满两拍没人认领 → FREE`。
+    //   它的存在前提是"给了号就一定会在一两拍内被派遣" —— C910 模型下不成立:
+    //   号在 IDU 的 IR 级被吃进 RAT 之后, 要经 IR → IS → IS 派发 才到 ROB,
+    //   中间被 IQ 满 / ROB 满卡住是**任意多拍**。按年龄回收就会在指令还攥着它的
+    //   时候把号放回池子 → 再发给别人 → 两条指令共用一个 preg, **静默错**, 不报错。
+    //   删掉之后号的出路只有两条: 派遣认领 (WF_ALLOC→ALLOC) 与冲刷 (→FREE)。
+    //   ⚠️ 代价: "消费者请求了却不派遣、也不冲刷"会**永久漏**一个号, 本模块
+    //      没有任何办法发现 (C910 靠"请求、RAT 写、进 IS 同一个 !ctrl_ir_stall
+    //      门控"从契约上排除这种情形)。这条是契约, 不是机制 —— 见 §6.0。
+    //   ⚠️ R02 那条变异 (冲刷不许把分配过的号留着) 现在是**唯一**的兜底出口,
+    //      比以前更承重。
+    //
+    // 【没验证到的】环的消失本身测不出来 (单元台与整核都看不见"组合环");
+    //   能测的只有"池子非空 ⇒ 三路 vld 全 1"这条**行为**不变量 (单测台里叫
+    //   "备号"检查, 变异 R08 拿它当锚)。tap_hit 那条兜底没有激励。
+    // =======================================================================
 
 endmodule

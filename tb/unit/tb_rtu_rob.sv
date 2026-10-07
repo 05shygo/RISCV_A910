@@ -31,9 +31,9 @@
 //   * 冲刷时间线严格 T(重定向+冻结) / T+1(backend_flush) / T+2(ren_flush+AMT) / T+3 放开;
 //   * AMT 广播逐位等于参考模型自己维护的架构映射表。
 //
-// 时钟约定 (与 §6.0 的两拍分配对齐):
+// 时钟约定 (与 §6.0 的门房分配对齐, 2026-10-07):
 //   在 negedge N 驱动的输入, 被 DUT 在下一个 posedge 采样 (即"周期 N+1"生效);
-//   在 negedge N 读到的 alloc* 是"周期 N"发出的编号 -> 用于周期 N+1 的派遣。
+//   在 D_REQ 那拍读到的 alloc* 是"门口备着的号", **当拍取走** -> 用于 D_DISP 的派遣。
 //   激励只许打 n_ready 之前的指令 —— 本拍刚派出去的还没进表项, 不能同拍完成。
 //
 // 用法:
@@ -260,9 +260,11 @@ module tb_rtu_rob;
     // =======================================================================
     // 派遣驱动: 一台**显式握手状态机**
     //
-    // §6.0 的握手是两拍: T 拍给编号, T+1 拍才派遣。TB 在 negedge 采样、DUT 在
-    // posedge 采样, 所以计划必须**晚一代**才摆上口, 否则配到的是上一代编号 ——
-    // 编号早已回池, 指令却拿着它, 紧接着它会被发给别人 (本 TB 栽过的坑)。
+    // §6.0 的门房握手 (2026-10-07): 编号是 DUT **提前备在门口**的寄存器值,
+    // 我们在 D_REQ 那拍请求 = **当拍取走**, 取走的那个用于 D_DISP 的派遣。
+    // TB 在 negedge 采样、DUT 在 posedge 采样, 所以计划必须**晚一代**才摆上口,
+    // 否则配到的是上一代编号 —— 指令拿着一个不归它的号, 紧接着它会被发给别人
+    // (本 TB 栽过的坑)。
     //
     //   D_IDLE --(有活 && 不 stall)--> D_REQ --(无条件)--> D_DISP --(无条件)--> D_IDLE
     //        生成计划 pl_*            摆 ren_preg_req      摆 disp_* + 记流水账
@@ -319,8 +321,26 @@ module tb_rtu_rob;
     logic [2:0]  cp_gotv = 3'd0;
     logic        commit_pending = 1'b0;
 
-    // ---- 连续驱动: 编号请求 (只在 D_REQ 那拍有效) ----
-    assign ren_preg_req = (dstate == D_REQ) ? pl_n[1:0] : 2'd0;
+    // ---- 连续驱动: 编号请求 (只在 D_REQ 那拍、且门房**备齐了**才发) ----
+    // ⚠️ 2026-10-07 (门房握手): 门控里加两条, 都是"请求即取走"的直接后果 ——
+    //    请求了却不派遣、也不冲刷, 那个号会永久停在 WF_ALLOC (年龄回收已删)。
+    //
+    //    ① `!disp_stall`: "这一拍能不能走"必须与"发不发请求"**同拍**决定
+    //       (照 C910 IDU 的 `!ctrl_ir_stall`)。disp_stall 各项都是寄存器
+    //       (preg_short 已在 RTU.v 里删掉) ⇒ 一个周期内不变, 不会抖。
+    //    ② `all_need_vld`: **门房备齐了才取**。号没备齐就发请求 = 白扔一个号
+    //       (RTU 那边"请求"就是取走, 会补下一个), 而这一份计划又派不出去。
+    //       这正是 IDU 的 `ctrl_ir_preg_stall` 在做的事: 没号就停住 IR 级,
+    //       等门房自己补上 (RTU 的 `pop_lane` 里有 `!tap_vld` 那一项在补)。
+    //       两条都不会和上面的 D_REQ 判断打架: 同一个表达式喂给两边。
+    wire [2:0] need_num;
+    assign need_num[0] = (pl_n > 0) && (pl_lreg[0] != 5'd0);
+    assign need_num[1] = (pl_n > 1) && (pl_lreg[1] != 5'd0);
+    assign need_num[2] = (pl_n > 2) && (pl_lreg[2] != 5'd0);
+    wire all_need_vld = (!need_num[0] || alloc_vld0)
+                     && (!need_num[1] || alloc_vld1)
+                     && (!need_num[2] || alloc_vld2);
+    assign ren_preg_req = ((dstate == D_REQ) && !disp_stall && all_need_vld) ? pl_n[1:0] : 2'd0;
     assign ren_lreg0    = pl_lreg[0];
     assign ren_lreg1    = pl_lreg[1];
     assign ren_lreg2    = pl_lreg[2];
@@ -479,10 +499,10 @@ module tb_rtu_rob;
     always @(posedge clk) if (d_arm) begin acc_q <= lane_go; d_arm <= 1'b0; end
 
     // ---- 分配编号的采样时机: **请求那一拍结束的那个 posedge** ----
-    // ⚠️⚠️ 这是本 TB 最大的一处踩坑。`rtu_preg_alloc*` 是优先编码器的**组合输出**,
-    //    只在"请求还挂在口上"的那一拍有效 (§6.0: "T 拍…**同拍**把编号放到
-    //    rtu_preg_alloc")。而选中的编号在那个 posedge 就进 WF_ALLOC、退出 free_vec,
-    //    编码器随即指向**下一批**空闲编号。
+    // ⚠️⚠️ 这是本 TB 最大的一处踩坑, 门房握手之后**这个采样点仍然是对的** ——
+    //    只是含义变了: 采到的不再是"本拍现选出来的号", 而是**门口一直备着的那个**
+    //    (§6.0: 号与 vld 都是寄存器, 当拍取走)。DUT 在同一个 posedge 用
+    //    `take_lane` 把这个号换掉、补下一个, 所以"我取走的"与"它记的账"同帧。
     //    早先这里是在 D_REQ 那一拍 (也就是 T+1) 直接读实时值 —— 读到的永远是"下一批",
     //    指令于是拿着一个**从没分配过、仍处于 FREE** 的编号当 dst_preg: 它既不进
     //    ALLOC 也不会被认领, 很快被编码器发给别人 (双份发出 / `释放了 FREE 态的 pN` /
@@ -490,8 +510,22 @@ module tb_rtu_rob;
     //    修法与"接受位"同构: 进 D_REQ 时上膛, 请求周期结尾的那个 posedge 采一次 ——
     //    取样点正是 DUT 采样 ren_preg_req 的同一刻, 两边看到的是同一批编号。
     logic        al_arm = 1'b0;
+    // "这一拍真的把请求发出去过" (门控通过)。下一拍才允许信采样锁存 —— 门房刚补上号
+    // 的那一拍, 实时值为真而锁存里还是空的旧值, 混用就会取回 000。
+    logic        req_sent = 1'b0;
     logic [6:0]  s_got [0:2];
     logic [2:0]  s_gotv = 3'd0;
+
+    // 同一件事, 但看的是**采样锁存**而不是实时值 —— 判断"号是不是已经到手了"必须用它。
+    // ⚠️ 两个判据的分工 (踩过一次才理清):
+    //   `all_need_vld`(实时) 决定**这一拍请求发不发**;
+    //   `s_need_vld`(锁存)   决定**号是不是真的取到手了**。
+    //   门房可能恰好在某个 posedge 补上号: 那一拍实时值为真、而锁存里还是"空"的旧值。
+    //   混用就会出现"实时说备齐了、取回来的却是 000" ⇒ 卡在 D_DISP 再也不动 (症状是
+    //   派了 22 条就永久停住, 而 disp_stall 全是 0)。
+    wire s_need_vld = (!need_num[0] || s_gotv[0])
+                   && (!need_num[1] || s_gotv[1])
+                   && (!need_num[2] || s_gotv[2]);
     always @(posedge clk) if (al_arm) begin
         s_got[0] <= alloc0; s_got[1] <= alloc1; s_got[2] <= alloc2;
         s_gotv   <= {alloc_vld2, alloc_vld1, alloc_vld0};
@@ -867,13 +901,16 @@ module tb_rtu_rob;
             end
 
             // ---------- 6) 分配器 ----------
-            // 纯 DUT 侧的不变量: 给出的编号自身必须是 FREE 态 (与模型无关)
-            if (alloc_vld0 && (dut.u_preg.st[alloc0] !== 2'd0))
-                err($sformatf("分配器给出非 FREE 的 p%0d (st=%0d)", alloc0, dut.u_preg.st[alloc0]));
-            if (alloc_vld1 && (dut.u_preg.st[alloc1] !== 2'd0))
-                err($sformatf("分配器给出非 FREE 的 p%0d (st=%0d)", alloc1, dut.u_preg.st[alloc1]));
-            if (alloc_vld2 && (dut.u_preg.st[alloc2] !== 2'd0))
-                err($sformatf("分配器给出非 FREE 的 p%0d (st=%0d)", alloc2, dut.u_preg.st[alloc2]));
+            // 纯 DUT 侧的不变量: 门口举着的编号自身必须是 **WF_ALLOC** 态 (与模型无关)。
+            // ⚠️ 2026-10-07 (门房握手): 原来是查 "FREE 态" —— 那时 `rtu_preg_alloc*`
+            //    是本拍现选出来的组合值。现在它是**早就备好的**门房寄存器, 拿出来时
+            //    早就出池了, 所以正确状态是 WF_ALLOC。查 FREE 会当场误报。
+            if (alloc_vld0 && (dut.u_preg.st[alloc0] !== `RTU_P_WFALLOC))
+                err($sformatf("分配器门口举着非 WF_ALLOC 的 p%0d (st=%0d)", alloc0, dut.u_preg.st[alloc0]));
+            if (alloc_vld1 && (dut.u_preg.st[alloc1] !== `RTU_P_WFALLOC))
+                err($sformatf("分配器门口举着非 WF_ALLOC 的 p%0d (st=%0d)", alloc1, dut.u_preg.st[alloc1]));
+            if (alloc_vld2 && (dut.u_preg.st[alloc2] !== `RTU_P_WFALLOC))
+                err($sformatf("分配器门口举着非 WF_ALLOC 的 p%0d (st=%0d)", alloc2, dut.u_preg.st[alloc2]));
             // ⚠️ 2026-10-02 (D1.2): 原来这里禁 `alloc < 32` ("分配器给出架构寄存器")。
             //    现在初始映射被顶掉后会回池子, 低段编号**可以被再分配** —— 这条禁则
             //    连同它守的那个前提一起作废; 真正的保证是上面那条 "给出的编号必须是
@@ -937,6 +974,32 @@ module tb_rtu_rob;
                                   x_retkill_q, x_flvl_q, ret_fv_q,
                                   ret_fp_q[6:0], ret_fp_q[13:7], ret_fp_q[20:14]));
                 end
+            end
+
+            // ---------- 6c) "备号" 不变量 (2026-10-07 门房握手) ----------
+            // **池子里还有 FREE 的下一拍, 门口就必须已经备着号。**
+            //
+            // 为什么是这条判据: 本次改造要断的环 (RTU 的 alloc vld 依赖本拍请求)
+            // 是**结构性**的, 单元台与整核都"看不见"环本身; 能看的只有它这个
+            // 行为后果 —— 组合输出式的实现在**没有请求的拍**上 vld 恒 0, 而那些拍上
+            // 池子通常还有几十个 FREE。所以拿"备号"当锚, 变异 R08 (把输出改回
+            // 组合的 g_sel*) 会被它当场抓住。
+            //
+            // 判据用**上一拍**的自由数 (st_snap_q 就是冲沿前的状态 = 上一拍),
+            // 因为"补号"要一个边沿, 当拍比必然差一拍。
+            // 取 `>= min(3, 上一拍 FREE 数)` 而不是 `== 3`: 上一拍只剩 1 个 FREE 时,
+            // 三路里只有一路补得上 (选择器按优先级给), 那是设计使然, 不是错。
+            // 排除冲刷那一拍: flush 把门口清空 + 池子整表重建, 下一拍本来就该重新备号。
+            if (!x_flvl_q && (cycle > 2)) begin
+                integer fpre3, need3, got3;
+                fpre3 = 0;
+                for (int q = 0; q < 96; q = q + 1)
+                    if (st_snap_q[2*q +: 2] === `RTU_P_FREE) fpre3 = fpre3 + 1;
+                need3 = (fpre3 >= 3) ? 3 : fpre3;
+                got3  = alloc_vld0 + alloc_vld1 + alloc_vld2;
+                if (got3 < need3)
+                    err($sformatf("门口没备上号: 上一拍 FREE=%0d ⇒ 至少该备 %0d 路, 实际 %0d 路 (vld=%b%b%b) | 本拍 req=%0d",
+                                  fpre3, need3, got3, alloc_vld2, alloc_vld1, alloc_vld0, ren_preg_req));
             end
 
             // ---------- 7) AMT 逐拍等于参考模型 ----------
@@ -1359,7 +1422,7 @@ module tb_rtu_rob;
             if (ren_flush) begin
                 // 冲刷: 挂着的编号由 DUT 在 FLUSH_2 放回, 模型里一并清掉
                 h_gotv = 3'd0; pl_n = 0; cp_n = 0;
-                d_arm = 1'b0; al_arm = 1'b0;
+                d_arm = 1'b0; al_arm = 1'b0; req_sent = 1'b0;
                 dstate = D_IDLE;
             end else begin
                 case (dstate)
@@ -1371,30 +1434,47 @@ module tb_rtu_rob;
                         end
                     end
                     D_REQ: begin
-                        // (a2) 请求是上一拍发出去的, 本拍得重新看一次 stall:
-                        //      比如 CSR 单槽被占 (csr_inflight) 时**不许**再派新指令 ——
-                        //      否则第二条 CSR 会覆盖单槽, 第一条退休时读到别人的字段。
-                        //      此时这份计划连同刚发出去的编号一起作废 (编号由 DUT 放回)。
+                        // 这一拍的任务: 等到"号到手"再走。三条出路 ——
+                        //   ① 停派遣 ⇒ 整份丢掉; ② 号到手 ⇒ 进 D_DISP; ③ 还没到手 ⇒ 原地等。
+                        // (a2) 每次都要重新看 stall: 比如 CSR 单槽被占 (csr_inflight) 时
+                        //      **不许**再派新指令 —— 否则第二条 CSR 会覆盖单槽, 第一条退休时
+                        //      读到别人的字段。⚠️ 门房握手之后**没有"把号放回"这回事**了
+                        //      (年龄回收已删): `!disp_stall` 那条门控保证"要停就不会发请求",
+                        //      所以停的这一拍根本没取走任何号, 门口的号原封不动留着。
+                        //      若哪天把那个门控去掉, 这里就会漏号。
                         if (disp_stall) begin
-                            pl_n = 0; h_gotv = 3'd0;
+                            // 请求被上面那两条门控掐掉了 ⇒ 这一拍**一个号都没取走**,
+                            // 所以这份计划可以整份丢掉 (不需要"放回"这回事)。
+                            pl_n = 0; h_gotv = 3'd0; req_sent = 1'b0;
                             dstate = D_IDLE;
+                        end else if (req_sent && s_need_vld) begin
+                            // 请求已经发出去**一整拍**了 ⇒ 采样锁存里装的就是这一份计划
+                            // 真正取走的号 (见下面 al_arm/采样那段注释)。
+                            // (b) 取**上一拍 posedge 采下来的那份**编号
+                            h_got[0] = s_got[0];
+                            h_got[1] = s_got[1];
+                            h_got[2] = s_got[2];
+                            h_gotv   = s_gotv;
+                            // (c) **现在**才算 old_preg: 要 (i) 上一份计划的账已经结完
+                            //     (②在 disp_step 开头, 本分支之前), (ii) 本份计划的 dst_preg
+                            //     刚锁存好 —— 两者只有在这一拍同时成立。放在 gen_plan 里算
+                            //     会看到一份还没入账的在途流 (单测台的 old_preg 就是这么错的)。
+                            for (int k = 0; k < 3; k = k + 1) begin
+                                pl_opreg[k] = old_preg_of(k);
+                                pl_src[k]   = g_op_src;
+                                pl_srcidx[k]= g_op_idx;
+                            end
+                            req_sent = 1'b0;
+                            d_arm  = 1'b1;
+                            dstate = D_DISP;
                         end else begin
-                        // (b) 取**上一拍 posedge 采下来的那份**编号 (见 al_arm)
-                        h_got[0] = s_got[0];
-                        h_got[1] = s_got[1];
-                        h_got[2] = s_got[2];
-                        h_gotv   = s_gotv;
-                        // (c) **现在**才算 old_preg: 要 (i) 上一份计划的账已经结完
-                        //     (②在 disp_step 开头, 本分支之前), (ii) 本份计划的 dst_preg
-                        //     刚锁存好 —— 两者只有在这一拍同时成立。放在 gen_plan 里算
-                        //     会看到一份还没入账的在途流 (单测台的 old_preg 就是这么错的)。
-                        for (int k = 0; k < 3; k = k + 1) begin
-                            pl_opreg[k] = old_preg_of(k);
-                            pl_src[k]   = g_op_src;
-                            pl_srcidx[k]= g_op_idx;
-                        end
-                        d_arm  = 1'b1;
-                        dstate = D_DISP;
+                            // 门房还没备齐 (池子空了), 或者刚备齐、号还没到手: **原地等**。
+                            // 请求由 `all_need_vld` 门控 (备齐那一拍才发), 空门房由 RTU
+                            // 自己的 `!tap_vld` 补上 —— 真 IDU 就是这么停 IR 级的。
+                            // `req_sent` 记住"这一拍真的发过请求", 下一拍才允许信采样锁存。
+                            al_arm   = 1'b1;
+                            req_sent = req_sent | all_need_vld;
+                            dstate   = D_REQ;
                         end
                     end
                     default: begin                     // D_DISP: 本拍把派遣摆在口上
@@ -1418,15 +1498,39 @@ module tb_rtu_rob;
                             cp_src[k]=pl_src[k];   cp_srcidx[k]=pl_srcidx[k];
                         end
                         commit_pending = 1'b1;
-                        if (disp_stall) begin
-                            pl_n = 0; dstate = D_IDLE; // stall 时不再往下发
-                        end else begin
-                            gen_plan();                // 下一份 (下一拍在 D_REQ 里请求)
-                            al_arm = 1'b1;             // ⚠️ 这里**也要**上膛!
-                            dstate = D_REQ;            //    流水式推进 (D_DISP→D_REQ) 时不经过
-                        end                            //    D_IDLE, 漏了这一行就会一直用**上一份**
+                        if (pl_n == 0 || (|acc_q)) begin
+                            // 这一份计划**完成**了: 要么本来就是空的 (gen_plan 会出
+                            // `n = rand%4 == 0`), 要么刚才那个 posedge 真的被接受了
+                            // (`acc_q` 就是那次接受位)。
+                            if (disp_stall) begin
+                                pl_n = 0; dstate = D_IDLE; // stall 时不再往下发
+                            end else begin
+                                gen_plan();            // 下一份 (下一拍在 D_REQ 里请求)
+                                al_arm = 1'b1;         // ⚠️ 这里**也要**上膛!
+                                dstate = D_REQ;        //    流水式推进 (D_DISP→D_REQ) 时不经过
+                            end                        //    D_IDLE, 漏了这一行就会一直用**上一份**
                                                        //    计划的编号 (踩过: 症状是反复拿同一个
                                                        //    早已变 ARCH 的编号, 一路顶到双份发出)
+                        end else begin
+                            // ⚠️ 2026-10-07 (门房握手): 还没被接受 (disp_stall 挡的)
+                            //    ⇒ **原地举着**。号已经取走了, 丢掉就漏 (年龄回收已删);
+                            //    真 IDU 也是带着号在 IS 里等的。
+                            //    不会死等: disp_stall 的每一项都会自己解除 (CSR 退休 /
+                            //    ROB 排空 / 冲刷走完); 真来冲刷的话, 上面那条
+                            //    `if (ren_flush)` 会把状态机整份重置 —— 号由池子一并清掉。
+                            //  ⚠️⚠️ 必须**先把接受位结算掉再重新上膛**: `acc_q` 会在下一个
+                            //    posedge 被覆盖成新的值, 不先记下来, 那些"真的接受了的"
+                            //    指令就永远进不了参考流 —— 症状是 DUT 的 ROB 占用数比参考流
+                            //    多、且差多少都不会自己回来, 紧接着参考流里没有它们 ⇒
+                            //    永远没有完成信号 ⇒ 死等 (一跑就是这个)。
+                            //    (走到这里 acc_q 必为 0, 所以这里记的是 0 条, 无害。)
+                            nd = 0;
+                            for (int k = 0; k < 3; k = k + 1) if (acc_q[k]) nd = nd + 1;
+                            dispatch_record(nd);
+                            commit_pending = 1'b0;
+                            d_arm  = 1'b1;             // 等的那几拍也要继续采接受位
+                            dstate = D_DISP;
+                        end
                     end
                 endcase
             end
@@ -1657,6 +1761,7 @@ module tb_rtu_rob;
             // 状态机推进 + 流水账。必须排在 check_cycle 之后: check_cycle 要在
             // dstate==D_DISP 那拍核对"摆上口的 vld"与 DUT 内部接受的 disp_acc 是否一致。
             disp_step();
+
 
             ref_retire();       // 本拍的退休 / 提交 / 冲刷
 

@@ -546,3 +546,33 @@ BEFORE
 <<<AFTER
     wire [2:0]  push_en = 3'b000;   // 变异: 不进队 (= 只发最老那条)
 AFTER
+
+### R08 rtu_alloc_tap_removed
+file:  mySoC/rtu/rtl/RTU_preg.v
+build: unit
+tests: rtu_unit
+note:  **2026-10-07 门房握手 (C910 式分配) 的回退变异**: 把 `rtu_preg_alloc*` /
+       `_vld*` 从"门口备着的寄存器"改回"本拍请求的组合输出" = 改造之前的行为。
+       ⚠️ 这条变异**功能上抓不住** (单元台与整核在两种实现下都能跑通) —— 它破坏的是
+       **结构**: 组合输出让 `_vld*` 成为本拍请求的函数, 而 C910 IDU 拿它当同拍许可
+       并反馈进自己的停顿链 (`ct_idu_ir_ctrl.sv:246-259`) ⇒ 组合环。
+       能测的只有它的**行为后果**: 组合输出在**没有请求的拍**上 vld 恒 0, 而那些拍上
+       池子通常还有几十个 FREE。判据就是单测台那条"备号"不变量:
+         "上一拍 FREE ≥ 1 ⇒ 本拍三路 alloc_vld 至少要备上 min(3, 上一拍 FREE) 路"。
+       实测: 默认种子下第一拍就红 (idle 拍 vld=000 而 FREE=61)。
+<<<BEFORE
+    assign rtu_preg_alloc0     = tap_num0;
+    assign rtu_preg_alloc1     = tap_num1;
+    assign rtu_preg_alloc2     = tap_num2;
+    assign rtu_preg_alloc_vld0 = tap_vld0;
+    assign rtu_preg_alloc_vld1 = tap_vld1;
+    assign rtu_preg_alloc_vld2 = tap_vld2;
+BEFORE
+<<<AFTER
+    assign rtu_preg_alloc0     = pop_num0;
+    assign rtu_preg_alloc1     = pop_num1;
+    assign rtu_preg_alloc2     = pop_num2;
+    assign rtu_preg_alloc_vld0 = pop_lane[0] & (|g_sel0);
+    assign rtu_preg_alloc_vld1 = pop_lane[1] & (|g_sel1);
+    assign rtu_preg_alloc_vld2 = pop_lane[2] & (|g_sel2);
+AFTER

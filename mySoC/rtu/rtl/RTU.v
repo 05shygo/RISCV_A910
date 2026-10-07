@@ -5,8 +5,11 @@
 // RTU — 退休单元顶层 (doc/rtu_plan_zh.md §5 / §6)
 //
 // 对外端口 = §6 契约的**逐字实现**, 一条不多一条不少。任何改动都要先改 §6。
-//   §6.0 物理寄存器分配握手 (两拍语义)   §6.1 输入   §6.2 输出
+//   §6.0 物理寄存器分配握手 (门房语义: 提前备号 / 当拍取走 / 取走即补)
+//   §6.1 输入   §6.2 输出
 //   §6.3 时序与边角约定 (冲刷时间线 / disp_stall 只依赖寄存器 / CSR 完成时机)
+//   ⚠️ 2026-10-07: §6.0 由"两拍语义"改成 C910 的门房语义, 目的是断开与 IDU
+//      停顿链之间的组合环 —— 见 doc/rtu_preg_alloc_plan_zh.md。
 //
 // 📌 **每个端口都有注释, 而且注释里顺带标了它属于哪条契约条目**
 //    (A1 读口 / A6b 的 ena 口径 / A6c 的 funct3 原样 / A6d 的 dst_lreg 给 0 /
@@ -21,7 +24,7 @@
 // 内部结构:
 //   RTU_ROB       表项阵列 + 独热创造指针 + read_entry 影子窗口 (D5) + 完成/解析匹配
 //   RTU_commit    判退级联 + 中断掩码 + 提交点副作用 (P1 链的后半段)
-//   RTU_preg      四态表 + WF_ALLOC 打拍 + 96 位三端口优先编码 + AMT
+//   RTU_preg      四态表 + 门房(tap)保持寄存器 + 96 位三端口优先编码 + AMT
 //   RTU_csr_slot  CSR 单槽 + 在途门控 (§4.3 的省资源项)
 //   RTU_expt      异常收集, 最旧者胜 (D9)
 //   RTU_flush     冲刷状态机 + 重定向分发 (D11)
@@ -31,23 +34,35 @@ module RTU (
     input  wire        cpu_clk,             // 时钟
     input  wire        cpu_rst,             // 复位, 高有效
 
-    // ===================== §6.0 物理寄存器分配握手 (两拍语义) =====================
+    // ===================== §6.0 物理寄存器分配握手 (门房语义, 2026-10-07) =========
     // 自由池与 96 位优先编码器都在 RTU 侧, 所以是"你要、我给"。车道语义**写死**:
     // `ren_preg_req = n` 表示**车道 0..n-1 是本次的请求者**, 车道 n..2 是 don't-care。
-    // 时序: T 拍你发请求 → RTU 当拍把编号放到 `rtu_preg_alloc*` (选中项进 WF_ALLOC);
-    // T+1 拍你把编号随指令下发, RTU 才把它推到 ALLOC。
-    // ⇒ **`rtu_preg_alloc*` 是给下一拍用的**, 同一拍内不要拿它再去组合 `disp_*`。
+    //
+    // 时序 = **C910 的"门房备号"** (`ct_rtu_pst_preg.v:7376-7393`):
+    //   * `rtu_preg_alloc*` / `_vld*` 都是**寄存器** —— 池子提前把一个号备在门口;
+    //   * 你**当拍取走**: 请求那一拍就把号用进 RAT / 随指令下发, RTU 在同一个边沿
+    //     给这一路补下一个号;
+    //   * `_vld* == 0` 表示这一路**这拍没有号可给** —— 你应当停住, 别用那个编号;
+    //   * 号在"备进门口"那一刻就出了自由池(WF_ALLOC), 派遣回来认领时才转 ALLOC,
+    //     **认领与取走相隔几拍不限**。
+    // ⇒ 与旧版(两拍: T 要 / T+1 用)的差别就是"号提前备好"。
+    //   旧写法让 `_vld*` 成了本拍请求的组合函数, 而消费者(IDU)拿它当同拍许可并
+    //   反馈进自己的停顿链 ⇒ 组合环。改成寄存器后环消失。
+    //   ⚠️ 消费者必须守一条契约: **请求 ⟺ 取走**。请求了却不派遣也不冲刷,
+    //      那个号会永久停在 WF_ALLOC (年龄回收已删)。C910 IDU 天然满足
+    //      (请求、RAT 写、进 IS 由同一个 `!ctrl_ir_stall` 门控)。
     input  wire [1:0]  ren_preg_req,        // 本拍要几个新 preg (0..3)
     input  wire [4:0]  ren_preg_req_lreg0,  // 请求 0 的 dst 逻辑寄存器 (判 x0 用)
     input  wire [4:0]  ren_preg_req_lreg1,  // 请求 1 的 —— lreg==0 的那一路不给编号
     input  wire [4:0]  ren_preg_req_lreg2,  // 请求 2 的
-    output wire [6:0]  rtu_preg_alloc0,     // 车道 0 分到的物理寄存器号
-    output wire [6:0]  rtu_preg_alloc1,     // 车道 1 分到的
-    output wire [6:0]  rtu_preg_alloc2,     // 车道 2 分到的
-    output wire        rtu_preg_alloc_vld0, // 车道 0 真的分到了 (lreg==0 或池子不够 -> 0)
+    output wire [6:0]  rtu_preg_alloc0,     // 车道 0 门口备着的号 (寄存器)
+    output wire [6:0]  rtu_preg_alloc1,     // 车道 1 门口备着的
+    output wire [6:0]  rtu_preg_alloc2,     // 车道 2 门口备着的
+    output wire        rtu_preg_alloc_vld0, // 车道 0 门口**备到了** (池子空 -> 0, 此时别用那个号)
     output wire        rtu_preg_alloc_vld1, // 车道 1 同上
     output wire        rtu_preg_alloc_vld2, // 车道 2 同上
     output wire [1:0]  rtu_preg_free_cnt,   // 剩余可用数, 饱和到 3 (3 == ">= 3")
+    //   ⚠️ 比"还能发出去多少"少 ≤3 —— 门口备着的那几个不在 FREE 里 (见 RTU_preg 末尾长注)
 
     // ===================== §6.1 派遣 (k = 0/1/2 = 程序序, 0 最老) =====================
     //
@@ -368,7 +383,6 @@ module RTU (
     wire [4:0]  ret_dst_lreg0, ret_dst_lreg1, ret_dst_lreg2;
     wire [6:0]  free_cnt;
     wire [223:0] amt_flat;
-    wire        preg_short;
 
     // =======================================================================
     // 派遣车道: 收口成程序序前缀 (§6 的硬约定 1; 允许少于 3 条, 不许跳号)
@@ -680,15 +694,24 @@ module RTU (
     assign rtu_ren_recover_map       = ren_recover_map;
 
     // =======================================================================
-    // 派遣停顿 —— 只依赖寄存器 (P8): ROB 占用计数、preg 空闲计数、CSR 在途、
+    // 派遣停顿 —— 只依赖寄存器 (P8): ROB 占用计数、CSR 在途、
     // 冲刷窗口、未决快路重定向 (D13)
+    //
+    // ⚠️ 2026-10-07 删掉了 `preg_short = (free_cnt < ren_preg_req)` 这一项。
+    //    它看着无害, 但配 C910 IDU 会绕出**第二条组合环**:
+    //        ren_preg_req ← IDU 的请求 ← ctrl_ir_stall ← ctrl_is_stall
+    //                     ← rtu_idu_rob_full ← rtu_disp_stall ← preg_short ← ren_preg_req
+    //    池子快见底时它还会**振荡** (preg_short=1 → 停 → 请求=0 → preg_short=0 → 放行 → …)。
+    //    C910 那侧不成立, 因为它的 `rtu_idu_rob_full` 是**寄存器** (`ct_rtu_rob.v:4479`)。
+    //    职责本来就重复: 该告诉消费者"这一路拿不到号"的是**每路的 alloc vld**
+    //    (RTU_preg 的 tap, 寄存器), 比"剩余总数"精确, 也不在环上。
+    //    ⚠️ 阶段 1 整核里 `ren_preg_req` 恒 0 ⇒ 这一项恒假 ⇒ 删它**行为一位不变**。
     // =======================================================================
-    assign preg_short = (free_cnt < {5'b0, ren_preg_req});
 
     // ⚠️ mispred_pend 是**寄存器** (见 RTU_flush) —— P8 要求这一项不许把
     //    beu_redirect_vld 组合进来 (那会造出"EX 控制锥 -> 前端捕获使能"的新长链,
     //    而 r3 的绑定路径正是 ex_csr_op -> U_ID_EX/*_reg/CE 那一族)。
-    assign rtu_disp_stall = rob_full | preg_short | csr_inflight | flushing | mispred_pend;
+    assign rtu_disp_stall = rob_full | csr_inflight | flushing | mispred_pend;
 
     // =======================================================================
     // 其余提交点副作用与 retire 计数
