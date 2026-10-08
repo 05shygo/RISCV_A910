@@ -794,13 +794,23 @@ parameter ROB_AW      = 6;       // log2(DEPTH)
 parameter IID_W       = 7;       // ROB_AW + 1 位回绕
 parameter DISP_W      = 3;       // 每拍派遣宽度 = 发射宽度
 parameter RETIRE_W    = 3;       // 每拍退休宽度
-parameter NUM_PREG    = 96;      // 物理寄存器数
-parameter PREG_W      = 7;       // log2(NUM_PREG)
+parameter NUM_PREG    = 96;      // 物理寄存器数 —— **构建期可配 64/96**, 见下
+parameter PREG_W      = 7;       // 编号位宽 —— **固定 7** (= log2(96)), 不随档变
 parameter ARCH_PREG   = 32;      // p0..p31 = x0..x31 初始映射, 永不释放
 parameter NUM_LREG    = 32;
 parameter CMPLT_PORTS = 5;       // ALU0/1/2 + BEU + MUL/DIV/LSU 汇总
 parameter FLUSH_LAT   = 1;       // 冲刷状态机拍数 (2026-10-02: F1/F2 合成一拍, 见 D11)
 ```
+
+> ⚠️ **2026-10-08: 物理寄存器数量改成构建期可配（`PREG=64|96`，默认 96）。**
+> 64 档是为了**不改同事交付的 C910 IDU**（它是 6 位 preg）而加的：只参数化
+> `RTU_preg` 内部的**池子**（数组/掩码/选择树/计数器常数），端口位宽与 ROB 表项位域
+> **固定取最大值 7 位** ⇒ 64 档下编号最高位恒 0，改配置不碰任何其它模块。
+> 完整说明、代价与验收见 `doc/rtu_preg_size_config_zh.md`。
+> ⚠️ 其中一条**与本文 §4 不变量 2 直接相关**：64 档的可用自由池只有 `64−32 = 32` 项，
+> 而 `ROB_DEPTH` 仍是 64 ⇒ **在途写寄存器指令被压在 32，64 项 ROB 填不满** ——
+> 正是下面不变量 2 批评参考核的那句话。64 档要长期用就得把 `RTU_ROB_DEPTH` 也降到 32
+> （本次没动，只记账）。
 
 **不变量**（写 RTL 时当断言用）：
 

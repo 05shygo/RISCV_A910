@@ -131,9 +131,12 @@ C910 开源交付里**没有**这 12 种几何（它由内存编译器生成，�
   却例化了名为 `32x54` 的宏 —— **宏容量大于实际使用**，`D/Q/WEN` 高位会被零扩展
   （写 0、读回来不用，无害）。C910 里也是"宏名 = 内存容量"这个惯例，
   所以模型按宏名给宽度是对的。已知、无害、记录在此。
-* **两个交付物彼此就没对上**：LSU 是 **96 preg / LSIQ 12 项**（与 `RTU_define.vh` 的
-  `RTU_NUM_PREG 96` / `RTU_PREG_W 7` 天然一致），而 IDU 是 **64 preg / LSIQ 8 项**。
-  用户已定案：**以我们这一代为准，IDU 扩到 96 / 7 位 + LSIQ 12 项**（Phase 2）。
+* **两个交付物彼此就没对上**：LSU 是 **96 preg / LSIQ 12 项**，而 IDU 是 **64 preg / LSIQ 8 项**。
+  ~~用户已定案：以我们这一代为准，IDU 扩到 96 / 7 位 + LSIQ 12 项（Phase 2）~~
+  ⚠️ **2026-10-08 改判**：**不动 IDU**，改由 RTU 提供 **64 档**
+  （`make ... PREG=64`，见 `doc/rtu_preg_size_config_zh.md`）—— 池子与 IDU 的 6 位 preg
+  同宽，IDU 一行不改；LSU 那侧仍是 96（它自己带 `ct_rtu_expand_96`，与 RTU 的 96 档同源）。
+  ⇒ "两个交付物谁迁就谁"这件事从"IDU 扩 96"翻成"RTU 可切 64"，代价与理由见那份文档 §3。
 
 ---
 
@@ -141,7 +144,7 @@ C910 开源交付里**没有**这 12 种几何（它由内存编译器生成，�
 
 | 阶段 | 内容 |
 |---|---|
-| Phase 2 | IDU 对齐到 96 preg / 7 位 + LSIQ 8→12 项（扫描面约 311 行 / 19 个文件） |
+| Phase 2 | ~~IDU 对齐到 96 preg / 7 位 + LSIQ 8→12 项~~ ⇒ **改判：不动 IDU，RTU 走 64 档**（`PREG=64`）。剩下的活只有"把 IDU 的 RAT 表项时钟接上"（见 `doc/rtu_preg_size_config_zh.md` 与 `doc/idu_rtu_接口待办.txt` §4） |
 | Phase 3 | 按 `rtu_plan_zh.md` §6.1 补三路派遣记录（pc/chk/flags/csr/dst_lreg/rf_we…）+ CSR 译码 + `chk` 随指令贯通重命名 |
 | Phase 4 | RTU↔IDU 适配层（C910 词汇 ↔ §6 词汇）+ RTU↔LSU 完成口 5/6 接线；`mycpu.v` 用开关让新旧 IDU 可切 |
 | Phase 5 | 多发射执行后端 + BIU/总线子系统（LSU 要 128 位 AXI 风格、三个主设备、外部仲裁）+ store 队列退休提交 |
