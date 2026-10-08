@@ -175,7 +175,7 @@ CROSS     ?= riscv32-unknown-elf-
 ASM_SRCS  := $(wildcard $(PWD)/asm/*.S)
 ASM_BINS  := $(patsubst $(PWD)/asm/%.S,$(PWD)/bin/%.bin,$(ASM_SRCS))
 
-.PHONY: all build run run-all verdi clean help coremark asm muldiv-unit rtu-unit rtu-lsu-unit
+.PHONY: all build run run-all verdi clean help coremark asm muldiv-unit rtu-unit rtu-lsu-unit rtu-adapter-unit
 
 asm: $(ASM_BINS)
 
@@ -539,6 +539,28 @@ LSU_UNIT_ARGS  ?=
 LSU_UNIT_DEFS  := +define+DCACHE_$(if $(filter 1024,$(DCACHE_SIZE)),1KB,$(if $(filter 4096,$(DCACHE_SIZE)),4KB,2KB))
 
 # ---------------------------------------------------------------------------
+# RTU 适配层单元台 (2026-10-08 立): 直接驱动 RTU_idu_lsu_adapter 两侧端口, 不经整核。
+# 它守的是适配层里**有真逻辑**的四类变换 (不是纯接线):
+#   请求计数 / 映射恢复表逐槽重排 / 异常两源取最旧 / store 重放两根来源。
+# 为什么单开: 这几条在整核 difftest 里只表现成"某条指令结果不对", 定位不到适配层;
+#   其中"恢复表逐槽重排"写成切低位也能跑过功能测试 (恢复表只在冲刷时用)。
+#
+#   make rtu-adapter-unit
+# ---------------------------------------------------------------------------
+RTU_ADP_BUILD := $(PWD)/obj_unit_rtu_adptr
+RTU_ADP_SIMV  := $(RTU_ADP_BUILD)/simv
+RTU_ADP_SRC   := $(wildcard $(PWD)/mySoC/rtu/rtl/*.v)
+RTU_ADP_HDR   := $(wildcard $(PWD)/mySoC/rtu/rtl/*.vh)
+RTU_ADP_TB    := $(PWD)/tb/unit/tb_rtu_adapter.sv
+
+rtu-adapter-unit: $(RTU_ADP_SIMV)
+	@$(RTU_ADP_SIMV) +vcs+lic+wait -exitstatus -l $(RTU_ADP_BUILD)/sim.log
+
+$(RTU_ADP_SIMV): $(RTU_ADP_SRC) $(RTU_ADP_HDR) $(RTU_ADP_TB)
+	@mkdir -p $(RTU_ADP_BUILD)
+	$(VCS) $(VCS_FLAGS) $(INC) -top tb_rtu_adapter -o $(RTU_ADP_SIMV) \
+	  $(RTU_ADP_SRC) $(RTU_ADP_TB)
+
 # RTU + LSU 联合单元台 (2026-10-08 立): 把两个交付物**真的连起来** elaborate
 #
 # 为什么要有它: 主构建里没有任何模块例化 ct_idu_top/lsu_top, 而两个冒烟台各连各的
