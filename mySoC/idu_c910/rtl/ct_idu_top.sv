@@ -701,7 +701,10 @@ ct_idu_ir_ctrl x_ct_idu_ir_ctrl (
   .ctrl_rt_inst2_vld                     (ctrl_rt_inst2_vld),
   .idu_rtu_ir_preg0_alloc_vld            (idu_rtu_ir_preg0_alloc_vld),//out
   .idu_rtu_ir_preg1_alloc_vld            (idu_rtu_ir_preg1_alloc_vld),//out
-  .idu_rtu_ir_preg2_alloc_vld            (idu_rtu_ir_preg2_alloc_vld)//out
+  .idu_rtu_ir_preg2_alloc_vld            (idu_rtu_ir_preg2_alloc_vld),//out
+  .ctrl_ir_pre_dis_sdiq_create1_en       (ctrl_ir_pre_dis_sdiq_create1_en),   // 2026-10-09 补: 原来只在 is_ctrl 那侧连了, 生产侧漏连 ⇒ 悬空 Z
+  .ctrl_ir_pre_dis_mult_create1_en       (ctrl_ir_pre_dis_mult_create1_en),
+  .ctrl_ir_pre_dis_div_create1_en        (ctrl_ir_pre_dis_div_create1_en)
 );
 
 // Instance 2: ct_idu_ir_dp

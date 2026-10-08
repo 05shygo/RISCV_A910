@@ -175,7 +175,7 @@ CROSS     ?= riscv32-unknown-elf-
 ASM_SRCS  := $(wildcard $(PWD)/asm/*.S)
 ASM_BINS  := $(patsubst $(PWD)/asm/%.S,$(PWD)/bin/%.bin,$(ASM_SRCS))
 
-.PHONY: all build run run-all verdi clean help coremark asm muldiv-unit rtu-unit rtu-lsu-unit rtu-adapter-unit iu-alu-unit iu-beu-unit iu-md-unit
+.PHONY: all build run run-all verdi clean help coremark asm muldiv-unit rtu-unit rtu-lsu-unit rtu-adapter-unit iu-alu-unit iu-beu-unit iu-md-unit rtu-subsys-elab
 
 asm: $(ASM_BINS)
 
@@ -597,6 +597,43 @@ $(IU_ALU_SIMV): $(IU_ALU_SRC) $(IU_ALU_TB)
 	@mkdir -p $(IU_ALU_BUILD)
 	$(VCS) $(VCS_FLAGS) $(INC) -top tb_iu_alu_pipe -o $(IU_ALU_SIMV) \
 	  $(IU_ALU_SRC) $(IU_ALU_TB)
+
+# RTU_subsys elaborate 体检 (2026-10-09 立): **RTU 与它所有对端的连线**。
+# 这一层把 RTU + IDU + LSU + 适配层 真的连起来 (生成自 scripts/gen_rtu_top.py),
+# 这个目标只做 elaborate + 查两类**静默错**的指纹:
+#   * `Error-` —— 端口/名字对不上;
+#   * `Warning-[IWNF]` (隐式线网没有驱动) —— **必须为 0**。
+#     ⚠️ 这条判据是有来历的: 交付的 IDU 里有 3 根 create1_en 只在消费侧连了、
+#        生产侧漏连 ⇒ 悬空 Z ⇒ 那三条队列的第二 create 口整个是死的,
+#        而"未声明且多位"那个扫描器**抓不到 1 位信号**, 只有 elaborate 能看见。
+#   * `PCWM-W` 允许 7 条已知且**有意**的 (PREG=64 下 RTU 7 位 → IDU 6 位的直连 ×4,
+#     交付内部 chk 字段 65→25 ×3); 多于 7 条会在下面提示。
+#
+#   make rtu-subsys-elab
+# ---------------------------------------------------------------------------
+SUBSYS_BUILD := $(PWD)/obj_subsys
+SUBSYS_LOG   := $(SUBSYS_BUILD)/elab.log
+
+rtu-subsys-elab:
+	@mkdir -p $(SUBSYS_BUILD)
+	# ⚠️ 必须先删增量目录: VCS 看到"设计没变"会直接回一句
+	#    "The design hasn't changed and need not be recompiled" 并**一条警告都不重发**,
+	#    于是下面的计数全是 0, 这个目标就成了永远绿的假检查。
+	#    (本机时钟偏移还会让 VCS 更爱走这条捷径, 见 memory `eda-env-csh-vcs`。)
+	@rm -rf $(SUBSYS_BUILD)/simv.daidir $(SUBSYS_BUILD)/simv
+	@$(VCS) $(VCS_FLAGS) $(INC) +define+RTU_PREG64 -top RTU_subsys \
+	  -o $(SUBSYS_BUILD)/simv $(VSRC) > $(SUBSYS_LOG) 2>&1 || true
+	@E=$$(grep -cE 'Error-\[' $(SUBSYS_LOG) || true); \
+	 W=$$(grep -cE 'Warning-\[IWNF\]' $(SUBSYS_LOG) || true); \
+	 P=$$(grep -A2 'Warning-\[PCWM-W\]' $(SUBSYS_LOG) | grep -c 'RTU_subsys.v' || true); \
+	 echo "  Error=$$E  IWNF(悬空线)=$$W  PCWM-W(位宽)=$$P"; \
+	 if [ "$$E" != "0" ]; then echo "  ❌ elaborate 失败, 见 $(SUBSYS_LOG)"; exit 1; fi; \
+	 if [ "$$W" != "0" ]; then \
+	   echo "  ❌ 有悬空线 —— 某个信号连了但没驱动 (症状是静默的, 见本目标的注释)"; \
+	   grep -A3 'Warning-\[IWNF\]' $(SUBSYS_LOG) | grep 'Implicit wire' | sort -u; exit 1; fi; \
+	 if [ "$$P" != "5" ]; then \
+	   echo "  ⚠️ RTU_subsys.v 里 PCWM-W = $$P, 预期 5 (PREG=64 下 RTU 7 位 → IDU 6 位的\n     有意直连: rtu_preg_raddr0/1/2 + rtu_csr_src_raddr + rtu_csr_rd_addr)"; fi; \
+	 echo "  ✅ RTU_subsys elaborate 通过 (RTU ↔ IDU/LSU 连线已接死)"
 
 # RTU 适配层单元台 (2026-10-08 立): 直接驱动 RTU_idu_lsu_adapter 两侧端口, 不经整核。
 # 它守的是适配层里**有真逻辑**的四类变换 (不是纯接线):
