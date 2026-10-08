@@ -92,7 +92,7 @@ module ct_lsu_sq_entry #(
     input  logic [IID_WIDTH-1:0]  st_dc_iid,
     input  logic [7:0]            st_dc_rot_sel_rev,
     input  logic [3:0]            st_dc_sdid,
-    input  logic                  st_dc_sdid_hit,
+ //   input  logic                  st_dc_sdid_hit,
     input  logic                  st_dc_secd,
     input  logic                  st_dc_sq_data_vld,
 
@@ -398,7 +398,7 @@ module ct_lsu_sq_entry #(
         if (!cpurst_b)
             sq_entry_st_data_sdid_hit <= 1'b0;
         else if (sq_entry_create_vld)
-            sq_entry_st_data_sdid_hit <= st_dc_sdid_hit;
+            sq_entry_st_data_sdid_hit <= 1'b0;//st_dc_sdid_hit;
         else if (sq_entry_vld && !sq_entry_data_vld)
             sq_entry_st_data_sdid_hit <= sq_entry_sdid_hit;
     end

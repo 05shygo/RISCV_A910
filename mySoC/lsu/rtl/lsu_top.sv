@@ -124,6 +124,9 @@ module lsu_top #(
 
   // LSU to IDU - Load queue status
   output logic [LSIQ_ENTRY-1:0]lsu_idu_imme_wakeup,
+  output logic                 lsu_idu_lsiq_pop_vld,
+  output logic                 lsu_idu_lsiq_pop0_vld,
+  output logic                 lsu_idu_lsiq_pop1_vld,
   output logic [LSIQ_ENTRY-1:0]lsu_idu_pop_entry,
   output logic [LSIQ_ENTRY-1:0]lsu_idu_secd,
 
@@ -214,6 +217,12 @@ assign lsu_idu_rb_full = ld_da_idu_rb_full[LSIQ_ENTRY-1:0] |
 logic [LSIQ_ENTRY-1:0]st_dc_idu_sq_full;
 assign lsu_idu_sq_full = st_dc_idu_sq_full[LSIQ_ENTRY-1:0];
 
+
+logic ld_da_idu_pop_vld;
+assign lsu_idu_lsiq_pop0_vld = ld_da_idu_pop_vld;
+logic st_da_idu_pop_vld;
+assign lsu_idu_lsiq_pop1_vld =st_da_idu_pop_vld;
+assign lsu_idu_lsiq_pop_vld = lsu_idu_lsiq_pop0_vld | lsu_idu_lsiq_pop1_vld;
 
 // Previously-implicit inter-module wires (declared at correct widths)
 logic                        dcache_arb_ld_ag_borrow_addr_vld;
@@ -335,7 +344,6 @@ logic [3:0] st_dc_rot_sel;
 logic st_dc_boundary;
 logic [31:0] st_dc_addr0;
 logic [3:0] st_dc_sdid;
-logic st_dc_sdid_hit;
 logic st_dc_sq_create_vld;
 logic st_dc_sq_create_dp_vld;
 logic st_dc_sq_create_gateclk_en;
@@ -912,6 +920,7 @@ lsu_ld_da #(
   .ld_da_cb_data_vld(ld_da_cb_data_vld),
   .ld_da_cb_data(ld_da_cb_data),
   .ld_da_idu_rb_full(ld_da_idu_rb_full),
+  .ld_da_idu_pop_vld(ld_da_idu_pop_vld),
   .ld_da_idu_pop_entry(ld_da_idu_pop_entry),
   .ld_da_idu_secd(ld_da_idu_secd),
   .ld_da_vb_borrow_vb(ld_da_vb_borrow_vb),
@@ -1136,6 +1145,7 @@ ct_lsu_st_da #(
   .st_da_dcache_replace_valid(st_da_dcache_replace_valid),
   .st_da_dcache_replace_way(st_da_dcache_replace_way),
   .st_da_dcache_way(st_da_dcache_way),
+  .st_da_idu_pop_vld(st_da_idu_pop_vld),
   .st_da_idu_pop_entry(st_da_idu_pop_entry),
   .st_da_idu_rb_full(st_da_idu_rb_full),
   .st_da_idu_secd(st_da_idu_secd),
@@ -1260,7 +1270,6 @@ ct_lsu_sq #(
   .st_dc_old(st_dc_old),
   .st_dc_rot_sel_rev(st_dc_rot_sel_rev),
   .st_dc_sdid(st_dc_sdid_oh),
-  .st_dc_sdid_hit(st_dc_sdid_hit),
   .st_dc_secd(st_dc_secd),
   .st_dc_sq_create_vld(st_dc_sq_create_vld),
   .st_dc_sq_data_vld(st_dc_sq_data_vld),

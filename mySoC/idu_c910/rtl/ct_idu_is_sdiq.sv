@@ -1,9 +1,9 @@
 module ct_idu_is_sdiq(
     input  logic         cpurst_b,
     input  logic         lsu_sdiq_has_in_sq_vld,
-    input  logic         lsu_sq_sdiq_unalign_vld,
+ //   input  logic         lsu_sq_sdiq_unalign_vld,
     input  logic [3:0]   lsu_sdiq_has_in_sq_sdiq,
-    input  logic [3:0]   lsu_sq_sdiq_unalign_sdiq,
+ //   input  logic [3:0]   lsu_sq_sdiq_unalign_sdiq,
     input  logic         ctrl_sdiq_create0_en,
     input  logic         ctrl_sdiq_create1_en,
     input  logic [7:0]   dp_sdiq_create0_data,
@@ -13,8 +13,8 @@ module ct_idu_is_sdiq(
     input  logic         iu_idu_ex2_pipe0_wb_preg_vld_dupx,
     input  logic [5:0]   iu_idu_ex2_pipe1_wb_preg_dupx,
     input  logic         iu_idu_ex2_pipe1_wb_preg_vld_dupx,
-    input  logic [11:0]  lsu_idu_ex1_sdiq_entry,
-    input  logic         lsu_idu_ex1_sdiq_pop_vld,
+  //  input  logic [11:0]  lsu_idu_ex1_sdiq_entry,
+ //   input  logic         lsu_idu_ex1_sdiq_pop_vld,
     input  logic [5:0]   lsu_idu_wb_pipe3_wb_preg_dupx,
     input  logic         lsu_idu_wb_pipe3_wb_preg_vld_dupx,
     input  logic         rtu_yy_xx_flush,
@@ -119,7 +119,7 @@ logic            sdiq_entry3_vld;
 
 // 其他
 logic [3:0]      lsu_sdiq_has_in_sq;
-logic [3:0]      lsu_sq_sdiq_unalign;
+//logic [3:0]      lsu_sq_sdiq_unalign;
 
 //----------------------------------------------------------------
 // 条目计数器
@@ -127,10 +127,10 @@ logic [3:0]      lsu_sq_sdiq_unalign;
 assign sdiq_entry_cnt_create[2:0]   = {2'b0, ctrl_sdiq_create0_en}
                                       + {2'b0, ctrl_sdiq_create1_en};
 
-assign sdiq_entry_cnt_pop[2:0]      = {2'b0, lsu_idu_ex1_sdiq_pop_vld};
+assign sdiq_entry_cnt_pop[2:0]      = {2'b0, sdiq_issue_en};
 
 assign sdiq_entry_cnt_updt_vld      = ctrl_sdiq_create0_en
-                                      || lsu_idu_ex1_sdiq_pop_vld;
+                                      || sdiq_issue_en;
 
 assign sdiq_entry_cnt_updt_val[2:0] = sdiq_entry_cnt[2:0]
                                       + sdiq_entry_cnt_create[2:0]
@@ -156,8 +156,8 @@ assign sdiq_entry_cnt_create_2 =  ctrl_sdiq_create1_en;
 assign sdiq_entry_cnt_create_1 =  ctrl_sdiq_create0_en && !ctrl_sdiq_create1_en;
 assign sdiq_entry_cnt_create_0 = !ctrl_sdiq_create0_en;
 
-assign sdiq_entry_cnt_pop_1    =  lsu_idu_ex1_sdiq_pop_vld;
-assign sdiq_entry_cnt_pop_0    = !lsu_idu_ex1_sdiq_pop_vld;
+assign sdiq_entry_cnt_pop_1    =  sdiq_issue_en;
+assign sdiq_entry_cnt_pop_0    = !sdiq_issue_en;
 
 assign sdiq_ctrl_full_updt     = (sdiq_entry_cnt[2:0] == 4'd2)
                                  && sdiq_entry_cnt_create_2
@@ -229,12 +229,12 @@ assign sdiq_entry_create_en[3:0] =
 // 准备创建信号
 //----------------------------------------------------------------
 assign sdiq_entry_create0_agevec[3:0] = sdiq_entry_vld[3:0]
-                                         & ~({4{lsu_idu_ex1_sdiq_pop_vld}}
-                                            & lsu_idu_ex1_sdiq_entry[3:0]);
+                                         & ~({4{sdiq_issue_en}}
+                                            & sdiq_dp_issue_entry[3:0]);
 
 assign sdiq_entry_create1_agevec[3:0] = sdiq_entry_vld[3:0]
-                                         & ~({4{lsu_idu_ex1_sdiq_pop_vld}}
-                                            & lsu_idu_ex1_sdiq_entry[3:0])
+                                         & ~({4{sdiq_issue_en}}
+                                            & sdiq_dp_issue_entry[3:0])
                                          | sdiq_entry_create0_in[3:0];
 
 //----------------------------------------------------------------
@@ -355,15 +355,15 @@ assign sdiq_dp_issue_read_data[SDIQ_WIDTH-1:0] =
 //            LSU Issue Queue Launch Control
 //==========================================================
 assign {sdiq_entry0_pop_other_entry[2:0],
-        sdiq_entry0_pop_cur_entry}          = lsu_idu_ex1_sdiq_entry[3:0];
+        sdiq_entry0_pop_cur_entry}          = sdiq_dp_issue_entry[3:0];
 assign {sdiq_entry1_pop_other_entry[2:1],
         sdiq_entry1_pop_cur_entry,
-        sdiq_entry1_pop_other_entry[0]}     = lsu_idu_ex1_sdiq_entry[3:0];
+        sdiq_entry1_pop_other_entry[0]}     = sdiq_dp_issue_entry[3:0];
 assign {sdiq_entry2_pop_other_entry[2],
         sdiq_entry2_pop_cur_entry,
-        sdiq_entry2_pop_other_entry[1:0]}   = lsu_idu_ex1_sdiq_entry[3:0];
+        sdiq_entry2_pop_other_entry[1:0]}   = sdiq_dp_issue_entry[3:0];
 assign {sdiq_entry3_pop_cur_entry,
-        sdiq_entry3_pop_other_entry[2:0]}   = lsu_idu_ex1_sdiq_entry[3:0];
+        sdiq_entry3_pop_other_entry[2:0]}   = sdiq_dp_issue_entry[3:0];
 
 //==========================================================
 //            LSU Issue Queue Create Control
@@ -371,7 +371,7 @@ assign {sdiq_entry3_pop_cur_entry,
 assign sdiq_src_reg_mask_update_vld = rtu_yy_xx_flush
                                       || ctrl_sdiq_create0_en
                                       || ctrl_sdiq_create1_en
-                                      || lsu_idu_ex1_sdiq_pop_vld;
+                                      || sdiq_issue_en;
 
 always @(posedge src_mask_clk or negedge cpurst_b)
 begin
@@ -409,19 +409,19 @@ assign idu_rtu_pst_preg_dealloc_mask[63:0] = sdiq_src0_preg_dealloc_mask[63:0];
 //             LSU Issue Queue Entry Instance
 //==========================================================
 assign lsu_sdiq_has_in_sq = {4{lsu_sdiq_has_in_sq_vld}} & lsu_sdiq_has_in_sq_sdiq[3:0];
-assign lsu_sq_sdiq_unalign = {4{lsu_sq_sdiq_unalign_vld}} & lsu_sq_sdiq_unalign_sdiq[3:0];
+//assign lsu_sq_sdiq_unalign = {4{lsu_sq_sdiq_unalign_vld}} & lsu_sq_sdiq_unalign_sdiq[3:0];
 
 // entry 0
 ct_idu_is_sdiq_entry u_ct_idu_is_sdiq_entry_0 (
     .cpurst_b                           (cpurst_b                           ),
     .lsu_sdiq_has_in_sq                 (lsu_sdiq_has_in_sq[0]              ),
-    .lsu_sq_sdiq_unalign                (lsu_sq_sdiq_unalign[0]             ),
+  //  .lsu_sq_sdiq_unalign                (lsu_sq_sdiq_unalign[0]             ),
     .forever_cpuclk                     (forever_cpuclk                     ),
     .iu_idu_ex2_pipe0_wb_preg_dupx      (iu_idu_ex2_pipe0_wb_preg_dupx      ),
     .iu_idu_ex2_pipe0_wb_preg_vld_dupx  (iu_idu_ex2_pipe0_wb_preg_vld_dupx  ),
     .iu_idu_ex2_pipe1_wb_preg_dupx      (iu_idu_ex2_pipe1_wb_preg_dupx      ),
     .iu_idu_ex2_pipe1_wb_preg_vld_dupx  (iu_idu_ex2_pipe1_wb_preg_vld_dupx  ),
-    .lsu_idu_ex1_sdiq_pop_vld           (lsu_idu_ex1_sdiq_pop_vld           ),
+    .lsu_idu_ex1_sdiq_pop_vld           (sdiq_issue_en           ),
     .lsu_idu_wb_pipe3_wb_preg_dupx      (lsu_idu_wb_pipe3_wb_preg_dupx      ),
     .lsu_idu_wb_pipe3_wb_preg_vld_dupx  (lsu_idu_wb_pipe3_wb_preg_vld_dupx  ),
     .rtu_yy_xx_flush                    (rtu_yy_xx_flush                    ),
@@ -442,13 +442,13 @@ ct_idu_is_sdiq_entry u_ct_idu_is_sdiq_entry_0 (
 ct_idu_is_sdiq_entry u_ct_idu_is_sdiq_entry_1 (
     .cpurst_b                           (cpurst_b                           ),
     .lsu_sdiq_has_in_sq                 (lsu_sdiq_has_in_sq[1]              ),
-    .lsu_sq_sdiq_unalign                (lsu_sq_sdiq_unalign[1]             ),
+  //  .lsu_sq_sdiq_unalign                (lsu_sq_sdiq_unalign[1]             ),
     .forever_cpuclk                     (forever_cpuclk                     ),
     .iu_idu_ex2_pipe0_wb_preg_dupx      (iu_idu_ex2_pipe0_wb_preg_dupx      ),
     .iu_idu_ex2_pipe0_wb_preg_vld_dupx  (iu_idu_ex2_pipe0_wb_preg_vld_dupx  ),
     .iu_idu_ex2_pipe1_wb_preg_dupx      (iu_idu_ex2_pipe1_wb_preg_dupx      ),
     .iu_idu_ex2_pipe1_wb_preg_vld_dupx  (iu_idu_ex2_pipe1_wb_preg_vld_dupx  ),
-    .lsu_idu_ex1_sdiq_pop_vld           (lsu_idu_ex1_sdiq_pop_vld           ),
+    .lsu_idu_ex1_sdiq_pop_vld           (sdiq_issue_en           ),
     .lsu_idu_wb_pipe3_wb_preg_dupx      (lsu_idu_wb_pipe3_wb_preg_dupx      ),
     .lsu_idu_wb_pipe3_wb_preg_vld_dupx  (lsu_idu_wb_pipe3_wb_preg_vld_dupx  ),
     .rtu_yy_xx_flush                    (rtu_yy_xx_flush                    ),
@@ -469,13 +469,13 @@ ct_idu_is_sdiq_entry u_ct_idu_is_sdiq_entry_1 (
 ct_idu_is_sdiq_entry u_ct_idu_is_sdiq_entry_2 (
     .cpurst_b                           (cpurst_b                           ),
     .lsu_sdiq_has_in_sq                 (lsu_sdiq_has_in_sq[2]              ),
-    .lsu_sq_sdiq_unalign                (lsu_sq_sdiq_unalign[2]             ),
+  //  .lsu_sq_sdiq_unalign                (lsu_sq_sdiq_unalign[2]             ),
     .forever_cpuclk                     (forever_cpuclk                     ),
     .iu_idu_ex2_pipe0_wb_preg_dupx      (iu_idu_ex2_pipe0_wb_preg_dupx      ),
     .iu_idu_ex2_pipe0_wb_preg_vld_dupx  (iu_idu_ex2_pipe0_wb_preg_vld_dupx  ),
     .iu_idu_ex2_pipe1_wb_preg_dupx      (iu_idu_ex2_pipe1_wb_preg_dupx      ),
     .iu_idu_ex2_pipe1_wb_preg_vld_dupx  (iu_idu_ex2_pipe1_wb_preg_vld_dupx  ),
-    .lsu_idu_ex1_sdiq_pop_vld           (lsu_idu_ex1_sdiq_pop_vld           ),
+    .lsu_idu_ex1_sdiq_pop_vld           (sdiq_issue_en           ),
     .lsu_idu_wb_pipe3_wb_preg_dupx      (lsu_idu_wb_pipe3_wb_preg_dupx      ),
     .lsu_idu_wb_pipe3_wb_preg_vld_dupx  (lsu_idu_wb_pipe3_wb_preg_vld_dupx  ),
     .rtu_yy_xx_flush                    (rtu_yy_xx_flush                    ),
@@ -496,13 +496,13 @@ ct_idu_is_sdiq_entry u_ct_idu_is_sdiq_entry_2 (
 ct_idu_is_sdiq_entry u_ct_idu_is_sdiq_entry_3 (
     .cpurst_b                           (cpurst_b                           ),
     .lsu_sdiq_has_in_sq                 (lsu_sdiq_has_in_sq[3]              ),
-    .lsu_sq_sdiq_unalign                (lsu_sq_sdiq_unalign[3]             ),
+ //   .lsu_sq_sdiq_unalign                (lsu_sq_sdiq_unalign[3]             ),
     .forever_cpuclk                     (forever_cpuclk                     ),
     .iu_idu_ex2_pipe0_wb_preg_dupx      (iu_idu_ex2_pipe0_wb_preg_dupx      ),
     .iu_idu_ex2_pipe0_wb_preg_vld_dupx  (iu_idu_ex2_pipe0_wb_preg_vld_dupx  ),
     .iu_idu_ex2_pipe1_wb_preg_dupx      (iu_idu_ex2_pipe1_wb_preg_dupx      ),
     .iu_idu_ex2_pipe1_wb_preg_vld_dupx  (iu_idu_ex2_pipe1_wb_preg_vld_dupx  ),
-    .lsu_idu_ex1_sdiq_pop_vld           (lsu_idu_ex1_sdiq_pop_vld           ),
+    .lsu_idu_ex1_sdiq_pop_vld           (sdiq_issue_en           ),
     .lsu_idu_wb_pipe3_wb_preg_dupx      (lsu_idu_wb_pipe3_wb_preg_dupx      ),
     .lsu_idu_wb_pipe3_wb_preg_vld_dupx  (lsu_idu_wb_pipe3_wb_preg_vld_dupx  ),
     .rtu_yy_xx_flush                    (rtu_yy_xx_flush                    ),

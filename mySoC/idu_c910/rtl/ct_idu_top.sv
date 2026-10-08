@@ -80,12 +80,8 @@ module ct_idu_top(
   //==========================================================
   // Interface with LSU - SDIQ control
   //==========================================================
-  input  logic [11:0]  lsu_idu_ex1_sdiq_entry,
-  input  logic         lsu_idu_ex1_sdiq_pop_vld,
   input  logic         lsu_sdiq_has_in_sq_vld,
   input  logic [3:0]   lsu_sdiq_has_in_sq_sdiq,
-  input  logic         lsu_sq_sdiq_unalign_vld,
-  input  logic [3:0]   lsu_sq_sdiq_unalign_sdiq,
 
   //==========================================================
   // Output to AIQ (ALU Issue Queue)
@@ -859,8 +855,6 @@ ct_idu_is_lsiq x_ct_idu_is_lsiq (
 ct_idu_is_sdiq x_ct_idu_is_sdiq (
   .cpurst_b                              (cpurst_b),
   .lsu_sdiq_has_in_sq_vld                (lsu_sdiq_has_in_sq_vld),//in
-  .lsu_sq_sdiq_unalign_vld               (lsu_sq_sdiq_unalign_vld),//in
-  .lsu_sdiq_has_in_sq_sdiq               (lsu_sdiq_has_in_sq_sdiq),
   .lsu_sq_sdiq_unalign_sdiq              (lsu_sq_sdiq_unalign_sdiq),
   .ctrl_sdiq_create0_en                              (ctrl_sdiq_create0_en),
   .ctrl_sdiq_create1_en                              (ctrl_sdiq_create1_en),
@@ -871,8 +865,6 @@ ct_idu_is_sdiq x_ct_idu_is_sdiq (
   .iu_idu_ex2_pipe0_wb_preg_vld_dupx                              (iu_idu_ex2_pipe0_wb_preg_vld_dupx),
   .iu_idu_ex2_pipe1_wb_preg_dupx                              (iu_idu_ex2_pipe1_wb_preg_dupx),
   .iu_idu_ex2_pipe1_wb_preg_vld_dupx                              (iu_idu_ex2_pipe1_wb_preg_vld_dupx),
-  .lsu_idu_ex1_sdiq_entry                (lsu_idu_ex1_sdiq_entry),//in
-  .lsu_idu_ex1_sdiq_pop_vld              (lsu_idu_ex1_sdiq_pop_vld),//in
   .lsu_idu_wb_pipe3_wb_preg_dupx                              (lsu_idu_wb_pipe3_wb_preg_dupx),
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx                              (lsu_idu_wb_pipe3_wb_preg_vld_dupx),
   .rtu_yy_xx_flush                              (rtu_yy_xx_flush),

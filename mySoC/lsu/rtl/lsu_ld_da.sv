@@ -106,6 +106,7 @@ module lsu_ld_da #(
     output logic [127:0]                  ld_da_cb_data,
 
     output logic [LSIQ_ENTRY-1:0]         ld_da_idu_rb_full,
+    output logic                          ld_da_idu_pop_vld,
     output logic [LSIQ_ENTRY-1:0]         ld_da_idu_pop_entry,
     output logic [LSIQ_ENTRY-1:0]         ld_da_idu_secd,
     output logic                          ld_da_vb_borrow_vb,
@@ -172,7 +173,7 @@ logic                          ld_da_rb_full_req;
 logic                          ld_da_other_discard_sq_req;
 logic                          ld_da_data_discard_sq_req;
 logic                          ld_da_rb_full_vld;
-logic                          ld_da_idu_pop_vld;
+
 logic                          ld_da_idu_secd_vld;
 
 logic [127:0]                  sq_ld_da_fwd_data_128;

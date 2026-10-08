@@ -35,7 +35,7 @@ module ct_idu_is_sdiq_entry (
   // Store Queue 状态
   //==========================================================
   input  logic         lsu_sdiq_has_in_sq,
-  input  logic         lsu_sq_sdiq_unalign,
+ // input  logic         lsu_sq_sdiq_unalign,
 
   //==========================================================
   // 写端口（来自 IU/LSU 的物理寄存器回写）
@@ -135,8 +135,8 @@ begin
     has_in_sq <= 1'b0;
   else if(lsu_sdiq_has_in_sq)
     has_in_sq <= 1'b1;
-  else if(lsu_sq_sdiq_unalign)
-    has_in_sq <= 1'b0;
+//  else if(lsu_sq_sdiq_unalign)
+//    has_in_sq <= 1'b0;
   else
     has_in_sq <= has_in_sq;
 end

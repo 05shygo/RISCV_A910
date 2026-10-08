@@ -219,7 +219,7 @@ assign st_dc_dcwp_hit_idx = 1'b0;
     assign st_dc_idu_sq_full[LSIQ_ENTRY-1:0] = {LSIQ_ENTRY{st_dc_sq_full_vld}} &
                                                  st_dc_mask_lsid[LSIQ_ENTRY-1:0];
 
-    assign lsu_idu_has_in_sq[SDIQ_ENTRY-1:0] = {SDIQ_ENTRY{st_dc_sq_create_vld & !sq_st_dc_full}} &
+    assign lsu_idu_has_in_sq[SDIQ_ENTRY-1:0] = {SDIQ_ENTRY{st_dc_sq_create_vld & (!st_dc_boundary | st_dc_secd) & !sq_st_dc_full}} &
                                                 st_dc_sdid_oh[SDIQ_ENTRY-1:0];
                                        
 

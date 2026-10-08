@@ -57,6 +57,7 @@ module ct_lsu_st_da #(
   output logic         st_da_dcache_replace_valid,
   output logic         st_da_dcache_replace_way,
   output logic         st_da_dcache_way,
+  output logic         st_da_idu_pop_vld,
   output logic [LSIQ_ENTRY-1:0] st_da_idu_pop_entry,
   output logic [LSIQ_ENTRY-1:0] st_da_idu_rb_full,
   output logic [LSIQ_ENTRY-1:0] st_da_idu_secd,
