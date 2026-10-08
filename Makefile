@@ -606,6 +606,11 @@ $(IU_ALU_SIMV): $(IU_ALU_SRC) $(IU_ALU_TB)
 #
 #   make rtu-adapter-unit
 # ---------------------------------------------------------------------------
+# ⚠️ 这个台**固定按 PREG=64 编译**: 适配层是给同事交付的 C910 IDU 用的,
+#    而那个 IDU 的 PRF 是 **64 项 / 6 位**; 适配层里有一条配置自检
+#    (`RTU_NUM_PREG > (1 << IDU_PREG_W)` ⇒ elaborate 失败) —— 用默认的 96 档跑,
+#    自检**会正确地报错**, 那不是在提示台子坏了, 是在提示"96 档得先扩 IDU 的 PRF"。
+RTU_ADP_PREG_DEFS := +define+RTU_PREG64
 RTU_ADP_BUILD := $(PWD)/obj_unit_rtu_adptr
 RTU_ADP_SIMV  := $(RTU_ADP_BUILD)/simv
 RTU_ADP_SRC   := $(wildcard $(PWD)/mySoC/rtu/rtl/*.v)
@@ -617,7 +622,7 @@ rtu-adapter-unit: $(RTU_ADP_SIMV)
 
 $(RTU_ADP_SIMV): $(RTU_ADP_SRC) $(RTU_ADP_HDR) $(RTU_ADP_TB)
 	@mkdir -p $(RTU_ADP_BUILD)
-	$(VCS) $(VCS_FLAGS) $(INC) -top tb_rtu_adapter -o $(RTU_ADP_SIMV) \
+	$(VCS) $(VCS_FLAGS) $(INC) $(RTU_ADP_PREG_DEFS) -top tb_rtu_adapter -o $(RTU_ADP_SIMV) \
 	  $(RTU_ADP_SRC) $(RTU_ADP_TB)
 
 # RTU + LSU 联合单元台 (2026-10-08 立): 把两个交付物**真的连起来** elaborate
