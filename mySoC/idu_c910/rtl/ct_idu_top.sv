@@ -12,11 +12,12 @@ module ct_idu_top(
   input  logic         ifu_idu_ib_inst1_vld,
   input  logic         ifu_idu_ib_inst2_vld,
   input  logic [96:0]  ifu_idu_ib_inst0_data,
+  input  logic [24:0]  ifu_idu_if_inst0_chk,
   input  logic [96:0]  ifu_idu_ib_inst1_data,
+  input  logic [24:0]  ifu_idu_if_inst1_chk,
   input  logic [96:0]  ifu_idu_ib_inst2_data,
-  output logic         idu_ifu_inst0_ready,
-  output logic         idu_ifu_inst1_ready,
-  output logic         idu_ifu_inst2_ready,
+  input  logic [24:0]  ifu_idu_if_inst2_chk,
+  output logic [1:0]   idu_accept_num,
 
   //==========================================================
   // Interface with RTU (Retire Unit)
@@ -165,12 +166,18 @@ module ct_idu_top(
   output logic [5:0]   idu_biq_dst_preg,
   output logic         idu_biq_taken,
   output logic [31:0]  idu_biq_npc,
-  output logic [31:0]  idu_biq_pc
+  output logic [31:0]  idu_biq_pc,
+  output logic [24:0]  idu_biq_chk
 );
 
 //==========================================================
 // Internal Signal Declarations
 //==========================================================
+logic         idu_ifu_inst0_ready;
+logic         idu_ifu_inst1_ready;
+logic         idu_ifu_inst2_ready;
+logic  [1:0]  idu_accept_num;
+assign idu_accept_num[1:0] = {idu_ifu_inst2_ready | idu_ifu_inst0_ready, idu_ifu_inst2_ready};
 
 // ID Stage signals
 logic        id_inst0_vld;
@@ -178,8 +185,11 @@ logic        id_inst1_vld;
 logic        id_inst2_vld;
 logic        ctrl_dp_id_stall;
 logic [121:0] dp_id_pipedown_inst0_data;
+logic [24:0]  dp_id_pipedown_inst0_chk;
 logic [121:0] dp_id_pipedown_inst1_data;
+logic [24:0]  dp_id_pipedown_inst1_chk;
 logic [121:0] dp_id_pipedown_inst2_data;
+logic [24:0]  dp_id_pipedown_inst2_chk;
 
 // IR Stage control signals
 logic        ctrl_ir_stall;
@@ -211,12 +221,16 @@ logic        dp_ctrl_ir_inst0_illegal;
 logic        dp_ctrl_ir_inst1_illegal;
 logic        dp_ctrl_ir_inst2_illegal;
 logic [96:0] crtl_ir_inst2_data;
+logic [24:0] crtl_ir_inst2_chk;
 logic [82:0] dp_ir_inst0_data;
 logic [64:0] dp_ir_inst0_pc;
+logic [24:0] dp_ir_inst0_chk;
 logic [82:0] dp_ir_inst1_data;
 logic [64:0] dp_ir_inst1_pc;
+logic [24:0] dp_ir_inst1_chk;
 logic [82:0] dp_ir_inst2_data;
 logic [64:0] dp_ir_inst2_pc;
+logic [24:0] dp_ir_inst2_chk;
 
 // Rename table signals
 logic [4:0]  dp_rt_inst0_src0_reg;
@@ -294,6 +308,24 @@ logic        ctrl_sdiq_create2_en;
 logic [1:0]  ctrl_sdiq_create0_sel;
 logic [1:0]  ctrl_sdiq_create1_sel;
 logic [1:0]  ctrl_sdiq_create2_sel;
+
+// IS Stage create data signals
+logic [63:0]  dp_aiq_create0_data;
+logic [63:0]  dp_aiq_create1_data;
+logic [151:0] dp_biq_create0_data;
+logic [151:0] dp_biq_create1_data;
+logic [67:0]  dp_lsiq_create0_data;
+logic [67:0]  dp_lsiq_create1_data;
+logic [7:0]   dp_sdiq_create0_data;
+logic [7:0]   dp_sdiq_create1_data;
+logic [62:0]  dp_mult_create0_data;
+logic [62:0]  dp_mult_create1_data;
+logic [62:0]  dp_div_create0_data;
+logic [62:0]  dp_div_create1_data;
+logic [6:0]   dp_ctrl_is_dis_inst2_ctrl_info;
+logic         dp_ctrl_is_inst0_dst_vld;
+logic         dp_ctrl_is_inst1_dst_vld;
+logic         dp_ctrl_is_inst2_dst_vld;
 
 // AIQ (ALU Issue Queue) signals
 logic        ctrl_aiq_rf_pop_vld;
@@ -422,15 +454,22 @@ ct_idu_id_dp u_ct_idu_id_dp (
     
     // 从 IFU 输入的数据 (97 bits x 3)
     .ifu_idu_ib_inst0_data     (ifu_idu_ib_inst0_data    ),//in
+    .ifu_idu_if_inst0_chk       (ifu_idu_if_inst0_chk),
     .ifu_idu_ib_inst1_data     (ifu_idu_ib_inst1_data    ),//in
+    .ifu_idu_if_inst1_chk       (ifu_idu_if_inst1_chk),
     .ifu_idu_ib_inst2_data     (ifu_idu_ib_inst2_data    ),//in
+    .ifu_idu_if_inst2_chk       (ifu_idu_if_inst2_chk),
     .rtu_yy_xx_flush           (rtu_yy_xx_flush          ),
     .crtl_ir_inst2_data         (crtl_ir_inst2_data),
+    .crtl_ir_inst2_chk          (crtl_ir_inst2_chk),
     
     // 向下游流水线输出的数据 (122 bits x 3)
     .dp_id_pipedown_inst0_data (dp_id_pipedown_inst0_data),
+    .dp_id_pipedown_inst0_chk   (dp_id_pipedown_inst0_chk),
     .dp_id_pipedown_inst1_data (dp_id_pipedown_inst1_data),
-    .dp_id_pipedown_inst2_data (dp_id_pipedown_inst2_data)
+    .dp_id_pipedown_inst1_chk   (dp_id_pipedown_inst1_chk),
+    .dp_id_pipedown_inst2_data (dp_id_pipedown_inst2_data),
+    .dp_id_pipedown_inst2_chk   (dp_id_pipedown_inst2_chk)
 );
 
 
@@ -496,9 +535,13 @@ ct_idu_ir_dp x_ct_idu_ir_dp (
   .forever_clk                           (forever_cpuclk),   // 该模块端口名就是 forever_clk
   .ctrl_ir_stall                         (ctrl_ir_stall),
   .crtl_ir_inst2_data                    (crtl_ir_inst2_data),
+  .crtl_ir_inst2_chk                     (crtl_ir_inst2_chk),  
   .dp_id_pipedown_inst0_data             (dp_id_pipedown_inst0_data),
+  .dp_id_pipedown_inst0_chk               (dp_id_pipedown_inst0_chk),
   .dp_id_pipedown_inst1_data             (dp_id_pipedown_inst1_data),
+  .dp_id_pipedown_inst1_chk               (dp_id_pipedown_inst1_chk),
   .dp_id_pipedown_inst2_data             (dp_id_pipedown_inst2_data),
+  .dp_id_pipedown_inst2_chk               (dp_id_pipedown_inst2_chk),
   .rt_dp_inst0_rel_preg                  (rt_dp_inst0_rel_preg),
   .rt_dp_inst0_src0_data                 (rt_dp_inst0_src0_data),
   .rt_dp_inst0_src1_data                 (rt_dp_inst0_src1_data),
@@ -524,8 +567,14 @@ ct_idu_ir_dp x_ct_idu_ir_dp (
   .dp_ctrl_ir_inst2_dst_vld              (dp_ctrl_ir_inst2_dst_vld),
   .dp_ctrl_ir_inst2_dst_x0               (dp_ctrl_ir_inst2_dst_x0),
   .dp_ir_inst0_data                              (dp_ir_inst0_data),
+  .dp_ir_inst0_pc                           (dp_ir_inst0_pc),
+  .dp_ir_inst0_chk                        (dp_ir_inst0_chk),
   .dp_ir_inst1_data                              (dp_ir_inst1_data),
+  .dp_ir_inst1_pc                           (dp_ir_inst1_pc),
+  .dp_ir_inst1_chk                        (dp_ir_inst1_chk),
   .dp_ir_inst2_data                              (dp_ir_inst2_data),
+  .dp_ir_inst2_pc                           (dp_ir_inst2_pc),
+  .dp_ir_inst2_chk                        (dp_ir_inst2_chk),
   .dp_rt_inst0_dst_preg                  (dp_rt_inst0_dst_preg),
   .dp_rt_inst0_dst_reg                   (dp_rt_inst0_dst_reg),
   .dp_rt_inst0_dst_vld                   (dp_rt_inst0_dst_vld),
@@ -698,8 +747,14 @@ ct_idu_is_dp x_ct_idu_is_dp (
   .cpurst_b                              (cpurst_b),
   .dp_ctrl_is_dis_inst2_ctrl_info       (dp_ctrl_is_dis_inst2_ctrl_info),
   .dp_ir_inst0_data                              (dp_ir_inst0_data),
+  .dp_ir_inst0_pc                           (dp_ir_inst0_pc),
+  .dp_ir_inst0_chk                        (dp_ir_inst0_chk),
   .dp_ir_inst1_data                              (dp_ir_inst1_data),
+  .dp_ir_inst1_pc                           (dp_ir_inst1_pc),
+  .dp_ir_inst1_chk                        (dp_ir_inst1_chk),
   .dp_ir_inst2_data                              (dp_ir_inst2_data),
+  .dp_ir_inst2_pc                           (dp_ir_inst1_pc),
+  .dp_ir_inst2_chk                        (dp_ir_inst2_chk),
   .rtu_idu_rob_inst0_iid                              (rtu_idu_rob_inst0_iid),//in
   .rtu_idu_rob_inst1_iid                              (rtu_idu_rob_inst1_iid),//in
   .rtu_idu_rob_inst2_iid                              (rtu_idu_rob_inst2_iid),//in
@@ -1014,7 +1069,8 @@ ct_idu_rf_dp x_ct_idu_rf_dp (
   .idu_biq_dst_preg                        (idu_biq_dst_preg),//out
   .idu_biq_taken                        (idu_biq_taken),//out
   .idu_biq_npc                        (idu_biq_npc),//out
-  .idu_biq_pc                        (idu_biq_pc)//out
+  .idu_biq_pc                        (idu_biq_pc),//out
+  .idu_biq_chk                        (idu_biq_chk)//out
 );
 
 // Instance 11: ct_idu_rf_prf_pregfile

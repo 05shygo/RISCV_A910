@@ -111,7 +111,7 @@ module ct_idu_rf_dp (
   //==========================================================
   // Pipe6: BIQ
   //==========================================================
-  input  logic [126:0]   biq_dp_issue_read_data,
+  input  logic [151:0]   biq_dp_issue_read_data,
   input  logic           biq_xx_issue_en,
   input  logic [31:0]    prf_dp_rf_pipe6_src0_data,
   input  logic [31:0]    prf_dp_rf_pipe6_src1_data,
@@ -126,7 +126,8 @@ module ct_idu_rf_dp (
   output logic [5:0]     idu_biq_dst_preg,   // [BIQ_DST_PREG : -5] 共 6 bit
   output logic           idu_biq_taken,      // [BIQ_PC] 单 bit
   output logic [31:0]    idu_biq_npc,        // [BIQ_PC-1  : BIQ_PC-32]
-  output logic [31:0]    idu_biq_pc          // [BIQ_PC-33 : BIQ_PC-64]
+  output logic [31:0]    idu_biq_pc,          // [BIQ_PC-33 : BIQ_PC-64]
+  output logic [24:0]    idu_biq_chk
 );
 
 //==========================================================
@@ -149,7 +150,8 @@ parameter AIQ_OPCODE            = 31;
 //----------------------------------------------------------
 //                    BIQ Parameters
 //----------------------------------------------------------
-parameter BIQ_WIDTH             = 127;
+parameter BIQ_WIDTH             = 152;
+parameter BIQ_CHK               = 151;
 parameter BIQ_PC                = 126;
 parameter BIQ_IID               = 61;
 parameter BIQ_DST_PREG          = 54;
@@ -757,13 +759,13 @@ assign idu_lsu_rf_pipe5_src0[31:0]      = rf_pipe5_src0_data[31:0];
 always @(posedge forever_cpuclk or negedge cpurst_b)
 begin
   if(!cpurst_b) begin
-    rf_pipe6_data[AIQ_WIDTH-1:0] <= {AIQ_WIDTH{1'b0}};
+    rf_pipe6_data[BIQ_WIDTH-1:0] <= {BIQ_WIDTH{1'b0}};
   end
   else if(biq_xx_issue_en) begin
-    rf_pipe6_data[AIQ_WIDTH-1:0] <= biq_dp_issue_read_data[AIQ_WIDTH-1:0];
+    rf_pipe6_data[BIQ_WIDTH-1:0] <= biq_dp_issue_read_data[BIQ_WIDTH-1:0];
   end
   else begin
-    rf_pipe6_data[AIQ_WIDTH-1:0] <= rf_pipe6_data[AIQ_WIDTH-1:0];
+    rf_pipe6_data[BIQ_WIDTH-1:0] <= rf_pipe6_data[BIQ_WIDTH-1:0];
   end
 end
 
@@ -817,6 +819,7 @@ assign rf_pipe6_src1_data[31:0] = prf_dp_rf_pipe6_src1_data[31:0];
 //----------------------------------------------------------
 //                Output to Execution Units
 //----------------------------------------------------------
+assign idu_biq_chk[24:0]     = rf_pipe6_data[BIQ_CHK:BIQ_CHK-24];
 assign idu_biq_iid[6:0]      = rf_pipe6_data[BIQ_IID:BIQ_IID-6];
 assign idu_biq_src0[31:0]    = rf_pipe6_src0_data[31:0];
 assign idu_biq_src1[31:0]    = rf_pipe6_src1_data[31:0];

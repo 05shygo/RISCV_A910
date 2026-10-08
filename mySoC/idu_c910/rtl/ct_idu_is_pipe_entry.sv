@@ -16,9 +16,11 @@ module ct_idu_is_pipe_entry (
   input  logic         rtu_yy_xx_flush,
   input  logic [82:0]  x_create_data,
   input  logic [64:0]  x_create_pc,
+  input  logic [24:0]  x_create_chk,
   input  logic         x_create_dp_en,
   output logic [82:0]  x_read_data,
-  output logic [64:0]  x_read_pc
+  output logic [64:0]  x_read_pc,
+  output logic [24:0]  x_read_chk
 );
 
 //==========================================================
@@ -96,21 +98,24 @@ begin
     entry_dst_rel_preg[6:0]  <= entry_dst_rel_preg[6:0];
   end
 end
-
+logic [24:0] entry_chk;
 always @(posedge forever_cpuclk or negedge cpurst_b)
 begin
   if(!cpurst_b) begin
     entry_pc[64:0]       <= 65'b0;
+    entry_chk[24:0]      <= 25'b0;
   end
   else if(x_create_dp_en) begin
     entry_pc[64:0]       <= x_create_pc[64:0];
+    entry_chk[24:0]      <= x_create_chk[24:0];
   end
   else begin
     entry_pc[64:0]       <= entry_pc[64:0];
+    entry_chk[24:0]      <= entry_chk[24:0];
   end
 end
 assign x_read_pc[64:0] = entry_pc[64:0];
-
+assign x_read_chk[24:0]=entry_chk[24:0];
 always @(posedge forever_cpuclk or negedge cpurst_b)
 begin
   if(!cpurst_b) begin

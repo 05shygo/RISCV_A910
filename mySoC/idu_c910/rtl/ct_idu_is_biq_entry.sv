@@ -10,20 +10,21 @@ module ct_idu_is_biq_entry (
     input  logic         lsu_idu_wb_pipe3_wb_preg_vld_dupx,
     input  logic         rtu_yy_xx_flush,
     input  logic [2:0]   x_create_agevec,
-    input  logic [126:0] x_create_data,
+    input  logic [151:0] x_create_data,
     input  logic         x_create_en,
     input  logic         x_pop_cur_entry,
     input  logic [2:0]   x_pop_other_entry,
     output logic         x_rdy,
     output logic [2:0]   x_agevec,
-    output logic [126:0] x_read_data,
+    output logic [151:0] x_read_data,
     output logic         x_vld
 );
 
     //==========================================================
     //                       Parameters
     //==========================================================
-parameter BIQ_WIDTH             = 127;
+parameter BIQ_WIDTH             = 152;
+parameter BIQ_CHK               = 151
 parameter BIQ_PC                = 126;
 parameter BIQ_IID               = 61;
 parameter BIQ_DST_PREG          = 54;
@@ -110,6 +111,7 @@ parameter BIQ_OPCODE            = 31;
             dst_vld       <= 1'b0;
             dst_preg[5:0] <= 6'b0;  // 补齐后此处不再报错
             pc[64:0]      <= 65'b0; // 补齐后此处不再报错
+            chk[24:0]     <= 25'b0;
         end
         else if (x_create_en) begin
             opcode[31:0]  <= x_create_data[BIQ_OPCODE:BIQ_OPCODE-31];
@@ -119,6 +121,7 @@ parameter BIQ_OPCODE            = 31;
             dst_vld       <= x_create_data[BIQ_DST_VLD];
             dst_preg[5:0] <= x_create_data[BIQ_DST_PREG:BIQ_DST_PREG-5];
             pc[64:0]      <= x_create_data[BIQ_PC:BIQ_PC-64];
+            chk[24:0]     <= x_create_data[BIQ_CHK:BIQ_CHK-24];
         end
         else begin
             opcode[31:0]  <= opcode[31:0];
@@ -128,6 +131,7 @@ parameter BIQ_OPCODE            = 31;
             dst_vld       <= dst_vld;
             dst_preg[5:0] <= dst_preg[5:0];
             pc[64:0]      <= pc[64:0];
+            chk[24:0]     <= chk[24:0];
         end
     end
 
@@ -139,6 +143,7 @@ parameter BIQ_OPCODE            = 31;
     assign x_read_data[BIQ_DST_VLD]                  = dst_vld;
     assign x_read_data[BIQ_DST_PREG:BIQ_DST_PREG-5]  = dst_preg[5:0];
     assign x_read_data[BIQ_PC:BIQ_PC-64]             = pc[64:0];
+    assign x_read_data[BIQ_CHK:BIQ_PC-CHK]           = chk[24:0];
 
     //==========================================================
     //              Source Dependency Information

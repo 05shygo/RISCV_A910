@@ -5,7 +5,7 @@ module ct_idu_is_biq (
   output logic         biq_ctrl_1_left_updt,
   output logic         biq_ctrl_full_updt,
   output logic         biq_xx_issue_en,
-  output logic [62:0]  biq_dp_issue_read_data,
+  output logic [151:0] biq_dp_issue_read_data,
 
   //----------------------------------------------------------------------------
   // Inputs
@@ -13,8 +13,8 @@ module ct_idu_is_biq (
   input  logic         cpurst_b,
   input  logic         ctrl_biq_create0_en,
   input  logic         ctrl_biq_create1_en,
-  input  logic [126:0] dp_biq_create0_data,
-  input  logic [126:0] dp_biq_create1_data,
+  input  logic [151:0] dp_biq_create0_data,
+  input  logic [151:0] dp_biq_create1_data,
   input  logic         forever_cpuclk,
   input  logic [5:0]   iu_idu_ex2_pipe0_wb_preg_dupx,
   input  logic         iu_idu_ex2_pipe0_wb_preg_vld_dupx,
@@ -24,7 +24,8 @@ module ct_idu_is_biq (
   input  logic         lsu_idu_wb_pipe3_wb_preg_vld_dupx,
   input  logic         rtu_yy_xx_flush
 );
-parameter BIQ_WIDTH             = 127;
+parameter BIQ_WIDTH             = 152;
+parameter BIQ_CHK               = 151
 parameter BIQ_PC                = 126;
 parameter BIQ_IID               = 61;
 parameter BIQ_DST_PREG          = 54;

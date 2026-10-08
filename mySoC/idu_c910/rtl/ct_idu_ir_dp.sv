@@ -3,11 +3,14 @@ module ct_idu_ir_dp (
   input  logic            forever_clk,
   input  logic            ctrl_ir_stall,
   output logic [96:0]     crtl_ir_inst2_data,
+  output logic [24:0]     crtl_ir_inst2_chk,
 
   input  logic [121:0]     dp_id_pipedown_inst0_data,
+  input  logic [24:0]      dp_id_pipedown_inst0_chk,
   input  logic [121:0]     dp_id_pipedown_inst1_data,
+  input  logic [24:0]      dp_id_pipedown_inst1_chk,
   input  logic [121:0]     dp_id_pipedown_inst2_data,
-
+  input  logic [24:0]      dp_id_pipedown_inst2_chk,
 
   input  logic [5  :0]    rt_dp_inst0_rel_preg,
   input  logic [8  :0]    rt_dp_inst0_src0_data,
@@ -45,10 +48,13 @@ module ct_idu_ir_dp (
 
   output logic [82 :0]    dp_ir_inst0_data,
   output logic [64:0]     dp_ir_inst0_pc,
+  output logic [24:0]     dp_ir_inst0_chk,
   output logic [82 :0]    dp_ir_inst1_data,
   output logic [64:0]     dp_ir_inst1_pc,
+  output logic [24:0]     dp_ir_inst1_chk,
   output logic [82 :0]    dp_ir_inst2_data,
   output logic [64:0]     dp_ir_inst2_pc,
+  output logic [24:0]     dp_ir_inst2_chk,
 
   output logic [5  :0]    dp_rt_inst0_dst_preg,
   output logic [4  :0]    dp_rt_inst0_dst_reg,
@@ -163,25 +169,41 @@ logic [5  :0]     ir_pipedown_inst2_dst_preg;
 //==========================================================
 //                IR/IS pipeline registers
 //==========================================================
+logic [24:0] ir_inst0_chk;
+logic [24:0] ir_inst1_chk;
+logic [24:0] ir_inst2_chk;
+
 always @(posedge forever_clk or negedge cpurst_b)
 begin
   if(!cpurst_b) begin
     ir_inst0_data[IR_WIDTH-1:0] <= {IR_WIDTH{1'b0}};
     ir_inst1_data[IR_WIDTH-1:0] <= {IR_WIDTH{1'b0}};
     ir_inst2_data[IR_WIDTH-1:0] <= {IR_WIDTH{1'b0}};
+    ir_inst0_chk[24:0]          <= {25{1'b0}};
+    ir_inst1_chk[24:0]          <= {25{1'b0}};
+    ir_inst2_chk[24:0]          <= {25{1'b0}};
   end
   else if(!ctrl_ir_stall) begin
     ir_inst0_data[IR_WIDTH-1:0] <= dp_id_pipedown_inst0_data[IR_WIDTH-1:0];
     ir_inst1_data[IR_WIDTH-1:0] <= dp_id_pipedown_inst1_data[IR_WIDTH-1:0];
     ir_inst2_data[IR_WIDTH-1:0] <= dp_id_pipedown_inst2_data[IR_WIDTH-1:0];
+    ir_inst0_chk[24:0]          <= dp_id_pipedown_inst0_chk[24:0];
+    ir_inst1_chk[24:0]          <= dp_id_pipedown_inst1_chk[24:0];
+    ir_inst2_chk[24:0]          <= dp_id_pipedown_inst2_chk[24:0];
   end
   else begin
     ir_inst0_data[IR_WIDTH-1:0] <= ir_inst0_data[IR_WIDTH-1:0];
     ir_inst1_data[IR_WIDTH-1:0] <= ir_inst1_data[IR_WIDTH-1:0];
     ir_inst2_data[IR_WIDTH-1:0] <= ir_inst2_data[IR_WIDTH-1:0];
+    ir_inst0_chk[24:0]          <= ir_inst0_chk[24:0];
+    ir_inst1_chk[24:0]          <= ir_inst1_chk[24:0];
+    ir_inst2_chk[24:0]          <= ir_inst2_chk[24:0];
   end
 end
 
+assign dp_ir_inst0_chk[24:0] = ir_inst0_chk[24:0];
+assign dp_ir_inst1_chk[24:0] = ir_inst1_chk[24:0];
+assign dp_ir_inst2_chk[24:0] = ir_inst2_chk[24:0];
 //==========================================================
 //                Prepare IR control data
 //==========================================================
@@ -374,6 +396,7 @@ assign dp_rt_inst2_src1_reg[4:0] =
 
 
 assign crtl_ir_inst2_data[96:0] = {ir_inst2_data[IR_TAKEN:IR_TAKEN-64],ir_inst2_data[IR_OPCODE:IR_OPCODE-31]};
+assign ctrl_ir_inst2_chk[24:0]  = ir_inst2_chk[24:0];
 //==========================================================
 //                   Instance IR Decoder
 //==========================================================

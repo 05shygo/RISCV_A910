@@ -8,10 +8,13 @@ module ct_idu_is_dp (
   // IR data
   input  logic [82:0] dp_ir_inst0_data,
   input  logic [64:0] dp_ir_inst0_pc,
+  input  logic [24:0] dp_ir_inst0_chk,
   input  logic [82:0] dp_ir_inst1_data,
   input  logic [64:0] dp_ir_inst1_pc,
+  input  logic [24:0] dp_ir_inst1_chk,
   input  logic [82:0] dp_ir_inst2_data,
   input  logic [64:0] dp_ir_inst2_pc,
+  input  logic [24:0] dp_ir_inst2_chk,
 
   // IID from RTU
   input  logic [6:0]   rtu_idu_rob_inst0_iid,
@@ -68,8 +71,8 @@ module ct_idu_is_dp (
   output logic [6:0]   dp_ctrl_is_dis_inst2_ctrl_info,
   output logic [63:0]  dp_aiq_create0_data,
   output logic [63:0]  dp_aiq_create1_data,
-  output logic [119:0] dp_biq_create0_data,
-  output logic [119:0] dp_biq_create1_data,
+  output logic [151:0] dp_biq_create0_data,
+  output logic [151:0] dp_biq_create1_data,
   output logic         dp_ctrl_is_inst0_dst_vld,
   output logic         dp_ctrl_is_inst1_dst_vld,
   output logic         dp_ctrl_is_inst2_dst_vld,
@@ -138,7 +141,8 @@ parameter MD_OPCODE             = 31;
 //----------------------------------------------------------
 //                    BIQ Parameters
 //----------------------------------------------------------
-parameter BIQ_WIDTH             = 127;
+parameter BIQ_WIDTH             = 152;
+parameter BIQ_CHK               = 151;
 parameter BIQ_PC                = 126;
 parameter BIQ_IID               = 61;
 parameter BIQ_DST_PREG          = 54;
@@ -205,64 +209,50 @@ logic [64:0] is_inst0_read_pc;
 logic [64:0] is_inst1_read_pc;
 logic [64:0] is_inst2_read_pc;
 
+logic [64:0] is_inst0_create_chk;
+logic [64:0] is_inst1_create_chk;
+logic [64:0] is_inst2_create_chk;
+logic [64:0] is_inst0_read_chk;
+logic [64:0] is_inst1_read_chk;
+logic [64:0] is_inst2_read_chk;
 // &CombBeg; @545
 always @(*)
 begin
   case(ctrl_xx_is_inst0_sel[1:0])
-    2'b01  : begin
-               is_inst0_create_data[IS_WIDTH-1:0] = is_inst2_read_data[IS_WIDTH-1:0];
-               is_inst0_create_pc[64:0] = is_inst2_read_pc[64:0];
-             end
-    2'b10  : begin
-               is_inst0_create_data[IS_WIDTH-1:0] = dp_ir_inst0_data[IS_WIDTH-1:0];
-               is_inst0_create_pc[64:0] = dp_ir_inst0_pc[64:0];
-             end
-    default: begin
-               is_inst0_create_data[IS_WIDTH-1:0] = {IS_WIDTH{1'bx}};
-               is_inst0_create_pc[64:0] =  {65{1'bx}};
-             end
-  endcase
-// &CombEnd; @545
-end
-
-// &CombBeg; @547
-always @(*)
-begin
-  case(ctrl_xx_is_inst0_sel[1:0])
     2'b01 : begin
+              is_inst0_create_data[IS_WIDTH-1:0] = is_inst2_read_data[IS_WIDTH-1:0];
+              is_inst0_create_pc[64:0]           = is_inst2_read_pc[64:0];
+              is_inst0_create_chk[24:0]          = is_inst2_read_chk[24:0];
               is_inst1_create_data[IS_WIDTH-1:0] = dp_ir_inst0_data[IS_WIDTH-1:0];
-              is_inst1_create_pc[64:0] = dp_ir_inst0_pc[64:0];
-            end
-    2'b10 : begin
-              is_inst1_create_data[IS_WIDTH-1:0] = dp_ir_inst1_data[IS_WIDTH-1:0];
-              is_inst1_create_pc[64:0] = dp_ir_inst1_pc[64:0];
-            end
-    default: begin
-               is_inst1_create_data[IS_WIDTH-1:0] = {IS_WIDTH{1'bx}};
-               is_inst1_create_pc[64:0] =  {65{1'bx}};
-             end
-  endcase
-// &CombEnd; @554
-end
-
-// &CombBeg; @556
-always @(*)
-begin
-  case(ctrl_xx_is_inst0_sel[1:0])
-    2'b01 : begin
+              is_inst1_create_pc[64:0]           = dp_ir_inst0_pc[64:0];
+              is_inst1_create_chk[24:0]          = dp_ir_inst0_chk[24:0];
               is_inst2_create_data[IS_WIDTH-1:0] = dp_ir_inst1_data[IS_WIDTH-1:0];
-              is_inst2_create_pc[64:0] = dp_ir_inst1_pc[64:0];
+              is_inst2_create_pc[64:0]           = dp_ir_inst1_pc[64:0];
+              is_inst2_create_chk[24:0]          = dp_ir_inst1_chk[24:0];
             end
     2'b10 : begin
+              is_inst0_create_data[IS_WIDTH-1:0] = dp_ir_inst0_data[IS_WIDTH-1:0];
+              is_inst0_create_pc[64:0]           = dp_ir_inst0_pc[64:0];
+              is_inst0_create_chk[24:0]          = dp_ir_inst0_chk[24:0];
+              is_inst1_create_data[IS_WIDTH-1:0] = dp_ir_inst1_data[IS_WIDTH-1:0];
+              is_inst1_create_pc[64:0]           = dp_ir_inst1_pc[64:0];
+              is_inst1_create_chk[24:0]          = dp_ir_inst1_chk[24:0];
               is_inst2_create_data[IS_WIDTH-1:0] = dp_ir_inst2_data[IS_WIDTH-1:0];
-              is_inst2_create_pc[64:0] = dp_ir_inst2_pc[64:0];
+              is_inst2_create_pc[64:0]           = dp_ir_inst2_pc[64:0];
+              is_inst2_create_chk[24:0]          = dp_ir_inst2_chk[24:0];
             end
     default: begin
-               is_inst2_create_data[IS_WIDTH-1:0] = {IS_WIDTH{1'bx}};
-               is_inst2_create_pc[64:0] =  {65{1'bx}};
-             end
+              is_inst0_create_data[IS_WIDTH-1:0] = {IS_WIDTH{1'bx}};
+              is_inst0_create_pc[64:0]           = {65{1'bx}};
+              is_inst0_create_chk[24:0]          = {25{1'bx}};
+              is_inst1_create_data[IS_WIDTH-1:0] = {IS_WIDTH{1'bx}};
+              is_inst1_create_pc[64:0]           = {65{1'bx}};
+              is_inst1_create_chk[24:0]          = {25{1'bx}};
+              is_inst2_create_data[IS_WIDTH-1:0] = {IS_WIDTH{1'bx}};
+              is_inst2_create_pc[64:0]           = {65{1'bx}};
+              is_inst2_create_chk[24:0]          = {25{1'bx}};
+            end
   endcase
-// &CombEnd; @563
 end
 
 parameter IS_CTRL_WIDTH       = 7;
@@ -297,9 +287,11 @@ ct_idu_is_pipe_entry u_ct_idu_is_pipe_entry_0 (
   .rtu_yy_xx_flush                   (rtu_yy_xx_flush),
   .x_create_data                     (is_inst0_create_data),
   .x_create_pc                       (is_inst0_create_pc),
+  .x_create_chk                      (is_inst0_create_chk),
   .x_create_dp_en                    (is_inst0_create_dp_en),
   .x_read_data                       (is_inst0_read_data),
-  .x_read_pc                         (is_inst0_read_pc)
+  .x_read_pc                         (is_inst0_read_pc),
+  .x_read_chk                        (is_inst0_read_chk)
 );
 
 ct_idu_is_pipe_entry u_ct_idu_is_pipe_entry_1 (
@@ -314,9 +306,11 @@ ct_idu_is_pipe_entry u_ct_idu_is_pipe_entry_1 (
   .rtu_yy_xx_flush                   (rtu_yy_xx_flush),
   .x_create_data                     (is_inst1_create_data),
   .x_create_pc                       (is_inst1_create_pc),
+  .x_create_chk                      (is_inst1_create_chk),
   .x_create_dp_en                    (is_inst1_create_dp_en),
   .x_read_data                       (is_inst1_read_data),
-  .x_read_pc                         (is_inst1_read_pc)
+  .x_read_pc                         (is_inst1_read_pc),
+  .x_read_chk                        (is_inst1_read_chk)
 );
 
 ct_idu_is_pipe_entry u_ct_idu_is_pipe_entry_2 (
@@ -331,9 +325,11 @@ ct_idu_is_pipe_entry u_ct_idu_is_pipe_entry_2 (
   .rtu_yy_xx_flush                   (rtu_yy_xx_flush),
   .x_create_data                     (is_inst2_create_data),
   .x_create_pc                       (is_inst2_create_pc),
+  .x_create_chk                      (is_inst2_create_chk),
   .x_create_dp_en                    (is_inst2_create_dp_en),
   .x_read_data                       (is_inst2_read_data),
-  .x_read_pc                         (is_inst2_read_pc)
+  .x_read_pc                         (is_inst2_read_pc),
+  .x_read_chk                        (is_inst2_read_chk)
 );
 
 //----------------------------------------------------------
@@ -463,9 +459,11 @@ logic [6:0]          is_biq_create0_iid;
 logic [IS_WIDTH-1:0] is_biq_create1_data;
 logic [6:0]          is_biq_create1_iid;
 
-// 【补齐】以下 2 个信号在原代码中使用但未声明
+// 【补齐】以下信号在原代码中使用但未声明
 logic [64:0]         is_biq_create0_pc;
 logic [64:0]         is_biq_create1_pc;
+logic [24:0]         is_biq_create0_chk;
+logic [24:0]         is_biq_create1_chk;
 
 // &CombBeg; @3167
 always @(*)
@@ -474,49 +472,56 @@ begin
     2'd0: begin
           is_biq_create0_data[IS_WIDTH-1:0] = is_inst0_read_data[IS_WIDTH-1:0];
           is_biq_create0_pc[64:0]           = is_inst0_read_pc[64:0];
+          is_biq_create0_chk[24:0]          = is_inst0_read_chk[24:0];
           is_biq_create0_iid[6:0]           = is_inst0_iid[6:0];
           end
     2'd1: begin
           is_biq_create0_data[IS_WIDTH-1:0] = is_inst1_read_data[IS_WIDTH-1:0];
           is_biq_create0_pc[64:0]           = is_inst1_read_pc[64:0];
+          is_biq_create0_chk[24:0]          = is_inst1_read_chk[24:0];
           is_biq_create0_iid[6:0]           = is_inst1_iid[6:0];
           end
     2'd2: begin
           is_biq_create0_data[IS_WIDTH-1:0] = is_inst2_read_data[IS_WIDTH-1:0];
-          is_biq_create0_pc[64:0]           = is_inst1_read_pc[64:0];
+          is_biq_create0_pc[64:0]           = is_inst2_read_pc[64:0];
+          is_biq_create0_chk[24:0]          = is_inst2_read_chk[24:0];
           is_biq_create0_iid[6:0]           = is_inst2_iid[6:0];
           end
     default: begin
           is_biq_create0_data[IS_WIDTH-1:0] = {IS_WIDTH{1'bx}};
           is_biq_create0_pc[64:0]           = {65{1'bx}};
+          is_biq_create0_chk[24:0]          = {25{1'bx}};
           is_biq_create0_iid[6:0]           = {7{1'bx}};
           end
   endcase
 // &CombEnd; @3195
 end
 
-// &CombBeg; @3197
 always @(*)
 begin
   case(ctrl_dp_is_dis_biq_create1_sel[1:0])
     2'd0: begin
           is_biq_create1_data[IS_WIDTH-1:0] = is_inst0_read_data[IS_WIDTH-1:0];
           is_biq_create1_pc[64:0]           = is_inst0_read_pc[64:0];
+          is_biq_create1_chk[24:0]          = is_inst0_read_chk[24:0];
           is_biq_create1_iid[6:0]           = is_inst0_iid[6:0];
           end
     2'd1: begin
           is_biq_create1_data[IS_WIDTH-1:0] = is_inst1_read_data[IS_WIDTH-1:0];
           is_biq_create1_pc[64:0]           = is_inst1_read_pc[64:0];
+          is_biq_create1_chk[24:0]          = is_inst1_read_chk[24:0];
           is_biq_create1_iid[6:0]           = is_inst1_iid[6:0];
           end
     2'd2: begin
           is_biq_create1_data[IS_WIDTH-1:0] = is_inst2_read_data[IS_WIDTH-1:0];
           is_biq_create1_pc[64:0]           = is_inst2_read_pc[64:0];
+          is_biq_create1_chk[24:0]          = is_inst2_read_chk[24:0];
           is_biq_create1_iid[6:0]           = is_inst2_iid[6:0];
           end
     default: begin
           is_biq_create1_data[IS_WIDTH-1:0] = {IS_WIDTH{1'bx}};
           is_biq_create1_pc[64:0]           = {65{1'bx}};
+          is_biq_create1_chk[24:0]          = {25{1'bx}};
           is_biq_create1_iid[6:0]           = {7{1'bx}};
           end
   endcase
@@ -532,6 +537,7 @@ logic [BIQ_WIDTH-1:0] biq_create1_data;
 assign dp_biq_create0_data[BIQ_WIDTH-1:0] = biq_create0_data[BIQ_WIDTH-1:0];
 assign dp_biq_create1_data[BIQ_WIDTH-1:0] = biq_create1_data[BIQ_WIDTH-1:0];
 
+assign biq_create0_data[BIQ_CHK:BIQ_CHK-24]            = is_biq_create0_chk[24:0];
 assign biq_create0_data[BIQ_PC:BIQ_PC-64]              = is_biq_create0_pc[64:0];
 assign biq_create0_data[BIQ_DST_PREG:BIQ_DST_PREG-5]   = is_biq_create0_data[IS_DST_PREG:IS_DST_PREG-5];
 assign biq_create0_data[BIQ_SRC1_DATA:BIQ_SRC1_DATA-6] = is_biq_create0_data[IS_SRC1_DATA:IS_SRC1_DATA-6];
@@ -542,6 +548,7 @@ assign biq_create0_data[BIQ_SRC0_VLD]                  = is_biq_create0_data[IS_
 assign biq_create0_data[BIQ_IID:BIQ_IID-6]             = is_biq_create0_iid[6:0];
 assign biq_create0_data[BIQ_OPCODE:BIQ_OPCODE-31]      = is_biq_create0_data[IS_OPCODE:IS_OPCODE-31];
 
+assign biq_create1_data[BIQ_CHK:BIQ_CHK-24]            = is_biq_create1_chk[24:0];
 assign biq_create1_data[BIQ_PC:BIQ_PC-64]              = is_biq_create1_pc[64:0];
 assign biq_create1_data[BIQ_DST_PREG:BIQ_DST_PREG-5]   = is_biq_create1_data[IS_DST_PREG:IS_DST_PREG-5];
 assign biq_create1_data[BIQ_SRC1_DATA:BIQ_SRC1_DATA-6] = is_biq_create1_data[IS_SRC1_DATA:IS_SRC1_DATA-6];
