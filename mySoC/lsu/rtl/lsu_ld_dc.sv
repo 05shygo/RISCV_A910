@@ -36,6 +36,7 @@ module lsu_ld_dc #(
     input  logic                          ld_ag_raw_new,
     input  logic [27:0]                   ld_ag_addr1_to4,
     input  logic [31:0]                   ld_ag_dc_addr0,
+    input  logic                          ld_ag_expt,
 
     //==========================================================
     // 来自其他模块 Input
@@ -80,6 +81,7 @@ module lsu_ld_dc #(
     output logic                          ld_dc_da_cb_merge_en,
     output logic                          ld_dc_raw_new,
     output logic [31:0]                   ld_dc_addr0,
+    output logic                          ld_dc_expt,
     output logic                          ld_dc_cb_addr_create_vld,
     output logic [27:0]                   ld_dc_cb_addr_tto4,
     output logic                          ld_dc_chk_ld_inst_vld,
@@ -193,7 +195,6 @@ begin
     ld_dc_settle_way                    <=  dcache_arb_ld_dc_settle_way;
   end
 end
-
 //====================================================================
 // LD AG -> DC stage pipeline register (你之前补全复位的这一组)
 //====================================================================
@@ -212,6 +213,7 @@ always @(posedge forever_cpuclk or negedge cpurst_b) begin
         ld_dc_bytes_vld1[15:0]   <= 16'b0;
         ld_dc_acclr_en           <= 1'b0;
         ld_dc_raw_new            <= 1'b0;
+        ld_dc_expt               <= 1'b0;
     end
     else if ( ld_ag_dc_inst_vld) begin
         ld_dc_inst_size[1:0]     <= ld_ag_inst_size[1:0];
@@ -227,7 +229,8 @@ always @(posedge forever_cpuclk or negedge cpurst_b) begin
         ld_dc_bytes_vld1[15:0]   <= ld_ag_bytes_vld1[15:0];
         ld_dc_acclr_en           <= ld_ag_acclr_en;
         ld_dc_raw_new            <= ld_ag_raw_new;
-        ld_dc_fwd_bypass_en   <= ld_ag_dc_fwd_bypass_en;
+        ld_dc_fwd_bypass_en      <= ld_ag_dc_fwd_bypass_en;
+        ld_dc_expt               <= ld_ag_expt;
     end
 end
 
@@ -252,16 +255,17 @@ end
 //==========================================================
 //               Generate check signal to lq/sq/wmb
 //==========================================================
-assign ld_dc_chk_ld_inst_vld    = ld_dc_inst_vld;
-assign ld_dc_chk_ld_addr1_vld   = ld_dc_inst_vld && ld_dc_acclr_en;
+assign ld_dc_chk_ld_inst_vld    = ld_dc_inst_vld && !ld_dc_expt;
+assign ld_dc_chk_ld_addr1_vld   = ld_dc_inst_vld && ld_dc_acclr_en && !ld_dc_expt;
 
 //==========================================================
 //                   RAW speculation check
 //==========================================================
-assign ld_dc_inst_chk_vld       = ld_dc_inst_vld;
+assign ld_dc_inst_chk_vld       = ld_dc_inst_vld && !ld_dc_expt;
 
 assign ld_dc_chk_ld_bypass_vld    = ld_dc_chk_ld_inst_vld
-                                    &&  ld_dc_fwd_bypass_en;
+                                    &&  ld_dc_fwd_bypass_en
+                                    && !ld_dc_expt;
 //-----------addr compare---------------
 //addr0 compare
 assign ld_dc_cmp_st_dc_addr0[31:0] = st_dc_addr0[31:0];
@@ -296,14 +300,16 @@ assign ld_dc_lq_create_vld      = ld_dc_inst_vld
                                 && !ld_dc_old
                                 && !lq_ld_dc_inst_hit
                                 && !ld_dc_depd_imme_restart_req
-                                && !sq_ld_dc_addr1_dep_discard;
+                                && !sq_ld_dc_addr1_dep_discard
+                                && !ld_dc_expt;
 
 assign ld_dc_lq_create1_vld     = ld_dc_inst_vld
                                 && !ld_dc_old
                                 && !lq_ld_dc_inst_hit
                                 && !ld_dc_depd_imme_restart_req
                                 && cb_ld_dc_addr_hit
-                                && !sq_ld_dc_addr1_dep_discard;
+                                && !sq_ld_dc_addr1_dep_discard
+                                && !ld_dc_expt;
 
 //==========================================================
 //                   Restart signal
@@ -410,14 +416,16 @@ assign ld_dc_cb_addr_create_vld = ld_dc_inst_vld
                                 && ld_dc_acclr_en
                                 && !ld_dc_restart_vld
                                 && cb_create_hit_idx
-                                && !rtu_yy_xx_flush;
+                                && !rtu_yy_xx_flush
+                                && !ld_dc_expt;
 
 assign ld_dc_da_cb_merge_en     = ld_dc_acclr_en
                                 && cb_ld_dc_addr_hit
                                 && !ld_dc_depd_st_dc3
                                 && !sq_ld_dc_cancel_acc_req
                                 && !wmb_ld_dc_cancel_acc_req
-                                && !lq_ld_dc_inst_hit;
+                                && !lq_ld_dc_inst_hit
+                                && !ld_dc_expt;
 
 //==========================================================
 //      Generage lsiq signal (renamed in lsu_restart.vp)

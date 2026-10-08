@@ -40,6 +40,7 @@ module ct_lsu_st_ag #(
     output logic         st_ag_inst_vld,
     output logic [LSIQ_ENTRY-1:0]   st_ag_lsid,
     output logic         st_ag_old,
+    output logic         st_ag_expt,
     output logic [SDIQ_ENTRY-1:0]   st_ag_sdid_oh,
     output logic         st_ag_secd,
     output logic [LSIQ_ENTRY-1:0]   st_ag_stall_restart_entry
@@ -138,6 +139,18 @@ module ct_lsu_st_ag #(
     assign st_ag_addr[31:0] = st_ag_addr_plus_sel ? st_ag_addr_plus[31:0]
                                                   : st_ag_addr_ori[31:0];
 
+logic st_ag_align;
+always @(*)
+begin
+casez({st_ag_inst_size[1:0],st_ag_addr_ori[2:0]})
+  {BYTE,3'b???}:st_ag_align = 1'b1;
+  {HALF,3'b??0}:st_ag_align = 1'b1;
+  {WORD,3'b?00}:st_ag_align = 1'b1;
+  default:st_ag_align  = 1'b0;
+endcase
+// &CombEnd; @420
+end
+assign st_ag_expt = !st_ag_align;
     //==========================================================
     //            Generate unalign, bytes_vld
     //==========================================================

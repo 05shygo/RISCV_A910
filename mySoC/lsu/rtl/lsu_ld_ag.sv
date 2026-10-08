@@ -78,6 +78,7 @@ module lsu_ld_ag #(
   output logic                         ld_ag_boundary,
   output logic                         ld_ag_acclr_en,
   output logic                         ld_ag_dc_fwd_bypass_en,
+  output logic                         ld_ag_expt,
   //==========================================================
   // LSU_LD_AG -> DCACHE
   //==========================================================
@@ -101,7 +102,8 @@ module lsu_ld_ag #(
 // Internal registers
 //==========================================================
 logic                         ld_ag_inst_vld;
-logic                         ld_rf_inst_vld;
+//logic                         ld_rf_inst_vld;
+//logic                         ld_ag_ld_inst;
 logic                         ld_ag_clk;
 logic                         ld_ag_addr_plus_sel;
 
@@ -112,8 +114,8 @@ logic [31:0]                  ld_ag_base;
 //==========================================================
 // Address generation
 //==========================================================
-logic [63:0]                  ld_ag_addr_ori;
-logic [63:0]                  ld_ag_va_ori;
+logic [31:0]                  ld_ag_addr_ori;
+//logic [63:0]                  ld_ag_va_ori;
 logic [31:0]                  ld_ag_addr;
 logic [31:0]                  ld_ag_addr_plus;
 
@@ -129,7 +131,7 @@ logic [3:0]                   ld_ag_access_size;
 // Boundary / Unalign
 //==========================================================
 logic                         ld_ag_boundary_unmask;
-logic                         ld_ag_ld_inst;
+//logic                         ld_ag_ld_inst;
 
 logic                         ld_ag_va_plus_sel;
 
@@ -239,7 +241,7 @@ always @(posedge ld_ag_clk or negedge cpurst_b)
 begin
   if (!cpurst_b)
     ld_ag_offset_plus[12:0]  <=  13'h0;
-  else if (!ld_ag_stall_vld &&  ld_rf_inst_vld)
+  else if (!ld_ag_stall_vld &&  idu_lsu_ld_sel)
     ld_ag_offset_plus[12:0]  <=  idu_lsu_ld_offset_plus[12:0];
 end
 
@@ -265,7 +267,6 @@ assign ld_ag_addr1_to4[27:0] = ld_ag_addr_ori[31:4];
 //assign ld_ag_offset_plus[31:0]     = ld_ag_offset[31:0] + 32'h10;
 //if misalign without page, then select ori va
 assign ld_ag_addr_plus_sel            = ld_ag_boundary_unmask
-                                      &&  ld_ag_ld_inst 
                                       &&  !ld_ag_secd;
 
 assign ld_ag_addr[31:0]               = ld_ag_addr_plus_sel
@@ -277,8 +278,24 @@ assign ld_ag_va_add_access_size[4:0]  = {1'b0,ld_ag_addr_ori[3:0]} + {1'b0,ld_ag
 assign ld_ag_boundary_unmask  = ld_ag_va_add_access_size[4];
 
 assign ld_ag_boundary = (ld_ag_boundary_unmask
-                            ||  ld_ag_secd)
-                        &&  ld_ag_ld_inst;
+                            ||  ld_ag_secd);
+
+//----------------generate unalign--------------------------
+//-----------unalign--------------------
+// &CombBeg; @400
+logic ld_ag_align;
+always @(*)
+begin
+casez({ld_ag_inst_size[1:0],ld_ag_addr_ori[2:0]})
+  {BYTE,3'b???}:ld_ag_align = 1'b1;
+  {HALF,3'b??0}:ld_ag_align = 1'b1;
+  {WORD,3'b?00}:ld_ag_align = 1'b1;
+  default:ld_ag_align  = 1'b0;
+endcase
+// &CombEnd; @411
+end
+assign ld_ag_expt = !ld_ag_align;
+                 
 
 //==========================================================
 //            Generate unalign, bytes_vld
@@ -412,12 +429,9 @@ assign ag_dcache_arb_ld_tag_idx         = ld_ag_addr[INDEX_MSB:INDEX_LSB];
 //-----------data array------------------------------------
 //------------data req signal-----------
 // &CombBeg; @1064
-always @( ld_ag_va_add_access_size[3:2]
-       or ld_ag_va_ori[3:2]
-       or ld_ag_boundary
-       or ld_ag_secd)
+always @(*)
 begin
-casez({ld_ag_boundary,ld_ag_secd,ld_ag_va_ori[3:2],ld_ag_va_add_access_size[3:2]})
+casez({ld_ag_boundary,ld_ag_secd,ld_ag_addr_ori[3:2],ld_ag_va_add_access_size[3:2]})
   {1'b0,1'b?,2'b00,2'b00}:bank_en_low_ori[3:0] = 4'b0001;
   {1'b0,1'b?,2'b00,2'b01}:bank_en_low_ori[3:0] = 4'b0011;
   {1'b0,1'b?,2'b00,2'b10}:bank_en_low_ori[3:0] = 4'b0111;

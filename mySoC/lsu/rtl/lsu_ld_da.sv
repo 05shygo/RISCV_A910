@@ -17,6 +17,8 @@ module lsu_ld_da #(
     input  logic [LSIQ_ENTRY-1:0]         ld_dc_lsid,
     input  logic                          ld_dc_old,
     input  logic [5:0]                    ld_dc_preg,
+    input  logic                          ld_dc_expt,
+ //   input  logic [31:0]                   ld_dc_addr1_to4,
     input  logic [15:0]                   ld_dc_bytes_vld,
     input  logic [15:0]                   ld_dc_bytes_vld1,
     input  logic                          ld_dc_acclr_en,
@@ -93,6 +95,8 @@ module lsu_ld_da #(
     output logic [4:0]                    ld_da_idx,
 
     output logic                          ld_da_wb_cmplt_req,
+    output logic                          ld_da_wb_expt_vld,
+    output logic [31:0]                   ld_da_wb_expt_addr,
     output logic                          ld_da_wb_data_req,
     output logic [31:0]                   ld_da_wb_data,
     output logic [3:0]                    ld_da_preg_sign_sel,
@@ -258,7 +262,8 @@ begin
   ld_da_dcache_data_bank3[31:0] <= dcache_lsu_ld_data_bank3_dout[31:0];
   ld_da_dcache_data_bank7[31:0] <= dcache_lsu_ld_data_bank7_dout[31:0];
 end
-
+logic ld_da_expt;
+//logic [27:0] ld_da_addr1_to4;
 always @(posedge forever_cpuclk or negedge cpurst_b) begin
   if (!cpurst_b) begin
     ld_da_inst_size         <= 2'b0;
@@ -269,6 +274,8 @@ always @(posedge forever_cpuclk or negedge cpurst_b) begin
     ld_da_lsid              <= {LSIQ_ENTRY{1'b0}};
     ld_da_old               <= 1'b0;
     ld_da_preg              <= 7'b0;
+    ld_da_expt              <= 1'b0;
+   // ld_da_addr1_to4         <= 28'b0;
     ld_da_bytes_vld         <= 16'b0;
     ld_da_bytes_vld1        <= 16'b0;
     ld_da_acclr_en          <= 1'b0;
@@ -291,6 +298,8 @@ always @(posedge forever_cpuclk or negedge cpurst_b) begin
     ld_da_lsid              <= ld_dc_lsid;
     ld_da_old               <= ld_dc_old;
     ld_da_preg              <= ld_dc_preg;
+    ld_da_expt              <= ld_dc_expt;
+  //  ld_da_addr1_to4         <= ld_dc_addr1_to4;
     ld_da_bytes_vld         <= ld_dc_bytes_vld;
     ld_da_bytes_vld1        <= ld_dc_bytes_vld1;
     ld_da_acclr_en          <= ld_dc_acclr_en;
@@ -499,20 +508,24 @@ assign ld_da_cb_ld_inst_vld = ld_da_inst_vld
 assign ld_da_cb_data_vld    = ld_da_inst_vld
                               &&  ld_da_cb_addr_create_vld 
                               &&  ld_da_dcache_hit
-                              &&  !ld_da_fwd_vld; 
+                              &&  !ld_da_fwd_vld
+                              &&  !ld_da_expt; 
 assign ld_da_cb_data[127:0]  = ld_da_dcache_pass_data128_am;
 
 assign ld_da_wb_cmplt_req = ld_da_inst_vld && !ld_da_secd;
+assign ld_da_wb_expt_vld = ld_da_expt;
+assign ld_da_wb_expt_addr[31:0] = ld_da_addr[31:0];
 assign ld_da_wb_data_req  = ld_da_wb_cmplt_req & ld_da_data_vld;
 assign ld_da_wb_data[31:0] = ld_da_data128[31:0];
 
-assign ld_da_data_vld = ld_da_inst_vld && (ld_da_fwd_vld || ld_da_dcache_hit);
+assign ld_da_data_vld = ld_da_inst_vld && (ld_da_fwd_vld || ld_da_dcache_hit) && !ld_da_expt;
 assign ld_da_rb_data_vld = ld_da_data_vld;
 
 assign ld_da_rb_create_vld_unmask = ld_da_inst_vld
                                     & !ld_da_discard_dc_req
                                     & !ld_da_secd
-                                    & (!ld_da_rb_data_vld | ld_da_boundary_after_mask);
+                                    & (!ld_da_rb_data_vld | ld_da_boundary_after_mask)
+                                    & !ld_da_expt;
 
 assign ld_da_boundary_after_mask = ld_da_inst_vld & ld_da_boundary & !ld_da_merge_from_cb;
 
@@ -535,7 +548,8 @@ assign ld_da_lfb_discard_grnt = ld_da_discard_from_lfb_req;
 assign ld_da_rb_merge_vld_unmask = ld_da_inst_vld
                                    && !ld_da_discard_dc_req
                                    && ld_da_secd
-                                   && ld_da_boundary;
+                                   && ld_da_boundary
+                                   && !ld_da_expt;
 
 assign ld_da_rb_merge_vld = ld_da_rb_merge_vld_unmask
                             && !ld_da_hit_idx_discard_req;

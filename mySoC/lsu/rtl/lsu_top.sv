@@ -146,6 +146,8 @@ module lsu_top #(
   // LSU to RTU - Writeback pipe3
   output logic                 lsu_rtu_wb_pipe3_cmplt,
   output logic [6:0]           lsu_rtu_wb_pipe3_iid,
+  output logic                 lsu_rtu_wb_pipe3_expt_vld,
+  output logic [31:0]          lsu_rtu_wb_pipe3_expt_addr,
   output logic [63:0]          lsu_rtu_wb_pipe3_wb_preg_expand,
   output logic                 lsu_rtu_wb_pipe3_wb_preg_vld,
 
@@ -157,6 +159,8 @@ module lsu_top #(
 
   // LSU to RTU - Writeback pipe4
   output logic                 lsu_rtu_wb_pipe4_cmplt,
+  output logic                 lsu_rtu_wb_pipe4_expt_vld,
+  output logic [31:0]          lsu_rtu_wb_pipe4_expt_addr,
   output logic                 lsu_rtu_wb_pipe4_flush,
   output logic [6:0]           lsu_rtu_wb_pipe4_iid,
   output logic                 lsu_rtu_wb_pipe4_spec_fail,
@@ -304,6 +308,7 @@ logic [DATA_INDEX_WIDTH-1:0] ag_dcache_arb_ld_data_high_idx;
 // DCache arbiter to Load
 logic dcache_arb_ag_ld_sel;
 logic dcache_arb_ld_dc_borrow_vld;
+logic dcache_arb_ld_dc_settle_way;
 logic [1:0] dcache_arb_ld_dc_borrow_db;
 
 // Store AG outputs
@@ -339,11 +344,11 @@ logic [6:0] st_dc_iid;
 logic [LSIQ_ENTRY-1:0] st_dc_lsid;
 logic [LSIQ_ENTRY-1:0] st_dc_sdid_oh;
 logic st_dc_old;
+logic st_dc_expt;
 logic [15:0] st_dc_bytes_vld;
 logic [3:0] st_dc_rot_sel;
 logic st_dc_boundary;
 logic [31:0] st_dc_addr0;
-logic [3:0] st_dc_sdid;
 logic st_dc_sq_create_vld;
 logic st_dc_sq_create_dp_vld;
 logic st_dc_sq_create_gateclk_en;
@@ -386,6 +391,8 @@ logic st_da_sq_dcache_way;
 logic [TAG_WIDTH+INDEX_WIDTH-1:0] st_da_vb_feedback_addr_tto_offset;
 logic st_da_wb_cmplt_req;
 logic st_da_wb_spec_fail;
+logic st_da_wb_expt_vld;
+logic [31:0] st_da_wb_expt_addr;
 logic [31:0] st_da_addr;
 logic st_da_boundary;
 logic [15:0] st_da_bytes_vld;
@@ -451,6 +458,7 @@ logic [6:0] ld_dc_iid;
 logic [LSIQ_ENTRY-1:0] ld_dc_lsid;
 logic ld_dc_old;
 logic [5:0] ld_dc_preg;
+logic ld_dc_expt;
 logic [15:0] ld_dc_bytes_vld;
 logic [15:0] ld_dc_bytes_vld1;
 logic ld_dc_acclr_en;
@@ -553,8 +561,10 @@ logic [2:0]vb_lfb_dcache_hit;
 logic [2:0]vb_lfb_dcache_way;
 logic vb_lfb_rcl_done;
 logic vb_rb_biu_req_hit_idx;
+logic vb_dcache_arb_data_way;
 
 // Load DA signals (placeholder, to be connected)
+logic ld_da_vb_borrow_vb;
 logic [31:0] ld_da_addr;
 logic [6:0] ld_da_iid;
 logic [5:0] ld_da_preg;
@@ -674,6 +684,8 @@ logic ld_wb_data_vld;
 logic ld_wb_inst_vld;
 logic [31:0] lsu_rtu_async_expt_addr;
 logic lsu_rtu_async_expt_vld;
+logic ld_da_wb_expt_vld;
+logic [31:0] ld_da_wb_expt_addr;
 
 // Control signals (placeholder)
 
@@ -724,6 +736,7 @@ lsu_ld_ag #(
   .ld_ag_boundary(ld_ag_boundary),
   .ld_ag_acclr_en(ld_ag_acclr_en),
   .ld_ag_dc_fwd_bypass_en(ld_ag_dc_fwd_bypass_en),
+  .ld_ag_expt(ld_ag_expt),
   .ag_dcache_arb_ld_tag_gateclk_en(ag_dcache_arb_ld_tag_gateclk_en),
   .ag_dcache_arb_ld_tag_req(ag_dcache_arb_ld_tag_req),
   .ag_dcache_arb_ld_tag_idx(ag_dcache_arb_ld_tag_idx),
@@ -761,6 +774,7 @@ lsu_ld_dc #(
   .ld_ag_boundary(ld_ag_boundary),
   .ld_ag_acclr_en(ld_ag_acclr_en),
   .ld_ag_dc_fwd_bypass_en(ld_ag_dc_fwd_bypass_en),
+  .ld_ag_expt(ld_ag_expt),
   .ld_ag_bytes_vld1(ld_ag_bytes_vld1),
   .ld_ag_bytes_vld(ld_ag_bytes_vld),
   .ld_ag_raw_new(ld_ag_raw_new),
@@ -796,6 +810,7 @@ lsu_ld_dc #(
   .ld_dc_lsid(ld_dc_lsid),
   .ld_dc_old(ld_dc_old),
   .ld_dc_preg(ld_dc_preg),
+  .ld_dc_expt(ld_dc_expt),
   .ld_dc_bytes_vld(ld_dc_bytes_vld),
   .ld_dc_bytes_vld1(ld_dc_bytes_vld1),
   .ld_dc_acclr_en(ld_dc_acclr_en),
@@ -843,6 +858,8 @@ lsu_ld_da #(
   .ld_dc_lsid(ld_dc_lsid),
   .ld_dc_old(ld_dc_old),
   .ld_dc_preg(ld_dc_preg),
+  .ld_dc_expt(ld_dc_expt),
+ // .ld_dc_addr1_to4(ld_dc_addr1_to4),
   .ld_dc_bytes_vld(ld_dc_bytes_vld),
   .ld_dc_bytes_vld1(ld_dc_bytes_vld1),
   .ld_dc_acclr_en(ld_dc_acclr_en),
@@ -927,6 +944,8 @@ lsu_ld_da #(
   .ld_da_data256(ld_da_data256),
   .ld_dc_settle_way(ld_dc_settle_way),
   .ld_da_wb_cmplt_req(ld_da_wb_cmplt_req),
+  .ld_da_wb_expt_vld(ld_da_wb_expt_vld),
+  .ld_da_wb_expt_addr(ld_da_wb_expt_addr),
   .ld_da_wb_data_req(ld_da_wb_data_req),
   .ld_da_wb_data(ld_da_wb_data),
   .ld_da_preg_sign_sel(ld_da_preg_sign_sel)
@@ -949,6 +968,8 @@ ct_lsu_ld_wb #(
   .ld_da_preg(ld_da_preg),
   .ld_da_preg_sign_sel(ld_da_preg_sign_sel),
   .ld_da_wb_cmplt_req(ld_da_wb_cmplt_req),
+  .ld_da_wb_expt_vld(ld_da_wb_expt_vld),
+  .ld_da_wb_expt_addr(ld_da_wb_expt_addr),
   .ld_da_wb_data(ld_da_wb_data),
   .ld_da_wb_data_req(ld_da_wb_data_req),
   .rb_ld_wb_bus_err(rb_ld_wb_bus_err),
@@ -969,6 +990,8 @@ ct_lsu_ld_wb #(
   .lsu_rtu_async_expt_vld(lsu_rtu_async_expt_vld),
   .lsu_rtu_wb_pipe3_cmplt(lsu_rtu_wb_pipe3_cmplt),
   .lsu_rtu_wb_pipe3_iid(lsu_rtu_wb_pipe3_iid),
+  .lsu_rtu_wb_pipe3_expt_vld(lsu_rtu_wb_pipe3_expt_vld),
+  .lsu_rtu_wb_pipe3_expt_addr(lsu_rtu_wb_pipe3_expt_addr),
   .lsu_rtu_wb_pipe3_wb_preg_expand(lsu_rtu_wb_pipe3_wb_preg_expand),
   .lsu_rtu_wb_pipe3_wb_preg_vld(lsu_rtu_wb_pipe3_wb_preg_vld),
   .lsu_idu_wb_pipe3_wb_preg(lsu_idu_wb_pipe3_wb_preg),
@@ -1030,6 +1053,7 @@ ct_lsu_st_ag #(
   .st_ag_inst_vld(st_ag_inst_vld),
   .st_ag_lsid(st_ag_lsid),
   .st_ag_old(st_ag_old),
+  .st_ag_expt(st_ag_expt),
   .st_ag_sdid_oh(st_ag_sdid_oh),
   .st_ag_secd(st_ag_secd),
   .st_ag_stall_restart_entry(st_ag_stall_restart_entry)
@@ -1059,6 +1083,7 @@ ct_lsu_st_dc u_lsu_st_dc (
   .st_ag_inst_vld(st_ag_inst_vld),
   .st_ag_lsid(st_ag_lsid),
   .st_ag_old(st_ag_old),
+  .st_ag_expt(st_ag_expt),
   .st_ag_sdid_oh(st_ag_sdid_oh),
   .st_ag_secd(st_ag_secd),
   .st_dc_inst_vld(st_dc_inst_vld),
@@ -1068,6 +1093,7 @@ ct_lsu_st_dc u_lsu_st_dc (
   .st_dc_lsid(st_dc_lsid),
   .st_dc_sdid_oh(st_dc_sdid_oh),
   .st_dc_old(st_dc_old),
+  .st_dc_expt(st_dc_expt),
   .st_dc_bytes_vld(st_dc_bytes_vld),
   .st_dc_rot_sel(st_dc_rot_sel),
   .st_dc_boundary(st_dc_boundary),
@@ -1135,6 +1161,7 @@ ct_lsu_st_da #(
   .st_dc_inst_vld(st_dc_inst_vld),
   .st_dc_lsid(st_dc_lsid),
   .st_dc_old(st_dc_old),
+  .st_dc_expt(st_dc_expt),
   .st_dc_secd(st_dc_secd),
   .st_dc_spec_fail(st_dc_spec_fail),
   .st_da_borrow_vld(st_da_borrow_vld),
@@ -1162,6 +1189,8 @@ ct_lsu_st_da #(
   .st_da_sq_dcache_way(st_da_sq_dcache_way),
   .st_da_vb_feedback_addr_tto10(st_da_vb_feedback_addr_tto10),
   .st_da_wb_cmplt_req(st_da_wb_cmplt_req),
+  .st_da_wb_expt_vld(st_da_wb_expt_vld),
+  .st_da_wb_expt_addr(st_da_wb_expt_addr),
   .st_da_wb_spec_fail(st_da_wb_spec_fail),
   .st_da_addr(st_da_addr),
   .st_da_boundary(st_da_boundary),
@@ -1178,8 +1207,12 @@ ct_lsu_st_wb u_lsu_st_wb (
   .rtu_yy_xx_flush(rtu_yy_xx_flush),
   .st_da_iid(st_da_iid),
   .st_da_wb_cmplt_req(st_da_wb_cmplt_req),
+  .st_da_wb_expt_vld(st_da_wb_expt_vld),
+  .st_da_wb_expt_addr(st_da_wb_expt_addr),
   .st_da_wb_spec_fail(st_da_wb_spec_fail),
   .lsu_rtu_wb_pipe4_cmplt(lsu_rtu_wb_pipe4_cmplt),//out
+  .lsu_rtu_wb_pipe4_expt_vld(lsu_rtu_wb_pipe4_expt_vld),
+  .lsu_rtu_wb_pipe4_expt_addr(lsu_rtu_wb_pipe4_expt_addr),
   .lsu_rtu_wb_pipe4_flush(lsu_rtu_wb_pipe4_flush),//out
   .lsu_rtu_wb_pipe4_iid(lsu_rtu_wb_pipe4_iid),//out
   .lsu_rtu_wb_pipe4_spec_fail(lsu_rtu_wb_pipe4_spec_fail)//out

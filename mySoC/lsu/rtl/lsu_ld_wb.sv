@@ -14,6 +14,8 @@ module ct_lsu_ld_wb #(
     input  logic [5:0]   ld_da_preg,
     input  logic [3:0]   ld_da_preg_sign_sel,
     input  logic         ld_da_wb_cmplt_req,
+    input  logic         ld_da_wb_expt_vld,
+    input  logic [31:0]  ld_da_wb_expt_addr,
     input  logic [31:0]  ld_da_wb_data,
     input  logic         ld_da_wb_data_req,
     input  logic         rb_ld_wb_bus_err,
@@ -36,6 +38,8 @@ module ct_lsu_ld_wb #(
     output logic         lsu_rtu_async_expt_vld,
     output logic         lsu_rtu_wb_pipe3_cmplt,
     output logic [6:0]   lsu_rtu_wb_pipe3_iid,
+    output logic         lsu_rtu_wb_pipe3_expt_vld,
+    output logic [31:0]  lsu_rtu_wb_pipe3_expt_addr,
     output logic [63:0]  lsu_rtu_wb_pipe3_wb_preg_expand,
     output logic         lsu_rtu_wb_pipe3_wb_preg_vld,
     output logic [5:0]   lsu_idu_wb_pipe3_wb_preg,
@@ -99,11 +103,11 @@ ct_rtu_expand_64 x_lsu_rb_ld_wb_preg_expand (
 assign ld_wb_da_cmplt_grnt      = ld_da_wb_cmplt_req;
 assign ld_wb_rb_cmplt_grnt      = !ld_da_wb_cmplt_req
                                   &&  rb_ld_wb_cmplt_req;
-
+logic ld_wb_pre_expt_vld;
 //-----------signal select--------------
 assign ld_wb_pre_inst_vld       = ld_da_wb_cmplt_req
                                   ||  rb_ld_wb_cmplt_req;
-
+assign ld_wb_pre_expt_vld = ld_da_wb_expt_vld;
 
 assign ld_wb_pre_iid[6:0]       = {7{ld_wb_da_cmplt_grnt}}  & ld_da_iid[6:0]
                                   | {7{ld_wb_rb_cmplt_grnt}}  & rb_ld_wb_iid[6:0];
@@ -156,13 +160,18 @@ begin
   else
     ld_wb_inst_vld      <=  1'b0;
 end
-
+logic ld_wb_expt;
+logic [31:0] ld_wb_expt_addr;
 always @(posedge forever_cpuclk or negedge cpurst_b)
 begin
   if (!cpurst_b)
     ld_wb_iid[6:0]        <=  7'b0;
+    ld_wb_expt            <=  1'b0;
+    ld_wb_expt_addr       <=  32'b0;
   else if(ld_wb_pre_inst_vld)
     ld_wb_iid[6:0]        <=  ld_wb_pre_iid[6:0];
+    ld_wb_expt            <=  ld_wb_pre_expt_vld;
+    ld_wb_expt_addr       <=  ld_da_wb_expt_addr;
 end
 
 //------------------data part-------------------------------
@@ -246,6 +255,8 @@ assign ld_wb_preg_data_sign_extend[31:0] = {32{ld_wb_preg_sign_sel[3]}} & ld_wb_
 //==========================================================
 assign lsu_rtu_wb_pipe3_cmplt         = ld_wb_inst_vld;
 assign lsu_rtu_wb_pipe3_iid[6:0]      = ld_wb_iid[6:0];
+assign lsu_rtu_wb_pipe3_expt_vld      = ld_wb_expt;
+assign lsu_rtu_wb_pipe3_expt_addr     = ld_wb_expt_addr;
 
 assign lsu_rtu_wb_pipe3_wb_preg_vld   = ld_wb_pre_preg_wb_vld;
 assign lsu_rtu_wb_pipe3_wb_preg_expand[63:0] = ld_wb_data_preg_expand[63:0];

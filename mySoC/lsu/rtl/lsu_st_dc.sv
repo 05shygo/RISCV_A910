@@ -32,6 +32,7 @@ module ct_lsu_st_dc #(
     input  logic         st_ag_inst_vld,
     input  logic [7:0]  st_ag_lsid,
     input  logic         st_ag_old,
+    input  logic         st_ag_expt,
     input  logic [3:0]  st_ag_sdid_oh,
     input  logic         st_ag_secd,
 
@@ -43,6 +44,7 @@ module ct_lsu_st_dc #(
     output logic [7:0]  st_dc_lsid,
     output logic [3:0]  st_dc_sdid_oh,
     output logic         st_dc_old,
+    output logic         st_dc_expt,
     output logic [15:0]  st_dc_bytes_vld,
     output logic [3:0]   st_dc_rot_sel,
     output logic         st_dc_boundary,
@@ -104,6 +106,7 @@ module ct_lsu_st_dc #(
             st_dc_lsid[LSIQ_ENTRY-1:0]    <= {LSIQ_ENTRY{1'b0}};
             st_dc_sdid_oh[SDIQ_ENTRY-1:0] <= {SDIQ_ENTRY{1'b0}};
             st_dc_old                     <= 1'b0;
+            st_dc_expt                    <= 1'b0;
             st_dc_bytes_vld[15:0]         <= 16'b0;
             st_dc_rot_sel[3:0]            <= 4'b0;
             st_dc_boundary                <= 1'b0;
@@ -114,12 +117,13 @@ module ct_lsu_st_dc #(
             st_dc_lsid[LSIQ_ENTRY-1:0]    <= st_ag_lsid[LSIQ_ENTRY-1:0];
             st_dc_sdid_oh[SDIQ_ENTRY-1:0] <= st_ag_sdid_oh[SDIQ_ENTRY-1:0];
             st_dc_old                     <= st_ag_old;
+            st_dc_expt                    <= st_ag_expt;
             st_dc_bytes_vld[15:0]         <= st_ag_dc_bytes_vld[15:0];
             st_dc_rot_sel[3:0]            <= st_ag_dc_rot_sel[3:0];
             st_dc_boundary                <= st_ag_boundary;
         end
     end
-
+st_ag_expt
     always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
         if (!cpurst_b)
             st_dc_addr0[31:0] <= {32{1'b0}};
@@ -149,7 +153,7 @@ assign st_dc_dcwp_hit_idx = 1'b0;
     //==========================================================
     //                 Create load queue
     //==========================================================
-    assign st_dc_sq_create_vld = st_dc_inst_vld && !sq_st_dc_inst_hit;
+    assign st_dc_sq_create_vld = st_dc_inst_vld && !sq_st_dc_inst_hit && !st_dc_expt;
 
     assign st_dc_sq_create_dp_vld     = st_dc_sq_create_vld;
     assign st_dc_sq_create_gateclk_en = st_dc_sq_create_dp_vld;
@@ -161,7 +165,7 @@ assign st_dc_dcwp_hit_idx = 1'b0;
     //==========================================================
     //        Generate check signal to lq/ld_dc stage
     //==========================================================
-    assign st_dc_chk_st_inst_vld = st_dc_inst_vld;
+    assign st_dc_chk_st_inst_vld = st_dc_inst_vld & !st_dc_expt;
 
     //==========================================================
     //        data pre_select
