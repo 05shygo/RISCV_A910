@@ -33,6 +33,10 @@ module tb_idu_c910;
   reg [24:0] ifu_idu_if_inst0_chk;
   reg       rtu_idu_alloc_preg0_vld;
   reg [ 5:0] rtu_idu_alloc_preg0;
+  reg [ 5:0] rtu_preg_raddr0;
+  reg       rtu_csr_rd_we;
+  reg [ 5:0] rtu_csr_rd_addr;
+  reg [31:0] rtu_csr_rd_wdata;
 
   // ---- 其余输入: 全部接常量 0 ----
   wire       ifu_idu_ib_inst1_vld;
@@ -75,6 +79,9 @@ module tb_idu_c910;
   wire [ 7:0] lsu_idu_lsiq_pop_entry;
   wire       lsu_sdiq_has_in_sq_vld;
   wire [ 3:0] lsu_sdiq_has_in_sq_sdiq;
+  wire [ 5:0] rtu_preg_raddr1;
+  wire [ 5:0] rtu_preg_raddr2;
+  wire [ 5:0] rtu_csr_src_raddr;
 
   // ---- 输出 ----
   wire [ 1:0] idu_accept_num;
@@ -175,6 +182,10 @@ module tb_idu_c910;
   wire [ 2:0] idu_rtu_disp2_csr_op;
   wire [ 4:0] idu_rtu_disp2_csr_imm;
   wire [ 6:0] idu_rtu_disp2_flags;
+  wire [31:0] rtu_preg_rdata0;
+  wire [31:0] rtu_preg_rdata1;
+  wire [31:0] rtu_preg_rdata2;
+  wire [31:0] rtu_csr_src_rdata;
 
   assign forever_cpuclk = clk;
   assign cpurst_b       = rst_n;
@@ -218,6 +229,9 @@ module tb_idu_c910;
   assign lsu_idu_lsiq_pop_entry           = 8'b0;
   assign lsu_sdiq_has_in_sq_vld           = 1'b0;
   assign lsu_sdiq_has_in_sq_sdiq          = 4'b0;
+  assign rtu_preg_raddr1                  = 6'b0;
+  assign rtu_preg_raddr2                  = 6'b0;
+  assign rtu_csr_src_raddr                = 6'b0;
 
   // ROB 不满 ⇒ 允许派遣; 不冲刷
   assign rtu_idu_rob_full = 1'b0;
@@ -270,6 +284,9 @@ module tb_idu_c910;
     .lsu_idu_lsiq_pop_entry           (lsu_idu_lsiq_pop_entry          ),
     .lsu_sdiq_has_in_sq_vld           (lsu_sdiq_has_in_sq_vld          ),
     .lsu_sdiq_has_in_sq_sdiq          (lsu_sdiq_has_in_sq_sdiq         ),
+    .rtu_preg_raddr1                  (rtu_preg_raddr1                 ),
+    .rtu_preg_raddr2                  (rtu_preg_raddr2                 ),
+    .rtu_csr_src_raddr                (rtu_csr_src_raddr               ),
     .rtu_idu_rob_full                 (rtu_idu_rob_full                ),
     .rtu_yy_xx_flush                  (rtu_yy_xx_flush                 ),
     .lsu_idu_lq_not_full              (lsu_idu_lq_not_full             ),
@@ -280,6 +297,10 @@ module tb_idu_c910;
     .ifu_idu_if_inst0_chk             (ifu_idu_if_inst0_chk            ),
     .rtu_idu_alloc_preg0_vld          (rtu_idu_alloc_preg0_vld         ),
     .rtu_idu_alloc_preg0              (rtu_idu_alloc_preg0             ),
+    .rtu_preg_raddr0                  (rtu_preg_raddr0                 ),
+    .rtu_csr_rd_we                    (rtu_csr_rd_we                   ),
+    .rtu_csr_rd_addr                  (rtu_csr_rd_addr                 ),
+    .rtu_csr_rd_wdata                 (rtu_csr_rd_wdata                ),
     .idu_accept_num                   (idu_accept_num                  ),
     .idu_rtu_ir_preg0_alloc_vld       (idu_rtu_ir_preg0_alloc_vld      ),
     .idu_rtu_ir_preg1_alloc_vld       (idu_rtu_ir_preg1_alloc_vld      ),
@@ -377,7 +398,11 @@ module tb_idu_c910;
     .idu_rtu_disp2_csr_addr           (idu_rtu_disp2_csr_addr          ),
     .idu_rtu_disp2_csr_op             (idu_rtu_disp2_csr_op            ),
     .idu_rtu_disp2_csr_imm            (idu_rtu_disp2_csr_imm           ),
-    .idu_rtu_disp2_flags              (idu_rtu_disp2_flags             )
+    .idu_rtu_disp2_flags              (idu_rtu_disp2_flags             ),
+    .rtu_preg_rdata0                  (rtu_preg_rdata0                 ),
+    .rtu_preg_rdata1                  (rtu_preg_rdata1                 ),
+    .rtu_preg_rdata2                  (rtu_preg_rdata2                 ),
+    .rtu_csr_src_rdata                (rtu_csr_src_rdata               )
   );
 
   //==========================================================
@@ -406,6 +431,8 @@ module tb_idu_c910;
   localparam [6:0]  PREG_GIVEN = 7'd33;
   localparam [6:0]  ARCH_X1    = 7'd1;              // rt_reset_updt_preg 里 x1 → p1
   localparam [24:0] CHK0      = 25'h0_12345;
+  localparam [5:0]  PRF_ADDR  = 6'd9;               // 随便挑一个非 0 的物理号
+  localparam [31:0] PRF_DATA  = 32'hDEAD_BEEF;      // 一个不会跟别的值撞的常数
 
   integer     n_disp;          // 观测到的派遣次数
   integer     errs;
@@ -467,6 +494,23 @@ module tb_idu_c910;
     end
     else
       $display("TB-IDU: ✅ 复位映射在 (复位释放后 RAT[x1]=%0d = x1→p%0d)", ARCH_X1, ARCH_X1);
+
+    // ---- 判据 4: PRF 的 RTU 写口 / 读口 (2026-10-08 新加的 4 读 1 写) ----
+    // 不依赖 IDU 流水: 直接按"退休拍写一个物理号、再按号读回来"验通路。
+    rtu_csr_rd_we    = 1'b1;
+    rtu_csr_rd_addr  = PRF_ADDR;
+    rtu_csr_rd_wdata = PRF_DATA;
+    @(posedge clk);
+    rtu_csr_rd_we    = 1'b0;
+    rtu_preg_raddr0  = PRF_ADDR;
+    @(posedge clk);
+    @(posedge clk);
+    if (rtu_preg_rdata0 !== PRF_DATA) begin
+      $display("TB-IDU: ❌ PRF 走访存失败: 写入 %h, 读回 %h (地址 %0d)", PRF_DATA, rtu_preg_rdata0, PRF_ADDR);
+      errs = errs + 1;
+    end
+    else
+      $display("TB-IDU: ✅ PRF 的 RTU 写/读口通 (p%0d <- %h, 读回一致)", PRF_ADDR, PRF_DATA);
 
     // ---- 连续灌激励, 验 RAT 在写 ⓐ + 派遣记录 ⓑ ----
     // 灌激励: {taken, npc, pc, inst}

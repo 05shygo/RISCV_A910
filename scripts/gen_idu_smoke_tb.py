@@ -32,6 +32,8 @@ SCENE_PORTS = {"rtu_idu_rob_full", "rtu_yy_xx_flush"}
 STIM_PORTS = {
     "ifu_idu_ib_inst0_vld", "ifu_idu_ib_inst0_data", "ifu_idu_if_inst0_chk",
     "rtu_idu_alloc_preg0_vld", "rtu_idu_alloc_preg0",
+    # 2026-10-08: PRF 的 RTU 写口 + 一个读口 —— 用来验"退休拍按物理号写/读"真通
+    "rtu_csr_rd_we", "rtu_csr_rd_addr", "rtu_csr_rd_wdata", "rtu_preg_raddr0",
 }
 
 # 这几根恒接 1 (不是 0): 它们是 LSU 队列的"不满"指示 —— 接 0 会被当成
@@ -164,6 +166,8 @@ module tb_idu_c910;
   localparam [6:0]  PREG_GIVEN = 7'd33;
   localparam [6:0]  ARCH_X1    = 7'd1;              // rt_reset_updt_preg 里 x1 → p1
   localparam [24:0] CHK0      = 25'h0_12345;
+  localparam [5:0]  PRF_ADDR  = 6'd9;               // 随便挑一个非 0 的物理号
+  localparam [31:0] PRF_DATA  = 32'hDEAD_BEEF;      // 一个不会跟别的值撞的常数
 
   integer     n_disp;          // 观测到的派遣次数
   integer     errs;
@@ -225,6 +229,23 @@ module tb_idu_c910;
     end
     else
       $display("TB-IDU: ✅ 复位映射在 (复位释放后 RAT[x1]=%0d = x1→p%0d)", ARCH_X1, ARCH_X1);
+
+    // ---- 判据 4: PRF 的 RTU 写口 / 读口 (2026-10-08 新加的 4 读 1 写) ----
+    // 不依赖 IDU 流水: 直接按"退休拍写一个物理号、再按号读回来"验通路。
+    rtu_csr_rd_we    = 1'b1;
+    rtu_csr_rd_addr  = PRF_ADDR;
+    rtu_csr_rd_wdata = PRF_DATA;
+    @(posedge clk);
+    rtu_csr_rd_we    = 1'b0;
+    rtu_preg_raddr0  = PRF_ADDR;
+    @(posedge clk);
+    @(posedge clk);
+    if (rtu_preg_rdata0 !== PRF_DATA) begin
+      $display("TB-IDU: \u274c PRF 走访存失败: 写入 %h, 读回 %h (地址 %0d)", PRF_DATA, rtu_preg_rdata0, PRF_ADDR);
+      errs = errs + 1;
+    end
+    else
+      $display("TB-IDU: \u2705 PRF 的 RTU 写/读口通 (p%0d <- %h, 读回一致)", PRF_ADDR, PRF_DATA);
 
     // ---- 连续灌激励, 验 RAT 在写 ⓐ + 派遣记录 ⓑ ----
     // 灌激励: {taken, npc, pc, inst}

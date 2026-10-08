@@ -225,7 +225,28 @@ module ct_idu_top(
   output logic [11:0]  idu_rtu_disp2_csr_addr,
   output logic [2:0]   idu_rtu_disp2_csr_op,
   output logic [4:0]   idu_rtu_disp2_csr_imm,
-  output logic [6:0]   idu_rtu_disp2_flags
+  output logic [6:0]   idu_rtu_disp2_flags,
+
+  //==========================================================
+  // Interface with RTU — 物理寄存器堆访问 (2026-10-08 新增)
+  //==========================================================
+  // 退休级要**按物理号**取数: difftest 的提交值(3 个退休槽) + CSR 指令的 rs1 源操作数。
+  // 交付的 PRF 是 11 读 3 写、全被内部占满 ⇒ 这 4 个读口 + 1 个写口都是新加的
+  // (见 ct_idu_rf_prf_pregfile 的说明与 RTU §6.1 的 A1/A5)。
+  //
+  // ⚠️ 地址是 **6 位**(PRF 是 64 档), RTU 侧是 7 位 ⇒ 由适配层切位后送进来。
+  // ⚠️ 读口是**组合**的: 退休那拍必须已经写回(顺序由 RTU 的"只有完成的才准退休"保证)。
+  input  logic [5:0]   rtu_preg_raddr0,
+  input  logic [5:0]   rtu_preg_raddr1,
+  input  logic [5:0]   rtu_preg_raddr2,
+  input  logic [5:0]   rtu_csr_src_raddr,
+  input  logic         rtu_csr_rd_we,
+  input  logic [5:0]   rtu_csr_rd_addr,
+  input  logic [31:0]  rtu_csr_rd_wdata,
+  output logic [31:0]  rtu_preg_rdata0,
+  output logic [31:0]  rtu_preg_rdata1,
+  output logic [31:0]  rtu_preg_rdata2,
+  output logic [31:0]  rtu_csr_src_rdata
 );
 
 //==========================================================
@@ -1212,7 +1233,19 @@ ct_idu_rf_prf_pregfile x_ct_idu_rf_prf_pregfile (
   .prf_dp_rf_pipe4_src0_data                              (prf_dp_rf_pipe4_src0_data),
   .prf_dp_rf_pipe5_src0_data                              (prf_dp_rf_pipe5_src0_data),
   .prf_dp_rf_pipe6_src0_data                              (prf_dp_rf_pipe6_src0_data),
-  .prf_dp_rf_pipe6_src1_data                              (prf_dp_rf_pipe6_src1_data)
+  .prf_dp_rf_pipe6_src1_data                              (prf_dp_rf_pipe6_src1_data),
+  // ---- RTU 的访问口 (2026-10-08 新增, 4 读 1 写) ----
+  .rtu_preg_raddr0                       (rtu_preg_raddr0),
+  .rtu_preg_raddr1                       (rtu_preg_raddr1),
+  .rtu_preg_raddr2                       (rtu_preg_raddr2),
+  .rtu_csr_src_raddr                     (rtu_csr_src_raddr),
+  .rtu_csr_rd_we                         (rtu_csr_rd_we),
+  .rtu_csr_rd_addr                       (rtu_csr_rd_addr),
+  .rtu_csr_rd_wdata                      (rtu_csr_rd_wdata),
+  .rtu_preg_rdata0                       (rtu_preg_rdata0),
+  .rtu_preg_rdata1                       (rtu_preg_rdata1),
+  .rtu_preg_rdata2                       (rtu_preg_rdata2),
+  .rtu_csr_src_rdata                     (rtu_csr_src_rdata)
 );
 
 //==========================================================
