@@ -175,7 +175,7 @@ CROSS     ?= riscv32-unknown-elf-
 ASM_SRCS  := $(wildcard $(PWD)/asm/*.S)
 ASM_BINS  := $(patsubst $(PWD)/asm/%.S,$(PWD)/bin/%.bin,$(ASM_SRCS))
 
-.PHONY: all build run run-all verdi clean help coremark asm muldiv-unit rtu-unit
+.PHONY: all build run run-all verdi clean help coremark asm muldiv-unit rtu-unit rtu-lsu-unit
 
 asm: $(ASM_BINS)
 
@@ -537,6 +537,30 @@ LSU_UNIT_SRC   := $(wildcard $(PWD)/mySoC/lsu/rtl/*.sv)
 LSU_UNIT_TB    := $(PWD)/tb/unit/lsu/tb_lsu_load_test.sv
 LSU_UNIT_ARGS  ?=
 LSU_UNIT_DEFS  := +define+DCACHE_$(if $(filter 1024,$(DCACHE_SIZE)),1KB,$(if $(filter 4096,$(DCACHE_SIZE)),4KB,2KB))
+
+# ---------------------------------------------------------------------------
+# RTU + LSU 联合单元台 (2026-10-08 立): 把两个交付物**真的连起来** elaborate
+#
+# 为什么要有它: 主构建里没有任何模块例化 ct_idu_top/lsu_top, 而两个冒烟台各连各的
+# 常量 ⇒ RTU↔LSU 那 16 根线**从来没被检查过**。这个台子是第一次把两侧接起来。
+#   make rtu-lsu-unit
+#   make rtu-lsu-unit RTU_LSU_ARGS=+DUMP       # 存 FSDB
+# ---------------------------------------------------------------------------
+RTU_LSU_BUILD := $(PWD)/obj_unit_rtu_lsu
+RTU_LSU_SIMV  := $(RTU_LSU_BUILD)/simv
+RTU_LSU_ARGS  ?=
+RTU_LSU_SRC   := $(wildcard $(PWD)/mySoC/rtu/rtl/*.v) $(wildcard $(PWD)/mySoC/lsu/rtl/*.sv)
+RTU_LSU_HDR   := $(wildcard $(PWD)/mySoC/rtu/rtl/*.vh)
+RTU_LSU_TB    := $(PWD)/tb/unit/tb_rtu_lsu.sv
+
+rtu-lsu-unit: $(RTU_LSU_SIMV)
+	@$(RTU_LSU_SIMV) +vcs+lic+wait -exitstatus $(RTU_LSU_ARGS) -l $(RTU_LSU_BUILD)/sim.log
+
+$(RTU_LSU_SIMV): $(RTU_LSU_SRC) $(RTU_LSU_HDR) $(RTU_LSU_TB)
+	@mkdir -p $(RTU_LSU_BUILD)
+	$(VCS) $(VCS_FLAGS) $(INC) $(LSU_UNIT_DEFS) -top tb_rtu_lsu -o $(RTU_LSU_SIMV) \
+	  -Mdir=$(RTU_LSU_BUILD)/csrc -l $(RTU_LSU_BUILD)/compile.log \
+	  $(RTU_LSU_SRC) $(RTU_LSU_TB)
 
 lsu-unit: $(LSU_UNIT_SIMV)
 	@$(LSU_UNIT_SIMV) +vcs+lic+wait -exitstatus $(LSU_UNIT_ARGS) -l $(LSU_UNIT_BUILD)/sim.log
