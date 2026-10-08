@@ -146,7 +146,12 @@ def main():
     // store 重放: LSU 的两根**或**起来送进 RTU (语义见 RTU 的端口注释)
     assign lsu_replay_vld = lsu_rtu_wb_pipe4_flush | lsu_rtu_wb_pipe4_spec_fail;
     // LSU 的冲刷口名字与 RTU 的不同名, 需要显式接 (其余 7 根同名, 靠连线自动对上)
-    assign rtu_yy_xx_flush = rtu_backend_flush;""")
+    assign rtu_yy_xx_flush = rtu_backend_flush;
+    // 释放否决掩码 (2026-10-08, 第 5 态): 本台**不建模** IDU 的 SDIQ, 由生成器
+    // 统一给 `initial preg_dealloc_mask = '0` (即"没有任何号被 store 引用"), 所以
+    // 这个台上的释放都是"挂一拍 RELEASE 就回池"。要测押住请用 rtu-unit 的
+    // `+MASKDIR` / `+MASKPCT=n` —— 那里才有参考模型与判据。""")
+    print()   # 与手写的尾段 (假 BIU / 激励) 之间留一个空行
 
 
 if __name__ == "__main__":

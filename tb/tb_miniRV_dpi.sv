@@ -129,6 +129,10 @@ module tb_miniRV_dpi;
         // ⚠️ 2026-10-08: 池子大小可配 (PREG=64|96) ⇒ 用 $size 取**实际**项数。
         //    写死 96 在 64 档下会越界读 st[64..95] (读出 X, ARCH 计数当场误报)。
         for (rtu_gi = 0; rtu_gi < $size(dut.Core_cpu.u_rtu.u_preg.st); rtu_gi = rtu_gi + 1)
+          // ⚠️ 2026-10-08: 常量 3 = `RTU_P_ARCH` 的编码值。第 5 态 (`RELEASE` = 4)
+          //    是**往后加**的, 前四态的编码没动, 所以这条比较仍然对。这里不写宏是因为
+          //    本文件 (以及整个主流程的 TB) 没有 include RTU_define.vh ——
+          //    **改状态编码时必须回来改这一行**, 否则探针会静默变成空检查。
           if (dut.Core_cpu.u_rtu.u_preg.st[rtu_gi] == 2'd3) rtu_arch_cnt = rtu_arch_cnt + 1;
         if (rtu_arch_cnt != 32)
           $fatal(1, "[RTU 不变量] t=%0t ARCH 项数 = %0d (应为 32) —— preg 状态表被写坏",

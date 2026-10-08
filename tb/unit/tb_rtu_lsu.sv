@@ -389,6 +389,7 @@ module tb_rtu_lsu;
     logic                  sq_stall;
     logic [31:0]           csr_rdata;
     logic                  int_pending;
+    logic [63:0]           preg_dealloc_mask;
     logic                  beu_redirect_vld;
     logic [31:0]           preg_rdata0;
     logic [31:0]           preg_rdata1;
@@ -538,6 +539,7 @@ module tb_rtu_lsu;
     initial sq_stall = 0;
     initial csr_rdata = '0;
     initial int_pending = 0;
+    initial preg_dealloc_mask = '0;
     initial beu_redirect_vld = 0;
     initial preg_rdata0 = '0;
     initial preg_rdata1 = '0;
@@ -630,6 +632,7 @@ module tb_rtu_lsu;
         .sq_stall                     (sq_stall),
         .csr_rdata                    (csr_rdata),
         .int_pending                  (int_pending),
+        .preg_dealloc_mask            (preg_dealloc_mask),
         .beu_redirect_vld             (beu_redirect_vld),
         .preg_rdata0                  (preg_rdata0),
         .preg_rdata1                  (preg_rdata1),
@@ -732,6 +735,10 @@ module tb_rtu_lsu;
     assign lsu_replay_vld = lsu_rtu_wb_pipe4_flush | lsu_rtu_wb_pipe4_spec_fail;
     // LSU 的冲刷口名字与 RTU 的不同名, 需要显式接 (其余 7 根同名, 靠连线自动对上)
     assign rtu_yy_xx_flush = rtu_backend_flush;
+    // 释放否决掩码 (2026-10-08, 第 5 态): 本台**不建模** IDU 的 SDIQ, 由生成器
+    // 统一给 `initial preg_dealloc_mask = '0` (即"没有任何号被 store 引用"), 所以
+    // 这个台上的释放都是"挂一拍 RELEASE 就回池"。要测押住请用 rtu-unit 的
+    // `+MASKDIR` / `+MASKPCT=n` —— 那里才有参考模型与判据。
 
     // ===================== 假 BIU (读通道) =====================
     // 契约 (侦察结论): 一次 burst **两拍** (32B 线 = 2×128bit, ar_len=01/ar_size=100),
