@@ -120,7 +120,7 @@ module tb_rtu_rob;
 
     // ---- 存储器模型: CSR 文件与物理寄存器堆 (都是组合读, 与真核同构) ----
     logic [31:0] csr_file [0:4095];
-    logic [31:0] pf [0:95];
+    logic [31:0] pf [0:95];      // 索引是 preg 号; 96 档够用, 64 档只用到前 64 项
     logic [31:0] csr_rdata;
     logic [31:0] prdata0, prdata1, prdata2, csrsrc_rdata;
 
@@ -482,10 +482,11 @@ module tb_rtu_rob;
     // 四态表在**冲沿前**的快照。"释放的编号不该是 FREE 态"这条不变量问的是
     // "释放发生在哪个状态上", 而释放本身就在同一个 posedge 把那个编号写成 FREE ——
     // 在负沿直接读 st[] 必然读到 FREE (等于拿结果去问原因, 恒假)。所以留一份边沿前的副本。
-    logic [191:0] st_snap_q = 192'd0;
+    // 池子大小可配 (64/96) ⇒ 快照宽度跟着走
+    logic [2*`RTU_NUM_PREG-1:0] st_snap_q = {2*`RTU_NUM_PREG{1'b0}};
     logic [223:0] amt_snap_q = 224'd0;
     always @(posedge clk) begin
-        for (int si = 0; si < 96; si = si + 1)
+        for (int si = 0; si < `RTU_NUM_PREG; si = si + 1)
             st_snap_q[2*si +: 2] <= dut.u_preg.st[si];
         for (int ai = 0; ai < 32; ai = ai + 1)
             amt_snap_q[7*ai +: 7] <= dut.u_preg.amt[ai];
@@ -552,6 +553,7 @@ module tb_rtu_rob;
     assign d1_dpreg = (pl_lreg[1] != 5'd0) ? h_got[1] : 7'd0;
     assign d2_dpreg = (pl_lreg[2] != 5'd0) ? h_got[2] : 7'd0;
 
+    integer      errors = 0;
     integer      errors = 0;
     integer      n_done = 0, n_trap = 0, n_int = 0, n_flush = 0;
     integer      n_store = 0, n_csr = 0, n_mret = 0, n_misp = 0;
@@ -958,14 +960,14 @@ module tb_rtu_rob;
             begin
                 integer fcnt, fpre;
                 fcnt = 0; fpre = 0;
-                for (int q = 0; q < 96; q = q + 1) begin
+                for (int q = 0; q < `RTU_NUM_PREG; q = q + 1) begin
                     if (dut.u_preg.st[q] === `RTU_P_FREE) fcnt = fcnt + 1;
                     if (st_snap_q[2*q +: 2] === `RTU_P_FREE) fpre = fpre + 1;
                 end
                 if (dut.u_preg.free_cnt !== fcnt[6:0]) begin
                     string chg;
                     chg = "";
-                    for (int q = 0; q < 96; q = q + 1)
+                    for (int q = 0; q < `RTU_NUM_PREG; q = q + 1)
                         if (st_snap_q[2*q +: 2] !== dut.u_preg.st[q])
                             chg = {chg, $sformatf(" p%0d:%0d>%0d", q,
                                                   st_snap_q[2*q +: 2], dut.u_preg.st[q])};
@@ -993,7 +995,7 @@ module tb_rtu_rob;
             if (!x_flvl_q && (cycle > 2)) begin
                 integer fpre3, need3, got3;
                 fpre3 = 0;
-                for (int q = 0; q < 96; q = q + 1)
+                for (int q = 0; q < `RTU_NUM_PREG; q = q + 1)
                     if (st_snap_q[2*q +: 2] === `RTU_P_FREE) fpre3 = fpre3 + 1;
                 need3 = (fpre3 >= 3) ? 3 : fpre3;
                 got3  = alloc_vld0 + alloc_vld1 + alloc_vld2;
@@ -1245,7 +1247,7 @@ module tb_rtu_rob;
                     pl_pc[k]    = {$urandom};
                     pl_chk[k]   = {$urandom} % (1 << 25);
                     pl_val[k]   = {$urandom};
-                    pl_s1[k]    = {$urandom} % 96;
+                    pl_s1[k]    = {$urandom} % `RTU_NUM_PREG;   // 源 preg 号必须在池子里
                     pl_ca[k]    = {$urandom} % 4096;
                     // ⚠️ csr_op 按 §6.1 A6c 是 **funct3 原样**, 而合法取值有六个:
                     //    001/010/011 (寄存器型) 与 101/110/111 (立即数型)。
@@ -1830,7 +1832,7 @@ module tb_rtu_rob;
         for (int k = 0; k < 4; k = k + 1) tq_idx[k] = 0;
 
         for (int a = 0; a < 4096; a = a + 1) csr_file[a] = {$urandom};
-        for (int p = 0; p < 96;   p = p + 1) pf[p] = {$urandom};
+        for (int p = 0; p < `RTU_NUM_PREG; p = p + 1) pf[p] = {$urandom};
         for (int l = 0; l < 32;   l = l + 1) begin
             ref_amt[l] = l[6:0];
             ref_rat[l] = l[6:0];       // RAT 初值 = 架构映射

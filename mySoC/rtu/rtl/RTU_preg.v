@@ -4,7 +4,7 @@
 // ---------------------------------------------------------------------------
 // RTU_preg — 物理寄存器四态表 + 分配握手 + 架构映射表 AMT (D2 / D3)。
 //
-// 四态 (每 preg 2 bit, 共 192 bit):
+// 四态 (每 preg 2 bit, 共 2*`RTU_NUM_PREG` bit —— 64 档 128 / 96 档 192):
 //   FREE --(被 tap 选中补进"门房")--> WF_ALLOC --(派遣认领)--> ALLOC
 //   ALLOC --(退休且写回)--> ARCH        ALLOC --(陷阱那条)--> FREE
 //   ARCH  --(退休且 old_preg != dst_preg)--> FREE
@@ -15,11 +15,11 @@
 //    一句话: 号与许可都进寄存器(每路一份 tap), 消费者**当拍取走**, 取走即补下一个;
 //    池子在"补进 tap"那一刻就把号标成 WF_ALLOC, 之后只等派遣来认领。
 //
-// ⚠️ `WF_ALLOC` 不是多余的簿记: 96 位三端口优先编码器是 7 级左右的组合深度,
+// ⚠️ `WF_ALLOC` 不是多余的簿记: NUM_PREG 位三端口优先编码器是 6~7 级的组合深度,
 //    直接串在"派遣 → 分配 → 更新状态"这条链上会把派遣拍压垮 (§4.2 的 P3)。
 //    C910 也是切成两拍 (`ct_rtu_pst_preg_entry.v:288-295`)。
 //
-// ⚠️ **2026-10-02 (D1.2): 自由池是全部 96 项, 不再钉在 p32..p95。**
+// ⚠️ **2026-10-02 (D1.2): 自由池是全部 NUM_PREG 项, 不再钉在 p32..p95。**
 //    改之前: reset 把 p0..p31 置 ARCH 且**永不回收** ⇒ 每个"搬过家"的 lreg 都
 //    额外占着一个回不来的格子, 池子收敛到 33 (= 64 − ≤31 个被顶掉的初始映射)。
 //    顺序核无所谓, 乱序要的就是深窗口 —— 参考核 free_list 只有 32 项却挂在 64 项
@@ -73,8 +73,8 @@ module RTU_preg (
     output wire [223:0] amt_flat               // 32 × 7bit, amt_flat[7*l +: 7] = AMT[l]
 );
 
-    reg  [1:0]  st [0:95];
-    reg  [1:0]  nst[0:95];
+    reg  [1:0]  st [0:`RTU_NUM_PREG-1];
+    reg  [1:0]  nst[0:`RTU_NUM_PREG-1];
     // ---- 每路一份"门房"寄存器 (C910 `ct_rtu_pst_preg.v:7376-7393` 的 alloc_preg*) ----
     // 它备着一个已经出池(WF_ALLOC)、等着被取走的号。消费者**当拍取走**;
     // 取走(或空着)的那一拍边沿才补下一个。于是许可与编号都不依赖本拍请求
@@ -135,18 +135,55 @@ module RTU_preg (
     //    `sel_oh` 落不进低段。
     //      位0 周期2 / 位1 周期4 / 位2 周期8 / 位3 周期16 / 位4 周期32 /
     //      位5 = p32..p63 (全表里唯一一段 bit5=1 的) / 位6 = p64..p95。
-    localparam [95:0] PREG_BM0 = 96'hAAAA_AAAA_AAAA_AAAA_AAAA_AAAA;
-    localparam [95:0] PREG_BM1 = 96'hCCCC_CCCC_CCCC_CCCC_CCCC_CCCC;
-    localparam [95:0] PREG_BM2 = 96'hF0F0_F0F0_F0F0_F0F0_F0F0_F0F0;
-    localparam [95:0] PREG_BM3 = 96'hFF00_FF00_FF00_FF00_FF00_FF00;
-    localparam [95:0] PREG_BM4 = 96'hFFFF_0000_FFFF_0000_FFFF_0000;
-    localparam [95:0] PREG_BM5 = 96'h0000_0000_FFFF_FFFF_0000_0000;
-    localparam [95:0] PREG_BM6 = 96'hFFFF_FFFF_0000_0000_0000_0000;
+    //
+    // ⚠️ 2026-10-08: 池子大小可配 (64/96)。64 档的图案就是 96 档的**低 64 位**
+    //    (周期图案的周期是 2 的幂, 截断不改变任何一位), 而 BM6 **恒 0** ——
+    //    64 档下没有任何编号的第 6 位是 1。这正是"端口固定 7 位"能成立的前提,
+    //    下面有配置自检盯着它 (改了 `RTU_NUM_PREG` 而忘了改掩码, elaborate 就炸)。
+`ifdef RTU_PREG64
+    localparam [`RTU_NUM_PREG-1:0] PREG_BM0 = 64'hAAAA_AAAA_AAAA_AAAA;
+    localparam [`RTU_NUM_PREG-1:0] PREG_BM1 = 64'hCCCC_CCCC_CCCC_CCCC;
+    localparam [`RTU_NUM_PREG-1:0] PREG_BM2 = 64'hF0F0_F0F0_F0F0_F0F0;
+    localparam [`RTU_NUM_PREG-1:0] PREG_BM3 = 64'hFF00_FF00_FF00_FF00;
+    localparam [`RTU_NUM_PREG-1:0] PREG_BM4 = 64'hFFFF_0000_FFFF_0000;
+    localparam [`RTU_NUM_PREG-1:0] PREG_BM5 = 64'hFFFF_FFFF_0000_0000;
+    localparam [`RTU_NUM_PREG-1:0] PREG_BM6 = 64'd0;
+`else
+    localparam [`RTU_NUM_PREG-1:0] PREG_BM0 = 96'hAAAA_AAAA_AAAA_AAAA_AAAA_AAAA;
+    localparam [`RTU_NUM_PREG-1:0] PREG_BM1 = 96'hCCCC_CCCC_CCCC_CCCC_CCCC_CCCC;
+    localparam [`RTU_NUM_PREG-1:0] PREG_BM2 = 96'hF0F0_F0F0_F0F0_F0F0_F0F0_F0F0;
+    localparam [`RTU_NUM_PREG-1:0] PREG_BM3 = 96'hFF00_FF00_FF00_FF00_FF00_FF00;
+    localparam [`RTU_NUM_PREG-1:0] PREG_BM4 = 96'hFFFF_0000_FFFF_0000_FFFF_0000;
+    localparam [`RTU_NUM_PREG-1:0] PREG_BM5 = 96'h0000_0000_FFFF_FFFF_0000_0000;
+    localparam [`RTU_NUM_PREG-1:0] PREG_BM6 = 96'hFFFF_FFFF_0000_0000_0000_0000;
+`endif
 
-    wire [95:0] free_vec;
+    // ---- 配置自检: 改动 `RTU_NUM_PREG` 就必须同步掩码, 否则 elaborate 期就炸 ----
+    // 照 RTU.v 里"路数自检"的同一套写法: 故意例化一个不存在的模块, 让工具报错。
+    // 查的是"编号位宽(7) 与池子大小是否自洽": 池子里若存在 ≥ 2^PREG_W 以外的号,
+    // 端口上就会送出池子里根本没有的编号 —— 下游拿它去索引会拿到 X。
+    generate
+        if (`RTU_NUM_PREG > (1 << `RTU_PREG_W)) begin : g_preg_too_big
+            RTU_NUM_PREG_MUST_FIT_RTU_PREG_W u_err();
+        end
+`ifdef RTU_PREG64
+        if (PREG_BM6 != {`RTU_NUM_PREG{1'b0}}) begin : g_bm6_must_be_zero
+            RTU_PREG64_MUST_HAVE_BM6_ZERO u_err();
+        end
+        if (`RTU_NUM_PREG != 64) begin : g_preg64_wrong_size
+            RTU_PREG64_MUST_BE_64 u_err();
+        end
+`else
+        if (`RTU_NUM_PREG != 96) begin : g_preg96_wrong_size
+            RTU_PREG96_MUST_BE_96 u_err();
+        end
+`endif
+    endgenerate
+
+    wire [`RTU_NUM_PREG-1:0] free_vec;
     genvar      gv;
     generate
-        for (gv = 0; gv < 96; gv = gv + 1) begin : g_free
+        for (gv = 0; gv < `RTU_NUM_PREG; gv = gv + 1) begin : g_free
             assign free_vec[gv] = (st[gv] == `RTU_P_FREE);
         end
     endgenerate
@@ -185,7 +222,7 @@ module RTU_preg (
     //    (改前这里是 `free_vec & PREG_HI_MSK`, 靠掩码把低段**结构上**挡在窗口外;
     //     现在那条保证改由"阶段 1 低段恒 ARCH"这条不变量提供: free_vec[31:0] ≡ 0
     //     ⇒ 本式与掩过时逐位相同。)
-    wire [95:0] free_pool = free_vec;
+    wire [`RTU_NUM_PREG-1:0] free_pool = free_vec;
 
     // -----------------------------------------------------------------------
     // "某一位的上方/下方有没有空闲" —— 显式的 Kogge-Stone 平衡树, 6 级翻满 64 位
@@ -203,45 +240,45 @@ module RTU_preg (
     //    移入 0、高树右移会从左端移入 0, 于是"边界之外没有空闲"这件事由移位自带,
     //    不需要掩码。改前低段是保留区、必须靠 `PREG_HI_MSK` 兜; 现在不用了。
     // -----------------------------------------------------------------------
-    wire [95:0] fu1  = free_pool >> 1;
-    wire [95:0] fu2  = fu1  | (fu1  >> 1);
-    wire [95:0] fu4  = fu2  | (fu2  >> 2);
-    wire [95:0] fu8  = fu4  | (fu4  >> 4);
-    wire [95:0] fu16 = fu8  | (fu8  >> 8);
-    wire [95:0] fu32 = fu16 | (fu16 >> 16);
-    wire [95:0] fu64 = fu32 | (fu32 >> 32);
+    wire [`RTU_NUM_PREG-1:0] fu1  = free_pool >> 1;
+    wire [`RTU_NUM_PREG-1:0] fu2  = fu1  | (fu1  >> 1);
+    wire [`RTU_NUM_PREG-1:0] fu4  = fu2  | (fu2  >> 2);
+    wire [`RTU_NUM_PREG-1:0] fu8  = fu4  | (fu4  >> 4);
+    wire [`RTU_NUM_PREG-1:0] fu16 = fu8  | (fu8  >> 8);
+    wire [`RTU_NUM_PREG-1:0] fu32 = fu16 | (fu16 >> 16);
+    wire [`RTU_NUM_PREG-1:0] fu64 = fu32 | (fu32 >> 32);
 
-    wire [95:0] fd1  = free_pool << 1;
-    wire [95:0] fd2  = fd1  | (fd1  << 1);
-    wire [95:0] fd4  = fd2  | (fd2  << 2);
-    wire [95:0] fd8  = fd4  | (fd4  << 4);
-    wire [95:0] fd16 = fd8  | (fd8  << 8);
-    wire [95:0] fd32 = fd16 | (fd16 << 16);
-    wire [95:0] fd64 = fd32 | (fd32 << 32);
+    wire [`RTU_NUM_PREG-1:0] fd1  = free_pool << 1;
+    wire [`RTU_NUM_PREG-1:0] fd2  = fd1  | (fd1  << 1);
+    wire [`RTU_NUM_PREG-1:0] fd4  = fd2  | (fd2  << 2);
+    wire [`RTU_NUM_PREG-1:0] fd8  = fd4  | (fd4  << 4);
+    wire [`RTU_NUM_PREG-1:0] fd16 = fd8  | (fd8  << 8);
+    wire [`RTU_NUM_PREG-1:0] fd32 = fd16 | (fd16 << 16);
+    wire [`RTU_NUM_PREG-1:0] fd64 = fd32 | (fd32 << 32);
 
     // ⚠️ 第 0/1 路的掩码在**末端**, 不在第 1 路的扫描输入上 —— 两条扫描并行
     //    (ARM `enyo_is_vxq_free_list.sv:349` 的写法)。见上面 ① 的长注。
     //    一位独热 = 自己 & ~(自己上方/下方有别人)。
-    wire [95:0] sel0_oh = free_pool & ~fu64;                // 最高
-    wire [95:0] sel1_oh = (free_pool & ~fd64) & ~sel0_oh;   // 最低 —— 与 sel0 并行
-    wire [95:0] v1      = free_pool & ~sel0_oh;
+    wire [`RTU_NUM_PREG-1:0] sel0_oh = free_pool & ~fu64;                // 最高
+    wire [`RTU_NUM_PREG-1:0] sel1_oh = (free_pool & ~fd64) & ~sel0_oh;   // 最低 —— 与 sel0 并行
+    wire [`RTU_NUM_PREG-1:0] v1      = free_pool & ~sel0_oh;
 
     // 第 2 路 (次高) 挂在第 0 路后面: 先去最高再找最高; 第 1 路的掩码仍在末端
-    wire [95:0] vu1  = v1 >> 1;
-    wire [95:0] vu2  = vu1  | (vu1  >> 1);
-    wire [95:0] vu4  = vu2  | (vu2  >> 2);
-    wire [95:0] vu8  = vu4  | (vu4  >> 4);
-    wire [95:0] vu16 = vu8  | (vu8  >> 8);
-    wire [95:0] vu32 = vu16 | (vu16 >> 16);
-    wire [95:0] vu64 = vu32 | (vu32 >> 32);
-    wire [95:0] sel2_oh = (v1 & ~vu64) & ~sel1_oh;
+    wire [`RTU_NUM_PREG-1:0] vu1  = v1 >> 1;
+    wire [`RTU_NUM_PREG-1:0] vu2  = vu1  | (vu1  >> 1);
+    wire [`RTU_NUM_PREG-1:0] vu4  = vu2  | (vu2  >> 2);
+    wire [`RTU_NUM_PREG-1:0] vu8  = vu4  | (vu4  >> 4);
+    wire [`RTU_NUM_PREG-1:0] vu16 = vu8  | (vu8  >> 8);
+    wire [`RTU_NUM_PREG-1:0] vu32 = vu16 | (vu16 >> 16);
+    wire [`RTU_NUM_PREG-1:0] vu64 = vu32 | (vu32 >> 32);
+    wire [`RTU_NUM_PREG-1:0] sel2_oh = (v1 & ~vu64) & ~sel1_oh;
 
     // ⚠️ 先把每个候选池声明出来再用 —— 本仓有"先用后声明造 1 位隐式线网"的前科
     //    (cpu/sim/rtl_patch/README.md 与 §9 的 R7), 症状是**语义静默错**而不是报错。
-    wire [95:0] v2    = v1 & ~sel1_oh;   // = 池子去掉前两路已选中的 (第 2 路的候选域)
-    wire [95:0] cand0 = free_pool;
-    wire [95:0] cand1 = v1;
-    wire [95:0] cand2 = v2;
+    wire [`RTU_NUM_PREG-1:0] v2    = v1 & ~sel1_oh;   // = 池子去掉前两路已选中的 (第 2 路的候选域)
+    wire [`RTU_NUM_PREG-1:0] cand0 = free_pool;
+    wire [`RTU_NUM_PREG-1:0] cand1 = v1;
+    wire [`RTU_NUM_PREG-1:0] cand2 = v2;
 
     // ⚠️ 每一路都必须**同时**用 `|candK` 门控, 三处 (g_selK / 装进门房 / 计数器的
     //    n_alloc) 逐位同式 —— 少一处就是"看着发出去了、账上没记"那类慢慢偏的 bug。
@@ -251,10 +288,10 @@ module RTU_preg (
     //    仍要留: 它守的是"这一路真拿到了号"这个定义本身, 与编码形式无关。
     //    ⚠️ 2026-10-07: 门控源从 `req_lane` 换成 `pop_lane` —— 号**装进门房那一刻**
     //       就出池 (标 WF_ALLOC), 而不是"被请求那一刻"。
-    wire [95:0] g_sel0 = sel0_oh & {96{pop_lane[0] & (|cand0)}};
-    wire [95:0] g_sel1 = sel1_oh & {96{pop_lane[1] & (|cand1)}};
-    wire [95:0] g_sel2 = sel2_oh & {96{pop_lane[2] & (|cand2)}};
-    wire [95:0] sel_oh = g_sel0 | g_sel1 | g_sel2;
+    wire [`RTU_NUM_PREG-1:0] g_sel0 = sel0_oh & {`RTU_NUM_PREG{pop_lane[0] & (|cand0)}};
+    wire [`RTU_NUM_PREG-1:0] g_sel1 = sel1_oh & {`RTU_NUM_PREG{pop_lane[1] & (|cand1)}};
+    wire [`RTU_NUM_PREG-1:0] g_sel2 = sel2_oh & {`RTU_NUM_PREG{pop_lane[2] & (|cand2)}};
+    wire [`RTU_NUM_PREG-1:0] sel_oh = g_sel0 | g_sel1 | g_sel2;
 
     // 独热 -> 7 位编号: 第 k 位 = "选中的那一位, 它的编号第 k 位是 1" (见 PREG_BM*)。
     // 一个都没选中时 7 位全 0, 与历次实现一致。这是"这一拍要装进门房的号"。
@@ -290,20 +327,20 @@ module RTU_preg (
     // 踩过的坑: 早先按 pend 值比较, TB 侧相位对不齐时 DUT 会静默地把
     // 编号放回 FREE, 而指令还拿着它 —— 自由池立刻放水。
     // -----------------------------------------------------------------------
-    wire [95:0] hit_disp;      // 本拍派遣真正用到的编号 (独热)
+    wire [`RTU_NUM_PREG-1:0] hit_disp;      // 本拍派遣真正用到的编号 (独热)
     genvar      gd;
     generate
-        for (gd = 0; gd < 96; gd = gd + 1) begin : g_disp
+        for (gd = 0; gd < `RTU_NUM_PREG; gd = gd + 1) begin : g_disp
             assign hit_disp[gd] = (disp_vld[0] && (disp_dst_preg0 == gd))
                                || (disp_vld[1] && (disp_dst_preg1 == gd))
                                || (disp_vld[2] && (disp_dst_preg2 == gd));
         end
     endgenerate
 
-    wire [95:0] is_wf;
+    wire [`RTU_NUM_PREG-1:0] is_wf;
     genvar      gw;
     generate
-        for (gw = 0; gw < 96; gw = gw + 1) begin : g_wf
+        for (gw = 0; gw < `RTU_NUM_PREG; gw = gw + 1) begin : g_wf
             assign is_wf[gw] = (st[gw] == `RTU_P_WFALLOC);
         end
     endgenerate
@@ -329,10 +366,10 @@ module RTU_preg (
     // 真重命名下被 kill 的 dst_preg 必然是 ALLOC/WF_ALLOC ⇒ 这条门控在阶段 2+ 惰性,
     // 单元单测台的行为一位不变。
     // -----------------------------------------------------------------------
-    wire [95:0] not_arch_vec;
+    wire [`RTU_NUM_PREG-1:0] not_arch_vec;
     genvar      gk;
     generate
-        for (gk = 0; gk < 96; gk = gk + 1) begin : g_notarch
+        for (gk = 0; gk < `RTU_NUM_PREG; gk = gk + 1) begin : g_notarch
             assign not_arch_vec[gk] = (st[gk] != `RTU_P_ARCH);
         end
     endgenerate
@@ -345,7 +382,7 @@ module RTU_preg (
     // 四态表更新 (优先级: 冲刷 > 退休 > 派遣确认 > 本拍选中 > 保持)
     // -----------------------------------------------------------------------
     always @(*) begin
-        for (i = 0; i < 96; i = i + 1) begin
+        for (i = 0; i < `RTU_NUM_PREG; i = i + 1) begin
             // ⚠️ 三个车道之间必须按**程序序从年轻到老**判 (先车道 2, 再 1, 再 0)。
             //    同一条 lreg 在一组里被写两次时, 年轻那条的 `old_preg` 正好是年长那条的
             //    `dst_preg`: 年长那条把它转 ARCH, 年轻那条又要把它放回 FREE —— 架构上
@@ -387,9 +424,9 @@ module RTU_preg (
             // 回池子, 位置随改名漂移); p32..p95 = FREE。
             // 对照 C910 `ct_rtu_pst_preg_entry.v:236`: `reset_mapped ? RETIRE : DEALLOC`。
             for (i = 0; i < 32; i = i + 1) st[i] <= `RTU_P_ARCH;
-            for (i = 32; i < 96; i = i + 1) st[i] <= `RTU_P_FREE;
+            for (i = 32; i < `RTU_NUM_PREG; i = i + 1) st[i] <= `RTU_P_FREE;
         end else begin
-            for (i = 0; i < 96; i = i + 1) st[i] <= nst[i];
+            for (i = 0; i < `RTU_NUM_PREG; i = i + 1) st[i] <= nst[i];
         end
     end
 
@@ -444,9 +481,9 @@ module RTU_preg (
     // `96 − 全表 ARCH 数`。写死 96 会永久高报, 于是消费者按高报的数发请求却拿不满编号。
     // ⚠️ 2026-10-07: 除 ARCH 外, 门房备着的那 ≤3 个号也不在 FREE 里 ⇒ free_cnt 比
     //    "还能发出去多少"少 ≤3。这是"提前备号"的固有代价 (C910 同样), 不是漏记。
-    wire [95:0] arch_vec;
+    wire [`RTU_NUM_PREG-1:0] arch_vec;
     generate
-        for (gv = 0; gv < 96; gv = gv + 1) begin : g_arch
+        for (gv = 0; gv < `RTU_NUM_PREG; gv = gv + 1) begin : g_arch
             assign arch_vec[gv] = (st[gv] == `RTU_P_ARCH);
         end
     endgenerate
@@ -458,8 +495,8 @@ module RTU_preg (
     always @(posedge cpu_clk or posedge cpu_rst) begin
         // ⚠️ 复位值必须是**常数** 64 (= 96 − 32 项初始映射): 那一拍 st[] 在真实
         //    上电时是 X, `96 − arch_cnt` 会算出 X 并永久留在计数器里。
-        if (cpu_rst)          free_cnt_q <= 7'd64;
-        else if (flush_lvl)   free_cnt_q <= 7'd96 - arch_cnt;
+        if (cpu_rst)          free_cnt_q <= `RTU_NUM_PREG - 32;
+        else if (flush_lvl)   free_cnt_q <= `RTU_NUM_PREG - arch_cnt;
         else                  free_cnt_q <= free_cnt_q + {3'b0, n_freed} - {3'b0, n_alloc};
     end
 

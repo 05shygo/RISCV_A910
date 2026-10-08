@@ -126,7 +126,9 @@ module tb_miniRV_dpi;
                  | dut.Core_cpu.u_rtu.u_preg.flush_lvl;
       if (rtu_evt_q) begin          // 边沿已过, st 是本边沿之后的值
         rtu_arch_cnt = 0;
-        for (rtu_gi = 0; rtu_gi < 96; rtu_gi = rtu_gi + 1)
+        // ⚠️ 2026-10-08: 池子大小可配 (PREG=64|96) ⇒ 用 $size 取**实际**项数。
+        //    写死 96 在 64 档下会越界读 st[64..95] (读出 X, ARCH 计数当场误报)。
+        for (rtu_gi = 0; rtu_gi < $size(dut.Core_cpu.u_rtu.u_preg.st); rtu_gi = rtu_gi + 1)
           if (dut.Core_cpu.u_rtu.u_preg.st[rtu_gi] == 2'd3) rtu_arch_cnt = rtu_arch_cnt + 1;
         if (rtu_arch_cnt != 32)
           $fatal(1, "[RTU 不变量] t=%0t ARCH 项数 = %0d (应为 32) —— preg 状态表被写坏",

@@ -39,6 +39,21 @@ LBUF ?= 0
 # 两者都只在 IFU=1 下有意义, 由 mySoC/ifu_subsys.v 的 ICACHE_EN/BP_EN 参数接收.
 ICACHE ?= 1
 BP ?= 1
+# PREG=64|96: **物理寄存器数量** (RTU_preg 的池子大小), 构建期可配。
+#   64 档与同事交付的 C910 IDU 的 6 位 preg 直接对得上 (IDU 一行不用改);
+#   默认 96 保持与 D-cache LSU 的 96 preg 一致。
+#   ⚠️ 只参数化**池子** (RTU_preg 内部): 端口位宽/ROB 表项位域/AMT 一律固定取最大值 7 位,
+#      所以 64 档下编号的最高位恒 0, 且不碰任何其它模块。
+#   完整说明与代价见 doc/rtu_preg_size_config_zh.md。
+#   ⚠️ 它只改 DEFINES ⇒ **必须有配置戳** (见下面的 PREG_CFG), 否则切档不会重编译。
+PREG ?= 96
+PREG_DEFS :=
+ifeq ($(PREG),64)
+PREG_DEFS += +define+RTU_PREG64
+endif
+ifeq ($(filter $(PREG),64 96),)
+$(error PREG 只能是 64 或 96, 当前是 '$(PREG)')
+endif
 # IFU=2 时换成自研 2 级前端 ifu2 的 RTL。两棵树的模块名不重名, 但顶层只有一棵
 # 能被例化 —— 旧树整个不参与编译, elaborate 更快, 也不会把死代码带进网表。
 # ifu_subsys.v 必须一并排除: 它是 rv32_ifu_top 的 SoC 适配层, 而那棵树这时
@@ -236,6 +251,12 @@ $(LBUF_CFG): FORCE
 	@mkdir -p $(BUILD_DIR)
 	@echo "$(LBUF)" | cmp -s - $@ || echo "$(LBUF)" > $@
 
+PREG_CFG := $(BUILD_DIR)/.preg_cfg
+
+$(PREG_CFG): FORCE
+	@mkdir -p $(BUILD_DIR)
+	@echo "$(PREG)" | cmp -s - $@ || echo "$(PREG)" > $@
+
 ICACHE_CFG := $(BUILD_DIR)/.icache_cfg
 BP_EN_CFG  := $(BUILD_DIR)/.bp_en_cfg
 
@@ -399,9 +420,9 @@ $(BP_CFG): FORCE
 
 FORCE:
 
-$(SIMV): $(VSRC) $(VHDR) $(SVSRC) $(DPIC) $(CSRC_GM) $(IFU_CFG) $(LBUF_CFG) $(BP_CFG) $(ICACHE_CFG) $(BP_EN_CFG) $(DCACHE_CFG)
+$(SIMV): $(VSRC) $(VHDR) $(SVSRC) $(DPIC) $(CSRC_GM) $(IFU_CFG) $(LBUF_CFG) $(BP_CFG) $(ICACHE_CFG) $(BP_EN_CFG) $(DCACHE_CFG) $(PREG_CFG)
 	@mkdir -p $(BUILD_DIR)
-	$(VCS) $(VCS_FLAGS) $(VCS_FLAGS_EXTRA) $(INC) $(DEFINES) $(BP_DEFS) $(FSDB_VCS) -CFLAGS -DVCS \
+	$(VCS) $(VCS_FLAGS) $(VCS_FLAGS_EXTRA) $(INC) $(DEFINES) $(BP_DEFS) $(PREG_DEFS) $(FSDB_VCS) -CFLAGS -DVCS \
 	  -CFLAGS -I$(PWD)/golden_model/include \
 	  -LDFLAGS "-Wl,-rpath,$(FSDB_HOME)/share/PLI/VCS/LINUX64" \
 	  -LDFLAGS "-Wl,-rpath,$(PWD)" \
@@ -464,9 +485,17 @@ RTU_UNIT_TB    := $(PWD)/tb/unit/tb_rtu_rob.sv
 rtu-unit: $(RTU_UNIT_SIMV)
 	@$(RTU_UNIT_SIMV) +vcs+lic+wait -exitstatus $(RTU_UNIT_ARGS) -l $(RTU_UNIT_BUILD)/sim.log
 
-$(RTU_UNIT_SIMV): $(RTU_UNIT_SRC) $(RTU_UNIT_HDR) $(RTU_UNIT_TB)
+# ⚠️ 池子大小 (PREG) 只改 DEFINES ⇒ 单元台也要自己的配置戳, 否则
+#    `make rtu-unit PREG=64` 会拿 96 档的 simv 跑 (切档静默失效)。
+RTU_UNIT_PREG_CFG := $(RTU_UNIT_BUILD)/.preg_cfg
+
+$(RTU_UNIT_PREG_CFG): FORCE
 	@mkdir -p $(RTU_UNIT_BUILD)
-	$(VCS) $(VCS_FLAGS) $(INC) -top tb_rtu_rob -o $(RTU_UNIT_SIMV) \
+	@echo "$(PREG)" | cmp -s - $@ || echo "$(PREG)" > $@
+
+$(RTU_UNIT_SIMV): $(RTU_UNIT_SRC) $(RTU_UNIT_HDR) $(RTU_UNIT_TB) $(RTU_UNIT_PREG_CFG)
+	@mkdir -p $(RTU_UNIT_BUILD)
+	$(VCS) $(VCS_FLAGS) $(INC) $(PREG_DEFS) -top tb_rtu_rob -o $(RTU_UNIT_SIMV) \
 	  -Mdir=$(RTU_UNIT_BUILD)/csrc -l $(RTU_UNIT_BUILD)/compile.log \
 	  $(RTU_UNIT_SRC) $(RTU_UNIT_TB)
 
@@ -583,6 +612,7 @@ help:
 	@echo "  WAVE=$(WAVE) (wave name prefix, default 'waves')"
 	@echo "  FMT=$(FMT) (fsdb|vcd|auto)"
 	@echo "  MAX_CYCLES=$(MAX_CYCLES)"
+	@echo "  PREG=$(PREG) (物理寄存器数量, 64|96; 只影响 RTU 池子)"
 	@echo "  VCS=$(VCS)"
 	@echo "  VERDI=$(VERDI)"
 	@echo

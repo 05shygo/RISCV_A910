@@ -18,8 +18,19 @@
 `define RTU_IID_W       7           // ROB_AW + 1 位回绕
 `define RTU_DISP_W      3           // 每拍派遣宽度 = 发射宽度
 `define RTU_RETIRE_W    3           // 每拍退休宽度
+// ---- 物理寄存器数量 (构建期可配: 64 / 96) ----------------------------------
+// `RTU_PREG64` 定义 ⇒ 64 项 (与同事交付的 C910 IDU 的 6 位 preg 直接对得上);
+// 不定义 ⇒ 96 项 (**默认, 与 D-cache LSU 的 96 preg / LSIQ 12 项一致**)。
+// 开关走 Makefile 的 `PREG=64|96`, 由带配置戳的 define 传进来 (见 doc/rtu_preg_size_config_zh.md)。
+// ⚠️ 只有**池子**跟着变 (`RTU_preg.v` 内部): 数组 / 掩码 / 选择树 / 计数器的复位常数。
+//    端口位宽、ROB 表项位域、AMT 一律**固定取最大值** —— 64 档下编号的最高位恒 0,
+//    将来接 IDU 时由适配层切 [5:0]。这样改配置不碰任何其它模块, 两个档共用一份 §6 契约。
+`ifdef RTU_PREG64
+`define RTU_NUM_PREG    64          // 物理寄存器数
+`else
 `define RTU_NUM_PREG    96          // 物理寄存器数
-`define RTU_PREG_W      7           // log2(NUM_PREG)
+`endif
+`define RTU_PREG_W      7           // 端口/表项的编号位宽 —— **固定 7** (= log2(96)), 不随档变
 // ⚠️ 2026-10-02: 原来这里还有一个 `RTU_ARCH_PREG 32`, 注释写的是
 //    "p0..p31 = x0..x31 初始映射, 永不释放"。D1.2 之后初始映射**会被回收**
 //    (位置随改名漂移), 那句话不再成立; 而这个宏**全仓零引用** —— 留着只会
