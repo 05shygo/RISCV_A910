@@ -29,6 +29,9 @@ module RTU_commit (
     input  wire [`RTU_E_W-1:0] win0,
     input  wire [`RTU_E_W-1:0] win1,
     input  wire [`RTU_E_W-1:0] win2,
+    // store 重放请求 (LSU 跟完成**同拍**报) —— 见下面 rp_now 的注释
+    input  wire                lsu_replay_vld,
+    input  wire [6:0]          lsu_replay_iid,
     input  wire [6:0]          win_iid0,
     input  wire [6:0]          win_iid1,
     input  wire [6:0]          win_iid2,
@@ -71,7 +74,7 @@ module RTU_commit (
     output wire                mispred_hit,
     output wire [31:0]         mispred_target,
     output wire                flush_trig,
-    output wire [1:0]          flush_src,
+    output wire [2:0]          flush_src,
     output wire [31:0]         flush_pc,
     output wire [31:0]         trap_epc,
     output wire [4:0]          trap_cause,
@@ -183,36 +186,90 @@ module RTU_commit (
     wire ok1 = w1_vld & w1_cmplt & ~(w1_store & (sq_stall | ~sq_rdy1)) & ~fsm_busy;
     wire ok2 = w2_vld & w2_cmplt & ~(w2_store & (sq_stall | ~sq_rdy2)) & ~fsm_busy;
 
-    // 中断在场时把宽度压到 1 (D10): 槽 0 先退掉, 下一拍再取中断
-    wire rv0 = ok0;
-    wire rv1 = ok1 & rv0 & ~int_pending;
-    wire rv2 = ok2 & rv1 & ~int_pending;
+    // -----------------------------------------------------------------------
+    // 两个前缀, 别混 (2026-10-08, store 重放):
+    //   `okp*` = **只看完成**的前缀 (改动前就是 `rv*`) —— 用来判"谁是最老的重定向"
+    //            (异常/中断/mret/误预测/重放都按它数年龄);
+    //   `rv*`  = 再排掉"要重放"的那条 —— **判退/提交/弹出**用它: 被标记的那条
+    //            必须原地不动 (它的 store 不许落内存), 它后面的也别越过去退。
+    // 中断在场时把宽度压到 1 (D10): 槽 0 先退掉, 下一拍再取中断。
+    // -----------------------------------------------------------------------
+    wire okp0 = ok0;
+    wire okp1 = ok1 & okp0 & ~int_pending;
+    wire okp2 = ok2 & okp1 & ~int_pending;
+
+    wire rpv0 = win0[`RTU_E_REPLAY];
+    wire rpv1 = win1[`RTU_E_REPLAY];
+    wire rpv2 = win2[`RTU_E_REPLAY];
+
+    // ⚠️ **同拍命中**: LSU 的这两根是跟完成一起报的 (`ct_lsu_st_wb.v:334-335`), 而
+    //    完成正是让那条 store "可以退休"的东西 ⇒ 它完全可能**这一拍就在队头、这一拍
+    //    就要退**。只靠寄存器标志 (rpv0) 抓不到这一拍: 标志要下一个边沿才立起来, 而
+    //    那个边沿上它已经退了 (内存写也提交了) —— 单测台换种子抓到的就是这一条。
+    //    ⇒ 队头那条的"这一拍报告"必须像 `trap_hit` 一样**同拍**参与判退。
+    wire rp_now = lsu_replay_vld && (lsu_replay_iid == win_iid0);
+
+    // ⚠️ 队头那条**同时陷入**时, 陷阱赢、重放标志作废 (它本来就要被冲掉、也不会
+    //    提交内存写) —— 不这么做的话陷阱那条的 `pop_n = 1` 会与 `commit_vld = 000`
+    //    打架 (判退级联按 `rv0` 门控而陷阱的 pop_n 不看标志), 单测台的账当场对不上。
+    //    陷阱要照常发交付脉冲 (ena=0), 所以 `rv0` 在那一拍必须是 1。
+    wire rp_head = (rpv0 | rp_now) & ~trap_hit;
+
+    wire rv0 = ok0  & ~rp_head;
+    wire rv1 = ok1  & rv0 & ~int_pending & ~rpv1;
+    wire rv2 = ok2  & rv1 & ~int_pending & ~rpv2;
 
     // -----------------------------------------------------------------------
     // 3) 异常 / 4) 中断 / 5) mret / 6) 误预测
     // -----------------------------------------------------------------------
-    assign trap_hit = expt_vld & rv0 & (expt_iid == win_iid0);
+    assign trap_hit = expt_vld & okp0 & (expt_iid == win_iid0);
 
-    assign int_take = int_pending & rv0 & ~w0_store & ~w0_csr & ~w0_mret & ~trap_hit;
+    assign int_take = int_pending & okp0 & ~w0_store & ~w0_csr & ~w0_mret & ~trap_hit;
 
-    assign mret_hit = rv0 & w0_mret & ~trap_hit & ~int_take;
+    assign mret_hit = okp0 & w0_mret & ~trap_hit & ~int_take;
 
-    wire mis0 = rv0 & w0_br & w0_misp;
-    wire mis1 = rv1 & w1_br & w1_misp;
-    wire mis2 = rv2 & w2_br & w2_misp;
-    assign mispred_hit = mis0 | mis1 | mis2;
+    wire mis0 = okp0 & w0_br & w0_misp;
+    wire mis1 = okp1 & w1_br & w1_misp;
+    wire mis2 = okp2 & w2_br & w2_misp;
 
-    assign mispred_target = mis0 ? win0[`RTU_E_TARGET] :
-                            mis1 ? win1[`RTU_E_TARGET] : win2[`RTU_E_TARGET];
+    // ---- store 重放 (第 5 类冲刷, 2026-10-08) ----
+    // 谁赢 = **位置最靠前(最老)的那个重定向** —— 与误预测同一套年龄口径 (okp*),
+    // 因为 `rp*` 与 `mis*` 各占一个槽、不会同槽 (store 不是分支)。
+    // ⚠️ 为什么必须按年龄仲裁: 重放要求"从它的 PC 重取", 而更年轻的误预测冲刷会
+    //    重取到**分支的目标**(比重放那条还靠后) ⇒ 把要重放的 store 永久跳过、
+    //    它的内存写丢掉。反过来, 更老的误预测赢是对的 (那条 store 在错误路径上,
+    //    本来就不该执行)。
+    wire rp0 = okp0 & rp_head;
+    wire rp1 = okp1 & rpv1;
+    wire rp2 = okp2 & rpv2;
+    wire replay_hit = rp0 | rp1 | rp2;
 
-    assign flush_trig = trap_hit | int_take | mret_hit | mispred_hit;
-    assign flush_src  = trap_hit ? `RTU_FS_EXPT :
-                        int_take ? `RTU_FS_INT  :
-                        mret_hit ? `RTU_FS_MRET : `RTU_FS_MISPRED;
+    // ⚠️ 必须用 `assign` —— `mispred_hit` 在端口表里已经是 `output wire`,
+    //    模块内再写一次 `wire mispred_hit = ...` 不会成为驱动源, 端口网悬空 (Z),
+    //    于是 `flush_trig = ... | Z` 变成 X, 冲刷 FSM 一上电就进 X 态 (踩过)。
+    // ⚠️ 抑制**必须用原始标志位 `rpv*`, 不能用 `rp*`** —— `rp*` 还额外要求那一槽
+    //    "这一拍可退" (ok*: 完成 + sq 就绪 + FSM 空闲)。队头那条 store 卡在 `sq_rdy`
+    //    上时 `rp0 = 0`, 于是**更年轻的**误预测就压过重放、重定向到分支目标, 把这条
+    //    要重放的 store 永久跳过 —— 正是要防的那件事 (单测台换种子抓到的)。
+    //    "在途且被标记"本身就是 `rpv*` (它随 pop/flush 清), 不需要 ok 参与。
+    assign mispred_hit = (mis0 & ~(rpv0 | rp_now)) | (mis1 & ~rpv0 & ~rpv1 & ~rp_now)
+                       | (mis2 & ~rpv0 & ~rpv1 & ~rpv2 & ~rp_now);
+
+    assign mispred_target = (mis0 & ~(rpv0 | rp_now))        ? win0[`RTU_E_TARGET] :
+                            (mis1 & ~rpv0 & ~rpv1 & ~rp_now) ? win1[`RTU_E_TARGET] :
+                                                               win2[`RTU_E_TARGET];
+
+    assign flush_trig = trap_hit | int_take | mret_hit | replay_hit | mispred_hit;
+    assign flush_src  = trap_hit    ? `RTU_FS_EXPT   :
+                        int_take    ? `RTU_FS_INT    :
+                        mret_hit    ? `RTU_FS_MRET   :
+                        replay_hit  ? `RTU_FS_REPLAY : `RTU_FS_MISPRED;
 
     // 重定向目标: 陷阱/中断 -> mtvec 解算值; mret -> mepc; 误预测 -> 分支的真实目标
     assign flush_pc = (trap_hit | int_take) ? csr_trap_vector :
                       mret_hit              ? csr_mepc        :
+                      replay_hit            ? (rp0 ? win0[`RTU_E_PC] :
+                                               rp1 ? win1[`RTU_E_PC] : win2[`RTU_E_PC]) :
                                               mispred_target;
 
     assign trap_epc   = win0[`RTU_E_PC];                      // 陷阱/中断都落在槽 0

@@ -51,7 +51,7 @@ module RTU_flush (
     input  wire         cpu_rst,
 
     input  wire         flush_trig,
-    input  wire [1:0]   flush_src,
+    input  wire [2:0]   flush_src,
     input  wire [31:0]  flush_pc,
     input  wire [223:0] amt_flat,        // 架构映射表 (RTU_preg 出)
     input  wire         beu_redirect_vld,// D13: EX 级真的发出误预测重定向的那一拍
@@ -146,8 +146,12 @@ module RTU_flush (
     assign core_redirect = flush_trig;
 
     // 前端重定向: **误预测不发** (D13 / C910 的 FLUSH_IS 不碰 IFU)。
-    // `flush_src` 的优先级是 trap > int > mret > mispred (RTU_commit), 所以
+    // `flush_src` 的优先级是 trap > int > mret > **replay** > mispred (RTU_commit),
+    // 所以
     // "== MISPRED" 等价于"这一拍只有误预测这一个源"。
+    // ⚠️ 只有**误预测**不重启前端 (D13: 前端在 EX 那拍已经被送到真实目标)。
+    //    2026-10-08 加的 `FS_REPLAY` (store 重放) 走的是"要重启"这一支 —— 它必须
+    //    从被标记那条自己的 PC 重取, 前端并没有替它做过任何重定向。
     wire is_mispred_flush = (flush_src == `RTU_FS_MISPRED);
     assign ifu_flush       = flush_trig & ~is_mispred_flush;
     assign ifu_chgflw_vld  = flush_trig & ~is_mispred_flush;

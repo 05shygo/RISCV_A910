@@ -1309,6 +1309,11 @@ RTU u_rtu (
     .cpu_rst (cpu_rst),
 
     // ---- §6.0 preg 分配握手: 阶段 1 恒不请求 (读法 A) ----
+    // ⚠️ 2026-10-08 新增: LSU 的 store 重放请求 (对应 lsu_rtu_wb_pipe4_flush/spec_fail)。
+    //    顺序核里 LSU 还没接 ⇒ 恒 0; 接上之后由 LSU 侧按"这条 store 的投机写失败了"
+    //    驱动 (带该指令的 iid)。恒 0 时下面那条重放路径永不触发, 行为与改动前逐位一致。
+    .lsu_replay_vld     (1'b0),
+    .lsu_replay_iid     (7'd0),
     .ren_preg_req       (2'd0),
     .ren_preg_req_lreg0 (5'd0),
     .ren_preg_req_lreg1 (5'd0),

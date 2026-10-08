@@ -164,6 +164,20 @@ module RTU (
     // 不会丢信息 —— 它随流水逐级锁存, 下一拍还会从下一级报到。RTU 侧只留最旧的一条。
     // `mtval` 由**检出级**装好送进来 (非法指令给指令字 / 访存故障给地址 / 取指故障给 PC),
     // RTU 不再重算。
+    // ===================== §6.1 LSU store 重放请求 — 2026-10-08 新增 =============
+    // 对应 LSU 的 `lsu_rtu_wb_pipe4_flush` / `lsu_rtu_wb_pipe4_spec_fail`
+    // (C910 里是**跟完成一起**报的两根, 见 `ct_lsu_st_wb.v:334-335`:
+    //  `spec_fail` = store 的投机写失败 —— 后来的 load 读到了旧数据之类)。
+    // 语义: "iid 这条 store 的投机结果是错的 ⇒ 它**要重放**"。
+    // RTU 的处理: 在它的表项上置 `RTU_E_REPLAY` ⇒ 它**不能退休**(store 不许落内存),
+    // 等它走到退休窗口最前面时触发一次 `RTU_FS_REPLAY` 冲刷: 冲掉它和更年轻的,
+    // **从它自己的 PC 重取** (与误预测的区别: 这条要重启前端)。
+    // ⚠️ 两根 LSU 信号在适配层**或**起来再送进来 (对我们这条简化路径是同一个动作);
+    //    将来若要区分(比如 flush 带异常向量), 再拆成两个口。
+    // ⚠️ 与完成口一样**按 iid 寻址**, 必须带着回绕位。
+    input  wire        lsu_replay_vld,
+    input  wire [6:0]  lsu_replay_iid,
+
     input  wire        expt_vld,            // 本拍有一级检出异常
     input  wire [6:0]  expt_iid,            // 是哪条 (按 iid 寻址, 用来判最旧)
     input  wire [4:0]  expt_cause,          // 异常号 (**不含** mcause 的中断位, 见 §6.3 ⑫)
@@ -232,6 +246,29 @@ module RTU (
     // ⚠️ 与 rtu_ifu_flush **必须在顶层分开接**: D13 之后两者对误预测取值不同。
     //    合成一根的症状是"错误路径的 store 写进内存", 不是慢。
     output wire        rtu_core_redirect,   // = 退休拍的 flush_trig (T 拍, 单拍)
+
+    // ===================== §6.2 提交窗口广播 (给 LSU) — 2026-10-08 新增 ==========
+    // **照 C910 `ct_rtu_rob_rt.v:2723-2731` 逐字对齐**: 那里的 LSU 拿这组信号跟自己的
+    // LQ/SQ/MSHR 表项里的 iid 比对, 决定"这条访存现在可以真正生效了"(lsu_lq_entry.sv:104)。
+    //   * `commit{k}` = **真的提交了** (trap 那条不算: 它没写回、它的 store 不能落内存);
+    //   * `commit{k}_iid` = 同一次提交的 iid;
+    //   * 两者都是**寄存器** (C910 就是), 且是**同一次窗口**的一对 —— 所以消费方
+    //     必须在同一个边沿成对采样 (iid 寄存器是无条件锁存的, 单独看它没有意义)。
+    //   ⚠️ 与 `rtu_retire_cnt` 的区别: 后者给 difftest 数条数 (trap 那条**要**计),
+    //      这里给 LSU 判"能不能落内存" (trap 那条**不能**发)。
+    output wire        rtu_yy_xx_commit0,   // 槽 0 本拍真的提交了
+    output wire        rtu_yy_xx_commit1,   // 槽 1 (0 和 1 都提交了才有它)
+    output wire        rtu_yy_xx_commit2,
+    output wire [6:0]  rtu_yy_xx_commit0_iid,  // 槽 0 的 iid (与上面那根成对)
+    output wire [6:0]  rtu_yy_xx_commit1_iid,
+    output wire [6:0]  rtu_yy_xx_commit2_iid,
+
+    // ===================== §6.2 异步冲刷 (给 LSU) — 2026-10-08 新增 ==============
+    // C910 里这根是**调试请求**的异步冲刷 (`ct_rtu_retire.v:2005/2016`:
+    // `async_flush = dbgreq_ack_jdbreq` ⇒ 打一拍给 LSU/WMB), 与指令流的冲刷无关。
+    // 本核**没有 debug 模块** ⇒ 恒 0; 将来接 debug 时把它的请求接到这里即可
+    // (LSU 侧拿它清 WMB/SQ: `lsu_sq.sv:527`、`lsu_wmb_ce.sv:62`)。
+    output wire        rtu_lsu_async_flush, // 恒 0 (占位, 见上)
 
     // ===================== §6.2 BEU: D1 的最旧门控 + 冲刷屏蔽 =====================
     output wire [6:0]  rtu_beu_retire_iid,  // ROB 的 pop iid —— ⚠️ **不再是门控用的**
@@ -343,7 +380,7 @@ module RTU (
     wire        flush_lvl;                   // FLUSH_2 脉冲
     wire        expt_clr;                    // FLUSH_1: 清 expt_entry
     wire        flush_trig;
-    wire [1:0]  flush_src;
+    wire [2:0]  flush_src;
     wire [31:0] flush_pc;
     wire        backend_flush;
     wire        ren_flush;
@@ -394,7 +431,12 @@ module RTU (
     assign disp_vld_raw = {disp2_vld, disp1_vld, disp0_vld};
 
     // 表项拼装 (位序 = RTU_define.vh 里那张图, 一个字都不能错)
-    assign disp_data0 = { 1'b1,             // vld
+    // ⚠️⚠️ 字段顺序必须与 `RTU_define.vh` 的位域表**逐行对齐**, 而且必须**写满
+    //    `RTU_E_W` 位**。少写一位不会报错 —— 会被静默零扩展, 于是每个字段整体错位
+    //    一格: 2026-10-08 加 `replay` 位时就踩过 (sq_id 的最低位落进 bit0 = 新加的
+    //    replay 位, 窗口里的"要重放"标志被随机置位, 一开跑就是误冲刷乱拉)。
+    assign disp_data0 = { 1'b0,             // [124] replay (派遣时恒 0)
+                          1'b1,             // vld
                           1'b0,             // cmplt
                           disp_wrap[0],     // wrap
                           disp0_pc,
@@ -408,10 +450,12 @@ module RTU (
                           1'b0,             // actual_taken
                           1'b0,             // mispred
                           disp0_sq_id };
-    assign disp_data1 = { 1'b1, 1'b0, disp_wrap[1], disp1_pc, 32'd0, disp1_chk,
+    assign disp_data1 = { 1'b0,          // [124] replay (派遣时恒 0)
+                         1'b1, 1'b0, disp_wrap[1], disp1_pc, 32'd0, disp1_chk,
                           disp1_dst_lreg, disp1_dst_preg, disp1_old_preg, disp1_flags,
                           disp1_rf_we, 1'b0, 1'b0, disp1_sq_id };
-    assign disp_data2 = { 1'b1, 1'b0, disp_wrap[2], disp2_pc, 32'd0, disp2_chk,
+    assign disp_data2 = { 1'b0,          // [124] replay (派遣时恒 0)
+                         1'b1, 1'b0, disp_wrap[2], disp2_pc, 32'd0, disp2_chk,
                           disp2_dst_lreg, disp2_dst_preg, disp2_old_preg, disp2_flags,
                           disp2_rf_we, 1'b0, 1'b0, disp2_sq_id };
 
@@ -435,6 +479,8 @@ module RTU (
         .cmplt_iid4         (cmplt_iid4),
         .cmplt_iid5         (cmplt_iid5),
         .cmplt_iid6         (cmplt_iid6),
+        .lsu_replay_vld     (lsu_replay_vld),
+        .lsu_replay_iid     (lsu_replay_iid),
         .resolve_vld        (resolve_vld),
         .resolve_iid        (resolve_iid),
         .resolve_taken      (resolve_taken),
@@ -524,6 +570,8 @@ module RTU (
         .win0           (win0),
         .win1           (win1),
         .win2           (win2),
+        .lsu_replay_vld (lsu_replay_vld),
+        .lsu_replay_iid (lsu_replay_iid),
         .win_iid0       (win_iid0),
         .win_iid1       (win_iid1),
         .win_iid2       (win_iid2),
@@ -722,5 +770,41 @@ module RTU (
     assign rtu_trap_tval  = trap_tval_d;
     assign rtu_trap_cause = trap_cause_d;
     assign rtu_retire_cnt = pop_n;
+
+    // -----------------------------------------------------------------------
+    // 提交窗口广播 (给 LSU) —— 寄存器输出, 与 C910 `ct_rtu_rob_rt.v:2686-2713` 同构
+    //
+    // 一次边沿上成对锁存: 决策 (`retire_cnt > k`, 且槽 0 要排掉 trap) 与**当拍**的
+    // 窗口 iid。消费方必须在同一个边沿成对采样 —— iid 是无条件锁存的, 单独看它会
+    // 拿到"下一个窗口"的号。
+    // ⚠️ trap 那条: 它走了 `rtu_retire_cnt` 与 difftest 脉冲 (§6.3 ⑥ 的口径), 但
+    //    **没有真正提交** (没写 rd、store 不落内存) ⇒ 这里必须排掉, 否则 LSU 会把
+    //    一条陷入的 store 写进内存。中断那条 `pop_n = 0` ⇒ 三路自然全 0。
+    // -----------------------------------------------------------------------
+    reg  [2:0] cmt_q;
+    reg  [6:0] cmt_iid_q0, cmt_iid_q1, cmt_iid_q2;
+
+    always @(posedge cpu_clk or posedge cpu_rst) begin
+        if (cpu_rst) begin
+            cmt_q <= 3'd0;
+            cmt_iid_q0 <= 7'd0; cmt_iid_q1 <= 7'd0; cmt_iid_q2 <= 7'd0;
+        end else begin
+            cmt_q[0] <= (pop_n > 2'd0) && !trap_hit;
+            cmt_q[1] <= (pop_n > 2'd1);
+            cmt_q[2] <= (pop_n > 2'd2);
+            cmt_iid_q0 <= win_iid0;
+            cmt_iid_q1 <= win_iid1;
+            cmt_iid_q2 <= win_iid2;
+        end
+    end
+
+    assign rtu_yy_xx_commit0     = cmt_q[0];
+    assign rtu_yy_xx_commit1     = cmt_q[1];
+    assign rtu_yy_xx_commit2     = cmt_q[2];
+    assign rtu_yy_xx_commit0_iid = cmt_iid_q0;
+    assign rtu_yy_xx_commit1_iid = cmt_iid_q1;
+    assign rtu_yy_xx_commit2_iid = cmt_iid_q2;
+
+    assign rtu_lsu_async_flush = 1'b0;   // 无 debug 模块 ⇒ 见端口注释
 
 endmodule

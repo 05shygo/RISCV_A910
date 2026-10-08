@@ -56,6 +56,13 @@ module RTU_ROB (
     //    进 EX ⇒ 一拍最多一条解析)。D1.4 一度做成 3 路"按发射宽度预留", 但那与
     //    完成口(按功能单元数配)口径不一致 —— 一个 BEU 时 2 路恒零, 白付 128 个
     //    比较器 (见 §4.2 的完成总线 Fmax 风险项)。2026-10-02 收回 1 路。
+    // ---- store 重放请求 (LSU 的 `lsu_rtu_wb_pipe4_flush` / `_spec_fail`) ----
+    // "这条 store 的投机写失败了 ⇒ 它要重放": 在它自己的表项上置 `RTU_E_REPLAY`,
+    // 之后它不能退休, 等它走到退休窗口最前面时由 RTU_commit 触发一次重放冲刷。
+    // 与完成口同构地**按 iid 寻址** (表项只存回绕位 ⇒ 必须比回绕位)。
+    input  wire                lsu_replay_vld,
+    input  wire [6:0]          lsu_replay_iid,
+
     input  wire                resolve_vld,
     input  wire [6:0]          resolve_iid,
     input  wire                resolve_taken,
@@ -157,6 +164,10 @@ module RTU_ROB (
 
         wire e_res = resolve_vld && (resolve_iid[5:0] == IDX) && (resolve_iid[6] == rob_q[gi][`RTU_E_WRAP]);
 
+        // store 重放请求: 与完成匹配同一套 iid 比较 (含回绕位)
+        wire e_replay = lsu_replay_vld && (lsu_replay_iid[5:0] == IDX)
+                                      && (lsu_replay_iid[6] == rob_q[gi][`RTU_E_WRAP]);
+
         // 本项这一拍被退休弹出 (见 RTU_ROB_entry 的 pop_en 注释)。
         // 距离用模 64 减法算, 于是回绕天然正确; pop_n 在 0 时全部为 0。
         wire [5:0] e_dist = IDX - rptr;
@@ -173,6 +184,7 @@ module RTU_ROB (
             .reload_en     (1'b0),
             .reload_data   ({`RTU_E_W{1'b0}}),
             .cmplt_hit     (e_cmplt),
+            .replay_set    (e_replay),
             .resolve_hit   (e_res),
             .resolve_taken (resolve_taken),
             .resolve_mispred(resolve_mispred),
@@ -222,11 +234,19 @@ module RTU_ROB (
 
     wire [`RTU_E_W-1:0] win_d0, win_d1, win_d2;
 
+    // ⚠️ 影子窗口也必须能收到重放置位: 判退读的是**窗口**那一份 (不是阵列),
+    //    而窗口只在"队头移动/冲刷/补空"时 reload —— 被重放的那条**故意不让它退**
+    //    (它的 store 不许落内存), 队头于是不动、窗口不 reload ⇒ 只靠阵列置位的话
+    //    窗口永远看不到这个标志, **卡死**。用窗口自己的 iid 判 (与 win_iid* 同式)。
+    wire win_replay0 = lsu_replay_vld && (lsu_replay_iid == win_iid0);
+    wire win_replay1 = lsu_replay_vld && (lsu_replay_iid == win_iid1);
+    wire win_replay2 = lsu_replay_vld && (lsu_replay_iid == win_iid2);
+
     RTU_ROB_entry u_win0 (
         .cpu_clk(cpu_clk), .cpu_rst(cpu_rst),
         .disp_en(1'b0), .disp_data({`RTU_E_W{1'b0}}), .pop_en(1'b0),
         .reload_en(win_rld0), .reload_data(rob_d[rld_idx0]),
-        .cmplt_hit(win_cmplt0), .resolve_hit(win_res0),
+        .cmplt_hit(win_cmplt0), .replay_set(win_replay0), .resolve_hit(win_res0),
         .resolve_taken(resolve_taken), .resolve_mispred(resolve_mispred),
         .resolve_target(resolve_target),
         .flush_clr(flush_lvl), .entry_q(win_q0), .entry_d(win_d0)
@@ -236,7 +256,7 @@ module RTU_ROB (
         .cpu_clk(cpu_clk), .cpu_rst(cpu_rst),
         .disp_en(1'b0), .disp_data({`RTU_E_W{1'b0}}), .pop_en(1'b0),
         .reload_en(win_rld1), .reload_data(rob_d[rld_idx1]),
-        .cmplt_hit(win_cmplt1), .resolve_hit(win_res1),
+        .cmplt_hit(win_cmplt1), .replay_set(win_replay1), .resolve_hit(win_res1),
         .resolve_taken(resolve_taken), .resolve_mispred(resolve_mispred),
         .resolve_target(resolve_target),
         .flush_clr(flush_lvl), .entry_q(win_q1), .entry_d(win_d1)
@@ -246,7 +266,7 @@ module RTU_ROB (
         .cpu_clk(cpu_clk), .cpu_rst(cpu_rst),
         .disp_en(1'b0), .disp_data({`RTU_E_W{1'b0}}), .pop_en(1'b0),
         .reload_en(win_rld2), .reload_data(rob_d[rld_idx2]),
-        .cmplt_hit(win_cmplt2), .resolve_hit(win_res2),
+        .cmplt_hit(win_cmplt2), .replay_set(win_replay2), .resolve_hit(win_res2),
         .resolve_taken(resolve_taken), .resolve_mispred(resolve_mispred),
         .resolve_target(resolve_target),
         .flush_clr(flush_lvl), .entry_q(win_q2), .entry_d(win_d2)

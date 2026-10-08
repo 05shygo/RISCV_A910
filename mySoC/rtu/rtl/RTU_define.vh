@@ -50,11 +50,13 @@
 `define RTU_RESOLVE_PORTS 1
 
 // ---- preg 四态 (D2) ----
-// 两拍分配: T 拍优先编码选中 FREE→WF_ALLOC, T+1 派遣确认 WF_ALLOC→ALLOC。
-// ⚠️ WF_ALLOC 不是多余的簿记 —— 它是给 96 位优先编码器打拍用的, 砍了就把它
+// ⚠️ 2026-10-07 起是**门房语义**: 号被选中**补进门房(tap)**那一拍 FREE→WF_ALLOC,
+//    派遣认领那一拍 WF_ALLOC→ALLOC (两者相隔几拍不限)。见 §6.0 与
+//    doc/rtu_preg_alloc_plan_zh.md。
+// ⚠️ WF_ALLOC 不是多余的簿记 —— 它是给优先编码器打拍用的, 砍了就把它
 //    串进派遣链 (§4.2 P3)。
 `define RTU_P_FREE      2'd0        // 在自由池里, 可被分配
-`define RTU_P_WFALLOC   2'd1        // 已被选中, 等下一拍派遣确认
+`define RTU_P_WFALLOC   2'd1        // 已出池、备在门房里, 等派遣认领
 `define RTU_P_ALLOC     2'd2        // 已分配给在途指令(推测态)
 `define RTU_P_ARCH      2'd3        // 已是架构态(某个 lreg 的当前映射)
 
@@ -86,14 +88,17 @@
 `define RTU_FLG_JAL     5
 `define RTU_FLG_JALR    6
 
-// ---- ROB 表项位域 (124 bit, D4) ----
+// ---- ROB 表项位域 (125 bit, D4) ----
 // 布局与 D4 的表格逐行对应; 表项模块的拼接顺序必须与这里一致。
-//   [123] vld   [122] cmplt  [121] wrap  [120:89] pc   [88:57] target
-//   [56:32] chk [31:27] dst_lreg [26:20] dst_preg [19:13] old_preg [12:6] flags
-//   [5] rf_we   [4] actual_taken [3] mispred [2:0] sq_id
+//   [124] replay (2026-10-08 新增, 加在**最高位**)  [123] vld  [122] cmplt
+//   [121] wrap  [120:89] pc   [88:57] target   [56:32] chk   [31:27] dst_lreg
+//   [26:20] dst_preg [19:13] old_preg [12:6] flags [5] rf_we
+//   [4] actual_taken [3] mispred [2:0] sq_id
+//   ⚠️ 新位加在最高位是为了**不动任何老字段的位置** —— 挤在低位会让所有位域整体
+//      挪一格, 而拼接是隐式零扩展的、写错了不报错 (2026-10-08 踩过)。
 // 为什么不存完整 iid: iid = {wrap, 本表项固定索引}, 索引是常量 (§4.3 第 2 条)。
 // ⚠️ 2026-10-02: 122 → 124 —— flags 由 5 位扩到 7 位 (加 JAL/JALR, 见上)。
-`define RTU_E_W        124
+`define RTU_E_W        125
 `define RTU_E_VLD      123
 `define RTU_E_CMPLT    122
 `define RTU_E_WRAP     121
@@ -108,12 +113,20 @@
 `define RTU_E_TAKEN    4
 `define RTU_E_MISPRED  3
 `define RTU_E_SQ_ID    2:0
+// `replay`: 这条指令**要重放** —— 由 LSU 在完成那一拍报回来
+//   (对应 `lsu_rtu_wb_pipe4_flush` / `_spec_fail`: store 的投机写失败)。
+//   置位后它**不能退休**(它的 store 不许落内存), 等它走到退休窗口最前面时
+//   触发一次 `RTU_FS_REPLAY` 冲刷 + 从它的 PC 重取。见 RTU_commit 的仲裁注释。
+`define RTU_E_REPLAY   124
 
 // ---- 冲刷来源 (D11 的优先级: 异常/中断 > mret > 误预测) ----
-`define RTU_FS_EXPT     2'd0
-`define RTU_FS_INT      2'd1
-`define RTU_FS_MRET     2'd2
-`define RTU_FS_MISPRED  2'd3
+// ⚠️ 2026-10-08: 由 2 位扩到 3 位 —— 加了第 5 类 `REPLAY` (LSU 报的 store 重放)。
+`define RTU_FS_EXPT     3'd0
+`define RTU_FS_INT      3'd1
+`define RTU_FS_MRET     3'd2
+`define RTU_FS_MISPRED  3'd3
+`define RTU_FS_REPLAY   3'd4     // store 投机失败 ⇒ 冲掉它和更年轻的, 从它的 PC 重取
+                                 //   (与误预测的区别: **要重启前端** —— 见 RTU_flush)
 
 // 中断的 cause: MTIP (与 defines.vh 的 INTR_MTIP_CAUSE 同值, 这里自带一份,
 // 免得退休单元的非测试台也得去 include 核的 defines.vh)

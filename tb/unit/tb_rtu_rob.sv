@@ -77,6 +77,12 @@ module tb_rtu_rob;
     logic        rsv_taken, rsv_misp;
     logic [31:0] rsv_tgt;
 
+    logic        rp_vld;                                   // LSU 报"这条 store 要重放"
+    logic [6:0]  rp_iid;
+    // 请求必须**整拍稳定** (真 LSU 的输出是寄存器) ⇒ 决定与摆口分开一拍:
+    logic        rp_pend;                                  // 已决定, 下一拍摆上口
+    logic [6:0]  rp_pend_iid;
+    logic [31:0] rp_pend_pc;
     logic        ex_vld;
     logic [6:0]  ex_iid;
     logic [4:0]  ex_cause;
@@ -132,6 +138,8 @@ module tb_rtu_rob;
 
     RTU dut (
         .cpu_clk(clk), .cpu_rst(rst),
+        .lsu_replay_vld     (rp_pend),      // ⚠️ 直接接挂起位: 整拍稳定, 见 gen_replay
+        .lsu_replay_iid     (rp_pend_iid),
         .ren_preg_req(ren_preg_req),
         .ren_preg_req_lreg0(ren_lreg0), .ren_preg_req_lreg1(ren_lreg1),
         .ren_preg_req_lreg2(ren_lreg2),
@@ -369,6 +377,7 @@ module tb_rtu_rob;
 
     logic [31:0] ret_epc_q = 32'd0, ret_tval_q = 32'd0;
     logic        ret_mret_q = 1'b0, ret_iflush_q = 1'b0, ret_bflush_q = 1'b0;
+    logic [2:0]  ret_fsrc_q = 3'd0;   // 那一拍冲刷的来源 (判 D13 用)
     logic        ret_iflush_d1_q = 1'b0;   // 冲刷窗口的第二拍 (见"早就完成却不退休"那条)
     logic        ret_ifu_vld_q = 1'b0;   // D13: DUT 这一拍有没有重启前端
     logic [223:0] ret_rmap_q;            // 恢复广播的锁存 (F1/F2 合并后只维持一拍)
@@ -437,6 +446,10 @@ module tb_rtu_rob;
         //      (n_misp 永远 0), 不再报错也不再验证。
         ret_iflush_q <= core_redirect;
         ret_iflush_d1_q <= core_redirect;
+        // 2026-10-08: 锁存**冲刷来源**。原来那两条 D13 判据拿 `!trap && !mret` 当
+        // "只剩误预测"的等价物 —— 加了第 5 类源 (store 重放) 之后不成立了: 重放
+        // **要**重启前端 (从那条 store 自己的 PC 重取), 会被误判成 D13 违规。
+        ret_fsrc_q   <= dut.flush_src;
         // 反向的那一半: DUT 到底有没有重启前端。只有误预测时它必须为 0 (见守卫)。
         ret_ifu_vld_q <= (ifu_flush | ifu_chg_vld);
         ret_ipc_q  <= ifu_chg_pc;
@@ -533,6 +546,10 @@ module tb_rtu_rob;
         al_arm   <= 1'b0;
     end
 
+    // ⚠️ 重放请求**必须整拍稳定**: 真核里 LSU 的这两根是**寄存器输出**, 一个周期内
+    //    不变。如果像原来那样在负沿才摆上去, DUT 的**组合判退**会在后半拍变一次,
+    //    而本台有些判据比的是"实时值 vs 上拍锁存值" ⇒ 假失败 (踩过: seed 12345 报
+    //    "retire_cnt=1 与提交脉冲 000 不符")。所以决定与摆口分开一拍。
     assign d0_vld = lane_go[0];    assign d1_vld = lane_go[1];    assign d2_vld = lane_go[2];
     assign d0_pc  = pl_pc[0];      assign d1_pc  = pl_pc[1];      assign d2_pc  = pl_pc[2];
     assign d0_chk = pl_chk[0];     assign d1_chk = pl_chk[1];     assign d2_chk = pl_chk[2];
@@ -833,7 +850,7 @@ module tb_rtu_rob;
 
             // ---------- 4) 误预测退休的重定向目标 ----------
             // (mret 也会发前端重定向, 但那条走 §5 的检查)
-            if (ret_iflush_q && !ret_trap_q && !ret_mret_q) begin
+            if (ret_iflush_q && (ret_fsrc_q == `RTU_FS_MISPRED)) begin
                 integer mi;
                 mi = -1;
                 for (int k = 0; k < 3; k = k + 1)
@@ -1069,10 +1086,11 @@ module tb_rtu_rob;
             // ---------- D13 守卫 ----------
             // 误预测的冲刷**不许**重启前端 (C910 的 FLUSH_IS 不碰 IFU): 前端在 BEU 的
             // 执行级重定向那拍就已经被送到真实目标, 再重启一次就是"重取两次"。
-            // `!trap && !mret` 在这里等价于"只有误预测这一个源" (flush_src 的优先级)。
+            // ⚠️ 2026-10-08: 判据从 `!trap && !mret` 改成**直接比冲刷来源** ——
+            //    第 5 类源 `FS_REPLAY` (store 重放) 是**要**重启前端的。
             // ⚠️ 比的是**两个锁存值** (同一个 posedge 采的), 不是"锁存的 vs 实时的"
             //    —— 本工程踩过"两帧混用 ⇒ 不可复现假失败"的坑 (经验 1)。
-            if (ret_iflush_q && !ret_trap_q && !ret_mret_q && ret_ifu_vld_q)
+            if (ret_iflush_q && (ret_fsrc_q == `RTU_FS_MISPRED) && ret_ifu_vld_q)
                 err("D13: 误预测冲刷不该拉 rtu_ifu_flush / rtu_ifu_chgflw_vld");
             // ⚠️ 不能拿 beu_mask 与 fl_state 逐拍相等: `beu_mask = flushing = flush_trig | ~idle`,
             //    而 `flush_trig` 是**组合**的提交级信号 —— 它在负沿上可能刚好为 1, 但 DUT
@@ -1700,6 +1718,94 @@ module tb_rtu_rob;
         end
     endtask
 
+    // ---- store 重放 (2026-10-08 新增的 RTU 输入) 的定向激励与检查 ----
+    // 语义: LSU 在**完成那一拍**报"这条 store 的投机写失败了 ⇒ 要重放"。
+    // 期望: RTU 把它标住 (不许退休), 等它走到退休窗口最前面时冲一次, 且
+    //       **从它自己的 PC 重取前端** (与误预测的区别就在这里)。
+    logic [31:0] rp_exp_pc;      // 注入的那条 store 的 PC (冲刷目标必须是它)
+    logic        rp_armed;       // 已注入, 等冲刷
+    integer      rp_wait;        // 等了多少拍
+    integer      n_replay;       // 注入次数
+    integer      n_replay_ok;    // 由**这次重放**触发冲刷 (目标 PC 对上) 的次数
+    integer      n_replay_other; // 先被别的冲刷 (更老的陷阱/中断/误预测) 冲掉的次数
+
+    task automatic gen_replay;
+        int pick, i;
+        begin
+            // 上一拍挂起的请求这一拍生效 (整拍稳定) ⇒ 现在开始等冲刷
+            if (rp_pend) begin
+                rp_pend   = 1'b0;
+                rp_armed  = 1'b1;
+                rp_wait   = 0;
+                rp_iid    = rp_pend_iid;      // 记下来给诊断/超时打印用
+                rp_exp_pc = rp_pend_pc;
+            end
+            if (rp_armed) begin
+                // 等**任何**冲刷 (core_redirect = flush_trig, 五类源都算), 再按来源分类。
+                // ⚠️ 不能等 `ifu_chg_vld`: D13 之后**误预测**冲刷不发前端重定向,
+                //    撞上它就会一直等不到 (踩过: 换个种子就报"没等到冲刷")。
+                if (core_redirect || ren_flush) begin
+                    if (dut.flush_src == `RTU_FS_REPLAY) begin
+                        // 这条是重放触发的: 必须**从那条 store 自己的 PC 重取前端**
+                        if (ifu_chg_vld && (ifu_chg_pc === rp_exp_pc))
+                            n_replay_ok = n_replay_ok + 1;
+                        else
+                            err($sformatf("重放冲刷没有从那条 store 的 PC 重取: ifu_vld=%b got=%08x exp=%08x",
+                                          ifu_chg_vld, ifu_chg_pc, rp_exp_pc));
+                    end else begin
+                        // 别的冲刷先到 (更老的陷阱/中断, 或误预测) —— 我们这条 store 被它
+                        // 一起冲掉、之后随重取重新执行, 合法。
+                        n_replay_other = n_replay_other + 1;
+                    end
+                    rp_armed = 1'b0;
+                end else begin
+                    rp_wait = rp_wait + 1;
+                    if (rp_wait > 60) begin
+                        err($sformatf("重放请求注入后 60 拍内没等到任何冲刷 (iid=%0d pc=%08x)",
+                                      rp_iid, rp_exp_pc));
+                        rp_armed = 1'b0;
+                    end
+                end
+                return;
+            end
+            if (n_replay_ok >= 3) return;                 // 覆盖够了就停 (免得多余的冲刷拖慢回归)
+            if (({$urandom} % 100) >= 20) return;         // 20% 概率注入 (够密的定向激励)
+            if (n_ready <= n_ret) return;
+            // 挑一条在途 store。⚠️ 不要要求它"还没完成" —— 真核里重放请求是**跟完成
+            // 一起**报的 (LSU 的 pipe4_cmplt 与 pipe4_flush/spec_fail 同拍)。
+            // ⚠️ **优先挑退休窗口里的那条**: 它必然自己触发重放冲刷, 覆盖断言才站得住。
+            //    挑更靠后的 store 虽然合法, 却容易被**更老的**误预测/陷阱抢先 (那条
+            //    store 在错误路径上, 本就该被一起冲掉 ⇒ 只记"先被别的冲刷")。
+            pick = -1;
+            // ⚠️ 只挑**队头那一条** (n_ret): 它必然自己触发重放冲刷, 覆盖断言才站得住;
+            //    挑后面的 store 容易被更老的误预测抢先冲掉 (那条 store 在错误路径上,
+            //    本就该被冲掉 ⇒ 只记"先被别的冲刷"), 一轮下来可能一次都走不到。
+            // ⚠️ 不要加 `!x_cmp[i]`: 能退的 store 多半**已经完成**了 (gen_complete 每拍
+            //    把能完成的都完成), 加上这个条件就一条都挑不到 (踩过两次)。
+            // ⚠️ 只在"这条 store **一定**能触发重放冲刷"时注入 —— 也就是它现在就满足
+            //    RTU_commit 的 `ok0`: 队头、已完成、sq 就绪、没在冲刷、没停派遣。
+            //    否则标记刚落地就被一场无关的冲刷 (陷阱/误预测) 连人带表项清掉, 注入
+            //    白费, 一轮下来可能一次都走不到重放路径 (踩过好几轮)。
+            if (core_redirect || dut.flushing || disp_stall) return;
+            if (sq_stall || !sq_rdy0) return;
+            // 队头那条最理想 (必然自己触发); 退而求其次在窗口里挑一条已完成的 store
+            // —— 它可能被更老的冲刷抢先 (合法, 记"先被别的冲刷"), 但能提高注入密度。
+            i = n_ret;
+            if ((i < n_ready) && x_flg[i][`RTU_FLG_STORE] && x_cmp[i]) pick = i;
+            else
+                for (i = n_ret + 1; (i < n_ready) && (i < (n_ret + 3)); i = i + 1)
+                    if (x_flg[i][`RTU_FLG_STORE] && x_cmp[i]) begin pick = i; break; end
+            if (pick < 0) return;
+            // 只写挂起位: 下一拍整拍摆上口 (见上面的注释)
+            x_cmp[pick]    = 1'b1;                         // 重放请求与完成同拍来
+            rp_pend        = 1'b1;
+            rp_pend_iid    = x_iid[pick];
+            rp_pend_pc     = x_pc[pick];
+            n_replay    = n_replay + 1;
+            log_evt($sformatf("REPLAY inst=%0d iid=%0d pc=%08x", pick, x_iid[pick], x_pc[pick]));
+        end
+    endtask
+
     task automatic gen_resolve;
         int unsigned span;
         int pick;
@@ -1784,6 +1890,7 @@ module tb_rtu_rob;
 
             // 下一拍的完成 / 解析 / 异常 / 存储队列 / 中断
             gen_complete();
+            gen_replay();
             gen_resolve();
             gen_expt();
             // 中断请求按**电平**建模: 置起来之后一直保持到被取走 —— 真机的 mip.MTIP
@@ -1806,6 +1913,7 @@ module tb_rtu_rob;
         ci0=0; ci1=0; ci2=0; ci3=0; ci4=0; ci5=0; ci6=0;
         rsv_vld=0; rsv_iid=0; rsv_taken=0; rsv_misp=0; rsv_tgt=0;
         ex_vld=0; ex_iid=0; ex_cause=0; ex_tval=0;
+        rp_vld=0; rp_iid=0;
         sq_rdy0=1; sq_rdy1=1; sq_rdy2=1; sq_stall=0;
         int_pending=0;
         csr_tvec = 32'h0000_1000;
@@ -1825,6 +1933,8 @@ module tb_rtu_rob;
         void'($urandom(seed));
         mbr_left = 0;
         void'($value$plusargs("MULTIBR=%d", mbr_left));
+        rp_armed = 1'b0; rp_wait = 0; n_replay = 0; n_replay_ok = 0; n_replay_other = 0; rp_exp_pc = 32'd0;
+        rp_pend = 1'b0; rp_pend_iid = 7'd0; rp_pend_pc = 32'd0;
         tq_n = 0; tq_drop = 0; n_mb_win = 0; n_trn_evt = 0; n_q_max = 0; nomisp = 0;
         void'($value$plusargs("NOMISP=%d", nomisp));
         mbr_gap = 48; mbr_auto = 1;
@@ -1878,6 +1988,15 @@ module tb_rtu_rob;
         $display("  训练: 事件 %0d 条 / 一窗多条控制转移 %0d 拍 / 队列最深 %0d / 溢出丢 %0d (DUT 计 %0d)",
                  n_trn_evt, n_mb_win, n_q_max, tq_drop, dut.u_commit.tr_ovf_cnt);
         if (n_mb_win == 0) err("训练 FIFO 没被激励到 (一窗 ≥2 条控制转移 0 次): 加 +MULTIBR=K 再来");
+        // store 重放 (2026-10-08): 注入过的必须每条都有交代 —— 要么它自己触发冲刷,
+        // 要么先被别的冲刷合法地冲掉。
+        $display("  store 重放: 注入 %0d 次 / 本请求触发冲刷 %0d 次 / 先被别的冲刷 %0d 次",
+                 n_replay, n_replay_ok, n_replay_other);
+        if (n_replay == 0) err("store 重放路径一次都没被激励到");
+        if (n_replay_ok == 0) err("store 重放注入过, 但一次都没由它自己触发冲刷 (目标 PC 从未对上)");
+        if (n_replay != n_replay_ok + n_replay_other)
+            err($sformatf("重放注入 %0d 次, 但只有 %0d+%0d 次有交代 (剩下的超时了)",
+                          n_replay, n_replay_ok, n_replay_other));
 
         if (errors == 0) begin
             $display("  RTU UNIT: ALL PASS");

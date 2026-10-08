@@ -2,7 +2,7 @@
 `include "RTU_define.vh"
 
 // ---------------------------------------------------------------------------
-// RTU_ROB_entry — 一条 ROB 表项 (D4 的 124 bit), 例化 64 次 + 3 次 (影子窗口)。
+// RTU_ROB_entry — 一条 ROB 表项 (D4 的 125 bit), 例化 64 次 + 3 次 (影子窗口)。
 //
 // 三条写入路径, 优先级 **flush > reload > disp > 自更新**:
 //   * disp    : 派遣建表项 (数据由 RTU_ROB 按车道拼好)
@@ -33,6 +33,10 @@ module RTU_ROB_entry (
     input  wire [`RTU_E_W-1:0] reload_data,
 
     input  wire                cmplt_hit,
+    // LSU 报"这条 store 要重放" ⇒ 置位 (自更新的一位, 与完成/解析并行)。
+    // ⚠️ 只在**自更新**里置位: 优先级低于 disp/pop/reload —— 那三条分别意味着
+    //    "这一格换了主人", 不该被一条旧的重放请求污染。
+    input  wire                replay_set,
     input  wire                resolve_hit,
     input  wire                resolve_taken,
     input  wire                resolve_mispred,
@@ -52,6 +56,9 @@ module RTU_ROB_entry (
         upd = q;
         if (cmplt_hit) begin
             upd[`RTU_E_CMPLT] = 1'b1;
+        end
+        if (replay_set) begin
+            upd[`RTU_E_REPLAY] = 1'b1;   // 只置不清: 清由 pop/flush 负责 (那两条都写 0)
         end
         if (resolve_hit) begin
             upd[`RTU_E_TARGET]  = resolve_target;
