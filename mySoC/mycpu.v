@@ -1383,6 +1383,14 @@ RTU u_rtu (
     // 到 MEM 级就写出去 —— 对退休级而言"永远就绪", 所以 sq_rdy 恒 1、sq_stall 恒 0。
     // (⚠️ 这里**不能**接 0: 接 0 会让每一条 store 都永远退不了休 —— 死锁。)
     .sq_rdy0 (1'b1), .sq_rdy1 (1'b1), .sq_rdy2 (1'b1), .sq_stall (1'b0),
+    // ---- §6.1 IDU 的释放否决掩码 (第 5 态, 2026-10-08) ----
+    // TODO: 等 IDU 接进来, 改接 `idu_rtu_pst_preg_dealloc_mask`。阶段 1 恒 0 是**正确**
+    // 取值, 不只是占位: 阶段 1 是恒等映射 (dst == old) ⇒ `ret_free_vld ≡ 0` ⇒ 一次释放
+    // 都不会发生, 掩码没有作用对象; 反过来掩码本身现在也恒 0 (IDU 那侧 SDIQ 的
+    // `ct_idu_is_sdiq.sv:38` 的 src_mask_clk 全仓无驱动, 见接口待办的"先决条件")。
+    // ⚠️ **必须显式写这一行**: 漏了它是悬空 Z ⇒ `st==RELEASE` 那支变 X ⇒ else-if 视为假
+    //    ⇒ 号**永久漏在 RELEASE** (不是 X 爆炸, 是静默漏号)。极性见 RTU.v 端口注释。
+    .preg_dealloc_mask (64'd0),
     // 阶段 1 的 CSR 仍在 EX 级读写, 所以这里喂进去的 csr_rdata 其实是**该条指令
     // 自己的 CSR 旧值**(= wb_wD_eff: CSR 的 rf_wsel 是 ALUC 且 A 口取旧值, 见
     // Control.v 的 SYSTEM 分支)。RTU 在退休拍正好需要"这条 CSR 指令的旧值"——

@@ -24,7 +24,7 @@
 // 内部结构:
 //   RTU_ROB       表项阵列 + 独热创造指针 + read_entry 影子窗口 (D5) + 完成/解析匹配
 //   RTU_commit    判退级联 + 中断掩码 + 提交点副作用 (P1 链的后半段)
-//   RTU_preg      四态表 + 门房(tap)保持寄存器 + 96 位三端口优先编码 + AMT
+//   RTU_preg      五态表 + 门房(tap)保持寄存器 + 96 位三端口优先编码 + AMT
 //   RTU_csr_slot  CSR 单槽 + 在途门控 (§4.3 的省资源项)
 //   RTU_expt      异常收集, 最旧者胜 (D9)
 //   RTU_flush     冲刷状态机 + 重定向分发 (D11)
@@ -190,6 +190,23 @@ module RTU (
     input  wire        sq_stall,            // 队列满/下游忙 -> **压退休宽度** (与中断共用 commit_mask)
     input  wire [31:0] csr_rdata,           // CSR 组合读出的旧值 (地址见 rtu_csr_addr)
     input  wire        int_pending,         // 有中断待取 (**已按 mstatus/mie/mip 屏蔽过**)
+
+    // ============ §6.1 IDU 的释放否决掩码 (2026-10-08 新增, 第 5 态) ============
+    // 来自 IDU 的 `idu_rtu_pst_preg_dealloc_mask[63:0]` (ct_idu_is_sdiq.sv:388-406):
+    // 所有存活 SDIQ 表项的 src0 (= store 数据源) preg 的独热或。
+    //
+    // ⚠️ **极性: 位 = 1 ⇒ 这个号还被 store 引用着, 不许回池** (名字里的 "dealloc"
+    //    是 C910 的叫法, 读成"可以释放这些"正好反过来)。
+    // ⚠️ **为什么需要它** (端口契约在 §6.1 的 A9, 完整背景见 §3 D2 的 2026-10-08 修正块):
+    //    store 的"完成"不蕴含"数据已读" —— `lsu_st_da.sv:309` 的
+    //    `st_da_wb_cmplt_req` 只看地址那条流水走完, `lsu_sq_entry.sv:432` 的
+    //    `sq_entry_cmit_data_not_vld` 就是"已提交但数据没到"。于是更年轻的那条
+    //    覆盖同一条 lreg 的指令退休时, 会把 store 还要读的号放回池子 ⇒ 重分配 ⇒
+    //    静默错数。sq_rdy*/sq_stall 是同一件事的另一道闸 (靠**压住退休**实现),
+    //    这一根是"只压号、不压退休"的那道 —— 二者不互相替代。
+    // ⚠️ 位**不落** = 那个号永久出池 (停在 RELEASE), 所以"掩码最终必须清零"是
+    //    跨组契约, 与 `sq_rdy*` 一起写在 §10 的 D2 表 (D2.6)。
+    input  wire [63:0] preg_dealloc_mask,
 
     // ===================== BEU -> RTU (D13) =====================
     // EX 级**真的发出**误预测重定向的那一拍 (mycpu.v 里就是 iu_ifu_chgflw_vld)。
@@ -663,7 +680,7 @@ module RTU (
     assign dbg_commit_vld2 = commit_vld[2];
 
     // =======================================================================
-    // 物理寄存器状态 (四态表 + AMT)
+    // 物理寄存器状态 (五态表 + AMT)
     // =======================================================================
     RTU_preg u_preg (
         .cpu_clk            (cpu_clk),
@@ -688,6 +705,7 @@ module RTU (
         .ret_dst_lreg0      (ret_dst_lreg0),
         .ret_dst_lreg1      (ret_dst_lreg1),
         .ret_dst_lreg2      (ret_dst_lreg2),
+        .preg_dealloc_mask  (preg_dealloc_mask),
         .flush_lvl          (flush_lvl),
         .rtu_preg_alloc0    (rtu_preg_alloc0),
         .rtu_preg_alloc1    (rtu_preg_alloc1),
@@ -701,6 +719,10 @@ module RTU (
     );
 
     // 释放的观察口 (§6.2): 自由池在 RTU 侧, 这三个口是给 debug/difftest 看的
+    // ⚠️ 2026-10-08 (第 5 态): 口径是"释放**意图**", **不是**"已经回池" —— 号退休
+    //    那拍进 RELEASE, 真正回池要等 `preg_dealloc_mask` 把这一位撤下来。所以
+    //    `_vld = 1` 与"这一拍池子里多了这个号"不再等价 (差 ≥1 拍, 被掩码押住时更久)。
+    //    没有消费者 (IDU 侧无对应口), 纯观察; 要判"真回池"请用 free_cnt 或状态表。
     assign rtu_ren_free_vld0 = ret_free_vld[0];
     assign rtu_ren_free_vld1 = ret_free_vld[1];
     assign rtu_ren_free_vld2 = ret_free_vld[2];

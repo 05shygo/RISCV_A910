@@ -2,13 +2,27 @@
 `include "RTU_define.vh"
 
 // ---------------------------------------------------------------------------
-// RTU_preg — 物理寄存器四态表 + 分配握手 + 架构映射表 AMT (D2 / D3)。
+// RTU_preg — 物理寄存器五态表 + 分配握手 + 架构映射表 AMT (D2 / D3)。
 //
-// 四态 (每 preg 2 bit, 共 2*`RTU_NUM_PREG` bit —— 64 档 128 / 96 档 192):
+// 五态 (每 preg 3 bit, 共 3*`RTU_NUM_PREG` bit —— 64 档 192 / 96 档 288):
 //   FREE --(被 tap 选中补进"门房")--> WF_ALLOC --(派遣认领)--> ALLOC
 //   ALLOC --(退休且写回)--> ARCH        ALLOC --(陷阱那条)--> FREE
-//   ARCH  --(退休且 old_preg != dst_preg)--> FREE
+//   ARCH  --(退休且 old_preg != dst_preg)--> RELEASE --(!mask)--> FREE
 //   冲刷: 非 ARCH 全部回 FREE (一拍并行, 每个 preg 各看各的, 不用扫描)
+//
+// ⚠️ **2026-10-08: 释放改成"无条件先挂一拍" (ARCH→RELEASE), 第 5 态。**
+//    挡的是 store 数据读的 WAR: store 的"完成"不蕴含"数据已读"
+//    (lsu_st_da.sv:309 的 st_da_wb_cmplt_req 只看地址那条流水走完;
+//     lsu_sq_entry.sv:432 的 sq_entry_cmit_data_not_vld 就是"已提交但数据没到"),
+//    于是更年轻的那条覆盖同一条 lreg 的指令退休时, 会把 store 还要读的那个号
+//    放回池子 ⇒ 号被重分配 ⇒ store 读到别人的值 (静默错数)。
+//    IDU 的 `idu_rtu_pst_preg_dealloc_mask` 正好是"这些号还被存活的 SDIQ 表项
+//    引用着"的独热或 (ct_idu_is_sdiq.sv:388-406) —— 拿它当**否决**用。
+//    ⚠️ 无条件 (而不是"只在 mask 命中那一拍才挂"): mask 是寄存 + 事件驱动, 比
+//       SDIQ 状态晚 1~2 拍; 无条件多给一拍重新判的机会, 且计数器不必给每路释放
+//       加门控 (少一类"两条判据不同源"的隐患)。**代价是每个号回池晚一拍**
+//       (阶段 1 恒等映射下 `ret_free_vld ≡ 0` ⇒ 主流程一位不变)。
+//    设计决策与验收见 doc/rtu_plan_zh.md §3 D2 的 2026-10-08 修正块。
 //
 // ⚠️ **2026-10-07: 分配握手改成 C910 的"门房保持寄存器"(tap), 年龄回收删除。**
 //    完整理由与验收口径见 doc/rtu_preg_alloc_plan_zh.md, 摘要在文件末尾。
@@ -53,10 +67,26 @@ module RTU_preg (
     // ---- 退休 ----
     input  wire [2:0]  ret_arch_vld,     // dst_preg -> ARCH (+ AMT 写)
     input  wire [2:0]  ret_kill_vld,     // 陷阱那条: 分配过但没写的 dst_preg -> FREE
-    input  wire [2:0]  ret_free_vld,     // old_preg (调用方已判 != dst_preg) -> FREE
+    input  wire [2:0]  ret_free_vld,     // old_preg (调用方已判 != dst_preg) -> RELEASE
     input  wire [6:0]  ret_dst_preg0, ret_dst_preg1, ret_dst_preg2,
     input  wire [6:0]  ret_old_preg0, ret_old_preg1, ret_old_preg2,
     input  wire [4:0]  ret_dst_lreg0, ret_dst_lreg1, ret_dst_lreg2,
+
+    // ---- store 数据读的 WAR 否决 (来自 IDU 的 idu_rtu_pst_preg_dealloc_mask) ----
+    // ⚠️ **极性: 位 = 1 表示这个号**还被存活的 SDIQ 表项引用着, 不许回池**。
+    //    名字里的 "dealloc" 是 C910 的叫法, 读成"可以释放这些"正好**反过来** ——
+    //    接反极性会把正被引用的号全放回池子, 是本模块最贵的一种接错。极性由
+    //    `rel_go_vec = rel_vec & ~mask_ext` 这一行定义, 只有这一处。
+    // ⚠️ 64 位固定 (= 交付的 IDU 的宽度, 与 preg 池子大小无关): bit≥64 只在 96 档
+    //    存在, 而 IDU 是 64 位 ⇒ 那一段恒 0 = 恒不否决。见下面的 `mask_ext`。
+    // ⚠️ 它是**寄存值**, 比 SDIQ 的真实状态晚 1~2 拍 (事件驱动: 只在 create/pop/
+    //    flush 上更新)。做**否决**这方向是安全的 (只会多挡): 要挡的那次释放来自
+    //    **更年轻**的那条指令的退休 (它的 old_preg 就是 store 改名时读到的映射),
+    //    而那条退休又在 store 自己的退休之后 ⇒ 释放拍距 store 建表至少一整个
+    //    流水深度, 1~2 拍滞后吃得下。
+    // ⚠️ 位**不落**的后果: 那个号永久停在 RELEASE = 永久出池 (池子单调缩水)。
+    //    所以"掩码位最终必须清零"是一条跨组契约 (doc/rtu_plan_zh.md §10 D2)。
+    input  wire [63:0] preg_dealloc_mask,
 
     // ---- 冲刷 (FLUSH_2) ----
     input  wire        flush_lvl,
@@ -73,8 +103,8 @@ module RTU_preg (
     output wire [223:0] amt_flat               // 32 × 7bit, amt_flat[7*l +: 7] = AMT[l]
 );
 
-    reg  [1:0]  st [0:`RTU_NUM_PREG-1];
-    reg  [1:0]  nst[0:`RTU_NUM_PREG-1];
+    reg  [2:0]  st [0:`RTU_NUM_PREG-1];
+    reg  [2:0]  nst[0:`RTU_NUM_PREG-1];
     // ---- 每路一份"门房"寄存器 (C910 `ct_rtu_pst_preg.v:7376-7393` 的 alloc_preg*) ----
     // 它备着一个已经出池(WF_ALLOC)、等着被取走的号。消费者**当拍取走**;
     // 取走(或空着)的那一拍边沿才补下一个。于是许可与编号都不依赖本拍请求
@@ -187,6 +217,41 @@ module RTU_preg (
             assign free_vec[gv] = (st[gv] == `RTU_P_FREE);
         end
     endgenerate
+
+    // -----------------------------------------------------------------------
+    // 释放的"押住"逻辑 (2026-10-08, 第 5 态) —— 三个向量, 全扁平写法
+    //
+    //   mask_ext  : 把 IDU 的 64 位掩码铺到池子宽度 (96 档补 32 位 0 = 恒不否决)
+    //   rel_vec   : 哪些号停在 RELEASE
+    //   rel_go_vec: 这一拍**真的能回池**的号 = RELEASE 且掩码已撤 ⇒ 状态表与
+    //               计数器**共用这一个向量** (两处若各判各的, 就是本文件反复
+    //               踩过的"账目慢慢偏"那类 bug)
+    //   killable_vec: 陷阱可以 kill 的状态 (ALLOC/WF_ALLOC)。原来这一处用的是
+    //               `st != ARCH` —— 加了 RELEASE 之后它会把 RELEASE 也放过去,
+    //               等于给否决开了一条旁路, 所以改成显式的"分配出去过"。
+    //               顺带修掉一处潜在漂移: 今天 kill 若命中 FREE 态, 状态不动而
+    //               `n_freed` 照 +1 (虽然契约上不可达)。
+    //
+    // ⚠️ 三个向量都要**先声明后用** (本仓有"遗漏声明退化成 1 位隐式线网, 症状是
+    //    静默错"的前科, 见 §9 R7) —— 所以都放在这里, 早于下面的状态机循环。
+    // -----------------------------------------------------------------------
+`ifdef RTU_PREG64
+    wire [`RTU_NUM_PREG-1:0] mask_ext = preg_dealloc_mask;
+`else
+    wire [`RTU_NUM_PREG-1:0] mask_ext = {32'd0, preg_dealloc_mask};
+`endif
+
+    wire [`RTU_NUM_PREG-1:0] rel_vec;
+    wire [`RTU_NUM_PREG-1:0] rel_go_vec;
+    wire [`RTU_NUM_PREG-1:0] killable_vec;
+    genvar      gr;
+    generate
+        for (gr = 0; gr < `RTU_NUM_PREG; gr = gr + 1) begin : g_rel
+            assign rel_vec[gr]      = (st[gr] == `RTU_P_RELEASE);
+            assign killable_vec[gr] = (st[gr] == `RTU_P_ALLOC) || (st[gr] == `RTU_P_WFALLOC);
+        end
+    endgenerate
+    assign rel_go_vec = rel_vec & ~mask_ext;
 
     // 本路本拍被**取走**: 消费者请求了这一路, 且 dst 不是 x0 (x0 不分配、不映射)。
     // "请求即取走" 是 C910 的语义 —— 它那边 alloc_vld、RAT 写、进 IS 由同一个
@@ -351,7 +416,7 @@ module RTU_preg (
     wire conf_free_any  = |(is_wf & ~hit_disp);
 
     // -----------------------------------------------------------------------
-    // 陷阱那条的 kill —— **必须门掉 ARCH 态**
+    // 陷阱那条的 kill —— **必须门掉 ARCH 态** (2026-10-08: 改成显式 `killable_vec`)
     //
     // kill 的语义是"把**分配出去**的编号还回池子" (它没写 rd), 架构态永远不该被
     // kill。不门的话, 阶段 1 的恒等映射 (§7 读法 A: dst_preg == p_<lreg> == ARCH)
@@ -365,21 +430,19 @@ module RTU_preg (
     //    门了状态却不门计数, 就是"账目慢慢偏"那类 bug。
     // 真重命名下被 kill 的 dst_preg 必然是 ALLOC/WF_ALLOC ⇒ 这条门控在阶段 2+ 惰性,
     // 单元单测台的行为一位不变。
+    //
+    // ⚠️ `killable_vec` 的定义在上面 (与 rel_vec 同一组 generate), 判的是
+    //    ALLOC/WF_ALLOC **而不是** `st != ARCH` —— 后者会把 2026-10-08 新加的
+    //    RELEASE 也放进去, 等于给"押住"开一条旁路 (把还被 store 引用的号 kill 回池)。
+    //    契约上不可达 (陷阱那条的 dst_preg 必然 ALLOC), 但闸门该按语义写, 不按
+    //    "目前只有三态"写。
     // -----------------------------------------------------------------------
-    wire [`RTU_NUM_PREG-1:0] not_arch_vec;
-    genvar      gk;
-    generate
-        for (gk = 0; gk < `RTU_NUM_PREG; gk = gk + 1) begin : g_notarch
-            assign not_arch_vec[gk] = (st[gk] != `RTU_P_ARCH);
-        end
-    endgenerate
-
-    wire [2:0] kill_hit = { ret_kill_vld[2] & not_arch_vec[ret_dst_preg2],
-                            ret_kill_vld[1] & not_arch_vec[ret_dst_preg1],
-                            ret_kill_vld[0] & not_arch_vec[ret_dst_preg0] };
+    wire [2:0] kill_hit = { ret_kill_vld[2] & killable_vec[ret_dst_preg2],
+                            ret_kill_vld[1] & killable_vec[ret_dst_preg1],
+                            ret_kill_vld[0] & killable_vec[ret_dst_preg0] };
 
     // -----------------------------------------------------------------------
-    // 四态表更新 (优先级: 冲刷 > 退休 > 派遣确认 > 本拍选中 > 保持)
+    // 五态表更新 (优先级: 冲刷 > 退休 > 释放落下 > 派遣确认 > 本拍选中 > 保持)
     // -----------------------------------------------------------------------
     always @(*) begin
         for (i = 0; i < `RTU_NUM_PREG; i = i + 1) begin
@@ -391,22 +454,42 @@ module RTU_preg (
             //    空闲计数与真实状态当场对不上 (单测台的账就是在这儿差的)。
             //    比较器个数没变, 只是换了枚举顺序。
             if (flush_lvl) begin
-                // 冲刷: 没退休的一律回 FREE, 架构态不动
+                // 冲刷: 没退休的一律回 FREE, 架构态不动。
+                // ⚠️ 这条**绕过否决掩码**是有理由的, 不是漏了: 同一次冲刷里 IDU
+                //    把 SDIQ 表项的 vld 与掩码寄存器一起清掉
+                //    (ct_idu_is_sdiq_entry.sv:115 / ct_idu_is_sdiq.sv:398-399),
+                //    而本核的冲刷保证"重定向那条必然在队头"(执行级重定向 + 最旧门控,
+                //    见 D12/D13) ⇒ 在飞指令全是比它年轻的, 全部被冲掉 ⇒ 冲刷那一拍
+                //    没有任何存活的引用者。RELEASE 也在这条里回 FREE。
                 nst[i] = (st[i] == `RTU_P_ARCH) ? `RTU_P_ARCH : `RTU_P_FREE;
             end else if ((ret_arch_vld[2] && (ret_dst_preg2 == i))) begin
                 nst[i] = `RTU_P_ARCH;
             end else if ((kill_hit[2] && (ret_dst_preg2 == i)) ||
                          (ret_free_vld[2] && (ret_old_preg2 == i))) begin
-                nst[i] = `RTU_P_FREE;
+                // 退休释放**一律先落 RELEASE** (无条件, 不看掩码): 见文件头与端口注释。
+                nst[i] = (ret_free_vld[2] && (ret_old_preg2 == i)) ? `RTU_P_RELEASE
+                                                                   : `RTU_P_FREE;
             end else if ((ret_arch_vld[1] && (ret_dst_preg1 == i))) begin
                 nst[i] = `RTU_P_ARCH;
             end else if ((kill_hit[1] && (ret_dst_preg1 == i)) ||
                          (ret_free_vld[1] && (ret_old_preg1 == i))) begin
-                nst[i] = `RTU_P_FREE;
+                nst[i] = (ret_free_vld[1] && (ret_old_preg1 == i)) ? `RTU_P_RELEASE
+                                                                   : `RTU_P_FREE;
             end else if ((ret_arch_vld[0] && (ret_dst_preg0 == i))) begin
                 nst[i] = `RTU_P_ARCH;
             end else if ((kill_hit[0] && (ret_dst_preg0 == i)) ||
                          (ret_free_vld[0] && (ret_old_preg0 == i))) begin
+                nst[i] = (ret_free_vld[0] && (ret_old_preg0 == i)) ? `RTU_P_RELEASE
+                                                                   : `RTU_P_FREE;
+            end else if (rel_go_vec[i]) begin
+                // **电平**, 不是脉冲: 释放请求那一拍只把号挂进 RELEASE, 真正回池
+                // 发生在这里 —— 掩码把这个号撤下来的那一拍。必须有这一支:
+                // `ret_free_vld` 是一拍脉冲, 只靠它上面那条判就等于"被挡一次就永久
+                // 丢了" (号卡在 RELEASE 出不了池, 池子单调缩水)。
+                // ⚠️ 位置: 必须排在三条 lane 支之后 (退休事件优先), 而在下面
+                //    `is_wf`/`sel_oh` 之前还是之后都行 —— 那两支对 RELEASE 结构性
+                //    为假 (`is_wf` 要求 WF_ALLOC; `sel_oh` 由 `free_pool` 派生,
+                //    要求 FREE), 别为了"整齐"把它们挪到前面。
                 nst[i] = `RTU_P_FREE;
             end else if (is_wf[i] &&  hit_disp[i]) begin
                 nst[i] = `RTU_P_ALLOC;          // 本拍被派出去了 (承下门房备着的号)
@@ -464,17 +547,31 @@ module RTU_preg (
     // ⚠️ `kill_hit` **也要算进去**: 陷阱那条自己的 dst_preg 是 ALLOC -> FREE
     //    (它没写 rd), 漏了它每次陷阱都会让计数器少 1 —— 单测台里表现为
     //    "计数器恒低 1, 一直不回来" (踩过)。陷阱那拍 write_vld=0, 所以 kill 与
-    //    arch/free 不会互相覆盖, 直接相加即可。 (最多 3+3+3 = 9, 用 4 位)
+    //    arch/free 不会互相覆盖, 直接相加即可。
     // ⚠️ 这里用的是 `kill_hit` 而**不是** `ret_kill_vld` —— 状态转移上面门掉了
     //    ARCH, 计数必须同门 (见那段注释), 否则池子的账与状态表当场对不上。
     // ⚠️ 2026-10-07: 去掉了"年龄回收"那一项 (n_cf) —— 号不再按年龄回收。
-    wire [3:0] n_freed = {3'b0, ret_free_vld[0]} + {3'b0, ret_free_vld[1]}
-                       + {3'b0, ret_free_vld[2]}
-                       + {3'b0, kill_hit[0]} + {3'b0, kill_hit[1]}
-                       + {3'b0, kill_hit[2]};
+    // ⚠️ **2026-10-08 (第 5 态): `ret_free_vld` 三项从"free"里删掉了, 换成
+    //    `rel_go_vec` 的 popcount。** 因为释放现在不再当拍进池:
+    //      ARCH --(ret_free_vld)--> RELEASE   这一步**记账中性** (前不是 FREE、
+    //                                          后也不是 FREE) ⇒ 不能算 freed;
+    //      RELEASE --(rel_go_vec)--> FREE     这一步才是 +1。
+    //    用**同一个向量** `rel_go_vec` 做状态与计数 (上面那支 else-if 判的也是它),
+    //    免得两处各判各的又慢慢偏。相位也顺: 状态表在同一个边沿落 FREE、计数器
+    //    在同一个边沿 +1, 单测台的 popcount 自检逐拍对得上。
+    // ⚠️ 位宽: 上界 = 3 (kill) + NUM_PREG (release, 理论上掩码一次撤掉全部) ⇒
+    //    96+3+96 = 195 < 256, 所以 `n_freed`/`n_alloc` 都用 8 位、加减在 8 位里算。
+    //    原来 4 位能过是因为上界 96+6 = 102 < 128, 加了 popcount 之后 7 位的中间值
+    //    会**回绕**。真实可达上界很松 (RELEASE 的号数 ≤ IDU 的 SDIQ 深度 = 4)。
+    //    ⚠️ popcount 的加法树只喂 `free_cnt_q`, 而 `disp_stall` 那一项已于
+    //       2026-10-07 删掉 ⇒ 不在停派遣的路径上; 但它是本模块唯一的时序新增项,
+    //       Fmax 回归要专门看一眼。
+    wire [7:0] n_rel  = $countones(rel_go_vec);
+    wire [7:0] n_freed = {6'b0, kill_hit[0]} + {6'b0, kill_hit[1]}
+                       + {6'b0, kill_hit[2]} + n_rel;
     // ⚠️ 数的必须是**出池的次数** (= 装进门房的次数), 不是"本拍请求了几路" ——
     //    号在装进 tap 那一刻就出池, 与请求的相位解耦。少记一次计数器就永久高报。
-    wire [3:0] n_alloc = {3'b0, (|g_sel0)} + {3'b0, (|g_sel1)} + {3'b0, (|g_sel2)};
+    wire [7:0] n_alloc = {7'b0, (|g_sel0)} + {7'b0, (|g_sel1)} + {7'b0, (|g_sel2)};
 
     // 冲刷后还在池子外的只有 ARCH: 初始映射那 32 项、以及任何 retired 过的映射 ——
     // `st[i] == ARCH ? ARCH : FREE` 那一条把它们留下了。所以自由数**不是** 96 而是
@@ -496,8 +593,13 @@ module RTU_preg (
         // ⚠️ 复位值必须是**常数** 64 (= 96 − 32 项初始映射): 那一拍 st[] 在真实
         //    上电时是 X, `96 − arch_cnt` 会算出 X 并永久留在计数器里。
         if (cpu_rst)          free_cnt_q <= `RTU_NUM_PREG - 32;
+        // 冲刷公式不变: 冲刷那一拍 `nst` 只可能是 ARCH 或 FREE (RELEASE 也归 FREE)
+        // ⇒ 冲刷后的 FREE 数恰好是 `NUM_PREG − arch_cnt` (arch_cnt 是组合、取边沿前的
+        // st[], 而 ARCH 项在冲刷里原样保留, 两者同源)。
         else if (flush_lvl)   free_cnt_q <= `RTU_NUM_PREG - arch_cnt;
-        else                  free_cnt_q <= free_cnt_q + {3'b0, n_freed} - {3'b0, n_alloc};
+        // ⚠️ 加减**必须在 8 位里算** (n_freed/n_alloc 已是 8 位 ⇒ 表达式宽度 8):
+        //    见上面那条位宽注释, 7 位中间值会回绕。
+        else                  free_cnt_q <= free_cnt_q + n_freed - n_alloc;
     end
 
     assign free_cnt          = free_cnt_q;

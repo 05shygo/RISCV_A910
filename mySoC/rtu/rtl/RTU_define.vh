@@ -49,16 +49,23 @@
 `define RTU_CMPLT_PORTS   7
 `define RTU_RESOLVE_PORTS 1
 
-// ---- preg 四态 (D2) ----
+// ---- preg 五态 (D2) ----
 // ⚠️ 2026-10-07 起是**门房语义**: 号被选中**补进门房(tap)**那一拍 FREE→WF_ALLOC,
 //    派遣认领那一拍 WF_ALLOC→ALLOC (两者相隔几拍不限)。见 §6.0 与
 //    doc/rtu_preg_alloc_plan_zh.md。
 // ⚠️ WF_ALLOC 不是多余的簿记 —— 它是给优先编码器打拍用的, 砍了就把它
 //    串进派遣链 (§4.2 P3)。
-`define RTU_P_FREE      2'd0        // 在自由池里, 可被分配
-`define RTU_P_WFALLOC   2'd1        // 已出池、备在门房里, 等派遣认领
-`define RTU_P_ALLOC     2'd2        // 已分配给在途指令(推测态)
-`define RTU_P_ARCH      2'd3        // 已是架构态(某个 lreg 的当前映射)
+// ⚠️ **2026-10-08 加了第 5 态 RELEASE** (2 bit → 3 bit)。理由与 C910 的 RELEASE
+//    不同: C910 那条是给"快速退休/折叠"用的 (所以本核当初把它并掉了), 我们这条
+//    是给 **store 数据读的 WAR** 用的 —— store 的"完成"不蕴含"数据已读"
+//    (lsu_st_da.sv 的 st_da_wb_cmplt_req 只看地址流水走完), 于是更年轻的那条
+//    覆盖同一条 lreg 的指令退休时, 会把 store 还要读的那个号放回池子。
+//    现在: 释放一律先落 RELEASE, 等 IDU 的 dealloc mask 把这个号撤下来才回 FREE。
+`define RTU_P_FREE      3'd0        // 在自由池里, 可被分配
+`define RTU_P_WFALLOC   3'd1        // 已出池、备在门房里, 等派遣认领
+`define RTU_P_ALLOC     3'd2        // 已分配给在途指令(推测态)
+`define RTU_P_ARCH      3'd3        // 已是架构态(某个 lreg 的当前映射)
+`define RTU_P_RELEASE   3'd4        // 已被顶掉但**还被 store 引用着**, 等 mask 落下才回 FREE
 
 // ---- ROB 满的判据 (§4 不变量 1) ----
 // 用计数器 + 留空位, 不用指针比较: 一拍最多派 3 条, 留 RSV 个空位就置 full。

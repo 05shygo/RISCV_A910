@@ -39,6 +39,12 @@
 // 用法:
 //   make rtu-unit                       # 默认种子 + 200 条随机指令
 //   ./obj_unit_rtu/simv +SEED=12345 +NINSTR=400 [+TRACE]
+//   ./obj_unit_rtu/simv +MASKPCT=0      # 关掉否决掩码注入 (掩码恒 0 的口径)
+//   ./obj_unit_rtu/simv +MASKDIR        # 只走定向注入 (必打释放路径)
+// +MASKPCT=n 是随机注入的百分比 (默认 30); +MASKDIR 是旗标 (不带值)。
+// ⚠️ `+MASKPCT=0` **不是**"与加第 5 态之前逐位一致" —— 关掉的只是**激励**, 释放
+//    仍然走 `RELEASE` 挂一拍才回池 (无条件写法的固有代价, 最长停 1 拍)。它是
+//    "没有引用者时的行为"口径, 不是"没有第 5 态"口径。
 // ===========================================================================
 module tb_rtu_rob;
 
@@ -89,6 +95,7 @@ module tb_rtu_rob;
     logic [31:0] ex_tval;
 
     logic        sq_rdy0, sq_rdy1, sq_rdy2, sq_stall;
+    logic [63:0] dealloc_mask;                             // 第 5 态: 1 = 这个号还被 store 引用, 押住
     logic        int_pending;
     logic [31:0] csr_tvec, csr_mepc_i;
 
@@ -170,6 +177,7 @@ module tb_rtu_rob;
         .resolve_mispred(rsv_misp), .resolve_target(rsv_tgt),
         .expt_vld(ex_vld), .expt_iid(ex_iid), .expt_cause(ex_cause), .expt_tval(ex_tval),
         .sq_rdy0(sq_rdy0), .sq_rdy1(sq_rdy1), .sq_rdy2(sq_rdy2), .sq_stall(sq_stall),
+        .preg_dealloc_mask(dealloc_mask),
         .csr_rdata(csr_rdata), .int_pending(int_pending),
         .preg_rdata0(prdata0), .preg_rdata1(prdata1), .preg_rdata2(prdata2),
         .rtu_csr_src_rdata(csrsrc_rdata),
@@ -261,6 +269,26 @@ module tb_rtu_rob;
     // 派遣时写、冲刷时用 `rtu_ren_recover_map` (= ref_amt) 整表覆盖 —— 契约怎么
     // 描述对面那一侧, 参考模型就怎么维护, 不再去"重建"它。
     logic [6:0]  ref_rat [0:31];
+
+    // ---- 第 5 态 (2026-10-08): 参考模型里"哪些号正停在 RELEASE" ----
+    // 为什么这里可以维护第二份派生量 (而上面刚说"故意不维护占用位图"): 这条的转移
+    // 只由两件本台完全掌握的事驱动 —— 退休释放的脉冲 (x_rfwe/lreg/old/dst 现成) 与
+    // 否决掩码的电平 (x_mask_q 同帧锁存)。它不依赖"派遣/认领"那类跨拍握手。
+    // 口径 (在 ref_retire 里更新, 与 DUT 逐拍同帧; check_cycle 里比的是**边沿前**快照):
+    //   1) 电平: 掩码没握住的位 → 回 FREE;
+    //   2) 本拍释放的号 → 嵌进 RELEASE (**无条件**, 不看掩码);
+    //   3) 本拍有冲刷 → 全部归 FREE (状态表那一支优先级最高)。
+    logic [`RTU_NUM_PREG-1:0] ref_rel = {`RTU_NUM_PREG{1'b0}};
+    int   rel_age  [0:`RTU_NUM_PREG-1];     // 每个号在 RELEASE 连续停了几拍 (覆盖统计)
+    integer n_mask_arm  = 0;                // 掩码注入次数 (置位一次算一次)
+    integer n_veto      = 0;                // 真的押住一次释放的次数 (RELEASE 被激励到)
+    integer n_rel_free  = 0;                // RELEASE→FREE (掩码撤下) 的次数
+    integer n_rel_max   = 0;                // 一个号在 RELEASE 停过的最长拍数
+    // ⚠️ 必须是 int 数组, **不能**写成 `logic [63:0] mask_ttl` —— 那是一位一项的打包向量,
+    //    `mask_ttl[q] = 3 + urandom%6` 会被截成 1 位 (3/5/7→1, 4/6/8→0), 而 0 永远
+    //    不满足 `> 0` 的倒计时条件 ⇒ 那个位**永远撤不下来**, 释放被无限押住。
+    //    (本仓的老毛病: 位宽写错是静默错。第一次跑单测台就是这么抓到的。)
+    int   mask_ttl [0:63];                  // 每个注入位的剩余保持拍数 (**有界**)
 
     logic [5:0]  tb_cptr = 6'd0;       // 派遣指针镜像 (iid = {回绕位, 槽号})
     logic        tb_cmsb = 1'b0;
@@ -392,6 +420,7 @@ module tb_rtu_rob;
     logic [2:0]  x_retarch_q = 3'd0, x_retkill_q = 3'd0, x_retfree_q = 3'd0;
     logic [6:0]  x_dstp_q [0:2];
     logic        x_flvl_q = 1'b0;
+    logic [63:0] x_mask_q = 64'd0;      // 2026-10-08: 边沿那拍的否决掩码 (第 5 态)
     logic [6:0]  x_oldp_q [0:2];
     logic [2:0]  ret_fv_q = 3'd0;
     logic [20:0] ret_fp_q = 21'd0;
@@ -491,16 +520,19 @@ module tb_rtu_rob;
         x_dstp_q[1] <= dut.u_preg.ret_dst_preg1;
         x_dstp_q[2] <= dut.u_preg.ret_dst_preg2;
         x_flvl_q    <= dut.u_preg.flush_lvl;
+        // 2026-10-08 (第 5 态): 否决掩码也要锁存 —— 状态表那一支判的就是"边沿这一拍
+        // 掩码是什么", 诊断与参考模型都必须用 DUT 真正采到的那一帧, 不能用实时值。
+        x_mask_q    <= dealloc_mask;
     end
-    // 四态表在**冲沿前**的快照。"释放的编号不该是 FREE 态"这条不变量问的是
+    // 五态表在**冲沿前**的快照。"释放的编号不该是 FREE 态"这条不变量问的是
     // "释放发生在哪个状态上", 而释放本身就在同一个 posedge 把那个编号写成 FREE ——
     // 在负沿直接读 st[] 必然读到 FREE (等于拿结果去问原因, 恒假)。所以留一份边沿前的副本。
-    // 池子大小可配 (64/96) ⇒ 快照宽度跟着走
-    logic [2*`RTU_NUM_PREG-1:0] st_snap_q = {2*`RTU_NUM_PREG{1'b0}};
+    // 池子大小可配 (64/96) ⇒ 快照宽度跟着走; 2026-10-08 每项 2 → 3 bit (第 5 态)。
+    logic [3*`RTU_NUM_PREG-1:0] st_snap_q = {3*`RTU_NUM_PREG{1'b0}};
     logic [223:0] amt_snap_q = 224'd0;
     always @(posedge clk) begin
         for (int si = 0; si < `RTU_NUM_PREG; si = si + 1)
-            st_snap_q[2*si +: 2] <= dut.u_preg.st[si];
+            st_snap_q[3*si +: 3] <= dut.u_preg.st[si];
         for (int ai = 0; ai < 32; ai = ai + 1)
             amt_snap_q[7*ai +: 7] <= dut.u_preg.amt[ai];
     end
@@ -747,11 +779,32 @@ module tb_rtu_rob;
                                               fp_k, i));
                             // 纯 DUT 侧: 释放的编号在 DUT 的池子里绝不该是 FREE 态
                             // (它是"被替换掉的架构映射", 一定处于 ARCH/ALLOC)。
-                            if (fv_k && (st_snap_q[2*fp_k +: 2] === 2'd0)) begin
+                            if (fv_k && (st_snap_q[3*fp_k +: 3] === `RTU_P_FREE)) begin
                                 err($sformatf("释放了 FREE 态的 p%0d (指令 %0d, trap=%b) dpr=%0d old=%0d lreg=%0d amt=%0d oldsrc=%0d idx=%0d",
                                               fp_k, i, trap_this, x_dpr[i], x_opr[i],
                                               x_lreg[i], ref_amt[x_lreg[i]], x_src[i], x_srcidx[i]));
                                 if (!log_dumped3) begin dump_log(); log_dumped3 = 1'b1; end
+                            end
+                            // ---- 6d) 释放的落点: 掩码命中 ⇒ 停 RELEASE, 否则 ⇒ FREE ----
+                            // 2026-10-08 (第 5 态) 的核心判据。边沿后读**活**状态
+                            // (st_snap_q 是边沿前), 与上面几条同帧对齐。
+                            // ⚠️ 排除冲刷那一拍: 冲刷把非 ARCH 全归 FREE, 掩码位还没来得及
+                            //    撤下来 (IDU 是下一拍才清) —— 那一拍的 RELEASE 被冲掉是**对的**。
+                            // ⚠️ 64 档以上 fp_k 可能 ≥ 64, 而本台的掩码只有 64 位 ⇒ 越界读会拿到
+                            //    X。按 DUT 的 `mask_ext` 口径补 0 (bit≥64 恒不否决)。
+                            if (fv_k && !x_flvl_q && (fp_k !== x_dpr[i])) begin
+                                logic mbit;
+                                mbit = (fp_k < 7'd64) ? x_mask_q[fp_k] : 1'b0;
+                                if (mbit) n_veto = n_veto + 1;
+                                // **无条件**释放: 释放那一拍**一定**落在 RELEASE, 与掩码无关;
+                                // 回池发生在它之后的某一拍 (`~mask` 那拍)。所以这条判据不带
+                                // 掩码分支 —— 它钉的正是"释放不再当拍回池"这件事本身。
+                                // 掩码有没有起作用由 6b 的集合比对与覆盖计数负责。
+                                // ⚠️ 唯一例外是冲刷那一拍 (状态表那一支优先级最高, 非 ARCH 全归
+                                //    FREE), 已被上面的 `!x_flvl_q` 排除。
+                                if (dut.u_preg.st[fp_k] !== `RTU_P_RELEASE)
+                                    err($sformatf("释放没落 RELEASE: p%0d (指令 %0d) 边沿后状态=%0d, 期望 RELEASE(4) | mask[%0d]=%b",
+                                                  fp_k, i, dut.u_preg.st[fp_k], fp_k, mbit));
                             end
                         end
                     end
@@ -966,6 +1019,17 @@ module tb_rtu_rob;
                         if (!log_dumped3) begin dump_log(); log_dumped3 = 1'b1; end
                     end
             end
+            // 门房手里备着的号不得是 RELEASE 态 (第 5 态, 2026-10-08)。
+            // 结构上不可能 (`sel_oh` 由 `free_pool` 派生 ⇒ 只挑 FREE), 但这个不变量是
+            // "RELEASE 的号出不了池"那句话的落地形式 —— 顺带覆盖 6d 判据依赖的前提。
+            for (int k = 0; k < 3; k = k + 1) begin
+                logic [6:0] ak;
+                logic       av;
+                ak = (k == 0) ? alloc0 : (k == 1) ? alloc1 : alloc2;
+                av = (k == 0) ? alloc_vld0 : (k == 1) ? alloc_vld1 : alloc_vld2;
+                if (av && (dut.u_preg.st[ak] === `RTU_P_RELEASE))
+                    err($sformatf("门房 %0d 握着 RELEASE 态的 p%0d (第 5 态的号绝不进池)", k, ak));
+            end
 
 
             // ---------- 6b) 空闲计数 == 池子里真 FREE 的个数 ----------
@@ -975,23 +1039,32 @@ module tb_rtu_rob;
             // ⚠️ 2026-10-02 (D1.2): 原来只数高段 [32,96) —— 那是"p0..p31 永不回收"
             //    时代的写法; 现在初始映射会被顶掉, 低段也会进池子, 必须数全表。
             begin
-                integer fcnt, fpre;
-                fcnt = 0; fpre = 0;
+                integer fcnt, fpre, frel;
+                fcnt = 0; fpre = 0; frel = 0;
                 for (int q = 0; q < `RTU_NUM_PREG; q = q + 1) begin
                     if (dut.u_preg.st[q] === `RTU_P_FREE) fcnt = fcnt + 1;
-                    if (st_snap_q[2*q +: 2] === `RTU_P_FREE) fpre = fpre + 1;
+                    if (st_snap_q[3*q +: 3] === `RTU_P_FREE) fpre = fpre + 1;
+                    // 2026-10-08 (第 5 态): **哪些**号停在 RELEASE —— 比"数得对"更有牙,
+                    // 它钉的是"押住的是哪一个"。快照是边沿前, ref_rel 同帧 (见声明处口径)。
+                    // ⚠️ 头几拍不比 (cycle > 3): 复位刚出来时两者都该是空集, 留个安全边。
+                    if (st_snap_q[3*q +: 3] === `RTU_P_RELEASE) frel = frel + 1;
+                    if ((cycle > 3) &&
+                        ((st_snap_q[3*q +: 3] === `RTU_P_RELEASE) !== ref_rel[q]))
+                        err($sformatf("RELEASE 集合不符 (边沿前快照): p%0d 快照=%0d 模型=%b | 边沿那拍 mask=%b",
+                                      q, st_snap_q[3*q +: 3], ref_rel[q],
+                                      (q < 64) ? x_mask_q[q] : 1'b0));
                 end
                 if (dut.u_preg.free_cnt !== fcnt[6:0]) begin
                     string chg;
                     chg = "";
                     for (int q = 0; q < `RTU_NUM_PREG; q = q + 1)
-                        if (st_snap_q[2*q +: 2] !== dut.u_preg.st[q])
+                        if (st_snap_q[3*q +: 3] !== dut.u_preg.st[q])
                             chg = {chg, $sformatf(" p%0d:%0d>%0d", q,
-                                                  st_snap_q[2*q +: 2], dut.u_preg.st[q])};
-                    err($sformatf("空闲计数不符: 计数器=%0d, 实际 FREE=%0d | 本边沿变化:%s | E前 kill=%b flvl=%b fvl=%b old=%0d,%0d,%0d",
+                                                  st_snap_q[3*q +: 3], dut.u_preg.st[q])};
+                    err($sformatf("空闲计数不符: 计数器=%0d, 实际 FREE=%0d | 本边沿变化:%s | E前 kill=%b flvl=%b fvl=%b old=%0d,%0d,%0d rel_cnt=%0d",
                                   dut.u_preg.free_cnt, fcnt, chg,
                                   x_retkill_q, x_flvl_q, ret_fv_q,
-                                  ret_fp_q[6:0], ret_fp_q[13:7], ret_fp_q[20:14]));
+                                  ret_fp_q[6:0], ret_fp_q[13:7], ret_fp_q[20:14], frel));
                 end
             end
 
@@ -1013,7 +1086,7 @@ module tb_rtu_rob;
                 integer fpre3, need3, got3;
                 fpre3 = 0;
                 for (int q = 0; q < `RTU_NUM_PREG; q = q + 1)
-                    if (st_snap_q[2*q +: 2] === `RTU_P_FREE) fpre3 = fpre3 + 1;
+                    if (st_snap_q[3*q +: 3] === `RTU_P_FREE) fpre3 = fpre3 + 1;
                 need3 = (fpre3 >= 3) ? 3 : fpre3;
                 got3  = alloc_vld0 + alloc_vld1 + alloc_vld2;
                 if (got3 < need3)
@@ -1166,6 +1239,17 @@ module tb_rtu_rob;
         integer i;
         begin
             vldv = ret_vld_q;                    // 用 posedge 锁存的那一份 (与 DUT 同刻)
+
+            // ---- 第 5 态 (2026-10-08): 这一步必须排在"本拍新释放的号嵌进去"**之前** ----
+            // 电平清位: 掩码没握住的 → 回 FREE。用**边沿同帧**的 x_mask_q (DUT 的
+            // 状态机那一支看的也是这一帧)。顺序反了就会把当拍新挂的号当拍清掉。
+            begin
+                logic [`RTU_NUM_PREG-1:0] rel_before;
+                rel_before = ref_rel;
+                for (int q = 0; q < `RTU_NUM_PREG; q = q + 1)
+                    if ((q >= 64) || !x_mask_q[q]) ref_rel[q] = 1'b0;
+                n_rel_free = n_rel_free + $countones(rel_before & ~ref_rel);
+            end
             // ⚠️ 这里连"陷阱是哪一类"都必须用锁存的那一份: `trap_cause` 是**组合**输出,
             //    没有 trap_hit 时它恒等于 `RTU_CAUSE_MTIP`(默认值)。早先这里读实时值,
             //    于是每一次**同步**异常都被当成中断处理 —— `n_ret = n_inst` 把整条流
@@ -1189,6 +1273,9 @@ module tb_rtu_rob;
                         i = n_ret;
                         if (x_rfwe[i] && (x_lreg[i] != 5'd0))
                             ref_amt[x_lreg[i]] = x_dpr[i];   // 模型只需要维护 AMT
+                        // 第 5 态: 这条真要释放 old_preg 吗 (与 check_cycle 的 exp_free_k 同式)
+                        if (x_rfwe[i] && (x_lreg[i] != 5'd0) && (x_opr[i] != x_dpr[i]))
+                            ref_rel[x_opr[i]] = 1'b1;
                         log_evt($sformatf("RET  inst=%0d iid=%0d rptr=%0d lreg=%0d dpr=%0d rfwe=%b",
                                           i, x_iid[i], dut.u_rob.rptr, x_lreg[i], x_dpr[i], x_rfwe[i]));
                         n_ret = n_ret + 1;
@@ -1200,6 +1287,15 @@ module tb_rtu_rob;
             // 提交点副作用也要用锁存的那一份 (实时值描述的是**下一个**事件, 会写错地址)
             if (ret_csrwe_q) csr_file[ret_csra_q] = ret_csrw_q;
             if (ret_csrrd_q) pf[ret_csrra_q]      = ret_csrrw_q;
+
+            // ---- 第 5 态: 冲刷排在最后 = 优先级最高 (状态表那一支就是最高优先) ----
+            if (x_flvl_q) ref_rel = {`RTU_NUM_PREG{1'b0}};
+            // 覆盖统计: 每个号在 RELEASE 连续停了几拍 (最长停留用来证明"押住"是持续行为,
+            // 而不是只擦过一拍)
+            for (int q = 0; q < `RTU_NUM_PREG; q = q + 1) begin
+                rel_age[q] = ref_rel[q] ? (rel_age[q] + 1) : 0;
+                if (rel_age[q] > n_rel_max) n_rel_max = rel_age[q];
+            end
         end
     endtask
 
@@ -1806,6 +1902,72 @@ module tb_rtu_rob;
         end
     endtask
 
+    // =======================================================================
+    // 释放否决掩码的激励 (2026-10-08, 第 5 态)
+    //
+    // 真 IDU 的这根掩码来自"存活 SDIQ 表项的 src0 preg", 本台不建模 SDIQ ⇒ **合成**它:
+    //   * 定向 (+MASKDIR=1, 或随机模式下的那一支): 挑**马上就要释放**的那个号 ——
+    //     退休窗口队头那条, 满足 `rfwe & lreg!=0 & old!=dst` (与 exp_free_k 同式) ⇒
+    //     保证 RELEASE 一定被激励到, 收尾的覆盖断言才有意义;
+    //   * 随机 (+MASKPCT=n, 默认 30): 上面那条不成立时, 在池子里任取一个 ARCH/ALLOC 态
+    //     的号 (对 FREE/WF 置位没有意义, 还会掩盖"激励真的打到释放路径上"这件事)。
+    // ⚠️ **保持时间必须有界** (3~8 拍): 无界的掩码会把号永久押在 RELEASE ⇒ 池子被抽干
+    //    ⇒ 停派遣 ⇒ 撞本台的"活性不足"覆盖断言 (那是假失败, 不是 DUT 的错)。真机里
+    //    这个位由 SDIQ 表项的弹出撤下, 本来就是有限的。
+    // ⚠️ 同时最多握 4 位 —— 对齐 IDU 的 SDIQ 深度 (4 项), 不造硬件到不了的状态。
+    // ⚠️ 冲刷那拍清空: 真 IDU 侧掩码寄存器就是 flush 清零的 (ct_idu_is_sdiq.sv:398-399),
+    //    而 DUT 的冲刷支本来就绕过掩码 ⇒ 不清就会造出"掩码握着、表里已经 FREE"的假状态,
+    //    让 6d 判据误报。
+    // ⚠️ 掩码是**电平**输入, 只在状态表的组合 nst 上起作用 (不参与判退/冲刷的组合链),
+    //    所以在负沿直接摆是与 `sq_rdy/sq_stall` 同一档的安全做法, 不需要"隔一拍"。
+    // =======================================================================
+    logic        mask_en  = 1'b1;
+    logic        mask_dir = 1'b0;
+    integer      mask_pct = 30;
+
+    task automatic gen_mask;
+        int i, q, cnt, pick;
+        begin
+            // 倒计时: 到点撤位
+            for (q = 0; q < 64; q = q + 1) begin
+                if (mask_ttl[q] > 0) begin
+                    mask_ttl[q] = mask_ttl[q] - 1;
+                    if (mask_ttl[q] == 0) dealloc_mask[q] = 1'b0;
+                end
+            end
+            if (!mask_en) begin dealloc_mask = 64'd0; return; end
+            if (x_flvl_q || ret_flush_q || dut.flushing) begin
+                dealloc_mask = 64'd0;
+                for (q = 0; q < 64; q = q + 1) mask_ttl[q] = 0;
+                return;
+            end
+            cnt = 0;
+            for (q = 0; q < 64; q = q + 1) if (dealloc_mask[q]) cnt = cnt + 1;
+            if (cnt >= 4) return;                                  // 上限: 对齐 SDIQ 深度
+            if (!mask_dir && (({$urandom} % 100) >= mask_pct)) return;
+            pick = -1;
+            i = n_ret;                                             // 队头 = 下一拍要退的那条
+            if ((i < n_ready) && x_rfwe[i] && (x_lreg[i] != 5'd0)
+                && (x_opr[i] != x_dpr[i]) && (x_opr[i] < 7'd64)
+                && !dealloc_mask[x_opr[i]])
+                pick = x_opr[i];
+            else if (!mask_dir) begin
+                for (int t = 0; t < 6; t = t + 1) begin
+                    q = {$urandom} % 64;
+                    if (!dealloc_mask[q] &&
+                        ((dut.u_preg.st[q] === `RTU_P_ARCH) ||
+                         (dut.u_preg.st[q] === `RTU_P_ALLOC))) begin
+                        pick = q; break;
+                    end
+                end
+            end
+            if (pick < 0) return;
+            dealloc_mask[pick] = 1'b1;
+            mask_ttl[pick]     = 3 + ({$urandom} % 6);              // 3~8 拍
+            n_mask_arm = n_mask_arm + 1;
+        end
+    endtask
+
     task automatic gen_resolve;
         int unsigned span;
         int pick;
@@ -1891,6 +2053,7 @@ module tb_rtu_rob;
             // 下一拍的完成 / 解析 / 异常 / 存储队列 / 中断
             gen_complete();
             gen_replay();
+            gen_mask();         // 第 5 态: 合成 IDU 的释放否决掩码
             gen_resolve();
             gen_expt();
             // 中断请求按**电平**建模: 置起来之后一直保持到被取走 —— 真机的 mip.MTIP
@@ -1937,6 +2100,14 @@ module tb_rtu_rob;
         rp_pend = 1'b0; rp_pend_iid = 7'd0; rp_pend_pc = 32'd0;
         tq_n = 0; tq_drop = 0; n_mb_win = 0; n_trn_evt = 0; n_q_max = 0; nomisp = 0;
         void'($value$plusargs("NOMISP=%d", nomisp));
+        // 第 5 态: 否决掩码的激励开关。
+        //   +MASKPCT=0 关掉随机注入 (掩码恒 0: 释放仍然挂一拍 RELEASE —— 见文件头的
+        //              说明, 这不是"第 5 态之前逐位一致"的口径);
+        //   +MASKDIR=1 只走定向 (必打释放路径, 覆盖最浓)。
+        dealloc_mask = 64'd0;
+        void'($value$plusargs("MASKPCT=%d", mask_pct));
+        if ($test$plusargs("MASKDIR")) mask_dir = 1'b1;
+        if (mask_pct <= 0) mask_en = 1'b0;
         mbr_gap = 48; mbr_auto = 1;
         if ($test$plusargs("MULTIBR")) mbr_auto = 0;   // 定向模式: 关掉自动爆发
         for (int k = 0; k < 4; k = k + 1) tq_idx[k] = 0;
@@ -1997,6 +2168,25 @@ module tb_rtu_rob;
         if (n_replay != n_replay_ok + n_replay_other)
             err($sformatf("重放注入 %0d 次, 但只有 %0d+%0d 次有交代 (剩下的超时了)",
                           n_replay, n_replay_ok, n_replay_other));
+
+        // 第 5 态 (RELEASE) 的覆盖判据 (2026-10-08)。
+        // ⚠️ 这三条是"改完全绿"这句话的分量所在: 没有定向激励时, 一个**把 RELEASE
+        //    整条支去掉**的实现照样能把 6b 的账目自检骗过去 (释放当拍就 FREE, 数目是对的)。
+        //    只有"真的押住过、并且押住的号确实晚了一拍以上才回池"才能把它钉下来。
+        $display("  释放押住 (第 5 态): 掩码注入 %0d 次 / 押住释放 %0d 次 / 延迟回池 %0d 次 / 最长停 RELEASE %0d 拍",
+                 n_mask_arm, n_veto, n_rel_free, n_rel_max);
+        if (!mask_en)
+            $display("    (本次 +MASKPCT=0: 掩码恒 0 ⇒ 没有引用者; 释放仍挂一拍 RELEASE 才回池)");
+        else begin
+            if (n_mask_arm == 0) err("否决掩码一次都没注入 (激励生成器坏了)");
+            if (n_veto == 0)
+                err("否决掩码注入过, 但一次都没押住释放 (RELEASE 没被激励到): 换种子或 +MASKDIR");
+            if (n_rel_free == 0)
+                err("RELEASE 进过, 但一次都没有'掩码撤下 -> 回 FREE'(延迟回池路径没走到)");
+            if (n_rel_max < 2)
+                err($sformatf("RELEASE 最长只停了 %0d 拍 —— 押住不像持续行为, 检查是否当拍就回池了",
+                              n_rel_max));
+        end
 
         if (errors == 0) begin
             $display("  RTU UNIT: ALL PASS");

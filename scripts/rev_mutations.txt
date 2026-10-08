@@ -264,12 +264,10 @@ note:  重定向目标: mret 回 mepc, 其他陷阱去 mtvec。对调之后 mret
 <<<BEFORE
     assign flush_pc = (trap_hit | int_take) ? csr_trap_vector :
                       mret_hit              ? csr_mepc        :
-                                              mispred_target;
 BEFORE
 <<<AFTER
     assign flush_pc = (trap_hit | int_take) ? csr_mepc :
                       mret_hit              ? csr_trap_vector :
-                                              mispred_target;
 AFTER
 
 ### M17 wb_rf_we_exc_gate_off
@@ -429,9 +427,9 @@ note:  陷阱那条的 kill ("分配出去但没写的 dst_preg 回 FREE") 必�
        实测: 注入后 `make run TEST=trap IFU=2` 在 t=1.9us 就报
        "ARCH 项数 = 31 (应为 32)"。
 <<<BEFORE
-    wire [2:0] kill_hit = { ret_kill_vld[2] & not_arch_vec[ret_dst_preg2],
-                            ret_kill_vld[1] & not_arch_vec[ret_dst_preg1],
-                            ret_kill_vld[0] & not_arch_vec[ret_dst_preg0] };
+    wire [2:0] kill_hit = { ret_kill_vld[2] & killable_vec[ret_dst_preg2],
+                            ret_kill_vld[1] & killable_vec[ret_dst_preg1],
+                            ret_kill_vld[0] & killable_vec[ret_dst_preg0] };
 BEFORE
 <<<AFTER
     wire [2:0] kill_hit = ret_kill_vld;
@@ -575,4 +573,26 @@ BEFORE
     assign rtu_preg_alloc_vld0 = pop_lane[0] & (|g_sel0);
     assign rtu_preg_alloc_vld1 = pop_lane[1] & (|g_sel1);
     assign rtu_preg_alloc_vld2 = pop_lane[2] & (|g_sel2);
+AFTER
+
+### R09 rtu_preg_release_skipped
+file:  mySoC/rtu/rtl/RTU_preg.v
+build: unit
+tests: rtu_unit
+note:  **2026-10-08 第 5 态 (RELEASE) 的回退变异**: 让退休释放**当拍就回池** —— 也就是把
+       "store 数据读的 WAR 保护"整条拿掉 (车道 2 的岔路改回 FREE; 6d 是**逐槽**判据,
+       改一条就够触发, 车道 2 是窗口最年轻的那条)。
+       ⚠️ 这条变异**账目上抓不住**: 池子的加减计数与 6b 的 popcount 自检在两种实现下
+       都自洽 (释放当拍进池, 数目一样对) —— 正是"改完全绿"骗得过自检的那一类。
+       能抓它的只有**行为**判据:
+         * 单测台 6d: "释放没落 RELEASE" (边沿后状态=FREE, 期望 RELEASE(4));
+         * 收尾覆盖: n_rel_free=0 ⇒ "一次都没有'掩码撤下 -> 回 FREE'";
+           n_rel_max=0 < 2 ⇒ "押住不像持续行为"。
+       实测: 默认种子下第一条带释放的指令就红。
+<<<BEFORE
+                nst[i] = (ret_free_vld[2] && (ret_old_preg2 == i)) ? `RTU_P_RELEASE
+                                                                   : `RTU_P_FREE;
+BEFORE
+<<<AFTER
+                nst[i] = `RTU_P_FREE;   // 变异: 释放当拍就回池 (去掉第 5 态)
 AFTER
