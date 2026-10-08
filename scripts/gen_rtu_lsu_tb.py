@@ -68,16 +68,32 @@ def width_of(w):
 # 这些信号**由本台的接线块驱动** (复位桥接 / 总线 grant / 重放或门), 生成块只声明不初始化
 NO_INIT = {
     "cpu_rst", "cpurst_b", "lsu_replay_vld",
+    # ⚠️ **两个时钟必须在这里** (2026-10-08 修的): 生成块对每个非 NO_INIT 输入都发
+    # `initial x = 0;`, 而接线块原来只桥了复位 —— 于是 RTU 的 `cpu_clk` 与 LSU 的
+    # `forever_cpuclk` **全程恒 0**, 两个 DUT 一个寄存器都不翻。症状是 `rtu-lsu-unit`
+    # 在第 3 步 `fork ... join_any` 上**永久挂死** (LSU 不动 ⇒ 既没有 AR 也没有完成),
+    # 而且因为本台原来没有自检, "挂死"与"跑完没事"在日志上长得一样 —— 更要命的是
+    # RTU 也没动: `occ_q` 全程 0、`retire_cnt` 全程 0, 即本台号称要验的那条链
+    # (完成 → 退休 → 提交广播 → LSU 表项 cmit) **一次都没发生过**。
+    "cpu_clk", "forever_cpuclk",
     "bus_arb_rb_ar_grnt", "bus_arb_rb_ar_sel",
     "bus_arb_wmb_aw_grnt", "bus_arb_wmb_w_grnt",
     "bus_arb_vb_aw_grnt", "bus_arb_vb_w_grnt",
     "biu_lsu_r_data", "biu_lsu_r_id", "biu_lsu_r_last", "biu_lsu_r_resp", "biu_lsu_r_vld",
 }
 # RTU 例化里这几个口要接 LSU 的信号 (默认是自环, 这里覆盖掉)
+# ⚠️ 完成口接的是**本台过闸后**的线 (`rt_cmplt_*`), 不是 LSU 的裸输出 —— 为什么:
+#    LSU 的 load AG 在"IDU 什么都没给"的时候会自由跑一个 restart 环
+#    (`lsu_ld_ag.sv:191-198`: `inst_vld <= (stall_ori && !ld_sel) || ld_sel`, 而
+#    `stall_ori = !dcache_arb_ag_ld_sel` ⇒ 空闲时每 2 拍翻一次), 于是
+#    `ld_da_wb_cmplt_req → pipe3_cmplt` 上**从复位起就周期性出现 iid 为垃圾的完成**。
+#    真机里 IDU 一直有真指令、且完成只属于真指令, 本台没有 IDU 就得自己过这道闸,
+#    否则 RTU 会被垃圾完成标错表项 (iid 撞上在途表项 ⇒ 假退休)。
+#    闸门见接线块里的 `rt_cmplt_vld5/6`。
 RTU_CONN_OVERRIDE = {
-    "cmplt_vld5": "lsu_rtu_wb_pipe3_cmplt",
+    "cmplt_vld5": "rt_cmplt_vld5",
     "cmplt_iid5": "lsu_rtu_wb_pipe3_iid",
-    "cmplt_vld6": "lsu_rtu_wb_pipe4_cmplt",
+    "cmplt_vld6": "rt_cmplt_vld6",
     "cmplt_iid6": "lsu_rtu_wb_pipe4_iid",
     "lsu_replay_iid": "lsu_rtu_wb_pipe4_iid",
 }
@@ -129,10 +145,31 @@ def main():
     print()
     print(emit("RTU", RTU_TOP, "u_rtu", skip=WIRED_FROM_RTU))
     print()
-    print("""    // ============ 本台接线 (复位桥接 / 总线 grant / 重放或门) ============
+    print("""    // ============ 本台接线 (时钟 / 复位桥接 / 总线 grant / 重放或门) ============
+    // ⚠️ 本台的 TB 内部信号**先声明** (VCS 对"先用后声明"直接报
+    //    `Identifier has not been declared yet`, 不是退化成隐式线网 —— 但两种都别踩)
+    logic        ld_inflight = 1'b0;   // 我们那条 load 在途 (激励置, 完成回报后清)
+    logic [6:0]  ld_iid      = 7'd0;   // 它的 iid (派遣那拍从 rtu_disp_iid0 采回)
+
+    // ⚠️ **时钟必须先接上** (2026-10-08 修): RTU 的时钟口叫 `cpu_clk`、LSU 的叫
+    // `forever_cpuclk` (= lsu_top.sv:50 唯一的时钟输入), 两边都接本台的 `clk`。
+    // 不接的后果见 NO_INIT 上面那段注释 (挂死 + 整条链根本没跑)。
+    assign cpu_clk        = clk;
+    assign forever_cpuclk = clk;
     // 复位: RTU 高有效、LSU 低有效 => 取反 (照 mySoC/ifu_subsys.v:111 的先例)
     assign cpu_rst  = rst;
     assign cpurst_b = ~rst;
+
+    // ---- 完成口过闸 (只放行"我们自己派出去的那条"的完成) ----
+    // 为什么需要: 见 RTU_CONN_OVERRIDE 上面的长注 (LSU 空闲时 pipe3_cmplt 上会有
+    // iid 为垃圾的完成)。三个条件缺一不可:
+    //   ① `ld_inflight` 我们这条在途 (激励置/清, 保证完成不会在窗口外漏进来);
+    //   ② iid 相等 —— 尾段把 `lch_entry` 一直举着, AG 的 restart 环带的就是**我们**
+    //      这条 (数据寄存器里锁的就是它), 所以"我们 iid 的完成"不会是别人的。
+    assign rt_cmplt_vld5 = lsu_rtu_wb_pipe3_cmplt & ld_inflight
+                                                & (lsu_rtu_wb_pipe3_iid == ld_iid);
+    // 本台不造 store ⇒ store 完成口恒 0 (别让 st_wb 的相位信号假报完成)
+    assign rt_cmplt_vld6 = 1'b0;
     // 总线仲裁: **与对应 req 同拍给 grant/sel** (不是"永远预授权") ——
     // 侦察结论: `sel` 与 `grnt` 必须同拍为高, LFB 地址表项才会建 (lsu_lfb.sv:277);
     // 而 grnt 还兼作 rb 表项的推进 (lsu_mshr_entry.sv:443)。本台不建模仲裁器,

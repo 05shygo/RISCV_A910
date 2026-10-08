@@ -26,6 +26,39 @@
 //
 // 复位: RTU 是 cpu_rst 高有效异步; LSU 是 cpurst_b 低有效异步 => 取反桥接
 //       (照 mySoC/ifu_subsys.v:111 的既有先例 `.cpurst_b(~rst)`)。
+//
+// ⚠️⚠️ **2026-10-08: 这个台之前是"假绿"的, 修了四处才第一次真的验到东西。**
+//   (之前的症状: `make rtu-lsu-unit` 在第 3 步 `fork ... join_any` 上**永久挂死**;
+//    而它没有自检、没有超时 ⇒ "挂死"与"跑完没事"在日志上长得一样。)
+//   ① **两个 DUT 的时钟都没接**: RTU 的 `cpu_clk`、LSU 的 `forever_cpuclk`
+//      (= lsu_top.sv:50 唯一的时钟输入) 都被生成段 `initial = 0` 按住了, 接线块只桥了
+//      复位 ⇒ 两边一个寄存器都不翻 (RTU 的 `occ_q` 全程 0、LSU 一条 AR 都不发)。
+//      修在**生成器**里 (NO_INIT + 接线块), 见 scripts/gen_rtu_lsu_tb.py。
+//   ② **派遣回执采错拍**: `rtu_disp_iid0` 是"当前创造指针", 只能在**举 vld 之前**读;
+//      原来在撤掉 vld 之后再读 ⇒ 送给 LSU 的 iid 与 RTU 表项里的对不上 ⇒
+//      完成信号标不中表项 ⇒ **永远不退** (实测: occ=1 但 w0cplt 起不来)。
+//   ③ **完成口没过闸**: LSU 的 load AG 在"没人给它指令"时会自由跑一个 restart 环
+//      (`lsu_ld_ag.sv:191-198`: `inst_vld <= (stall_ori && !ld_sel) || ld_sel`, 而
+//      `stall_ori = !dcache_arb_ag_ld_sel`) ⇒ `pipe3_cmplt` 上**从复位起就周期性出现
+//      iid 为垃圾的完成**。真 IDU 在场时完成只属于真指令, 本台没有 IDU, 就得自己过闸:
+//      闸门 = `ld_inflight`(我们这条在途) & iid 相等, 见接线块。
+//   ④ **没有自检、没有超时**: 现在有看门狗 (8000/200 拍) + 4 条链路判据 +
+//      `ALL PASS` / `$fatal`。
+//
+// ⚠️⚠️ **本台验到了什么、没验到什么 (别读过头)**:
+//   ✅ **RTU 侧那条链**: 派遣被接受 → 表项建起来 → 收到完成 → 退休 → **提交广播带对
+//      iid** → 退休计数 +1。这是本台现在真正钉住的东西。
+//   ❌ **没有证明 LSU 真的处理了这条 load**: 本环境里 LSU 全程 AR 0 次、LSIQ 表项弹出
+//      0 次, 而那条"完成"是在我们举上去之后 1~2 拍就来的 —— 位置与形态都更像它空闲
+//      restart 环吐的那一条 (恰好带着我们的 iid, 因为 AG 的数据寄存器里锁的就是这条)。
+//      ⇒ 运行时会打印一行 ⚠️ 明确说这件事。
+//   ❌ **store 那一半** (SDIQ 数据握手 → SQ 表项 cmit) 完全没有激励 —— 它要真 IDU 的
+//      SDIQ 读口配合, 本台建不出来。
+//   ⚠️ **LSU 自己的单测台 `tb/unit/lsu/tb_lsu_load_test.sv` 现在也是红的**:
+//      `Timeout waiting for first AR request` —— 它只等 2000 拍, 而本环境里这条 load 的
+//      天然延迟实测 ~4000 拍 (DC 级反复重试, 那期间 `ld_dc_dcache_hit`/`_valid*` 一直是 X)。
+//      ⇒ **AR / 回填这条路径目前没有任何台覆盖到**, 要么把它的超时放宽并查明为什么这么慢,
+//      要么查 DCache 为什么读不出确定值。这是 LSU 侧的活, 不是本台能修的。
 // ===========================================================================
 module tb_rtu_lsu;
 
@@ -178,7 +211,6 @@ module tb_rtu_lsu;
     initial idu_lsu_rf_pipe5_src0 = '0;
     initial idu_lsu_sdiq_sel = 0;
     initial idu_lsu_rf_pipe5_sdiq_entry = '0;
-    initial forever_cpuclk = 0;
     initial biu_lsu_b_id = '0;
     initial biu_lsu_b_resp = '0;
     initial biu_lsu_b_vld = 0;
@@ -465,7 +497,6 @@ module tb_rtu_lsu;
     wire  [31:0]           dbg_commit_value0;
     wire  [31:0]           dbg_commit_value1;
     wire  [31:0]           dbg_commit_value2;
-    initial cpu_clk = 0;
     initial ren_preg_req = '0;
     initial ren_preg_req_lreg0 = '0;
     initial ren_preg_req_lreg1 = '0;
@@ -611,9 +642,9 @@ module tb_rtu_lsu;
         .cmplt_iid3                   (cmplt_iid3),
         .cmplt_vld4                   (cmplt_vld4),
         .cmplt_iid4                   (cmplt_iid4),
-        .cmplt_vld5                   (lsu_rtu_wb_pipe3_cmplt),
+        .cmplt_vld5                   (rt_cmplt_vld5),
         .cmplt_iid5                   (lsu_rtu_wb_pipe3_iid),
-        .cmplt_vld6                   (lsu_rtu_wb_pipe4_cmplt),
+        .cmplt_vld6                   (rt_cmplt_vld6),
         .cmplt_iid6                   (lsu_rtu_wb_pipe4_iid),
         .resolve_vld                  (resolve_vld),
         .resolve_iid                  (resolve_iid),
@@ -717,10 +748,31 @@ module tb_rtu_lsu;
         .dbg_commit_value2            (dbg_commit_value2)
     );
 
-    // ============ 本台接线 (复位桥接 / 总线 grant / 重放或门) ============
+    // ============ 本台接线 (时钟 / 复位桥接 / 总线 grant / 重放或门) ============
+    // ⚠️ 本台的 TB 内部信号**先声明** (VCS 对"先用后声明"直接报
+    //    `Identifier has not been declared yet`, 不是退化成隐式线网 —— 但两种都别踩)
+    logic        ld_inflight = 1'b0;   // 我们那条 load 在途 (激励置, 完成回报后清)
+    logic [6:0]  ld_iid      = 7'd0;   // 它的 iid (派遣那拍从 rtu_disp_iid0 采回)
+
+    // ⚠️ **时钟必须先接上** (2026-10-08 修): RTU 的时钟口叫 `cpu_clk`、LSU 的叫
+    // `forever_cpuclk` (= lsu_top.sv:50 唯一的时钟输入), 两边都接本台的 `clk`。
+    // 不接的后果见 NO_INIT 上面那段注释 (挂死 + 整条链根本没跑)。
+    assign cpu_clk        = clk;
+    assign forever_cpuclk = clk;
     // 复位: RTU 高有效、LSU 低有效 => 取反 (照 mySoC/ifu_subsys.v:111 的先例)
     assign cpu_rst  = rst;
     assign cpurst_b = ~rst;
+
+    // ---- 完成口过闸 (只放行"我们自己派出去的那条"的完成) ----
+    // 为什么需要: 见 RTU_CONN_OVERRIDE 上面的长注 (LSU 空闲时 pipe3_cmplt 上会有
+    // iid 为垃圾的完成)。三个条件缺一不可:
+    //   ① `ld_inflight` 我们这条在途 (激励置/清, 保证完成不会在窗口外漏进来);
+    //   ② iid 相等 —— 尾段把 `lch_entry` 一直举着, AG 的 restart 环带的就是**我们**
+    //      这条 (数据寄存器里锁的就是它), 所以"我们 iid 的完成"不会是别人的。
+    assign rt_cmplt_vld5 = lsu_rtu_wb_pipe3_cmplt & ld_inflight
+                                                & (lsu_rtu_wb_pipe3_iid == ld_iid);
+    // 本台不造 store ⇒ store 完成口恒 0 (别让 st_wb 的相位信号假报完成)
+    assign rt_cmplt_vld6 = 1'b0;
     // 总线仲裁: **与对应 req 同拍给 grant/sel** (不是"永远预授权") ——
     // 侦察结论: `sel` 与 `grnt` 必须同拍为高, LFB 地址表项才会建 (lsu_lfb.sv:277);
     // 而 grnt 还兼作 rb 表项的推进 (lsu_mshr_entry.sv:443)。本台不建模仲裁器,
@@ -769,8 +821,35 @@ module tb_rtu_lsu;
                              biu_addr, 32'h0000_0000};
 
     // ===================== 刺激 =====================
-    logic [6:0] ld_iid;
+    // ⚠️ `ld_iid` / `ld_inflight` 声明在生成段 (接线块) 里 —— 完成口过闸要用它们
     integer     i;
+    integer     errs    = 0;          // 判据失败数 (收尾决定 PASS/FAIL)
+    integer     n_ar    = 0;          // 看到的 AR 次数 (回填路径到底跑没跑)
+    integer     n_pop   = 0;          // LSU 报 LSIQ 表项弹出的次数 (观察用)
+    integer     n_cmt   = 0;          // 提交广播脉冲的次数 (锁存, 见下)
+    logic [6:0] cmt_iid = 7'd0;       // 提交广播带的 iid (锁存)
+    logic [1:0] ret_max = 2'd0;       // 退休计数的最大值 (锁存)
+    logic       got_cmp = 1'b0;
+
+    task automatic chk(input logic cond, input string msg);
+        begin
+            if (!cond) begin
+                errs = errs + 1;
+                $display("  *** FAIL: %0s", msg);
+            end
+        end
+    endtask
+
+    // ⚠️ 提交广播是**一拍脉冲** (退休窗口那一拍), 而完成与退休可能只差一拍 ——
+    //    在激励里"先等完成、再等提交"会**擦肩而过**(实测踩过: 探针看见 commit0=1,
+    //    而激励的第一步等待错过了它)。⇒ 脉冲类判据一律**边沿锁存**, 激励只等"锁存到过"。
+    always @(posedge clk) begin
+        if (rtu_yy_xx_commit0) begin
+            n_cmt   <= n_cmt + 1;
+            cmt_iid <= rtu_yy_xx_commit0_iid;
+        end
+        if (rtu_retire_cnt > ret_max) ret_max <= rtu_retire_cnt;
+    end
 
     initial begin
         `ifdef DUMP
@@ -783,51 +862,96 @@ module tb_rtu_lsu;
         $display("[%0t] 上电完成 (disp_stall=%b)", $time, rtu_disp_stall);
 
         // ---- 1) 往 RTU 派一条普通指令, 取它的 iid ----
+        // ⚠️ 回执 `rtu_disp_iid0` = **当前的创造指针** (`RTU_ROB.v:326` 由 `cptr_oh` 组合
+        //    译出), 所以它只在"**还没被采走**"的时候等于"这条的 iid": DUT 在下一个
+        //    posedge 采 `disp0_vld` 并把指针推走, 推走之后口上就是**下一条**的号了。
+        //    两种错法都踩过: ① 在 posedge 读 (阻塞赋值与指针更新同拍 ⇒ 读到旧值 0);
+        //    ② 撤掉 vld 之后再读 (读到下一条的号 1)。两次都让发给 LSU 的 iid 与 RTU
+        //    表项里的 iid 对不上 ⇒ 完成信号标不中表项 ⇒ 永远不退 (实测: occ=1、
+        //    w0vld=1、完成回报的 iid 也在, 只有 w0cplt 起不来)。
+        //    ⇒ 正确时机 = **举 vld 之前**、在负沿读 (组合值已落定, 指针还没动)。
+        @(negedge clk);
+        ld_iid     = rtu_disp_iid0;            // ← 此刻指针指着的这一格就是我们的
         disp0_vld = 1'b1; disp0_pc = 32'h0000_0100; disp0_dst_lreg = 5'd1; disp0_rf_we = 1'b1;
         disp0_dst_preg = 7'd9; disp0_old_preg = 7'd1; disp0_flags = 7'b0; disp0_chk = 25'h0;
-        @(negedge clk);
-        disp0_vld = 1'b0;
-        @(posedge clk); ld_iid = rtu_disp_iid0;          // 派遣回执 = 这条的 iid
-        $display("[%0t] RTU 派了一条, iid=%0d (disp_vld0=%b)", $time, ld_iid, rtu_disp_vld0);
+        @(negedge clk);                        // 中间那个 posedge 已经把这条采进 ROB 了
+        chk(rtu_disp_vld0, "派遣没被接受 (rtu_disp_vld0=0)");
+        disp0_vld  = 1'b0;
+        $display("[%0t] RTU 派了一条, iid=%0d (disp_vld0=1, 未接受则上面已报)", $time, ld_iid);
 
-        // ---- 2) 拿同一个 iid 把这条 load 发给 LSU ----
-        // ⚠️ 激励要**举住**直到 ld_ag_inst_vld (空闲时它自振荡, 相位 50/50, 举一拍可能刚好
-        //    落在 stall 相位上, 载荷寄存器一个都不锁)。
+        // ---- 2) 拿**同一个** iid 把这条 load 发给 LSU ----
+        // 口径照 **LSU 自己的单测台** (`tb/unit/lsu/tb_lsu_load_test.sv:404-433`):
+        //   `ld_sel` 只举**一拍**, 而 `lch_entry` (LSIQ 表项号) **一直举着** ——
+        //   真 IDU 就是"表项有效直到 LSU 报弹出"这么维护的。实测: 把 `ld_sel` 举住不放
+        //   会让 AG 每拍都重新锁存这条 (`lsu_ld_ag.sv:191-198` 的
+        //   `inst_vld <= (stall_ori && !ld_sel) || ld_sel`), 反而更慢。
+        // ⚠️ 完成口的闸门 (`rt_cmplt_vld5`) 要求"我们这条在途 + iid 相等": LSU 的 load AG
+        //   在"没人给它指令"时会自由跑一个 restart 环, 于是 `pipe3_cmplt` 上**从复位起
+        //   就周期性出现 iid 为垃圾的完成**。本台没有 IDU, 就只能自己过这道闸。
         // ⚠️ oldest=0: 为 1 时 ld_dc_lq_create_vld 恒 0 (LQ 不建表项)。
+        ld_inflight = 1'b1;                    // 闸门 (见接线块)
         idu_lsu_ld_sel         <= 1'b1;
-        idu_lsu_ld_inst_size   <= 2'b10;      // word
+        idu_lsu_ld_inst_size   <= 2'b10;       // word
         idu_lsu_ld_sign_extend <= 1'b1;
         idu_lsu_ld_unalign_2nd <= 1'b0;
         idu_lsu_ld_iid         <= ld_iid;
         idu_lsu_ld_oldest      <= 1'b0;
         idu_lsu_ld_preg        <= 6'd1;
-        idu_lsu_ld_lch_entry   <= 8'h01;      // LSIQ 表项 one-hot (现在 8 项)
+        idu_lsu_ld_lch_entry   <= 8'h01;       // LSIQ 表项 one-hot (现在 8 项)
         idu_lsu_ld_offset      <= 12'h0;
         idu_lsu_ld_offset_plus <= 13'h10;
         idu_lsu_ld_src         <= 32'h0000_1000;   // 基址 -> 实际地址 0x1000
-        // 举 3 拍 (AG 的 vld 空闲时每 2 拍翻一次, 3 拍必覆盖到可接收的那一拍;
-        // 再长会重复注入, 这里只要命中最少一次)
-        repeat (3) @(negedge clk);
-        idu_lsu_ld_sel <= 1'b0;
-        $display("[%0t] load 激励撤掉 (举了 3 拍)", $time);
+        @(negedge clk);
+        idu_lsu_ld_sel         <= 1'b0;        // 只举一拍 (表项号继续举着)
 
-        // ---- 3) 等 AR -> 数据回 -> 完成回报 ----
-        fork
-            begin : w_ar
-                wait (rb_biu_ar_req);
-                $display("[%0t] *** AR! addr=%08x", $time, rb_biu_ar_addr);
+        // ---- 3) 等完成回报 (带看门狗), 顺路记回填 (AR) 与表项弹出 ----
+        // 原来这里是 `fork ... join_any` 且**没有超时** ⇒ LSU 不动就永久挂死, 而日志上
+        // 什么都看不出来。现在是有界等待 + 判据。
+        // ⚠️ 8000 拍这个上界是**实测**来的: 本环境里这条 load 走完 LSU 要 ~4000 拍
+        //    (DC 级反复重试; 那期间 `ld_dc_dcache_hit`/`_valid*` 一直是 X —— 本台不预置
+        //    DCache 状态)。**LSU 自己的单测台只等 2000 拍**, 所以它现在也报
+        //    "Timeout waiting for first AR request" —— 同一个现象, 不是本台特有的。
+        for (i = 0; i < 8000; i = i + 1) begin
+            @(negedge clk);
+            if (rb_biu_ar_req)       n_ar  = n_ar  + 1;
+            if (lsu_idu_pop_entry[0]) n_pop = n_pop + 1;
+            if (lsu_rtu_wb_pipe3_cmplt && (lsu_rtu_wb_pipe3_iid === ld_iid)) begin
+                got_cmp = 1'b1;
+                break;
             end
-            begin : w_cmplt
-                wait (lsu_rtu_wb_pipe3_cmplt);
-                $display("[%0t] *** load 完成回报: iid=%0d", $time, lsu_rtu_wb_pipe3_iid);
-            end
-        join_any
-        disable fork;
+        end
+        chk(i < 8000, "8000 拍内没等到这条 load 的完成回报 (lsu_rtu_wb_pipe3_cmplt)");
+        if (got_cmp)
+            $display("[%0t] *** load 完成回报: iid=%0d (AR/回填 %0d 次, 表项弹出 %0d 次)",
+                     $time, ld_iid, n_ar, n_pop);
+        idu_lsu_ld_lch_entry <= 8'h00;
 
-        // ---- 4) 观察 RTU 的提交广播 ----
-        repeat (40) @(negedge clk);
-        $display("[%0t] 观察结束 (commit0=%b iid=%0d | retire_cnt=%0d)",
-                 $time, rtu_yy_xx_commit0, rtu_yy_xx_commit0_iid, rtu_retire_cnt);
+        // ⚠️ 提交广播可能**就在完成回报的下一拍** —— 所以这里只用边沿锁存下来的计数,
+        //    不要在激励里"等脉冲" (会擦肩而过)。
+        for (i = 0; i < 200; i = i + 1) begin
+            @(negedge clk);
+            if (n_cmt > 0) break;
+        end
+        chk(n_cmt > 0, "200 拍内没等到提交广播 (rtu_yy_xx_commit0)");
+        chk(cmt_iid === ld_iid,
+            $sformatf("提交广播的 iid=%0d, 期望 %0d", cmt_iid, ld_iid));
+        chk(ret_max >= 2'd1, "退休计数没动 (rtu_retire_cnt=0)");
+        ld_inflight = 1'b0;                    // 关闸
+
+        // ---- 4) 结论 ----
+        // ⚠️ 本台只造 **load**, 两处没覆盖, 别当成已经好了:
+        //    * **store 那一半** (SDIQ 数据握手 → SQ 表项 cmit): 要真 IDU 的 SDIQ 读口配合;
+        //    * **AR / 回填路径**: 本环境里没发过 AR (LSU 自己的台也一样, 见上)。
+        $display("  链路: 派遣(iid=%0d) → load 完成 → 退休 %0d 条 → 提交广播 iid=%0d | AR %0d 次, 表项弹出 %0d 次",
+                 ld_iid, ret_max, cmt_iid, n_ar, n_pop);
+        if ((n_ar == 0) && (n_pop == 0)) begin
+            $display("  ⚠️ LSU 全程 AR 0 次、LSIQ 表项弹出 0 次 ⇒ **本台没证明 LSU 处理了这条 load**:");
+            $display("     上面那条完成是在举上激励后 1~2 拍就来的, 更像 LSU 空闲 restart 环吐出来的");
+            $display("     那一条 (恰好带着我们的 iid)。本台钉住的是 **RTU 侧**那条链:");
+            $display("     完成 → 退休 → 提交广播带对 iid。");
+        end
+        if (errs == 0) $display("  RTU-LSU UNIT: ALL PASS");
+        else           $fatal(1, "rtu-lsu unit test failed: %0d 条判据不成立", errs);
         $finish;
     end
 
