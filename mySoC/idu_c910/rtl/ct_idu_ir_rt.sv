@@ -111,6 +111,7 @@ logic         rt_inst2_src2_match_inst1;
 logic [191:0] rt_recover_updt_preg;
 logic         rt_recover_updt_vld;
 logic [191:0] rt_reset_updt_preg;
+logic         rt_reset_updt_vld;   // 2026-10-08 补: 复位映射的写窗口 (见下方注释)
 
 // 数组声明
 // ⚠️ 2026-10-08 修: 这两个数组原来声明成 **7 位**, 而表项的端口是
@@ -218,7 +219,31 @@ assign rt_reset_updt_preg[191:0] =
 assign rt_recover_updt_vld         = rtu_yy_xx_flush;
 assign rt_recover_updt_preg[191:0] = rtu_idu_rt_recover_preg[191:0];
 
-assign reg_write_en[31:0] = {32{rt_recover_updt_vld}}
+// ---------------------------------------------------------------------------
+// 2026-10-08 补: **复位映射的写窗口**。
+//
+// 原来 `rt_reset_updt_preg` (上面那张 x_l → p_l 的表) **算出来了却零消费** ——
+// 而表项的复位值是 `preg <= 7'b0` ⇒ 上电后 32 个表项全是 0 ⇒ **所有逻辑寄存器
+// 都指向 p0**。这在整核里是必错的 (x1/x2/... 互相踩)，只是冒烟台接常量看不出来。
+//
+// 这里给复位开一个**单拍写窗口**: 复位期间举起, 释放后的第一个时钟沿落下。
+// 于是释放后第一拍, 32 个表项各按自己的索引把 `rt_reset_updt_preg[6*jj+5:6*jj]`
+// 写进去 (数据本来就是按项索引的, 所以**一拍就能全灌完**, 不用走 32 拍)。
+//
+// 那一拍表项的 `always @(posedge write_clk...)` 里 `if(!cpurst_b)` 已经不成立、
+// `else if(x_write_en)` 成立 ⇒ 写生效 (write_clk 已在 2026-10-08 接到 forever_cpuclk)。
+//
+// ⚠️ 它在写使能里的优先级**高于 recover**: 见下面 create-data 生成里的三元选择与
+//    `reg_write_en` 的或项 —— 复位窗口与冲刷同拍时以复位为准。
+// ---------------------------------------------------------------------------
+reg rt_reset_updt_vld_q;
+always @(posedge forever_cpuclk or negedge cpurst_b) begin
+  if (!cpurst_b) rt_reset_updt_vld_q <= 1'b1;   // 复位期间举着
+  else           rt_reset_updt_vld_q <= 1'b0;   // 释放后第一拍落下
+end
+assign rt_reset_updt_vld = rt_reset_updt_vld_q;
+
+assign reg_write_en[31:0] = {32{rt_recover_updt_vld | rt_reset_updt_vld}}
                           | reg_write0_en[31:0]
                           | reg_write1_en[31:0]
                           | reg_write2_en[31:0];
@@ -284,9 +309,12 @@ generate
         reg_create_data[jj][0]   = 1'b0;
       end
       else begin
-        reg_create_data[jj][8:2] = {1'b0, rt_recover_updt_preg[6*jj+5 : 6*jj]};
-        reg_create_data[jj][1]   = 1'b1;
-        reg_create_data[jj][0]   = 1'b1;
+        // 复位窗口优先于 recover(冲刷): 两者同拍时灌复位映射
+        reg_create_data[jj][8:2] = rt_reset_updt_vld
+                                 ? {1'b0, rt_reset_updt_preg[6*jj+5 : 6*jj]}
+                                 : {1'b0, rt_recover_updt_preg[6*jj+5 : 6*jj]};
+        reg_create_data[jj][1]   = 1'b1;   // 架构映射: 值已在 PRF
+        reg_create_data[jj][0]   = 1'b1;   // rdy
       end
     end
   end

@@ -141,30 +141,44 @@ module tb_idu_c910;
   //==========================================================
   //   定向激励 + 判据 (2026-10-08 加)
   //==========================================================
-  // 【要证的两件事 —— 都是这次修复的核心, 而且是 elaboration 查不出来的】
+  // 【要证的三个东西 —— 都是这次修复的核心, 而且是 elaboration 查不出来的】
   //
   //  ⓐ **RAT 真的在写**。交付的 IDU 里改名表挂在无驱动的 write_clk 上 (C910 工厂版的
-  //     门控时钟单元被剥掉了), 一个字都写不进去。判据不靠层次引用, 而是用**先后两条
-  //     写同一个 lreg 的指令**:
-  //        第 1 条的 `old_preg` = RAT 复位值
-  //        第 2 条的 `old_preg` **必须等于第 1 条的 `dst_preg`**  ← 写没写进去就看这一条
-  //     表项不翻转的话, 第 2 条的 old_preg 会一直停在复位值。
+  //     门控时钟单元被剥掉了), 写使能数组也压根没接 ⇒ 一个字都写不进去。
+  //     判据: 灌一条 `addi x1,x0,1` 并让 RTU 恒给号 33, 然后**直接看 x1 表项**
+  //     是不是变成了 33 —— 即"编号从 rtu_idu_alloc_preg0 一路走到表项"。
   //
-  //  ⓑ **派遣记录真的出来了**。查 36 根新口的 vld/pc/rf_we/dst_lreg/dst_preg/chk
+  //  ⓑ **复位映射真的灌进了 RAT**。`rt_reset_updt_preg` 原来是零消费的 ⇒ 上电后
+  //     所有逻辑寄存器都指向 p0。判据: 复位一释放、**还没灌任何指令时**查 x1 表项
+  //     必须是架构映射 p1 (一旦有指令改名它就被覆盖了, 所以必须在这之前查)。
+  //
+  //  ⓒ **派遣记录真的出来了**。查 36 根新口的 vld/pc/rf_we/dst_lreg/dst_preg/chk
   //     与灌进去的激励对得上, 外加 A6d (不写寄存器时 dst_lreg 必须为 0)。
   //
-  // 激励: 每拍都往 inst0 车道灌同一条 `addi x1, x0, 1` (pc=0x100), RTU 侧恒给号 33。
-  //       于是每次派遣都是"写 x1", 相邻两次派遣正好构成上面那条判据。
+  // ⚠️ ⓐ / ⓑ 走的是**层次引用**(见下面"观察点"那段注释): 对外唯一能看到表项的路径
+  //    是派遣记录的 `old_preg`, 而那条路有交付缺陷 (采样晚一拍), 用它会变成恒真空判据。
+  // 激励: 每拍往 inst0 车道灌一条 `addi x1, x0, 1` (pc=0x100), RTU 侧恒给号 33。
   //==========================================================
   localparam [31:0] PC0       = 32'h0000_0100;
   localparam [31:0] INST_ADDI = 32'h0010_0093;      // addi x1, x0, 1
   localparam [6:0]  PREG_GIVEN = 7'd33;
+  localparam [6:0]  ARCH_X1    = 7'd1;              // rt_reset_updt_preg 里 x1 → p1
   localparam [24:0] CHK0      = 25'h0_12345;
 
   integer     n_disp;          // 观测到的派遣次数
   integer     errs;
-  logic [6:0] old_preg_1st;
   logic       saw_rat_write;   // ★ 见过 old_preg 变成 RTU 给的号
+
+  // ---- 改名表 x1 表项的观察点 ----
+  // ⚠️ 这里**故意用层次引用**。判据要用的是"表项里存的到底是不是那个号", 而
+  //    对外唯一能看到它的路径是派遣记录的 `old_preg` —— 那条路**有交付缺陷**:
+  //    `IS_DST_REL_PREG` 是对 RAT 的**实时组合读**, 到 IS 建表目那一拍才采样,
+  //    比改名晚一拍, 于是采到的是**写之后**的值, 恒等于自己的 `dst_preg` ⇒
+  //    "RAT 有没有写进去" 用它是问不出来的 (会变成恒真的空判据)。
+  //    要修的是交付侧 (把 rel_preg 在 IR→IS 边界寄存), 不是这里。
+  //    路径: ct_idu_top → ct_idu_ir_rt → generate 块 → 表项 (x1 是 1 号)
+  wire [6:0] dbg_rat_x1 =
+      u_ct_idu_top.x_ct_idu_ir_rt.gen_ct_idu_ir_rt_entry[1].x_ct_idu_ir_rt_entry_reg.preg;
 
   // ---- 派遣监视 ----
   always @(posedge clk) begin
@@ -177,21 +191,11 @@ module tb_idu_c910;
       if (idu_rtu_disp0_dst_preg !== PREG_GIVEN)begin errs=errs+1; $display("TB-IDU: ❌ 第%0d次派遣 dst_preg=%0d 期望 %0d (RTU 给的号)", n_disp, idu_rtu_disp0_dst_preg, PREG_GIVEN); end
       if (idu_rtu_disp0_chk      !== CHK0)      begin errs=errs+1; $display("TB-IDU: ❌ 第%0d次派遣 chk=%h 期望 %h (chk 旁路要原样透传)", n_disp, idu_rtu_disp0_chk, CHK0); end
 
-      if (n_disp == 1) begin
-        old_preg_1st = idu_rtu_disp0_old_preg[6:0];
-        // 注意: 激励是**每拍都灌**同一条, 所以第 1 次观测到的派遣通常已经不是流水线里
-        // 最早那条了 —— 这个 old_preg 可能已经是前面某条写进去的号, 不作为判据, 只打印。
-        $display("TB-IDU: 第1次观测到派遣: dst_preg=%0d old_preg=%0d", PREG_GIVEN, old_preg_1st);
-      end
-
-      // ★ 核心判据: RAT 把 "x1 -> 33" 写进去了 ⇒ 后面的某次派遣里,
-      //   old_preg (即 RAT 读出的旧映射) 必须变成 33。
-      //   ⚠️ 不能用"第 2 次派遣就检查" —— 三宽改名下同一组的三条**同拍读 RAT**,
-      //      组内看不到彼此的写 (没有组内转发), 要等下一组才读得到新值。
-      //   ⚠️ 也不能用层次引用去直接看表项 —— 那样测的是"线接上了", 不是"值真的走通了"。
-      if (idu_rtu_disp0_old_preg[6:0] === PREG_GIVEN) begin
+      // ★ 判据 2: RAT 真的把 **RTU 给的号** 写进去了 (直接看表项, 理由见观察点注释)。
+      //   它变成 33 说明 "编号 33 从 rtu_idu_alloc_preg0 一路走到表项" 全线通了。
+      if (dbg_rat_x1 === PREG_GIVEN) begin
         if (!saw_rat_write)
-          $display("TB-IDU: ✅ RAT 在写 —— 第%0d次派遣读到 old_preg=%0d (= 前面写进去的号)",
+          $display("TB-IDU: ✅ RAT 在写 —— 第%0d次派遣时 RAT[x1]=%0d (= RTU 给的号)",
                    n_disp, PREG_GIVEN);
         saw_rat_write = 1'b1;
       end
@@ -205,21 +209,30 @@ module tb_idu_c910;
     ifu_idu_if_inst0_chk    = 25'd0;
     rtu_idu_alloc_preg0_vld = 1'b0;
     rtu_idu_alloc_preg0     = 6'd0;
-    n_disp = 0; errs = 0; saw_rat_write = 1'b0; old_preg_1st = 7'd0;
+    n_disp = 0; errs = 0; saw_rat_write = 1'b0;
 
     rst_n = 1'b0;
     repeat (10) @(posedge clk);
     rst_n = 1'b1;
     repeat (3) @(posedge clk);
 
+    // ---- 判据 1: 复位映射 ⓒ (必须在灌任何指令**之前**查 —— 一旦有指令改名,
+    //      x1 的表项就被改成它拿到的号了, 复位映射就被覆盖掉了) ----
+    if (dbg_rat_x1 !== ARCH_X1) begin
+      $display("TB-IDU: ❌ 复位映射没灌进 RAT! 复位释放后 RAT[x1]=%0d, 期望 %0d (x1→p%0d)",
+               dbg_rat_x1, ARCH_X1, ARCH_X1);
+      errs = errs + 1;
+    end
+    else
+      $display("TB-IDU: ✅ 复位映射在 (复位释放后 RAT[x1]=%0d = x1→p%0d)", ARCH_X1, ARCH_X1);
+
+    // ---- 连续灌激励, 验 RAT 在写 ⓐ + 派遣记录 ⓑ ----
     // 灌激励: {taken, npc, pc, inst}
     ifu_idu_ib_inst0_data   = {1'b0, PC0 + 32'd4, PC0, INST_ADDI};
     ifu_idu_if_inst0_chk    = CHK0;
-    ifu_idu_ib_inst0_vld    = 1'b1;
     rtu_idu_alloc_preg0     = PREG_GIVEN[5:0];
     rtu_idu_alloc_preg0_vld = 1'b1;
-
-    // 跑够 2 次派遣 (发射队列会慢慢填满, 那之前一定能看到)
+    ifu_idu_ib_inst0_vld    = 1'b1;
     repeat (200) @(posedge clk);
     ifu_idu_ib_inst0_vld    = 1'b0;
     rtu_idu_alloc_preg0_vld = 1'b0;
