@@ -175,7 +175,7 @@ CROSS     ?= riscv32-unknown-elf-
 ASM_SRCS  := $(wildcard $(PWD)/asm/*.S)
 ASM_BINS  := $(patsubst $(PWD)/asm/%.S,$(PWD)/bin/%.bin,$(ASM_SRCS))
 
-.PHONY: all build run run-all verdi clean help coremark asm muldiv-unit rtu-unit rtu-lsu-unit rtu-adapter-unit iu-alu-unit
+.PHONY: all build run run-all verdi clean help coremark asm muldiv-unit rtu-unit rtu-lsu-unit rtu-adapter-unit iu-alu-unit iu-beu-unit
 
 asm: $(ASM_BINS)
 
@@ -539,6 +539,25 @@ LSU_UNIT_ARGS  ?=
 LSU_UNIT_DEFS  := +define+DCACHE_$(if $(filter 1024,$(DCACHE_SIZE)),1KB,$(if $(filter 4096,$(DCACHE_SIZE)),4KB,2KB))
 
 # ---------------------------------------------------------------------------
+# IU BEU 流水级单元台 (2026-10-08 立): IDU 的 BIQ 发射口 ↔ 老 BEU 的适配级。
+# 守: 操作数摆放 (BIQ 的 src1 是裸 PRF 读, JALR 要喂 br_imme) / 8 位独热编码 /
+#     **JALR 目标 & ~1** (老 BEU 原缺) / 重定向的两个门 / 完成与解析两条都要报。
+#
+#   make iu-beu-unit
+# ---------------------------------------------------------------------------
+IU_BEU_BUILD := $(PWD)/obj_unit_iu_beu
+IU_BEU_SIMV  := $(IU_BEU_BUILD)/simv
+IU_BEU_SRC   := $(PWD)/mySoC/iu/rtl/IU_beu_pipe.v $(PWD)/mySoC/iu/rtl/BEU.v
+IU_BEU_TB    := $(PWD)/tb/unit/tb_iu_beu_pipe.sv
+
+iu-beu-unit: $(IU_BEU_SIMV)
+	@$(IU_BEU_SIMV) +vcs+lic+wait -exitstatus -l $(IU_BEU_BUILD)/sim.log
+
+$(IU_BEU_SIMV): $(IU_BEU_SRC) $(IU_BEU_TB)
+	@mkdir -p $(IU_BEU_BUILD)
+	$(VCS) $(VCS_FLAGS) $(INC) -top tb_iu_beu_pipe -o $(IU_BEU_SIMV) \
+	  $(IU_BEU_SRC) $(IU_BEU_TB)
+
 # IU ALU 流水级单元台 (2026-10-08 立): IDU 的 AIQ 发射口 ↔ 老 ALU 的适配级。
 # 守三件事 (全在整核里只表现为"某条指令结果不对"、定位不到):
 #   ① 13 位独热 → alu_op 的编码转换; ② LUI/AUIPC (老 ALU 没有这两条);

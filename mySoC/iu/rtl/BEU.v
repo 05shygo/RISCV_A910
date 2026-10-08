@@ -84,14 +84,27 @@ assign br_taken = is_branch & cond;
 //    比较一律写成 `|(a ^ b)`: 显式 OR 树, 不给综合器"用减法借位链"的机会。
 // ---------------------------------------------------------------------------
 wire [31:0] npc_imm  = pc + sext;
-wire [31:0] npc_jalr = A + B;
+
+// ---------------------------------------------------------------------------
+// JALR 的目标: RISC-V 规定是 `(rs1 + sext(imm)) & ~1` —— **bit0 必须清掉**。
+//
+// ⚠️ 2026-10-08 修: 原来这里是裸的 `A + B`, 没有清 bit0。
+//    老核那条路也一样 (Control.v 给 JALR 用 `Sext_I` + `NPC_SEL_ALU`, 目标就是
+//    共享 ALU 的 A+B) ⇒ `imm[0] = 1` 时目标会跳错。RV32I 下编译器生成的 jalr
+//    偏移基本都是偶数, 所以一路没暴露; 但 ISA 测试里有 `jalr x1, x2, 1` 这类
+//    用例 (它必须跳到 `(rs1+1) & ~1`)。
+//    ⚠️ 清的位置很关键: **必须在加法之后**。把立即数的 bit0 先清掉再相加不等价
+//       (rs1=1, imm=1: 正确是 (1+1)&~1 = 2; 先清 imm 得 1+0 = 1)。
+// ---------------------------------------------------------------------------
+wire [31:0] npc_jalr_raw = A + B;
+wire [31:0] npc_jalr     = {npc_jalr_raw[31:1], 1'b0};
 
 wire m_pc4  = |(pc4      ^ pred_npc);
 wire m_imm  = |(npc_imm  ^ pred_npc);
 wire m_jalr = |(npc_jalr ^ pred_npc);
 
 wire a_imm  = |npc_imm[1:0];
-wire a_jalr = |npc_jalr[1:0];
+wire a_jalr = npc_jalr[1];   // 2026-10-08: bit0 已被上面清掉, 只看 bit1
 
 // 同一组 select (is_jalr / br_taken|is_jal) 选出三样结果
 wire sel_jalr = is_jalr;
