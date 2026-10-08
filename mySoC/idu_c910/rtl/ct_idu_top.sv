@@ -252,7 +252,16 @@ module ct_idu_top(
   output logic [31:0]  rtu_preg_rdata0,
   output logic [31:0]  rtu_preg_rdata1,
   output logic [31:0]  rtu_preg_rdata2,
-  output logic [31:0]  rtu_csr_src_rdata
+  output logic [31:0]  rtu_csr_src_rdata,
+
+  //==========================================================
+  // 执行单元的发射准入 (2026-10-08 新增)
+  //==========================================================
+  // 乘除单元忙 (除法 ~35 拍) ⇒ 这一拍别往它发。没有这根线的话请求会被**静默丢掉**、
+  // 那条指令永远不完成 ⇒ 死等 (见 ct_idu_is_md 端口表的说明)。
+  // ⚠️ 乘、除是**两条独立的 MD 队列** (x_ct_idu_is_mult / x_ct_idu_is_div), 但共用
+  //    MUL_DIV 的一个请求口 ⇒ 这根 stall **两个队列都要接**。
+  input  logic         md_unit_stall
 );
 
 //==========================================================
@@ -1023,7 +1032,8 @@ ct_idu_is_md x_ct_idu_is_mult (
   .iu_idu_ex2_pipe1_wb_preg_vld_dupx                              (iu_idu_ex2_pipe1_wb_preg_vld_dupx),
   .lsu_idu_wb_pipe3_wb_preg_dupx                              (lsu_idu_wb_pipe3_wb_preg_dupx),
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx                              (lsu_idu_wb_pipe3_wb_preg_vld_dupx),
-  .rtu_yy_xx_flush                              (rtu_yy_xx_flush)
+  .rtu_yy_xx_flush                              (rtu_yy_xx_flush),
+  .ctrl_md_unit_stall                              (md_unit_stall)  //2026-10-08 单元准入
 );
 
 ct_idu_is_md x_ct_idu_is_div (
@@ -1043,7 +1053,8 @@ ct_idu_is_md x_ct_idu_is_div (
   .iu_idu_ex2_pipe1_wb_preg_vld_dupx                              (iu_idu_ex2_pipe1_wb_preg_vld_dupx),
   .lsu_idu_wb_pipe3_wb_preg_dupx                              (lsu_idu_wb_pipe3_wb_preg_dupx),
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx                              (lsu_idu_wb_pipe3_wb_preg_vld_dupx),
-  .rtu_yy_xx_flush                              (rtu_yy_xx_flush)
+  .rtu_yy_xx_flush                              (rtu_yy_xx_flush),
+  .ctrl_md_unit_stall                              (md_unit_stall)  //2026-10-08 单元准入
 );
 
 // Instance 7: ct_idu_is_lsiq

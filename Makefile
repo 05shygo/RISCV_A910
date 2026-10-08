@@ -175,7 +175,7 @@ CROSS     ?= riscv32-unknown-elf-
 ASM_SRCS  := $(wildcard $(PWD)/asm/*.S)
 ASM_BINS  := $(patsubst $(PWD)/asm/%.S,$(PWD)/bin/%.bin,$(ASM_SRCS))
 
-.PHONY: all build run run-all verdi clean help coremark asm muldiv-unit rtu-unit rtu-lsu-unit rtu-adapter-unit iu-alu-unit iu-beu-unit
+.PHONY: all build run run-all verdi clean help coremark asm muldiv-unit rtu-unit rtu-lsu-unit rtu-adapter-unit iu-alu-unit iu-beu-unit iu-md-unit
 
 asm: $(ASM_BINS)
 
@@ -539,6 +539,26 @@ LSU_UNIT_ARGS  ?=
 LSU_UNIT_DEFS  := +define+DCACHE_$(if $(filter 1024,$(DCACHE_SIZE)),1KB,$(if $(filter 4096,$(DCACHE_SIZE)),4KB,2KB))
 
 # ---------------------------------------------------------------------------
+# IU MULDIV 流水级单元台 (2026-10-08 立): IDU 的 MUL/DIV 发射口 ↔ MUL_DIV 单元。
+# 守: 两个 rslt_sel[3:0] **位序含义不同**(乘 vs 除) / **tag={iid,preg} 的打包拆包** /
+#     写回与完成同拍 / div_busy 可见性 / 被冲刷的乘法不报写回。
+#
+#   make iu-md-unit
+# ---------------------------------------------------------------------------
+IU_MD_BUILD := $(PWD)/obj_unit_iu_md
+IU_MD_SIMV  := $(IU_MD_BUILD)/simv
+IU_MD_SRC   := $(PWD)/mySoC/iu/rtl/IU_md_pipe.v $(PWD)/mySoC/iu/rtl/MUL_DIV.v \
+               $(PWD)/mySoC/iu/rtl/mul_pipe.v $(PWD)/mySoC/iu/rtl/div_pipe.v
+IU_MD_TB    := $(PWD)/tb/unit/tb_iu_md_pipe.sv
+
+iu-md-unit: $(IU_MD_SIMV)
+	@$(IU_MD_SIMV) +vcs+lic+wait -exitstatus -l $(IU_MD_BUILD)/sim.log
+
+$(IU_MD_SIMV): $(IU_MD_SRC) $(IU_MD_TB)
+	@mkdir -p $(IU_MD_BUILD)
+	$(VCS) $(VCS_FLAGS) $(INC) -top tb_iu_md_pipe -o $(IU_MD_SIMV) \
+	  $(IU_MD_SRC) $(IU_MD_TB)
+
 # IU BEU 流水级单元台 (2026-10-08 立): IDU 的 BIQ 发射口 ↔ 老 BEU 的适配级。
 # 守: 操作数摆放 (BIQ 的 src1 是裸 PRF 读, JALR 要喂 br_imme) / 8 位独热编码 /
 #     **JALR 目标 & ~1** (老 BEU 原缺) / 重定向的两个门 / 完成与解析两条都要报。

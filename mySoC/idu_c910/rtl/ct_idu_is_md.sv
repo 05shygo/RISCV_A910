@@ -22,7 +22,17 @@ module ct_idu_is_md (
   input  logic         iu_idu_ex2_pipe1_wb_preg_vld_dupx,
   input  logic [5:0]   lsu_idu_wb_pipe3_wb_preg_dupx,
   input  logic         lsu_idu_wb_pipe3_wb_preg_vld_dupx,
-  input  logic         rtu_yy_xx_flush
+  input  logic         rtu_yy_xx_flush,
+
+  // 【2026-10-08 新增】**单元忙 ⇒ 这一拍别发**。
+  // 本队列原来只有 output 方向的 `md_xx_issue_en`, **没有反压输入** ⇒ 乘除单元
+  // 一旦来不及收 (除法要 ~35 拍), 请求就被静默丢掉、那条指令永远不完成 ⇒ 死等。
+  // 现在由 `IU_md_pipe` 的 `md_unit_stall` (= div_busy) 挡在发射口上。
+  // ⚠️ 粒度是"整个 MD 口": 除法在飞时乘法也让路。代价是那 ~35 拍里乘法不发射
+  //    (M 扩展占比小, 先保正确); 想细的话让顶层按队头 opcode 判断是不是除法。
+  // ⚠️ 单元侧还有一道 `div_accept = sel & ~busy` 兜底, 保证"没被收下的不会挤掉
+  //    在飞的那条"。两道合起来才闭环。
+  input  logic         ctrl_md_unit_stall
 );
     parameter int AIQ_WIDTH       = 63;
     parameter int AIQ_IID         = 62;
@@ -322,7 +332,8 @@ assign md_older_entry_ready[3] = |(md_entry3_agevec[2:0]
 assign md_entry_issue_en[3:0]  = md_entry_ready[3:0]
                                    & ~md_older_entry_ready[3:0];
 //rename for entries
-assign md_xx_issue_en = |md_entry_issue_en[3:0];
+// 2026-10-08: 加单元准入 —— 单元忙时压住发射 (见端口表的说明)
+assign md_xx_issue_en = |md_entry_issue_en[3:0] & ~ctrl_md_unit_stall;
 //-----------------issue data path selection----------------
 //issue data path will select oldest ready entry in issue queue
 //if no instruction valid, the data path will always select bypass 

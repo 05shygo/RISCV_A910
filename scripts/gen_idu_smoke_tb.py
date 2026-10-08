@@ -22,7 +22,7 @@ TB = os.path.join(ROOT, "tb/unit/tb_idu_c910.sv")
 
 # 这几根不接常量: 时钟/复位要动, rob_full/flush 是"允许派遣"的场景开关
 CLK_PORTS = {"forever_cpuclk", "cpurst_b"}
-SCENE_PORTS = {"rtu_idu_rob_full", "rtu_yy_xx_flush"}
+SCENE_PORTS = {"rtu_idu_rob_full", "rtu_yy_xx_flush", "md_unit_stall"}
 
 # 2026-10-08: 定向激励要驱动的输入 —— 由 initial 块给值, 不能接常量。
 # 选这几根是为了让**一条真指令**走完 IF→ID→IR→IS 并派遣出去:
@@ -77,7 +77,7 @@ def render(ports):
     tie1 = [p for p in ins if p[2] in TIE1_PORTS]
     skip = CLK_PORTS | SCENE_PORTS | STIM_PORTS | TIE1_PORTS
     const = [p for p in ins if p[2] not in skip]
-    if len(clocked) != 2 or len(scene) != 2:
+    if len(clocked) != 2 or len(scene) != 3:
         raise SystemExit("时钟/复位或场景开关端口对不上, 检查 CLK_PORTS/SCENE_PORTS")
     # 端口表改了名/删了口就要在这里炸, 别静默少驱动几根
     missing = (STIM_PORTS | TIE1_PORTS) - {p[2] for p in ins}
@@ -126,9 +126,11 @@ module tb_idu_c910;
     L.append("  assign cpurst_b       = rst_n;")
     L += ["  assign %-32s = %d'b0;" % (n, w) for _, w, n in const]
     L.append("")
-    L.append("  // ROB 不满 ⇒ 允许派遣; 不冲刷")
+    L.append("  // ROB 不满 ⇒ 允许派遣; 不冲刷; 乘除单元不忙")
+    L.append("  assign md_unit_stall    = 1'b0;")
     L.append("  assign rtu_idu_rob_full = 1'b0;")
     L.append("  assign rtu_yy_xx_flush  = 1'b0;")
+    L.append("  assign md_unit_stall    = 1'b0;   // 乘除单元不忙")
     L.append("  // LSU 队列的\"不满\"指示: 接 1 (接 0 会让 LSIQ 建不进去, 走不到派遣)")
     L += ["  assign %-32s = 1'b1;" % n for _, _, n in tie1]
     L.append("")
