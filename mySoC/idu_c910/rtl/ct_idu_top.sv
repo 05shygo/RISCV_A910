@@ -161,7 +161,12 @@ module ct_idu_top(
   output logic [6:0]   idu_biq_iid,
   output logic [31:0]  idu_biq_src0,
   output logic [31:0]  idu_biq_src1,
-  output logic [5:0]   idu_biq_rslt_sel,
+  // ⚠️ 2026-10-08 修: 原来是 [5:0] —— 而 ct_idu_rf_dp 驱动的是 **8 位**
+  //    (ct_idu_rf_pipe6_decd 的 pipe6_decd_br_sel), 其中
+  //      BR_JAL = bit6 / BR_JALR = bit7
+  //    ⇒ 截成 6 位后 **JAL/JALR 被整个丢掉** (在译码器眼里与"不是分支"同形)
+  //    ⇒ 每次函数调用都错。整核里只表现为 difftest 在 jal 上失配。
+  output logic [7:0]   idu_biq_rslt_sel,
   output logic [31:0]  idu_biq_br_imme,
   output logic         idu_biq_dst_vld,
   output logic [5:0]   idu_biq_dst_preg,
