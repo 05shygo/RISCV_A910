@@ -52,7 +52,7 @@ module lsu_mshr #(
     input  logic [6:0]   ld_da_iid,
     input  logic [1:0]   ld_da_inst_size,
     input  logic         ld_da_old,
-    input  logic [6:0]   ld_da_preg,
+    input  logic [5:0]   ld_da_preg,
     input  logic         ld_da_rb_cmit,
     input  logic         ld_da_rb_create_vld,
     input  logic         ld_da_rb_data_vld,
@@ -131,7 +131,7 @@ module lsu_mshr #(
     output logic [6:0]   rb_ld_wb_data_iid,
     output logic         rb_ld_wb_data_req,
     output logic [6:0]   rb_ld_wb_iid,
-    output logic [6:0]   rb_ld_wb_preg,
+    output logic [5:0]   rb_ld_wb_preg,
     output logic [3:0]   rb_ld_wb_preg_sign_sel,
 
     //==========================================================
@@ -225,7 +225,7 @@ logic [31:0]         rb_entry_addr [RB_ENTRY-1:0];
 logic [31:0]         rb_entry_data [RB_ENTRY-1:0];
 logic [6:0]          rb_entry_iid [RB_ENTRY-1:0];
 logic [1:0]          rb_entry_inst_size [RB_ENTRY-1:0];
-logic [6:0]          rb_entry_preg [RB_ENTRY-1:0];
+logic [5:0]          rb_entry_preg [RB_ENTRY-1:0];
 logic [7:0]          rb_entry_rot_sel [RB_ENTRY-1:0];
 logic [RB_ENTRY-1:0] rb_entry_sign_extend;
 
@@ -551,7 +551,7 @@ assign rb_ld_wb_inst_size[1:0]
     | {2{rb_ld_wb_data_ptr[2]}} & rb_entry_inst_size[2][1:0]
     | {2{rb_ld_wb_data_ptr[3]}} & rb_entry_inst_size[3][1:0];
 
-assign rb_ld_wb_preg[6:0]
+assign rb_ld_wb_preg[5:0]
     = {7{rb_ld_wb_data_ptr[0]}} & rb_entry_preg[0][6:0]
     | {7{rb_ld_wb_data_ptr[1]}} & rb_entry_preg[1][6:0]
     | {7{rb_ld_wb_data_ptr[2]}} & rb_entry_preg[2][6:0]

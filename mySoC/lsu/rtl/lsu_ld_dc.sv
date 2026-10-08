@@ -1,6 +1,6 @@
 module lsu_ld_dc #(
     parameter int IID_WIDTH  = 6,
-    parameter int LSIQ_ENTRY = 16,
+    parameter int LSIQ_ENTRY = 8,
     parameter int DCACHE_SIZE = 2048,  // 1024, 2048, or 4096 bytes
     // Derived parameters for dcache indexing
     parameter int CACHELINE_SIZE = 32,
@@ -27,7 +27,7 @@ module lsu_ld_dc #(
     input  logic [6:0]                    ld_ag_iid,
     input  logic [LSIQ_ENTRY-1:0]         ld_ag_lsid,
     input  logic                          ld_ag_old,
-    input  logic [6:0]                    ld_ag_preg,
+    input  logic [5:0]                    ld_ag_preg,
     input  logic                          ld_ag_boundary,
     input  logic                          ld_ag_acclr_en,
     input  logic                          ld_ag_dc_fwd_bypass_en,
@@ -73,7 +73,7 @@ module lsu_ld_dc #(
     output logic [6:0]                    ld_dc_iid,
     output logic [LSIQ_ENTRY-1:0]         ld_dc_lsid,
     output logic                          ld_dc_old,
-    output logic [6:0]                    ld_dc_preg,
+    output logic [5:0]                    ld_dc_preg,
     output logic [15:0]                   ld_dc_bytes_vld,
     output logic [15:0]                   ld_dc_bytes_vld1,
     output logic                          ld_dc_acclr_en,
@@ -207,7 +207,7 @@ always @(posedge forever_cpuclk or negedge cpurst_b) begin
         ld_dc_iid[6:0]           <= 7'b0;
         ld_dc_lsid[LSIQ_ENTRY-1:0] <= {LSIQ_ENTRY{1'b0}};
         ld_dc_old                <= 1'b0;
-        ld_dc_preg[6:0]          <= 7'b0;
+        ld_dc_preg[5:0]          <= 7'b0;
         ld_dc_bytes_vld[15:0]    <= 16'b0;
         ld_dc_bytes_vld1[15:0]   <= 16'b0;
         ld_dc_acclr_en           <= 1'b0;
@@ -222,7 +222,7 @@ always @(posedge forever_cpuclk or negedge cpurst_b) begin
         ld_dc_iid[6:0]           <= ld_ag_iid[6:0];
         ld_dc_lsid[LSIQ_ENTRY-1:0] <= ld_ag_lsid[LSIQ_ENTRY-1:0];
         ld_dc_old                <= ld_ag_old; // 原代码写 ld_ag_oldest，输入端口只有 ld_ag_old，注意核对RTL
-        ld_dc_preg[6:0]          <= ld_ag_preg[6:0];
+        ld_dc_preg[5:0]          <= ld_ag_preg[5:0];
         ld_dc_bytes_vld[15:0]    <= ld_ag_bytes_vld[15:0];
         ld_dc_bytes_vld1[15:0]   <= ld_ag_bytes_vld1[15:0];
         ld_dc_acclr_en           <= ld_ag_acclr_en;

@@ -11,7 +11,7 @@ module ct_lsu_ld_wb #(
     input  logic         forever_cpuclk,
     input  logic [31:0]  ld_da_addr,
     input  logic [6:0]   ld_da_iid,
-    input  logic [6:0]   ld_da_preg,
+    input  logic [5:0]   ld_da_preg,
     input  logic [3:0]   ld_da_preg_sign_sel,
     input  logic         ld_da_wb_cmplt_req,
     input  logic [31:0]  ld_da_wb_data,
@@ -23,7 +23,7 @@ module ct_lsu_ld_wb #(
     input  logic [6:0]   rb_ld_wb_data_iid,
     input  logic         rb_ld_wb_data_req,
     input  logic [6:0]   rb_ld_wb_iid,
-    input  logic [6:0]   rb_ld_wb_preg,
+    input  logic [5:0]   rb_ld_wb_preg,
     input  logic [3:0]   rb_ld_wb_preg_sign_sel,
     input  logic         rtu_yy_xx_flush,
 
@@ -36,11 +36,11 @@ module ct_lsu_ld_wb #(
     output logic         lsu_rtu_async_expt_vld,
     output logic         lsu_rtu_wb_pipe3_cmplt,
     output logic [6:0]   lsu_rtu_wb_pipe3_iid,
-    output logic [95:0]  lsu_rtu_wb_pipe3_wb_preg_expand,
+    output logic [63:0]  lsu_rtu_wb_pipe3_wb_preg_expand,
     output logic         lsu_rtu_wb_pipe3_wb_preg_vld,
-    output logic [6:0]   lsu_idu_wb_pipe3_wb_preg,
+    output logic [5:0]   lsu_idu_wb_pipe3_wb_preg,
     output logic [31:0]  lsu_idu_wb_pipe3_wb_preg_data,
-    output logic [95:0]  lsu_idu_wb_pipe3_wb_preg_expand,
+    output logic [63:0]  lsu_idu_wb_pipe3_wb_preg_expand,
     output logic         lsu_idu_wb_pipe3_wb_preg_vld
 );
 
@@ -55,8 +55,8 @@ logic         ld_wb_pre_data_vld;
 logic         ld_wb_pre_bus_err;
 logic [39:0]  ld_wb_pre_data_addr;
 logic [6:0]   ld_wb_pre_data_iid;
-logic [6:0]   ld_wb_pre_preg;
-logic [95:0]  ld_wb_pre_preg_expand;
+logic [5:0]   ld_wb_pre_preg;
+logic [63:0]  ld_wb_pre_preg_expand;
 logic [63:0]  ld_wb_pre_data;
 logic         ld_wb_pre_preg_wb_vld;
 logic [3:0]   ld_wb_pre_preg_sign_sel;
@@ -66,8 +66,8 @@ logic         ld_wb_bus_err;
 logic [39:0]  ld_wb_data_addr;
 logic [6:0]   ld_wb_data_iid;
 logic [63:0]  ld_wb_data;
-logic [6:0]   ld_wb_data_preg;
-logic [95:0]  ld_wb_data_preg_expand;
+logic [5:0]   ld_wb_data_preg;
+logic [63:0]  ld_wb_data_preg_expand;
 logic [3:0]   ld_wb_preg_sign_sel;
 logic [63:0]  ld_wb_data_sign0;
 logic [63:0]  ld_wb_data_sign1;
@@ -75,20 +75,20 @@ logic [63:0]  ld_wb_data_sign2;
 logic [63:0]  ld_wb_data_sign3;
 logic [63:0]  ld_wb_preg_data_sign_extend;
 
-logic [95:0]  ld_da_preg_expand;
-logic [95:0]  rb_ld_wb_preg_expand;
+logic [63:0]  ld_da_preg_expand;
+logic [63:0]  rb_ld_wb_preg_expand;
 
 //------------------------------------------------------------------
 // 子模块实例化
 //------------------------------------------------------------------
-ct_rtu_expand_96 x_lsu_ld_da_preg_expand (
-    .x_num        (ld_da_preg[6:0]),
-    .x_num_expand (ld_da_preg_expand[95:0])
+ct_rtu_expand_64 x_lsu_ld_da_preg_expand (
+    .x_num        (ld_da_preg[5:0]),
+    .x_num_expand (ld_da_preg_expand[63:0])
 );
 
-ct_rtu_expand_96 x_lsu_rb_ld_wb_preg_expand (
-    .x_num        (rb_ld_wb_preg[6:0]),
-    .x_num_expand (rb_ld_wb_preg_expand[95:0])
+ct_rtu_expand_64 x_lsu_rb_ld_wb_preg_expand (
+    .x_num        (rb_ld_wb_preg[5:0]),
+    .x_num_expand (rb_ld_wb_preg_expand[63:0])
 );
 
 //==========================================================
@@ -126,11 +126,11 @@ assign ld_wb_pre_data_addr[31:0] = {PA_WIDTH{ld_wb_da_data_grnt}} & ld_da_addr[3
 assign ld_wb_pre_data_iid[6:0]  = {7{ld_wb_da_data_grnt}} & ld_da_iid[6:0]
                                   | {7{ld_wb_rb_data_grnt}} & rb_ld_wb_data_iid[6:0];
 
-assign ld_wb_pre_preg[6:0]      = {7{ld_wb_da_data_grnt}} & ld_da_preg[6:0]
-                                  | {7{ld_wb_rb_data_grnt}} & rb_ld_wb_preg[6:0];
+assign ld_wb_pre_preg[5:0]      = {7{ld_wb_da_data_grnt}} & ld_da_preg[5:0]
+                                  | {7{ld_wb_rb_data_grnt}} & rb_ld_wb_preg[5:0];
 
-assign ld_wb_pre_preg_expand[95:0] = {96{ld_wb_da_data_grnt}} & ld_da_preg_expand[95:0]
-                                     | {96{ld_wb_rb_data_grnt}} & rb_ld_wb_preg_expand[95:0];
+assign ld_wb_pre_preg_expand[63:0] = {96{ld_wb_da_data_grnt}} & ld_da_preg_expand[63:0]
+                                     | {96{ld_wb_rb_data_grnt}} & rb_ld_wb_preg_expand[63:0];
 
 assign ld_wb_pre_data[31:0]     = ld_da_wb_data_req
                                   ? ld_da_wb_data[31:0]
@@ -216,14 +216,14 @@ always @(posedge forever_cpuclk or negedge cpurst_b)
 begin
   if (!cpurst_b)
   begin
-    ld_wb_data_preg[6:0]          <=  7'b0;
-    ld_wb_data_preg_expand[95:0]  <=  96'b0;
+    ld_wb_data_preg[5:0]          <=  7'b0;
+    ld_wb_data_preg_expand[63:0]  <=  96'b0;
     ld_wb_preg_sign_sel[3:0]      <=  4'b0;
   end
   else if(ld_wb_pre_data_vld)
   begin
-    ld_wb_data_preg[6:0]          <=  ld_wb_pre_preg[6:0];
-    ld_wb_data_preg_expand[95:0]  <=  ld_wb_pre_preg_expand[95:0];
+    ld_wb_data_preg[5:0]          <=  ld_wb_pre_preg[5:0];
+    ld_wb_data_preg_expand[63:0]  <=  ld_wb_pre_preg_expand[63:0];
     ld_wb_preg_sign_sel[3:0]      <=  ld_wb_pre_preg_sign_sel[3:0];
   end
 end
@@ -248,7 +248,7 @@ assign lsu_rtu_wb_pipe3_cmplt         = ld_wb_inst_vld;
 assign lsu_rtu_wb_pipe3_iid[6:0]      = ld_wb_iid[6:0];
 
 assign lsu_rtu_wb_pipe3_wb_preg_vld   = ld_wb_pre_preg_wb_vld;
-assign lsu_rtu_wb_pipe3_wb_preg_expand[95:0] = ld_wb_data_preg_expand[95:0];
+assign lsu_rtu_wb_pipe3_wb_preg_expand[63:0] = ld_wb_data_preg_expand[63:0];
 
 assign lsu_rtu_async_expt_vld         = ld_wb_data_vld && ld_wb_bus_err;
 assign lsu_rtu_async_expt_addr[31:0]  = (ld_wb_data_vld && ld_wb_bus_err)
@@ -256,8 +256,8 @@ assign lsu_rtu_async_expt_addr[31:0]  = (ld_wb_data_vld && ld_wb_bus_err)
                                         : {PA_WIDTH{1'b0}};
 
 assign lsu_idu_wb_pipe3_wb_preg_vld          = ld_wb_pre_preg_wb_vld;
-assign lsu_idu_wb_pipe3_wb_preg[6:0]         = ld_wb_data_preg[6:0];
-assign lsu_idu_wb_pipe3_wb_preg_expand[95:0] = ld_wb_data_preg_expand[95:0];
+assign lsu_idu_wb_pipe3_wb_preg[5:0]         = ld_wb_data_preg[5:0];
+assign lsu_idu_wb_pipe3_wb_preg_expand[63:0] = ld_wb_data_preg_expand[63:0];
 assign lsu_idu_wb_pipe3_wb_preg_data[31:0]   = ld_wb_preg_data_sign_extend[31:0];
 
 // &ModuleEnd; @1056

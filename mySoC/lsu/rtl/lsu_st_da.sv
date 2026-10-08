@@ -1,6 +1,6 @@
 module ct_lsu_st_da #(
   parameter int DCACHE_SIZE = 2048,  // 1024, 2048, 4096 bytes
-  parameter int LSIQ_ENTRY  = 12,
+  parameter int LSIQ_ENTRY = 8,
   parameter int CACHELINE_SIZE = 32,
   parameter int NUM_WAYS = 2,
   parameter int OFFSET_WIDTH = 5,

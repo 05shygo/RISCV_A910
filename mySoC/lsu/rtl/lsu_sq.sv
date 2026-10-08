@@ -4,7 +4,7 @@
 
 module ct_lsu_sq #(
     parameter SQ_ENTRY   = 6,
-    parameter LSIQ_ENTRY = 12,
+    parameter LSIQ_ENTRY = 8,
     parameter IID_WIDTH  = 7
 )(
     input  logic         cpurst_b,
@@ -16,7 +16,7 @@ module ct_lsu_sq #(
     input  logic         dcache_tag_gwen,
     input  logic [1:0]   dcache_tag_wen,
     input  logic         forever_cpuclk,
-    input  logic [11:0]  ld_da_lsid,
+    input  logic [7:0]  ld_da_lsid,
     input  logic         ld_da_sq_data_discard_vld,
     input  logic [SQ_ENTRY-1:0] ld_da_sq_fwd_id,
     input  logic         ld_da_sq_fwd_multi_vld,
@@ -190,7 +190,7 @@ module ct_lsu_sq #(
     logic [31:0] sq_entry_data [0:SQ_ENTRY-1];
     logic [IID_WIDTH-1:0] sq_entry_iid [0:SQ_ENTRY-1];
     logic [7:0]  sq_entry_rot_sel [0:SQ_ENTRY-1];
-    logic [11:0] sq_entry_data_depd_wakeup [0:SQ_ENTRY-1];
+    logic [7:0]  sq_entry_data_depd_wakeup [0:SQ_ENTRY-1];
 
     //==========================================================
     // SQ entry instances

@@ -1,5 +1,5 @@
 module ct_lsu_st_dc #(
-    parameter LSIQ_ENTRY = 12,
+    parameter LSIQ_ENTRY = 8,
     parameter SDIQ_ENTRY = 4
 )(
     input  logic         cpurst_b,
@@ -30,7 +30,7 @@ module ct_lsu_st_dc #(
     input  logic [3:0]   st_ag_dc_rot_sel,
     input  logic [6:0]   st_ag_iid,
     input  logic         st_ag_inst_vld,
-    input  logic [11:0]  st_ag_lsid,
+    input  logic [7:0]  st_ag_lsid,
     input  logic         st_ag_old,
     input  logic [3:0]  st_ag_sdid_oh,
     input  logic         st_ag_secd,
@@ -40,14 +40,14 @@ module ct_lsu_st_dc #(
     output logic         st_dc_borrow_vld,
     output logic         st_dc_secd,
     output logic [6:0]   st_dc_iid,
-    output logic [11:0]  st_dc_lsid,
-    output logic [11:0]  st_dc_sdid_oh,
+    output logic [7:0]  st_dc_lsid,
+    output logic [3:0]  st_dc_sdid_oh,
     output logic         st_dc_old,
     output logic [15:0]  st_dc_bytes_vld,
     output logic [3:0]   st_dc_rot_sel,
     output logic         st_dc_boundary,
     output logic [31:0]  st_dc_addr0,
-    output logic [3:0]   st_dc_sdid,
+ //   output logic [3:0]   st_dc_sdid,
     output logic         st_dc_sq_create_vld,
     output logic         st_dc_sq_create_dp_vld,
     output logic         st_dc_sq_create_gateclk_en,
@@ -60,7 +60,7 @@ module ct_lsu_st_dc #(
     output logic [4:0]   st_dc_da_dcache_dirty_array,
     output logic         st_dc_da_tag0_hit,
     output logic         st_dc_da_tag1_hit,
-    output logic [11:0]  st_dc_idu_sq_full,
+    output logic [7:0]  st_dc_idu_sq_full,
     output logic         st_dc_dcwp_hit_idx,
     output logic         st_dc_spec_fail,
     output logic [SDIQ_ENTRY-1:0] lsu_idu_has_in_sq
@@ -70,7 +70,7 @@ module ct_lsu_st_dc #(
     //                 Internal signals
     //==========================================================
     logic [7:0]  st_dc_data_rot_sel;
-    logic [11:0] st_dc_mask_lsid;
+    logic [7:0] st_dc_mask_lsid;
     logic        st_dc_sq_full_vld;
     logic        st_dc_restart_vld;
 
@@ -221,5 +221,6 @@ assign st_dc_dcwp_hit_idx = 1'b0;
 
     assign lsu_idu_has_in_sq[SDIQ_ENTRY-1:0] = {SDIQ_ENTRY{st_dc_sq_create_vld & !sq_st_dc_full}} &
                                                 st_dc_sdid_oh[SDIQ_ENTRY-1:0];
+                                       
 
 endmodule

@@ -1,6 +1,6 @@
 module ct_lsu_sq_entry #(
     parameter SQ_ENTRY   = 6,
-    parameter LSIQ_ENTRY = 12,
+    parameter LSIQ_ENTRY = 8,
     parameter IID_WIDTH  = 7
 )(
     //==========================================================

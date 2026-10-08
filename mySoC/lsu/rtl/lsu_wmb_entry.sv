@@ -527,7 +527,7 @@ module lsu_wmb_entry #(
 
   assign wmb_entry_dcache_update_vld = wmb_entry_vld & wmb_entry_dcache_update_vld_unmask;
 
-  assign wmb_entry_rb_biu_req_hit_idx = (wmb_entry_addr[INDEX_MSB:5] ==  rb_biu_req_addr[INDEX_MSB:5]);
+  assign wmb_entry_rb_biu_req_hit_idx = wmb_entry_vld & (wmb_entry_addr[INDEX_MSB:5] ==  rb_biu_req_addr[INDEX_MSB:5]);
   //==========================================================
   //                 Output Assignment
   //==========================================================

@@ -39,6 +39,14 @@ module ct_spsram_32x54 (
   parameter DATA_WIDTH = 54;
 
   reg [DATA_WIDTH-1:0] mem_q [0:(1<<ADDR_WIDTH)-1];
+    // ⚠️ 2026-10-08: **仿真用的确定性初值**。真 SRAM 上电内容随机, 真机靠软件/硬件
+    //    把 tag 的 valid 位清掉; 仿真里不清的话 tag 读回 X ⇒ dcache_hit = X ⇒
+    //    ld_da_rb_create_vld = X ⇒ rb_biu_req_unmask 永远置不起来 ⇒ **总线读请求
+    //    根本发不出** (实测: LSU 自带 TB 卡在 "Timeout waiting for first AR request",
+    //    根因就是这里)。清成全 0 等于"所有行都无效", 与真机复位后的期望状态一致。
+    initial begin : SIM_INIT
+        for (int i = 0; i < (1 << ADDR_WIDTH); i = i + 1) mem_q[i] = '0;
+    end
   reg [DATA_WIDTH-1:0] q_q;
   integer i;
 

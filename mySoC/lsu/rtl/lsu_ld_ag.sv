@@ -1,6 +1,6 @@
 module lsu_ld_ag #(
   parameter int IID_WIDTH  = 6,
-  parameter int LSIQ_ENTRY = 16,
+  parameter int LSIQ_ENTRY = 8,
   parameter int DCACHE_SIZE = 2048,  // 1024, 2048, or 4096 bytes
   // Derived parameters for dcache indexing
   parameter int CACHELINE_SIZE = 32,
@@ -29,7 +29,7 @@ module lsu_ld_ag #(
   input  logic [6:0]                   idu_lsu_ld_iid,
   input  logic [LSIQ_ENTRY-1:0]        idu_lsu_ld_lch_entry,
   input  logic                         idu_lsu_ld_oldest,
-  input  logic [6:0]                   idu_lsu_ld_preg,
+  input  logic [5:0]                   idu_lsu_ld_preg,
   input  logic [11:0]                  idu_lsu_ld_offset,
   input  logic [12:0]                  idu_lsu_ld_offset_plus,
   input  logic [31:0]                  idu_lsu_ld_src,
@@ -74,7 +74,7 @@ module lsu_ld_ag #(
   output logic [6:0]                   ld_ag_iid,
   output logic [LSIQ_ENTRY-1:0]        ld_ag_lsid,
   output logic                         ld_ag_old,
-  output logic [6:0]                   ld_ag_preg,
+  output logic [5:0]                   ld_ag_preg,
   output logic                         ld_ag_boundary,
   output logic                         ld_ag_acclr_en,
   output logic                         ld_ag_dc_fwd_bypass_en,
@@ -209,7 +209,7 @@ begin
     ld_ag_iid[6:0]              <=  7'b0;
     ld_ag_lsid[LSIQ_ENTRY-1:0]  <=  {LSIQ_ENTRY{1'b0}};
     ld_ag_old                   <=  1'b0;
-    ld_ag_preg[6:0]             <=  7'b0;
+    ld_ag_preg[5:0]             <=  7'b0;
   end
   else if(!ld_ag_stall_vld  &&  idu_lsu_ld_sel)
   begin
@@ -219,7 +219,7 @@ begin
     ld_ag_iid[6:0]              <=  idu_lsu_ld_iid[6:0];
     ld_ag_lsid[LSIQ_ENTRY-1:0]  <=  idu_lsu_ld_lch_entry[LSIQ_ENTRY-1:0];
     ld_ag_old                   <=  idu_lsu_ld_oldest;
-    ld_ag_preg[6:0]             <=  idu_lsu_ld_preg[6:0];
+    ld_ag_preg[5:0]             <=  idu_lsu_ld_preg[5:0];
   end
 end
 

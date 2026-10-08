@@ -25,7 +25,7 @@ module lsu_mshr_entry #(
     input  logic [INDEX_WIDTH-1:0] ld_da_idx,
     input  logic [6:0]   ld_da_iid,
     input  logic [1:0]   ld_da_inst_size,
-    input  logic [6:0]   ld_da_preg,
+    input  logic [5:0]   ld_da_preg,
     input  logic         ld_da_rb_cmit,
     input  logic         ld_da_rb_data_vld,
     input  logic         ld_da_rb_discard_grnt,
@@ -69,7 +69,7 @@ module lsu_mshr_entry #(
     output logic [1:0]   rb_entry_inst_size_v,
     output logic         rb_entry_ld_da_hit_idx_x,
     output logic         rb_entry_merge_fail_x,
-    output logic [6:0]   rb_entry_preg_v,
+    output logic [5:0]   rb_entry_preg_v,
     output logic [7:0]   rb_entry_rot_sel_v,
     output logic         rb_entry_sign_extend_x,
     output logic         rb_entry_sq_pop_hit_idx_x,
@@ -97,7 +97,7 @@ logic        rb_entry_dest_vld;
 logic [6:0]  rb_entry_iid;
 logic [1:0]  rb_entry_inst_size;
 logic [3:0]  rb_entry_next_state;
-logic [6:0]  rb_entry_preg;
+logic [5:0]  rb_entry_preg;
 logic [7:0]  rb_entry_rot_sel;
 logic        rb_entry_secd;
 logic        rb_entry_sign_extend;
@@ -209,7 +209,7 @@ begin
     rb_entry_iid[6:0]         <=  7'b0;
     rb_entry_sign_extend      <=  1'b0;
     rb_entry_boundary         <=  1'b0;
-    rb_entry_preg[6:0]        <=  7'b0;
+    rb_entry_preg[5:0]        <=  7'b0;
     rb_entry_st               <=  1'b0;
     rb_entry_inst_size[1:0]   <=  2'b0;
     rb_entry_create_lfb       <=  1'b0;
@@ -221,7 +221,7 @@ begin
     rb_entry_iid[6:0]         <=  ld_da_iid[6:0];
     rb_entry_sign_extend      <=  ld_da_sign_extend;
     rb_entry_boundary         <=  ld_da_boundary_after_mask;
-    rb_entry_preg[6:0]        <=  ld_da_preg[6:0];
+    rb_entry_preg[5:0]        <=  ld_da_preg[5:0];
     rb_entry_st               <=  1'b0;
     rb_entry_inst_size[1:0]   <=  ld_da_inst_size[1:0];
   end
@@ -232,7 +232,7 @@ begin
     rb_entry_iid[6:0]         <=  ld_da_iid[6:0];
     rb_entry_sign_extend      <=  ld_da_sign_extend;
     rb_entry_boundary         <=  ld_da_boundary_after_mask;
-    rb_entry_preg[6:0]        <=  ld_da_preg[6:0];
+    rb_entry_preg[5:0]        <=  ld_da_preg[5:0];
     rb_entry_st               <=  1'b0;
     rb_entry_inst_size[1:0]   <=  ld_da_inst_size[1:0];
   end
@@ -243,7 +243,7 @@ begin
     rb_entry_iid[6:0]         <=  st_da_iid[6:0];
     rb_entry_sign_extend      <=  1'b0;
     rb_entry_boundary         <=  1'b0;
-    rb_entry_preg[6:0]        <=  7'b0;
+    rb_entry_preg[5:0]        <=  7'b0;
     rb_entry_st               <=  1'b1;
     rb_entry_inst_size[1:0]   <=  2'b0;
   end
@@ -674,7 +674,7 @@ assign rb_entry_vld_x                   = rb_entry_vld;
 assign rb_entry_addr_v[31:0]            = rb_entry_addr[31:0];
 assign rb_entry_iid_v[6:0]              = rb_entry_iid[6:0];
 assign rb_entry_sign_extend_x           = rb_entry_sign_extend;
-assign rb_entry_preg_v[6:0]             = rb_entry_preg[6:0];
+assign rb_entry_preg_v[5:0]             = rb_entry_preg[5:0];
 assign rb_entry_inst_size_v[1:0]        = rb_entry_inst_size[1:0];
 assign rb_entry_depd_x                  = rb_entry_depd;
 assign rb_entry_data_v[31:0]            = rb_entry_data[31:0];

@@ -1,5 +1,5 @@
 module ct_lsu_lfb #(
-    parameter LSIQ_ENTRY     = 12,
+    parameter LSIQ_ENTRY = 8,
     parameter LFB_ADDR_ENTRY = 3,
     parameter LFB_DATA_ENTRY = 1,
     parameter BIU_LFB_ID_T   = 2'b00,

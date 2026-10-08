@@ -1,6 +1,6 @@
 module lsu_top #(
   parameter int DCACHE_SIZE = 2048,  // 1024, 2048, or 4096 bytes
-  parameter int LSIQ_ENTRY  = 12,
+  parameter int LSIQ_ENTRY = 8,
   parameter int SQ_ENTRY    = 6,
   parameter int SDIQ_ENTRY  = 4,
   parameter int WMB_ENTRY   = 4,
@@ -15,7 +15,7 @@ module lsu_top #(
   input  logic [6:0]           idu_lsu_ld_iid,
   input  logic [LSIQ_ENTRY-1:0] idu_lsu_ld_lch_entry,
   input  logic                 idu_lsu_ld_oldest,
-  input  logic [6:0]           idu_lsu_ld_preg,
+  input  logic [5:0]           idu_lsu_ld_preg,
   input  logic [11:0]          idu_lsu_ld_offset,
   input  logic [12:0]          idu_lsu_ld_offset_plus,
   input  logic [31:0]          idu_lsu_ld_src,
@@ -143,13 +143,13 @@ module lsu_top #(
   // LSU to RTU - Writeback pipe3
   output logic                 lsu_rtu_wb_pipe3_cmplt,
   output logic [6:0]           lsu_rtu_wb_pipe3_iid,
-  output logic [95:0]          lsu_rtu_wb_pipe3_wb_preg_expand,
+  output logic [63:0]          lsu_rtu_wb_pipe3_wb_preg_expand,
   output logic                 lsu_rtu_wb_pipe3_wb_preg_vld,
 
   // LSU to IDU - Writeback pipe3
-  output logic [6:0]           lsu_idu_wb_pipe3_wb_preg,
+  output logic [5:0]           lsu_idu_wb_pipe3_wb_preg,
   output logic [31:0]          lsu_idu_wb_pipe3_wb_preg_data,
-  output logic [95:0]          lsu_idu_wb_pipe3_wb_preg_expand,
+  output logic [63:0]          lsu_idu_wb_pipe3_wb_preg_expand,
   output logic                 lsu_idu_wb_pipe3_wb_preg_vld,
 
   // LSU to RTU - Writeback pipe4
@@ -273,7 +273,7 @@ logic ld_ag_sign_extend;
 logic [6:0] ld_ag_iid;
 logic [LSIQ_ENTRY-1:0] ld_ag_lsid;
 logic ld_ag_old;
-logic [6:0] ld_ag_preg;
+logic [5:0] ld_ag_preg;
 logic ld_ag_boundary;
 logic ld_ag_acclr_en;
 logic ld_ag_dc_fwd_bypass_en;
@@ -442,7 +442,7 @@ logic ld_dc_sign_extend;
 logic [6:0] ld_dc_iid;
 logic [LSIQ_ENTRY-1:0] ld_dc_lsid;
 logic ld_dc_old;
-logic [6:0] ld_dc_preg;
+logic [5:0] ld_dc_preg;
 logic [15:0] ld_dc_bytes_vld;
 logic [15:0] ld_dc_bytes_vld1;
 logic ld_dc_acclr_en;
@@ -549,7 +549,7 @@ logic vb_rb_biu_req_hit_idx;
 // Load DA signals (placeholder, to be connected)
 logic [31:0] ld_da_addr;
 logic [6:0] ld_da_iid;
-logic [6:0] ld_da_preg;
+logic [5:0] ld_da_preg;
 logic [3:0] ld_da_preg_sign_sel;
 logic ld_da_wb_cmplt_req;
 logic [31:0] ld_da_wb_data;
@@ -631,7 +631,7 @@ logic [31:0] rb_ld_wb_data;
 logic [6:0] rb_ld_wb_data_iid;
 logic rb_ld_wb_data_req;
 logic [6:0] rb_ld_wb_iid;
-logic [6:0] rb_ld_wb_preg;
+logic [5:0] rb_ld_wb_preg;
 logic [3:0] rb_ld_wb_preg_sign_sel;
 logic ld_wb_rb_cmplt_grnt;
 logic ld_wb_rb_data_grnt;
@@ -1063,7 +1063,7 @@ ct_lsu_st_dc u_lsu_st_dc (
   .st_dc_rot_sel(st_dc_rot_sel),
   .st_dc_boundary(st_dc_boundary),
   .st_dc_addr0(st_dc_addr0),
-  .st_dc_sdid(st_dc_sdid),
+  //.st_dc_sdid(st_dc_sdid),
   .st_dc_sq_create_vld(st_dc_sq_create_vld),
   .st_dc_sq_create_dp_vld(st_dc_sq_create_dp_vld),
   .st_dc_sq_create_gateclk_en(st_dc_sq_create_gateclk_en),
@@ -1259,7 +1259,7 @@ ct_lsu_sq #(
   .st_dc_iid(st_dc_iid),
   .st_dc_old(st_dc_old),
   .st_dc_rot_sel_rev(st_dc_rot_sel_rev),
-  .st_dc_sdid(st_dc_sdid),
+  .st_dc_sdid(st_dc_sdid_oh),
   .st_dc_sdid_hit(st_dc_sdid_hit),
   .st_dc_secd(st_dc_secd),
   .st_dc_sq_create_vld(st_dc_sq_create_vld),

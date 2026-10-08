@@ -1,6 +1,6 @@
 module lsu_ld_da #(
     parameter int IID_WIDTH     = 6,
-    parameter int LSIQ_ENTRY    = 16,
+    parameter int LSIQ_ENTRY = 8,
     parameter int DC_IDX        = 8,
     parameter int SQ_ENTRY      = 6
 )(
@@ -16,7 +16,7 @@ module lsu_ld_da #(
     input  logic [6:0]                    ld_dc_iid,
     input  logic [LSIQ_ENTRY-1:0]         ld_dc_lsid,
     input  logic                          ld_dc_old,
-    input  logic [6:0]                    ld_dc_preg,
+    input  logic [5:0]                    ld_dc_preg,
     input  logic [15:0]                   ld_dc_bytes_vld,
     input  logic [15:0]                   ld_dc_bytes_vld1,
     input  logic                          ld_dc_acclr_en,
@@ -76,7 +76,7 @@ module lsu_ld_da #(
     output logic [6:0]                    ld_da_iid,
     output logic [LSIQ_ENTRY-1:0]         ld_da_lsid,
     output logic                          ld_da_old,
-    output logic [6:0]                    ld_da_preg,
+    output logic [5:0]                    ld_da_preg,
     output logic [15:0]                   ld_da_bytes_vld,
     output logic [15:0]                   ld_da_bytes_vld1,
     output logic                          ld_da_acclr_en,
