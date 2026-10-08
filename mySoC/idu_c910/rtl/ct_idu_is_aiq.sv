@@ -5,7 +5,7 @@ module ct_idu_is_aiq (
   output logic         aiq_ctrl_1_left_updt,
   output logic         aiq_ctrl_full_updt,
   output logic         aiq_xx_issue_en,
-  output logic [63:0]  aiq_dp_issue_read_data,
+  output logic [95:0]  aiq_dp_issue_read_data,   // 64 → 96 (2026-10-08 加 PC)
 
   //----------------------------------------------------------------------------
   // Inputs
@@ -13,8 +13,8 @@ module ct_idu_is_aiq (
   input  logic         cpurst_b,
   input  logic         ctrl_aiq_create0_en,
   input  logic         ctrl_aiq_create1_en,
-  input  logic [63:0]  dp_aiq_create0_data,
-  input  logic [63:0]  dp_aiq_create1_data,
+  input  logic [95:0]  dp_aiq_create0_data,     // 64 → 96
+  input  logic [95:0]  dp_aiq_create1_data,     // 64 → 96
   input  logic         forever_cpuclk,
   input  logic [5:0]   iu_idu_ex2_pipe0_wb_preg_dupx,
   input  logic         iu_idu_ex2_pipe0_wb_preg_vld_dupx,
@@ -24,7 +24,7 @@ module ct_idu_is_aiq (
   input  logic         lsu_idu_wb_pipe3_wb_preg_vld_dupx,
   input  logic         rtu_yy_xx_flush
 );
-parameter AIQ_WIDTH             = 64;
+parameter AIQ_WIDTH             = 96;   // 2026-10-08: 64 → 96 (高 32 位给 PC)
 parameter AIQ_ILLEGAL           = 63;
 parameter AIQ_IID               = 62;
 parameter AIQ_SRC2_DATA         = 55;

@@ -69,8 +69,8 @@ module ct_idu_is_dp (
   // Outputs
   //----------------------------------------------------------------------------
   output logic [6:0]   dp_ctrl_is_dis_inst2_ctrl_info,
-  output logic [63:0]  dp_aiq_create0_data,
-  output logic [63:0]  dp_aiq_create1_data,
+  output logic [95:0]  dp_aiq_create0_data,
+  output logic [95:0]  dp_aiq_create1_data,
   output logic [151:0] dp_biq_create0_data,
   output logic [151:0] dp_biq_create1_data,
   output logic         dp_ctrl_is_inst0_dst_vld,
@@ -144,7 +144,8 @@ parameter IS_OPCODE            = 31;
 //----------------------------------------------------------
 //                    AIQ Parameters
 //----------------------------------------------------------
-parameter AIQ_WIDTH             = 64;
+parameter AIQ_WIDTH             = 96;   // 2026-10-08: 64 → 96 (高 32 位给 PC)
+parameter AIQ_PC                = 95;   // 2026-10-08 新增: AUIPC 的 PC (高 32 位, 其余字段不动)
 parameter AIQ_ILLEGAL           = 63; // 修正：补上分号
 parameter AIQ_IID               = 62;
 parameter AIQ_SRC2_DATA         = 55;
@@ -413,6 +414,8 @@ assign ctrl_is_sdiq_create1_entry[3:0] = {4{ctrl_sdiq_create1_en}} & sdiq_create
 //----------------------------------------------------------
 //                  Create Data for AIQ
 //----------------------------------------------------------
+logic [31:0]         is_aiq_create0_pc;    // 2026-10-08: AIQ 表项的 PC
+logic [31:0]         is_aiq_create1_pc;
 logic [IS_WIDTH-1:0] is_aiq_create0_data;
 logic [6:0]          is_aiq_create0_iid;
 logic [IS_WIDTH-1:0] is_aiq_create1_data;
@@ -424,18 +427,22 @@ begin
   case(ctrl_dp_is_dis_aiq_create0_sel[1:0])
     2'd0: begin
           is_aiq_create0_data[IS_WIDTH-1:0] = is_inst0_read_data[IS_WIDTH-1:0];
+          is_aiq_create0_pc[31:0]           = is_inst0_read_pc[31:0];   // 2026-10-08
           is_aiq_create0_iid[6:0]           = is_inst0_iid[6:0];
           end
     2'd1: begin
           is_aiq_create0_data[IS_WIDTH-1:0] = is_inst1_read_data[IS_WIDTH-1:0];
+          is_aiq_create0_pc[31:0]           = is_inst1_read_pc[31:0];   // 2026-10-08
           is_aiq_create0_iid[6:0]           = is_inst1_iid[6:0];
           end
     2'd2: begin
           is_aiq_create0_data[IS_WIDTH-1:0] = is_inst2_read_data[IS_WIDTH-1:0];
+          is_aiq_create0_pc[31:0]           = is_inst2_read_pc[31:0];   // 2026-10-08
           is_aiq_create0_iid[6:0]           = is_inst2_iid[6:0];
           end
     default: begin
           is_aiq_create0_data[IS_WIDTH-1:0] = {IS_WIDTH{1'bx}};
+          is_aiq_create0_pc[31:0]           = {32{1'bx}};   // 2026-10-08
           is_aiq_create0_iid[6:0]           = {7{1'bx}};
           end
   endcase
@@ -448,18 +455,22 @@ begin
   case(ctrl_dp_is_dis_aiq_create1_sel[1:0])
     2'd0: begin
           is_aiq_create1_data[IS_WIDTH-1:0] = is_inst0_read_data[IS_WIDTH-1:0];
+          is_aiq_create1_pc[31:0]           = is_inst0_read_pc[31:0];   // 2026-10-08
           is_aiq_create1_iid[6:0]           = is_inst0_iid[6:0];
           end
     2'd1: begin
           is_aiq_create1_data[IS_WIDTH-1:0] = is_inst1_read_data[IS_WIDTH-1:0];
+          is_aiq_create1_pc[31:0]           = is_inst1_read_pc[31:0];   // 2026-10-08
           is_aiq_create1_iid[6:0]           = is_inst1_iid[6:0];
           end
     2'd2: begin
           is_aiq_create1_data[IS_WIDTH-1:0] = is_inst2_read_data[IS_WIDTH-1:0];
+          is_aiq_create1_pc[31:0]           = is_inst2_read_pc[31:0];   // 2026-10-08
           is_aiq_create1_iid[6:0]           = is_inst2_iid[6:0];
           end
     default: begin
           is_aiq_create1_data[IS_WIDTH-1:0] = {IS_WIDTH{1'bx}};
+          is_aiq_create1_pc[31:0]           = {32{1'bx}};   // 2026-10-08
           is_aiq_create1_iid[6:0]           = {7{1'bx}};
           end
   endcase
@@ -471,6 +482,10 @@ end
 //----------------------------------------------------------
 logic [AIQ_WIDTH-1:0] aiq_create0_data;
 logic [AIQ_WIDTH-1:0] aiq_create1_data;
+
+// 2026-10-08: PC 放在高 32 位 (AIQ_PC=95), 原有字段位置一位不动
+assign aiq_create0_data[AIQ_PC:AIQ_PC-31]                     = is_aiq_create0_pc[31:0];
+assign aiq_create1_data[AIQ_PC:AIQ_PC-31]                     = is_aiq_create1_pc[31:0];
 
 assign dp_aiq_create0_data[AIQ_WIDTH-1:0] = aiq_create0_data[AIQ_WIDTH-1:0];
 assign dp_aiq_create1_data[AIQ_WIDTH-1:0] = aiq_create1_data[AIQ_WIDTH-1:0];

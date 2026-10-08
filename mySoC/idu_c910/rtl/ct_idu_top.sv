@@ -92,6 +92,7 @@ module ct_idu_top(
   output logic [5:0]   idu_aiq_dst_preg,
   output logic [31:0]  idu_aiq_src0,
   output logic [31:0]  idu_aiq_src1,
+  output logic [31:0]  idu_aiq_pc,        // 2026-10-08 新增: AUIPC 要用 (见 rf_dp 的说明)
   output logic [12:0]  idu_aiq_rslt_sel,
   output logic         idu_aiq_illegal,
 
@@ -252,6 +253,60 @@ module ct_idu_top(
 //==========================================================
 // Internal Signal Declarations
 //==========================================================
+
+//==========================================================
+//  【2026-10-08 补】顶层缺失的信号声明 —— 共 38 根
+//==========================================================
+// ⚠️ 这些信号在本文件里**从来没被声明过**，而它们是 Verilog 的**隐式 1 位线网**
+//    （`default_nettype wire`）⇒ 连到多位端口时**被静默截断成 1 位**。
+//    后果: **整条发射通路是断的** ——
+//      * `aiq_dp_issue_read_data` 应该是 96 位 (AIQ 读出的整条指令信息),
+//        截成 1 位后 ALU 拿到的 iid/src/preg/opcode 全是垃圾;
+//      * 所有 `*_create*_sel[1:0]` 截成 1 位 ⇒ 2 选 1 的 create 口 mux
+//        永远只能区分 0/1 两路, 第 3 路选不中;
+//      * biq/mult/div/lsiq/sdiq 的读出数据同理。
+//    本仓历史上栽过三次同一类坑 (漏声明 → 隐式线网 → 静默失效, 见 mycpu.v 的注释),
+//    这是第四次, 而且是面积最大的一次。宽度取自各自的端口定义 (取最宽的那个口)。
+//==========================================================
+logic [95:0] aiq_dp_issue_read_data;
+logic [151:0] biq_dp_issue_read_data;
+logic [1:0] ctrl_dp_is_dis_aiq_create0_sel;
+logic [1:0] ctrl_dp_is_dis_aiq_create1_sel;
+logic [1:0] ctrl_dp_is_dis_biq_create0_sel;
+logic [1:0] ctrl_dp_is_dis_biq_create1_sel;
+logic [1:0] ctrl_dp_is_dis_div_create0_sel;
+logic [1:0] ctrl_dp_is_dis_div_create1_sel;
+logic [1:0] ctrl_dp_is_dis_lsiq_create0_sel;
+logic [1:0] ctrl_dp_is_dis_lsiq_create1_sel;
+logic [1:0] ctrl_dp_is_dis_mult_create0_sel;
+logic [1:0] ctrl_dp_is_dis_mult_create1_sel;
+logic [1:0] ctrl_dp_is_dis_sdiq_create0_sel;
+logic [1:0] ctrl_dp_is_dis_sdiq_create1_sel;
+logic [1:0] ctrl_ir_pre_dis_aiq_create0_sel;
+logic [1:0] ctrl_ir_pre_dis_aiq_create1_sel;
+logic [1:0] ctrl_ir_pre_dis_biq_create0_sel;
+logic [1:0] ctrl_ir_pre_dis_biq_create1_sel;
+logic [1:0] ctrl_ir_pre_dis_div_create0_sel;
+logic [1:0] ctrl_ir_pre_dis_div_create1_sel;
+logic [1:0] ctrl_ir_pre_dis_lsiq_create0_sel;
+logic [1:0] ctrl_ir_pre_dis_lsiq_create1_sel;
+logic [1:0] ctrl_ir_pre_dis_mult_create0_sel;
+logic [1:0] ctrl_ir_pre_dis_mult_create1_sel;
+logic [1:0] ctrl_ir_pre_dis_sdiq_create0_sel;
+logic [1:0] ctrl_ir_pre_dis_sdiq_create1_sel;
+logic [62:0] div_dp_issue_read_data;
+logic [59:0] lsiq_dp_pipe3_entry_read_data;
+logic [7:0] lsiq_dp_pipe3_issue_entry;
+logic [59:0] lsiq_dp_pipe3_issue_read_data;
+logic [59:0] lsiq_dp_pipe4_entry_read_data;
+logic [7:0] lsiq_dp_pipe4_issue_entry;
+logic [59:0] lsiq_dp_pipe4_issue_read_data;
+logic [62:0] mult_dp_issue_read_data;
+logic [3:0] sdiq_create0_entry;
+logic [3:0] sdiq_create1_entry;
+logic [3:0] sdiq_dp_issue_entry;
+logic [7:0] sdiq_dp_issue_read_data;
+
 logic         idu_ifu_inst0_ready;
 logic         idu_ifu_inst1_ready;
 logic         idu_ifu_inst2_ready;
@@ -400,8 +455,8 @@ logic [1:0]  ctrl_sdiq_create1_sel;
 logic [1:0]  ctrl_sdiq_create2_sel;
 
 // IS Stage create data signals
-logic [63:0]  dp_aiq_create0_data;
-logic [63:0]  dp_aiq_create1_data;
+logic [95:0]  dp_aiq_create0_data;   // 64 → 96 (2026-10-08 加 PC)
+logic [95:0]  dp_aiq_create1_data;
 logic [151:0] dp_biq_create0_data;
 logic [151:0] dp_biq_create1_data;
 logic [67:0]  dp_lsiq_create0_data;

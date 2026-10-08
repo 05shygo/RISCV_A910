@@ -8,7 +8,7 @@ module ct_idu_rf_dp (
   //==========================================================
   // Pipe0: AIQ
   //==========================================================
-  input  logic [63:0]    aiq_dp_issue_read_data,
+  input  logic [95:0]    aiq_dp_issue_read_data,   // 64 → 96 (2026-10-08 加 PC)
   input  logic           aiq_xx_issue_en,
   input  logic [31:0]    prf_dp_rf_pipe0_src0_data,
   input  logic [31:0]    prf_dp_rf_pipe0_src1_data,
@@ -16,6 +16,7 @@ module ct_idu_rf_dp (
   output logic [5:0]     dp_prf_rf_pipe0_src1_preg,
   output logic [6:0]     idu_aiq_iid,
   output logic [5:0]     idu_aiq_dst_preg,
+  output logic [31:0]    idu_aiq_pc,          // 2026-10-08 新增: AUIPC 要用
   output logic [31:0]    idu_aiq_src0,
   output logic [31:0]    idu_aiq_src1,
   output logic [12:0]    idu_aiq_rslt_sel,
@@ -136,7 +137,8 @@ module ct_idu_rf_dp (
 //----------------------------------------------------------
 //                    AIQ Parameters
 //----------------------------------------------------------
-parameter AIQ_WIDTH             = 64;
+parameter AIQ_WIDTH             = 96;   // 2026-10-08: 64 → 96 (高 32 位给 PC)
+parameter AIQ_PC                = 95;   // 2026-10-08 新增
 parameter AIQ_ILLEGAL           = 63;
 parameter AIQ_IID               = 62;
 parameter AIQ_SRC2_DATA         = 55;
@@ -378,6 +380,9 @@ end
 //----------------------------------------------------------
 assign idu_aiq_iid[6:0]              = rf_pipe0_data[AIQ_IID:AIQ_IID-6];
 assign idu_aiq_dst_preg[5:0]         = rf_pipe0_data[AIQ_SRC2_DATA:AIQ_SRC2_DATA-5];
+// 2026-10-08 新增: 把表项里存的 PC 引出来。C910 里 AUIPC 的 PC 来自 BJU 的
+// PC FIFO, 交付的 IDU 没有那一路 ⇒ 这里照 chk 的做法随指令带进 AIQ 表项。
+assign idu_aiq_pc[31:0]              = rf_pipe0_data[AIQ_PC:AIQ_PC-31];
 assign idu_aiq_src0[31:0]            = rf_pipe0_src0_data[31:0];
 assign idu_aiq_src1[31:0]            = rf_pipe0_src1_data[31:0];
 assign idu_aiq_rslt_sel[ALU_SEL-1:0] = pipe0_decd_sel[ALU_SEL-1:0];

@@ -94,6 +94,7 @@ module tb_idu_c910;
   wire [ 5:0] idu_aiq_dst_preg;
   wire [31:0] idu_aiq_src0;
   wire [31:0] idu_aiq_src1;
+  wire [31:0] idu_aiq_pc;
   wire [12:0] idu_aiq_rslt_sel;
   wire       idu_aiq_illegal;
   wire       idu_mult_sel;
@@ -311,6 +312,7 @@ module tb_idu_c910;
     .idu_aiq_dst_preg                 (idu_aiq_dst_preg                ),
     .idu_aiq_src0                     (idu_aiq_src0                    ),
     .idu_aiq_src1                     (idu_aiq_src1                    ),
+    .idu_aiq_pc                       (idu_aiq_pc                      ),
     .idu_aiq_rslt_sel                 (idu_aiq_rslt_sel                ),
     .idu_aiq_illegal                  (idu_aiq_illegal                 ),
     .idu_mult_sel                     (idu_mult_sel                    ),
