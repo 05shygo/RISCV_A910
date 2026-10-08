@@ -175,7 +175,7 @@ CROSS     ?= riscv32-unknown-elf-
 ASM_SRCS  := $(wildcard $(PWD)/asm/*.S)
 ASM_BINS  := $(patsubst $(PWD)/asm/%.S,$(PWD)/bin/%.bin,$(ASM_SRCS))
 
-.PHONY: all build run run-all verdi clean help coremark asm muldiv-unit rtu-unit rtu-lsu-unit rtu-adapter-unit
+.PHONY: all build run run-all verdi clean help coremark asm muldiv-unit rtu-unit rtu-lsu-unit rtu-adapter-unit iu-alu-unit
 
 asm: $(ASM_BINS)
 
@@ -539,6 +539,26 @@ LSU_UNIT_ARGS  ?=
 LSU_UNIT_DEFS  := +define+DCACHE_$(if $(filter 1024,$(DCACHE_SIZE)),1KB,$(if $(filter 4096,$(DCACHE_SIZE)),4KB,2KB))
 
 # ---------------------------------------------------------------------------
+# IU ALU 流水级单元台 (2026-10-08 立): IDU 的 AIQ 发射口 ↔ 老 ALU 的适配级。
+# 守三件事 (全在整核里只表现为"某条指令结果不对"、定位不到):
+#   ① 13 位独热 → alu_op 的编码转换; ② LUI/AUIPC (老 ALU 没有这两条);
+#   ③ 写回协议 (expand 独热 / 唤醒口 / 完成回报 / 非法指令报完成但不写 PRF)。
+#
+#   make iu-alu-unit
+# ---------------------------------------------------------------------------
+IU_ALU_BUILD := $(PWD)/obj_unit_iu_alu
+IU_ALU_SIMV  := $(IU_ALU_BUILD)/simv
+IU_ALU_SRC   := $(PWD)/mySoC/iu/rtl/IU_alu_pipe.v $(PWD)/mySoC/iu/rtl/ALU.v
+IU_ALU_TB    := $(PWD)/tb/unit/tb_iu_alu_pipe.sv
+
+iu-alu-unit: $(IU_ALU_SIMV)
+	@$(IU_ALU_SIMV) +vcs+lic+wait -exitstatus -l $(IU_ALU_BUILD)/sim.log
+
+$(IU_ALU_SIMV): $(IU_ALU_SRC) $(IU_ALU_TB)
+	@mkdir -p $(IU_ALU_BUILD)
+	$(VCS) $(VCS_FLAGS) $(INC) -top tb_iu_alu_pipe -o $(IU_ALU_SIMV) \
+	  $(IU_ALU_SRC) $(IU_ALU_TB)
+
 # RTU 适配层单元台 (2026-10-08 立): 直接驱动 RTU_idu_lsu_adapter 两侧端口, 不经整核。
 # 它守的是适配层里**有真逻辑**的四类变换 (不是纯接线):
 #   请求计数 / 映射恢复表逐槽重排 / 异常两源取最旧 / store 重放两根来源。
