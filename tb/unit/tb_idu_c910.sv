@@ -465,6 +465,23 @@ module tb_idu_c910;
       if (idu_rtu_disp0_dst_preg !== PREG_GIVEN)begin errs=errs+1; $display("TB-IDU: ❌ 第%0d次派遣 dst_preg=%0d 期望 %0d (RTU 给的号)", n_disp, idu_rtu_disp0_dst_preg, PREG_GIVEN); end
       if (idu_rtu_disp0_chk      !== CHK0)      begin errs=errs+1; $display("TB-IDU: ❌ 第%0d次派遣 chk=%h 期望 %h (chk 旁路要原样透传)", n_disp, idu_rtu_disp0_chk, CHK0); end
 
+      // ★ 判据 1b: **`old_preg` 必须是被替换掉的那个映射**（2026-10-09 新修）。
+      //   交付原来把 `rel_preg` 做成 RAT 的**实时组合读**、而 IS 表项的锁存使能
+      //   来自 IS 级（晚一拍）⇒ 锁进去的是**改名之后**的值（= 自己刚拿到的号）。
+      //   症状：`old_preg == dst_preg` ⇒ 退休时那个旧号**永不释放**（静默漏号），
+      //   AMT 的架构回滚也会恢复成错的映射。
+      //   定点实测：改名拍 RAT[x1] 读出 1（真值），晚一拍的 create 已是 33。
+      //   这里用"第一条派遣的 old_preg 必须是架构映射 p1"把它钉死。
+      if (n_disp == 1) begin
+        if (idu_rtu_disp0_old_preg[6:0] !== ARCH_X1) begin
+          errs = errs + 1;
+          $display("TB-IDU: ❌ old_preg 不是被替换掉的映射! 首条派遣 old_preg=%0d, 期望 %0d (= RAT 复位值)",
+                   idu_rtu_disp0_old_preg, ARCH_X1);
+        end
+        else
+          $display("TB-IDU: ✅ old_preg 对 (首条派遣读到 %0d = 改名前的映射, 不是自己刚拿到的号)", ARCH_X1);
+      end
+
       // ★ 判据 2: RAT 真的把 **RTU 给的号** 写进去了 (直接看表项, 理由见观察点注释)。
       //   它变成 33 说明 "编号 33 从 rtu_idu_alloc_preg0 一路走到表项" 全线通了。
       if (dbg_rat_x1 === PREG_GIVEN) begin

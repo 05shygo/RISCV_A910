@@ -89,8 +89,13 @@ begin
   end
   else if(x_create_dp_en) begin
     entry_dst_reg[4:0]       <= x_create_data[IS_DST_REG:IS_DST_REG-4];
-    entry_dst_preg[6:0]      <= x_create_data[IS_DST_PREG:IS_DST_PREG-6];
-    entry_dst_rel_preg[6:0]  <= x_create_data[IS_DST_REL_PREG:IS_DST_REL_PREG-6];
+    // ⚠️ 2026-10-09 修: 原来写的是 -6 (7 位), 而**打包侧** (ct_idu_ir_dp.sv:507-516)
+    //    与**消费侧** (ct_idu_is_dp.sv:601/686) 用的都是 **-5 (6 位)** ⇒
+    //    这里多读的那一位 `x_create_data[60]` 其实是**邻居 dst_reg 的 MSB**,
+    //    落进 `entry_dst_preg[6]`。当前没有消费者读那一位, 所以不发病 ——
+    //    但它是个「看着是 7 位、其实第 7 位是别人的」的陷阱, 一并改对。
+    entry_dst_preg[5:0]      <= x_create_data[IS_DST_PREG:IS_DST_PREG-5];
+    entry_dst_rel_preg[5:0]  <= x_create_data[IS_DST_REL_PREG:IS_DST_REL_PREG-5];  // 同上: -6 → -5
   end
   else begin
     entry_dst_reg[4:0]       <= entry_dst_reg[4:0];
@@ -193,6 +198,19 @@ assign x_create_src2_data[6:0] = x_create_data[IS_SRC2_DATA:IS_SRC2_DATA-6];
 assign x_read_data[IS_SRC2_DATA:IS_SRC2_DATA-6] = x_read_src2_data[6:0];
 assign x_read_data[IS_SRC1_DATA:IS_SRC1_DATA-6] = x_read_src1_data[6:0];
 assign x_read_data[IS_SRC0_DATA:IS_SRC0_DATA-6] = x_read_src0_data[6:0];
+// ⚠️ 2026-10-09 补: 上面那批读出口 assign **漏了三个字段** ——
+//    `entry_dst_rel_preg` / `entry_dst_preg` / `entry_dst_reg` 都在 :88-98 被锁存了,
+//    却**没有一个接进 x_read_data** ⇒ 这三段是真·无驱动 ⇒ 读出恒 X。
+//    后果不是「少个观察量」: `is_aiq/biq/lsiq/sdiq_create*_data` **全部**等于
+//    `is_inst{k}_read_data` (见 ct_idu_is_dp.sv:429/457/532/601/686 …), 而
+//      * `biq_create*_data[BIQ_DST_PREG]  ← IS_DST_PREG` ⇒ **JAL/JALR 的 rd 是 X**;
+//      * `lsiq_create*_data[LSIQ_DST_PREG] ← IS_DST_PREG` ⇒ **load 的目标 preg 是 X**
+//        (它一路传到 `idu_lsu_ld_preg`, LSU 按它写回 PRF);
+//      * `IS_DST_REL_PREG` = 旧映射, RTU 退休释放编号要用。
+//    本仓第五次栽「漏接 = 静默 X」这一类。
+assign x_read_data[IS_DST_REG:IS_DST_REG-4]           = entry_dst_reg[4:0];   // [60:56] 5 位
+assign x_read_data[IS_DST_PREG:IS_DST_PREG-5]         = entry_dst_preg[5:0];   // [66:61] **6 位**
+assign x_read_data[IS_DST_REL_PREG:IS_DST_REL_PREG-5] = entry_dst_rel_preg[5:0]; // [72:67] **6 位**
 
 //------------------------source 0--------------------------
 ct_idu_dep_reg_entry u_ct_idu_dep_reg_entry_src0 (

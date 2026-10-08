@@ -466,7 +466,45 @@ assign rt_dp_inst0_src2_data[0]   = inst0_src2_read_wb
                                     || !dp_rt_inst0_dst_vld;
 assign rt_dp_inst0_src2_data[6:1] = inst0_src2_read_preg[5:0];
 
-assign rt_dp_inst0_rel_preg[5:0] = inst0_dst_read_data[6:1];
+// ⚠️⚠️ 2026-10-09 修: **`rel_preg`（被替换掉的旧映射）原来没打拍** ——
+//    它是对 RAT 的**实时组合读**, 而消费它的 IS 流水表项
+//    (`ct_idu_is_pipe_entry`) 的锁存使能 `is_inst*_create_dp_en`
+//    = `ctrl_dp_is_inst*_vld && ...` 来自 **IS 级**(`is_dp.sv:216`),
+//    比改名拍**晚一拍**。⇒ 表项锁进去的是**改名之后**的值, 不是被替换掉的那个。
+//
+//    实测定格 (单元台探针, t 单位 ns):
+//      t=185000: rt_inst0_vld=1 (改名)  RAT[x1] 读出 = 1   ← 真值
+//      t=195000: is_inst*_create_dp_en=1 (表项锁存) create = 33  ← 记错的那个
+//      t=205000: 表项读出口 = 33
+//
+//    对 C910 无所谓 —— 它不把 `old_preg` 交给 ROB(它的释放靠 PST 自己那套);
+//    但**我们的 RTU 要**: `disp*_old_preg` 是退休时放回自由池的编号,
+//    记成新号会让 `old_preg == dst_preg` ⇒ 旧号**永不释放**(静默漏号),
+//    而 AMT 的架构回滚也会恢复成错的映射。
+//
+//    修法: 在**改名那一拍**把它锁进寄存器, 于是它与 IS 表项的锁存使能同相。
+//    门控用改名的同一条件 (`ctrl_rt_inst*_vld && !ctrl_ir_stall`),
+//    停顿期间保持 —— 与 `reg_write_en` 的口径一致。
+reg [5:0] inst0_rel_preg_q, inst1_rel_preg_q, inst2_rel_preg_q;
+always @(posedge forever_cpuclk or negedge cpurst_b) begin
+  if (!cpurst_b) begin
+    inst0_rel_preg_q <= 6'd0;
+    inst1_rel_preg_q <= 6'd0;
+    inst2_rel_preg_q <= 6'd0;
+  end
+  else if (rtu_yy_xx_flush) begin
+    inst0_rel_preg_q <= 6'd0;
+    inst1_rel_preg_q <= 6'd0;
+    inst2_rel_preg_q <= 6'd0;
+  end
+  else begin
+    if (inst0_write_en) inst0_rel_preg_q <= inst0_dst_read_data[6:1];
+    if (inst1_write_en) inst1_rel_preg_q <= inst1_dst_read_data[6:1];
+    if (inst2_write_en) inst2_rel_preg_q <= inst2_dst_read_data[6:1];
+  end
+end
+
+assign rt_dp_inst0_rel_preg[5:0] = inst0_rel_preg_q[5:0];
 
 //-----------------instruction 1 source 0-------------------
 always @(*)
