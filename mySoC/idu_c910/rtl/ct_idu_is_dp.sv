@@ -83,7 +83,34 @@ module ct_idu_is_dp (
   output logic [62:0]  dp_mult_create0_data,
   output logic [62:0]  dp_mult_create1_data,
   output logic [62:0]  dp_div_create0_data,
-  output logic [62:0]  dp_div_create1_data
+  output logic [62:0]  dp_div_create1_data,
+
+  //----------------------------------------------------------------------------
+  // 【2026-10-08 新增】派遣记录 —— 给 RTU（退休单元）用的逐路录出
+  //
+  // 为什么加在这里: 下面那批 `*_create{0,1}_data` 是**按发射队列**组织的, 每个队列
+  // 只有 2 个 create 口, 且靠 `ctrl_dp_is_dis_*_create{0,1}_sel` 指明"这口装的是
+  // 三路里的哪一路" —— 从那些 create 口**反推不出**完整的三路记录 (没有进任何队列的
+  // 那一路就丢了)。而 `is_inst{0,1,2}_create_{data,pc,chk}` 本来就是**按车道**排好的
+  // 派遣当拍最终值 (已含 pipedown2 的 mux, 见 :218-256), 所以直接按车道录出。
+  //
+  // 字段含义 (data[82:0] 的位域见文件里的 IS_* parameter):
+  //   pc   —— **只取 [31:0]**: 内部是 65 位 {taken[64], npc[63:32], pc[31:0]}
+  //   chk  —— 前端取指时打包的预测快照, 退休点训练要用
+  //   data —— 指令 + 分类 + 逻辑/物理寄存器号, 由顶层 ct_idu_top 拆给 RTU
+  //
+  // ⚠️ 按车道录出, 但**是否真的派发**由 ct_idu_is_ctrl 的 ctrl_dp_dis_inst{k}_vld 决定 —
+  //    这两者必须成对使用 (data 是组合值, 车道没派发时它没有意义)。
+  //----------------------------------------------------------------------------
+  output logic [82:0]  dp_is_dis_inst0_data,
+  output logic [82:0]  dp_is_dis_inst1_data,
+  output logic [82:0]  dp_is_dis_inst2_data,
+  output logic [31:0]  dp_is_dis_inst0_pc,
+  output logic [31:0]  dp_is_dis_inst1_pc,
+  output logic [31:0]  dp_is_dis_inst2_pc,
+  output logic [24:0]  dp_is_dis_inst0_chk,
+  output logic [24:0]  dp_is_dis_inst1_chk,
+  output logic [24:0]  dp_is_dis_inst2_chk
 );
 
 //==========================================================
@@ -254,6 +281,23 @@ begin
             end
   endcase
 end
+
+//==========================================================
+//   派遣记录录出 (2026-10-08 新增, 给 RTU)
+//==========================================================
+// 就是把上面那个 mux 的三路结果按车道引出去。注意:
+//   * data 是 83 位原样, 由 ct_idu_top 拆字段 (IDU 这边不解释 RTU 的 flags 编码);
+//   * pc 只录 [31:0] —— 内部 65 位 = {taken, npc[31:0], pc[31:0]};
+//   * chk 内部声明成了 [64:0] 但只用 [24:0] (见上面声明处的注释), 这里按 25 位录。
+assign dp_is_dis_inst0_data[82:0] = is_inst0_create_data[82:0];
+assign dp_is_dis_inst1_data[82:0] = is_inst1_create_data[82:0];
+assign dp_is_dis_inst2_data[82:0] = is_inst2_create_data[82:0];
+assign dp_is_dis_inst0_pc[31:0]   = is_inst0_create_pc[31:0];
+assign dp_is_dis_inst1_pc[31:0]   = is_inst1_create_pc[31:0];
+assign dp_is_dis_inst2_pc[31:0]   = is_inst2_create_pc[31:0];
+assign dp_is_dis_inst0_chk[24:0]  = is_inst0_create_chk[24:0];
+assign dp_is_dis_inst1_chk[24:0]  = is_inst1_create_chk[24:0];
+assign dp_is_dis_inst2_chk[24:0]  = is_inst2_create_chk[24:0];
 
 parameter IS_CTRL_WIDTH       = 7;
 parameter IS_CTRL_ILLEGAL     = 6;

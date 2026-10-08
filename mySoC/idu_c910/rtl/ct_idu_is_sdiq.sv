@@ -38,6 +38,22 @@ parameter int SDIQ_WIDTH = 8;
 logic            cnt_clk;
 logic            src_mask_clk;
 
+// ---------------------------------------------------------------------------
+// 本地时钟驱动（2026-10-08 补）
+//
+// ⚠️ 这两个是 C910 工厂版门控时钟单元的产物, 交付时那批单元被整体剥掉 ⇒
+//    全仓无驱动。后果有两个 (接口待办里记的是同一个坑):
+//      ① `src_mask_clk` 上的 src_mask 寄存器永不翻转 ⇒ `sdiq_src_mask` 恒 0
+//         ⇒ 送出去的 `idu_rtu_pst_preg_dealloc_mask` 恒 0 ⇒ RTU 那侧第 5 态
+//         RELEASE 的释放否决口是**死的**(不会误挡, 但也永远覆盖不到);
+//      ② `cnt_clk` 上的表项计数器 `sdiq_entry_cnt` 不动 ⇒ 满/空/创建指针的
+//         判据全是死的。
+//    SDIQ 自己的 always 块内部自带使能条件, 所以直接接 forever_cpuclk 功能等价,
+//    只是少了时钟门控的省电效果。本模块的 forever_cpuclk 端口一直存在(见端口表)。
+// ---------------------------------------------------------------------------
+assign cnt_clk      = forever_cpuclk;
+assign src_mask_clk = forever_cpuclk;
+
 // 条目计数器相关
 logic [2:0]      sdiq_entry_cnt_create;
 logic [2:0]      sdiq_entry_cnt_pop;

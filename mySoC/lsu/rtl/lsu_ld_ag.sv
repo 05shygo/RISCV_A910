@@ -107,6 +107,20 @@ logic                         ld_ag_inst_vld;
 logic                         ld_ag_clk;
 logic                         ld_ag_addr_plus_sel;
 
+// ---------------------------------------------------------------------------
+// 本地时钟驱动（2026-10-08 补）
+// ⚠️ C910 工厂版在这里例化门控时钟单元 (forever_cpuclk + ag_dcache_arb_*_gateclk_en
+//    → ct_clk_cell), **交付时那批单元被整体剥掉** ⇒ `ld_ag_clk` 全仓无驱动。
+//    后果: 地址生成级的流水寄存器 (offset / offset_plus / inst_size / iid / preg…)
+//    全部冻结 —— 整个 load 通路从第一级就是死的。
+// 本模块的 forever_cpuclk 端口一直存在 (见端口表, 且 lsu_top 已连)。
+// 各 always 块内部自带使能条件 (!ld_ag_stall_vld / idu_lsu_ld_sel / 冲刷),
+// 所以直接接 forever_cpuclk 功能等价, 只是少了时钟门控的省电效果。
+// 注意: 本文件里还留着一处 `always @(posedge forever_cpuclk)` 直连 —— 两处同源,
+//      不存在相位差。
+// ---------------------------------------------------------------------------
+assign ld_ag_clk = forever_cpuclk;
+
 logic [31:0]                  ld_ag_offset;
 logic [31:0]                  ld_ag_base;
 
@@ -282,6 +296,14 @@ assign ld_ag_boundary = (ld_ag_boundary_unmask
 
 //----------------generate unalign--------------------------
 //-----------unalign--------------------
+// 2026-10-08 修: 下面这个 casez 用了 BYTE/HALF/WORD, 而这三个 parameter 原本声明在
+// 文件靠下 (~:319) ⇒ **先用后声明**, VCS 报 "Identifier 'BYTE' has not been declared",
+// 整个 LSU elaborate 失败。把声明提到使用点之前 (下面那段 `Generate unalign, bytes_vld`
+// 里的同名声明已随之删除, 只留这一处, 避免重复定义)。
+parameter BYTE = 2'b00,
+          HALF = 2'b01,
+          WORD = 2'b10;
+
 // &CombBeg; @400
 logic ld_ag_align;
 always @(*)
@@ -302,9 +324,7 @@ assign ld_ag_expt = !ld_ag_align;
 //==========================================================
 //---------------inst access size---------------
 // access size is used to select bytes_vld and boundary judge
-parameter BYTE        = 2'b00,
-          HALF        = 2'b01,
-          WORD        = 2'b10;
+// (BYTE/HALF/WORD 的声明已上移到上面的 unalign 块之前 —— 那里先用到了它们, 见 2026-10-08 注)
 
 
 always @( ld_ag_inst_size[1:0])

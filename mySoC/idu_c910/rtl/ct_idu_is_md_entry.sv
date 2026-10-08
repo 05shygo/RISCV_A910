@@ -54,6 +54,12 @@ module ct_idu_is_md_entry (
     logic         entry_clk;
     logic         create_preg_clk;
     logic         create_clk;
+    // 2026-10-08 补: 同 ct_idu_is_aiq_entry —— 这三个是 C910 工厂版门控时钟单元的
+    // 产物, 交付时被剥掉 ⇒ 表项冻结。直接接 forever_cpuclk, always_ff 内部自带
+    // 使能条件, 功能等价。父模块 ct_idu_is_md 已连 forever_cpuclk。
+    assign entry_clk       = forever_cpuclk;
+    assign create_preg_clk = forever_cpuclk;
+    assign create_clk      = forever_cpuclk;
 
     //==========================================================
     //                      Entry Valid

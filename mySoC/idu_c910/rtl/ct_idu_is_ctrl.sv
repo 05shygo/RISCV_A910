@@ -135,7 +135,16 @@ module ct_idu_is_ctrl (
   output logic         ctrl_is_inst2_vld,
   output logic         ctrl_is_stall,
 
-  output logic [1:0]   ctrl_xx_is_inst0_sel
+  output logic [1:0]   ctrl_xx_is_inst0_sel,
+
+  // 【2026-10-08 新增】派遣记录用: 车道 k 本拍**真的派发**
+  // ⚠️ 与上面那个 ctrl_dp_dis_inst{k}_preg_vld 不是一回事 —— 那个还串了
+  //    `dp_ctrl_is_inst{k}_dst_vld` (只在该路**写寄存器**时有效)。RTU 的
+  //    `disp{k}_vld` 要的是"这一路有一条真指令离开 ID", **不管它写不写寄存器**
+  //    (store / 分支 / 跳转都不写 rd, 但都要建 ROB 表项)。
+  output logic         ctrl_dp_dis_inst0_vld,
+  output logic         ctrl_dp_dis_inst1_vld,
+  output logic         ctrl_dp_dis_inst2_vld
 );
 
 //==========================================================
@@ -412,6 +421,11 @@ assign ctrl_dp_dis_inst1_preg_vld = is_dis_inst1_vld
 assign ctrl_dp_dis_inst2_preg_vld = is_dis_inst2_vld
                                   && !ctrl_is_dis_stall
                                   && dp_ctrl_is_inst2_dst_vld;
+
+// ---- 派遣记录用: 裸的车道有效 (不串 dst_vld), 见端口表的说明 ----
+assign ctrl_dp_dis_inst0_vld = is_dis_inst0_vld && !ctrl_is_dis_stall;
+assign ctrl_dp_dis_inst1_vld = is_dis_inst1_vld && !ctrl_is_dis_stall;
+assign ctrl_dp_dis_inst2_vld = is_dis_inst2_vld && !ctrl_is_dis_stall;
 
 
 //==========================================================

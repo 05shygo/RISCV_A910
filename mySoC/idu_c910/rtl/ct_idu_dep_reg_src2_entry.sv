@@ -181,6 +181,25 @@ assign x_read_rdy_for_issue  = rdy || mla_rdy
                                    || mla_issue_data_ready;
 assign x_read_rdy_for_bypass = rdy;
 
+// ---------------------------------------------------------------------------
+// 本地时钟驱动（2026-10-08 补）
+//
+// ⚠️ C910 工厂版在交付前会给每个本地时钟例化一个门控时钟单元
+//    （`forever_cpuclk` + `*_gateclk_en` → `ct_clk_cell`），**交付的这份被整体剥掉了** ——
+//    于是 `dep_clk` / `write_clk` 全仓无驱动（只有声明、只被 always 当时钟用），
+//    后果是**这个表项一个字节都写不进去**（改名表 / ready 位全部冻结）。
+//
+// 这里直接接 `forever_cpuclk`，**功能等价**，理由是三个用到它们的 always 块
+// 内部各自带使能条件（`x_write_en` / `wake_up` / `rdy_clear` / `rdu_update`），
+// 所以"不门控"只是让触发器多翻转一些拍，不改任何功能行为。
+// 代价只是少了时钟门控的省电效果 —— 将来做低功耗时把 gateclk 单元补回来即可
+// （`x_gateclk_write_en` / `x_gateclk_idx_write_en` 这两个口还在，就是给它用的）。
+//
+// 父模块 `ct_idu_ir_rt` 原来**没有 forever_cpuclk 端口**，已一并补上并连到这里。
+// ---------------------------------------------------------------------------
+assign dep_clk   = forever_cpuclk;
+assign write_clk = forever_cpuclk;
+
 always @(posedge dep_clk or negedge cpurst_b)
 begin
   if(!cpurst_b)

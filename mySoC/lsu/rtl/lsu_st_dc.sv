@@ -123,7 +123,9 @@ module ct_lsu_st_dc #(
             st_dc_boundary                <= st_ag_boundary;
         end
     end
-st_ag_expt
+    // 2026-10-08 修: 这里原来有一行裸的 `st_ag_expt` (提交 3e605a0 把一个空行粘贴成了
+    // 标识符) ⇒ 语法错 "keyword 'always_ff' is not expected in this context",
+    // 整个 LSU elaborate 失败。st_dc_expt 本身就声明在上面端口表 :47, 是多余的残留。
     always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
         if (!cpurst_b)
             st_dc_addr0[31:0] <= {32{1'b0}};

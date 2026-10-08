@@ -24,7 +24,7 @@ module ct_idu_is_biq_entry (
     //                       Parameters
     //==========================================================
 parameter BIQ_WIDTH             = 152;
-parameter BIQ_CHK               = 151
+parameter BIQ_CHK               = 151;  // 2026-10-08 修: 原来漏了分号 (同 ct_idu_is_biq.sv 那处)
 parameter BIQ_PC                = 126;
 parameter BIQ_IID               = 61;
 parameter BIQ_DST_PREG          = 54;
@@ -47,8 +47,12 @@ parameter BIQ_OPCODE            = 31;
     logic         dst_vld;
     
     // 【补齐】以下两个信号在 always_ff 块中被赋值，但未声明
-    logic [5:0]   dst_preg;  
-    logic [64:0]  pc;        
+    logic [5:0]   dst_preg;
+    logic [64:0]  pc;
+    // 【补齐 2026-10-08】chk 在 :120/:130/:140/:152 用了四处, 同样没声明
+    // （前几行的 dst_preg / pc 就是这个坑的上一批）。BIQ 表项现在带 chk 字段,
+    // 位域 BIQ_CHK=151 起 25 位 —— 与 BIQ_PC=126 起的 65 位 pc 相邻不重叠。
+    logic [24:0]  chk;
     
     logic [6:0]   dst_data;        // 注：原代码中声明了但未使用，可能是 dst_preg 的笔误
     logic [6:0]   create_src0_data;
@@ -64,6 +68,12 @@ parameter BIQ_OPCODE            = 31;
     logic         entry_clk;
     logic         create_preg_clk;
     logic         create_clk;
+    // 2026-10-08 补: 同 ct_idu_is_aiq_entry —— 这三个是 C910 工厂版门控时钟单元的
+    // 产物, 交付时被剥掉 ⇒ 表项冻结。父模块 ct_idu_is_biq 已连 forever_cpuclk。
+    // 注: create_preg_clk 在本模块里**没有被任何 always 块用到**(本表项不存 preg),
+    //     所以不接它; 留着声明只是为了与同族表项对齐。
+    assign entry_clk  = forever_cpuclk;
+    assign create_clk = forever_cpuclk;
 
     //==========================================================
     //                      Entry Valid
@@ -143,7 +153,12 @@ parameter BIQ_OPCODE            = 31;
     assign x_read_data[BIQ_DST_VLD]                  = dst_vld;
     assign x_read_data[BIQ_DST_PREG:BIQ_DST_PREG-5]  = dst_preg[5:0];
     assign x_read_data[BIQ_PC:BIQ_PC-64]             = pc[64:0];
-    assign x_read_data[BIQ_CHK:BIQ_PC-CHK]           = chk[24:0];
+    // 2026-10-08 修: 原来写的是 [BIQ_CHK:BIQ_PC-CHK] —— 两处错:
+    //   ① `CHK` 这个标识符不存在 (应该是 BIQ_CHK), 报 "Identifier not declared";
+    //   ② 就算写成 BIQ_PC-BIQ_CHK, 方向也不对 (126-151 是负数)。
+    // 正确位域: chk 是 25 位、高位起点 BIQ_CHK=151 ⇒ [151:127];
+    // 与下面 pc 的 [126:62] 相邻不重叠 (BIQ_CHK-24 = 127 = BIQ_PC+1)。
+    assign x_read_data[BIQ_CHK:BIQ_CHK-24]           = chk[24:0];
 
     //==========================================================
     //              Source Dependency Information

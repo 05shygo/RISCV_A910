@@ -6,6 +6,28 @@ IDU ↔ RTU 对接待办 —— 组合环、以及需要 IDU 新增的端口
   范本 = open_riscv_2035/C910_RTL_FACTORY/gen_rtl/
 凡标了 文件:行号 的都是核过的；标"要核"的是还没定位到确切位置。
 
+--------------------------------------------------------------------------------
+【2026-10-08 深夜 更新 —— 里程碑 1 已落地】先决条件 + IDU 加口都做完了：
+  * **改名表四处病因全部查清，三处已修**（时钟 / 写使能数组没驱动 / 数组宽度错位），
+    第四条 `rt_reset_updt_preg` 零消费**还没修**。
+  * **派遣记录 36 根已加到 `ct_idu_top`**（3 路 × 12 字段），数据从 `ct_idu_is_dp`
+    按车道录出；`disp*_sq_id` 有意没加。
+  * 冒烟台升级成定向激励，**判据是"RAT 真在写 + 派遣记录对得上"**，实测 198 次派遣全过。
+  * 完整清单（含给同事的逐条改法）见 **doc/DELIVERY_FIXES_2026-10-08.md**。
+  下面本文的内容保留原样，只在必要处标「10-08 更新」。
+--------------------------------------------------------------------------------
+【2026-10-08 晚 更新】拉取 origin/miniRV 至 3e605a0 后重核。两个同事提交动了接口，
+本文改动如下，逐条在下面标了「10-08 更新」：
+  * 第二节 (2) chk —— **改写**。cbcbd18 "idu chk"（19:22）把 chk 的输入口与
+    随指令锁存都做了 ⇒ 原来"IDU 完全没有这条路、要三步"的判断**作废**，
+    负担降级成"把 IS 读出侧引到顶层"一步。
+  * 第二节 (3) 脚注 —— LSIQ 深度原写 12，**实为 8**。
+  * **新增第三节**：IDU 顶层端口表的另外两处变更（删 3 根 ready 换 1 根
+    accept_num、新增 idu_biq_chk），与 RTU 无关但会绊到接线方和冒烟台。
+  * **新增第四节**：LSU 边（3e605a0 "expt"，21:33）的指针 —— 细节在
+    doc/rtu_接口对照表.csv 的 RTU↔LSU 表；含一条 load 侧的真 bug 与两条适配层契约。
+--------------------------------------------------------------------------------
+
 
 ================================================================================
 一、组合环：IDU 把 rtu_idu_alloc_preg*_vld 当"同拍许可"用
@@ -224,8 +246,15 @@ C910 原版是 idu_rtu_rob_create0..3_{data[39:0], en, dp_en, gateclk_en}，
                                                           * LSU 侧的存储队列是
                                                             lsu_sq.sv 的 SQ_ENTRY = 6
                                                             （3 位，正好对上 RTU 的
-                                                            [2:0]）；LSIQ_ENTRY = 12 是
+                                                            [2:0]）；LSIQ_ENTRY 是
                                                             发射队列，与 sq_id 无关。
+                                                            ⚠️ **10-08 更新**：LSIQ
+                                                            深度原写 12，**实为 8**
+                                                            （lsu_top.sv:3，commit
+                                                            165dfd5 "8 LSIQ" 改的）。
+                                                            对 IDU 的
+                                                            idu_lsu_{ld,st}_lch_entry[7:0]
+                                                            一致；RTU 不碰它。
                                                           ⇒ 要么把 SDIQ 分配提前到派遣点
                                                           引出来（LSU 侧再做 SDIQ→SQ 的
                                                           映射），要么由 LSU 在派遣当拍
@@ -242,14 +271,30 @@ C910 原版是 idu_rtu_rob_create0..3_{data[39:0], en, dp_en, gateclk_en}，
 
   作用：前端在取指时打包的预测快照（GHR/BTB/TAGE 那一套），RTU 存进 ROB 表项，
   退休时用它去训练预测器 —— 这样"写哪一格"与退休时的预测器状态无关。
-  ⚠️ **IDU 现在完全没有这条路**：IFU 给它的 97 位包里只有
-  {taken[96], npc[95:64], pc[63:32], inst[31:0]}（ct_idu_id_dp.sv:22-26），
-  chk 不在包里 —— 我们的 ifu2 是把 chk 当**独立旁路**送出来的
-  （rv32ifu2_top.v:204/207/210 的 idu_inst0/1/2_chk[24:0]）。
-  所以不只"加端口"：要 (a) IDU 顶层加 3×25 输入，(b) 把它随指令锁进 IDU 的
-  流水线（ID → IR → IS → 派发），(c) 在派遣点引出来。
-  参考：现核里 chk 只走了 0 路，ifu2 的 inst1/inst2_chk 在 mycpu.v:417/420
-  是**悬空**的。
+
+  ⚠️⚠️ **10-08 更新：这一条的负担已经大幅降级，原来的判断作废。**
+  原先写的是"IDU 完全没有这条路 ⇒ 要加输入口 + 随指令锁存 + 派遣点引出"三步。
+  同事在 cbcbd18 "idu chk" 里把**前两步做了**：
+
+    (a) **顶层输入口已加**：`ifu_idu_if_inst0/1/2_chk[24:0]`
+        （ct_idu_top.sv:15/17/19），三路齐全。
+        ifu2 侧本来就有对应的旁路输出（rv32ifu2_top.v:204/207/210
+        的 `idu_inst0/1/2_chk[24:0]`）⇒ **IFU 侧不用改，接上即可**。
+    (b) **随指令锁存已做**：chk 跟着指令走完 IF → ID → IR → IS 全程 ——
+        顶层有 dp_id_pipedown_inst*_chk / dp_ir_inst*_chk，
+        `ct_idu_is_pipe_entry` 里存成 `entry_chk`（:101-118），
+        在 IS 级读出侧就是 `is_inst{k}_read_chk`（ct_idu_is_dp.sv:215-217）。
+
+  ⇒ **只剩第三步：把 IS 读出侧的 chk 引到顶层给 RTU。** 不用再动流水线。
+
+  ⚠️ 但有个坑要当心：同一次提交还给 BIQ 加了个出口 `idu_biq_chk[24:0]`
+     （ct_idu_top.sv:170），它的源头是 `is_biq_create0/1_chk`
+     （ct_idu_is_dp.sv:465-493）—— **只有 2 路**（BIQ 是 2 个 create 口）。
+     RTU 要的是 **3 路**（派遣组里任意一路都可能是分支）⇒ **别直接抄 BIQ 那两路**，
+     要按 is_inst{k}_read_chk 三路重取。
+
+  ⚠️ 另：ifu2 那三根 chk 在现核 mycpu.v 里仍是**悬空**的（那是接旧 IDU 的顶层），
+     接 C910 IDU 时三根要全部接上，别再留悬空。
 
 
 (3) 位宽/路数要"改"而不是"加"的 -------------------------------------------------
@@ -304,6 +349,12 @@ C910 原版是 idu_rtu_rob_create0..3_{data[39:0], en, dp_en, gateclk_en}，
   Phase 4：适配层 —— 切 [5:0]、重排恢复表、反相复位、接线
            （组合环与 WF_ALLOC 回收窗口**已在 2026-10-07 修掉**，不用再做）
 
+  ⚠️ **10-08 更新后的实际剩余量**（原来 39 + 75 = 114 根，现在少了 75 根的锁存部分）：
+    * (1) 39 根派遣记录：**没动**，仍是全新增（IDU 顶层确认仍无 rob_create*/pst_dis*）。
+    * (2) chk：**从"加口 + 锁存 + 引出"三步降到"引出"一步**（输入口与锁存同事已做）。
+      引出的位置 = IS 级读出侧 `is_inst{k}_read_chk`。
+    * A7（一拍最多一条 CSR）：**没动**，仍要 IDU 侧保证。
+
   ⚠️ 先决条件（不修则以上都无从验证）：交付的 IDU 里 **RAT 表项没有时钟** ——
   ct_idu_dep_reg_src2_entry 的 preg 挂在 write_clk 上（:238），而 write_clk 全目录
   无驱动（交付里没有任何 gated_clk_cell），且 ct_idu_ir_rt.sv:137-149 的例化没连
@@ -319,4 +370,122 @@ C910 原版是 idu_rtu_rob_create0..3_{data[39:0], en, dp_en, gateclk_en}，
        满/空判据是死的。这条与 RTU 无关，但会挡住"掩码真的动起来"这件事。
   ⇒ 接线前与 RAT 时钟一起修。修完之后，`make rtu-unit +MASKDIR` 那条定向激励
      才有对应的整核现象可对照（单元台里 RTU 侧的参考模型与判据已经就位）。
+
+
+================================================================================
+三、IDU 顶层端口表变更（2026-10-08, commit cbcbd18 "idu chk"）
+    —— 与 RTU 无关，但**影响接线方和冒烟台**，接之前要知道
+================================================================================
+
+同一个提交里同事还动了两处顶层端口，都不在 RTU 这条边上，但会绊到接线：
+
+---- 3.1 删了 3 根 ready，换成 1 根 accept_num ---------------------------------
+
+  IDU 顶层**删掉**了 `idu_ifu_inst0/1/2_ready` 三个输出，**换成**
+  `idu_accept_num[1:0]`（ct_idu_top.sv:20）。
+
+  内部那三根 ready 还在（ct_idu_id_ctrl.sv:36-38），只是不再出顶层：
+    inst0_ready = inst1_ready = !ctrl_id_pipedown_stall
+    inst2_ready = !ctrl_id_pipedown_stall | !ctrl_xx_is_inst0_sel[0]
+  顶层把它们压成（ct_idu_top.sv:180）：
+    accept_num = {inst2_ready | inst0_ready, inst2_ready}
+
+  编码核过了，**没有歧义、也没有 bug**：因为 inst0_ready 与 inst1_ready 恒相等，
+  可达状态只有三个 —— 全停(0)、只收 1 条(inst2_ready=1)、收满 3 条，
+  对应 2'b00 / 2'b01 / 2'b11。**2'b10（=2）不可达**（这正是 `|inst0_ready`
+  那一项的用处：把"3 条"和"1 条"区分开）。
+
+  语义 = **本拍从 IFU 收下几条（程序序前缀）**。
+
+  ✅ **好消息：ifu2 早就有这个口** —— rv32ifu2_top.v:212 就是
+     `input wire [1:0] idu_accept_num`（注释"同拍消费的前缀条数"，接到
+     `pop_num`，:666）。所以这次改动是**把 IDU 对齐到 ifu2 的既有握手**，
+     不是给我们新增负担；反而比原来的三根 ready 更好接。
+
+---- 3.2 新增 chk 送 BIQ 的出口（别和 RTU 那路接混） ---------------------------
+
+  `idu_biq_chk[24:0]`（ct_idu_top.sv:170）—— 把 chk 送到 BIQ（分支路径）。
+  与 RTU 的 `disp{k}_chk` 是**两个不同的出口**，源头也不同：
+    * BIQ 那路源头是 `is_biq_create0/1_chk`，**只有 2 路**；
+    * RTU 要的是 `is_inst{k}_read_chk`，**3 路**。
+  接的时候别图省事从 BIQ 那两路分叉。
+
+---- 3.3 ⚠️ 冒烟台已过时，`make idu-unit` 现在会 elaborate 失败 ----------------
+
+  `tb/unit/tb_idu_c910.sv` 的端口连接不是手写的，是
+  `scripts/gen_idu_smoke_tb.py` 从 ct_idu_top.sv 的端口表**生成**的
+  （脚本头注释里就写了"改了 IDU 顶层端口之后重跑本脚本即可 —— 忘了重跑，
+  elaborate 会报 port not found，那正是这个冒烟台存在的意义"）。
+
+  同事这次改了端口表但**没重跑生成器**。实测：
+      $ python3 scripts/gen_idu_smoke_tb.py --check
+      tb_idu_c910.sv 与 ct_idu_top.sv 端口表不一致 —— 需要重新生成
+  现在那份 TB 里还连着已删除的 `idu_ifu_inst0/1/2_ready`（:82-84 / :256-258），
+  且缺 `ifu_idu_if_inst0/1/2_chk` / `idu_accept_num` / `idu_biq_chk`。
+  ⇒ **跑 `make idu-unit` 之前先重跑 `python3 scripts/gen_idu_smoke_tb.py`。**
+
+
+================================================================================
+四、LSU ↔ RTU 那边（只留指针，细节在对照表里）
+================================================================================
+
+本文只写 IDU 边。同一天 LSU 侧的接口变化写在 doc/rtu_接口对照表.csv / .xlsx
+的「RTU↔LSU」表里（新增一节「访存异常」），要点三条：
+
+  1. 新增 4 根：`lsu_rtu_wb_pipe3_expt_vld/_expt_addr[31:0]`（load）、
+     `lsu_rtu_wb_pipe4_expt_vld/_expt_addr[31:0]`（store）。语义 = **地址非对齐**。
+  2. **RTU 侧不用改口** —— 走现成的 `expt_vld/iid/cause/tval` 收集口即可：
+     cause 按口给（pipe3→4 / pipe4→6），tval = `_expt_addr`，iid = 同拍 cmplt iid。
+  3. 🔴 但适配层多两条硬约束（下面 4.1 / 4.2）。
+
+---- 4.1 两源同拍 ⇒ 必须先比 iid 取最旧 ----------------------------------------
+
+  丢错一条的后果是**年长那条的异常永久丢失**（它会按正常流程退休走掉，
+  且不会被重取 —— 冲刷只冲比 trap 那条更年轻的）—— 而 RTU 的 `RTU_expt.v`
+  只能跟"**已经收下的**"比年龄（它手里最多只有一条），
+  所以这个比较只能在适配层做（或把 RTU 的异常口加宽到 2 路）。
+  用 `RTU_iid_cmp` 同款模比较即可。
+
+---- 4.2 🔴 `expt_vld` 必须用 `cmplt` 门控 —— load 侧现在有个真 bug ---------------
+
+  ⚠️ **`lsu_ld_wb.sv:165-175` 新加的那段 always 缺 begin/end**：
+
+      always @(posedge forever_cpuclk or negedge cpurst_b)
+      begin
+        if (!cpurst_b)
+          ld_wb_iid[6:0]        <=  7'b0;      ← 只有这一句在 if 里
+          ld_wb_expt            <=  1'b0;      ← 无条件
+          ld_wb_expt_addr       <=  32'b0;     ← 无条件
+        else if(ld_wb_pre_inst_vld)
+          ld_wb_iid[6:0]        <=  ld_wb_pre_iid[6:0];   ← 只有这一句在 else-if 里
+          ld_wb_expt            <=  ld_wb_pre_expt_vld;   ← 无条件
+          ld_wb_expt_addr       <=  ld_da_wb_expt_addr;   ← 无条件
+      end
+
+  于是 `ld_wb_expt` / `ld_wb_expt_addr` 成了 `ld_wb_pre_expt_vld` /
+  `ld_da_wb_expt_addr` 的**无条件一拍延迟**（同一 always 里对同一变量的最后一次
+  非阻塞赋值胜出 —— 复位那拍也会被覆盖，只是 `ld_da_expt` 同时被复位、实际值仍为 0，
+  属侥幸）。而导出的 cmplt `lsu_rtu_wb_pipe3_cmplt = ld_wb_inst_vld` 是**有门控**的
+  （:152-162：置位要 `ld_wb_pre_inst_vld`，且 `rtu_yy_xx_flush` 那拍清零）。
+
+  ⇒ **会出现 `expt_vld = 1` 而 `cmplt = 0` 的拍。而那一拍的 `lsu_rtu_wb_pipe3_iid`
+     是残留值**（上一条 load 的、或 0）。真会碰上的两种情形：
+
+    ① 冲刷那拍：cmplt 被 `rtu_yy_xx_flush` 清掉，expt 没有清的口；
+    ② `ld_da_wb_cmplt_req = ld_da_inst_vld && !ld_da_secd`（lsu_ld_da.sv:515）
+       而 `ld_da_wb_expt_vld = ld_da_expt`（:516）是**裸**的 —— `ld_da_expt`
+       只在复位与 `ld_dc_da_inst_vld` 时更新（:268/:292），**没有冲刷清零**，
+       而 `ld_da_inst_vld` 有 ⇒ 两根脱节。
+
+  ⚠️ 后果是**静默的**（不报 x、不报 z）：若消费方拿裸的 `expt_vld` 去报异常，
+    就会**按错误的 iid 报异常**；RTU 把它收进单表项并一直挂到那条 iid 退休
+    ⇒ 冤枉一条无辜指令陷入、或静默掐掉它的退休。**只有 difftest 能抓。**
+
+  ⇒ 契约（写进适配层）：**`expt_vld` 必须与同口的 `cmplt` 相与之后再送进 RTU**，
+     iid / tval 也按这一拍取样。这不是"保险"，是**必须**。
+  ⇒ 顺手请同事补上那段 begin/end —— **store 侧 `lsu_st_wb.sv:59-74` 写法是对的**
+     （`begin/end` + 用 `st_wb_pre_inst_vld` 门控），照着改即可。
+
+  ✅ 好消息：store 侧**没有**这个相位问题（begin/end 齐、门控齐），
+     但 4.2 的"与 cmplt 相与"对两个口一视同仁，写成一条规矩更省心。
 ================================================================================

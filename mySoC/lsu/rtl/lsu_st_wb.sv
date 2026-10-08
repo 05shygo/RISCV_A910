@@ -56,6 +56,10 @@ always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
     st_wb_inst_vld <= 1'b0;
 end
 logic st_wb_expt_vld;
+// 2026-10-08 修: 原来只声明了 st_wb_expt_vld, 下面 always_ff 里用到的
+// st_wb_expt_addr **没有声明** ⇒ "Identifier not declared", LSU elaborate 失败。
+// (对照 load 侧 lsu_ld_wb.sv 是有 `logic [31:0] ld_wb_expt_addr;` 的。)
+logic [31:0] st_wb_expt_addr;
 always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
   if (!cpurst_b) begin
     st_wb_iid[6:0]        <= 7'b0;

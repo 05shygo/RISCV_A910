@@ -1,4 +1,8 @@
 module ct_idu_ir_ctrl (
+  // 2026-10-08 补: 原来这个模块**没有时钟端口** —— C910 工厂版靠门控时钟单元在内部
+  // 派生 ir_inst_clk, 交付时那批单元被剥掉 ⇒ IR 级的流水线寄存器
+  // (ir_inst0/1/2_vld) 挂在无驱动的时钟上, 永不翻转。
+  input  logic         forever_cpuclk,
   input  logic         cpurst_b,
   input  logic         ctrl_id_pipedown_inst0_vld,
   input  logic         ctrl_id_pipedown_inst1_vld,
@@ -175,6 +179,12 @@ parameter IS_CTRL_MULT        = 0;
 //==========================================================
 //                 IR pipeline registers
 //==========================================================
+// 本地时钟驱动（2026-10-08 补）: 见模块头的说明。
+// IR 级寄存器的 always 块内部自带使能条件（!cpurst_b / rtu_yy_xx_flush /
+// !ctrl_ir_stall / else 保持），所以直接接 forever_cpuclk 功能等价，
+// 只是少了时钟门控的省电效果。
+assign ir_inst_clk = forever_cpuclk;
+
 //----------------------------------------------------------
 //               Pipeline register implement
 //----------------------------------------------------------

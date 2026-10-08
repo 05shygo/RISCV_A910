@@ -25,7 +25,7 @@ module ct_idu_is_biq (
   input  logic         rtu_yy_xx_flush
 );
 parameter BIQ_WIDTH             = 152;
-parameter BIQ_CHK               = 151
+parameter BIQ_CHK               = 151;   // 2026-10-08 修: 原来漏了分号 ⇒ 本文件语法错 ⇒ 整个 IDU 编不过
 parameter BIQ_PC                = 126;
 parameter BIQ_IID               = 61;
 parameter BIQ_DST_PREG          = 54;

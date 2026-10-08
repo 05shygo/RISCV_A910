@@ -167,7 +167,65 @@ module ct_idu_top(
   output logic         idu_biq_taken,
   output logic [31:0]  idu_biq_npc,
   output logic [31:0]  idu_biq_pc,
-  output logic [24:0]  idu_biq_chk
+  output logic [24:0]  idu_biq_chk,
+
+  //==========================================================
+  // Interface with RTU — 派遣记录 (2026-10-08 新增)
+  //==========================================================
+  // k = 0/1/2 = **程序序** (0 最老)。RTU 的 §6.1 契约:
+  //   * 一拍最多 3 条, 必须是程序序前缀 —— 这里天然满足: `_vld{k}` 直接来自
+  //     IS 级那三路的有效位;
+  //   * **必须与"真的进了 ROB"同源** —— 见下面 ctrl_dp_dis_inst{k}_vld 的说明;
+  //   * A6d: `rf_we == 0` 时 `dst_lreg` **必须给 0** (不能给垃圾 rd, 否则 RTU 会
+  //     按"要写 rd"去分配编号而退休时又不写 ⇒ 编号静默泄漏)。本模块的
+  //     IS_DST_REG 字段在译码阶段就已按 dst_vld 清过, 这里照搬;
+  //   * A6b: `rf_we` 必须与写回级同源 —— 这里就是 IS_DST_VLD(与它进发射队列的
+  //     那一份同源), 不是用 rd != 0 现推的;
+  //   * A6c: `csr_op` 给 **funct3 原样** (从原始指令字切 [14:12]), 不是译码后的
+  //     两位码 —— 否则 csrrwi 会被当成寄存器形式。
+  //
+  // ⚠️ `_sq_id` **故意没有** —— 见 doc/idu_rtu_接口待办.txt 的讨论: IDU 这边的
+  //    SDIQ (4 项) 不是 LSU 的 SQ (6 项), 两者不是同一个队列; 且 LSU 那侧是按
+  //    **iid 广播**找表项的 (rtu_yy_xx_commit*), 根本不需要槽号。要不要这根线
+  //    等跟 LSU 确认后再定, 现在不造一根语义不清的。
+  output logic         idu_rtu_disp0_vld,
+  output logic [31:0]  idu_rtu_disp0_pc,
+  output logic [24:0]  idu_rtu_disp0_chk,
+  output logic [4:0]   idu_rtu_disp0_dst_lreg,
+  output logic         idu_rtu_disp0_rf_we,
+  output logic [6:0]   idu_rtu_disp0_dst_preg,
+  output logic [6:0]   idu_rtu_disp0_old_preg,
+  output logic [6:0]   idu_rtu_disp0_src1_preg,
+  output logic [11:0]  idu_rtu_disp0_csr_addr,
+  output logic [2:0]   idu_rtu_disp0_csr_op,
+  output logic [4:0]   idu_rtu_disp0_csr_imm,
+  output logic [6:0]   idu_rtu_disp0_flags,
+
+  output logic         idu_rtu_disp1_vld,
+  output logic [31:0]  idu_rtu_disp1_pc,
+  output logic [24:0]  idu_rtu_disp1_chk,
+  output logic [4:0]   idu_rtu_disp1_dst_lreg,
+  output logic         idu_rtu_disp1_rf_we,
+  output logic [6:0]   idu_rtu_disp1_dst_preg,
+  output logic [6:0]   idu_rtu_disp1_old_preg,
+  output logic [6:0]   idu_rtu_disp1_src1_preg,
+  output logic [11:0]  idu_rtu_disp1_csr_addr,
+  output logic [2:0]   idu_rtu_disp1_csr_op,
+  output logic [4:0]   idu_rtu_disp1_csr_imm,
+  output logic [6:0]   idu_rtu_disp1_flags,
+
+  output logic         idu_rtu_disp2_vld,
+  output logic [31:0]  idu_rtu_disp2_pc,
+  output logic [24:0]  idu_rtu_disp2_chk,
+  output logic [4:0]   idu_rtu_disp2_dst_lreg,
+  output logic         idu_rtu_disp2_rf_we,
+  output logic [6:0]   idu_rtu_disp2_dst_preg,
+  output logic [6:0]   idu_rtu_disp2_old_preg,
+  output logic [6:0]   idu_rtu_disp2_src1_preg,
+  output logic [11:0]  idu_rtu_disp2_csr_addr,
+  output logic [2:0]   idu_rtu_disp2_csr_op,
+  output logic [4:0]   idu_rtu_disp2_csr_imm,
+  output logic [6:0]   idu_rtu_disp2_flags
 );
 
 //==========================================================
@@ -231,6 +289,17 @@ logic [24:0] dp_ir_inst1_chk;
 logic [82:0] dp_ir_inst2_data;
 logic [64:0] dp_ir_inst2_pc;
 logic [24:0] dp_ir_inst2_chk;
+
+// IR → RT (改名表) 的指令有效位 (2026-10-08 补声明 + 补连接)
+// ⚠️ 交给 ct_idu_ir_ctrl 产生、原来只接在 ir_ctrl 例化那一侧,
+//    ir_rt 例化那一侧是空连接 `()`, 而这两根名字又**没有显式声明** ⇒
+//    靠隐式 1 位线网"恰好"连上、且 ir_rt 的端口拿到的是悬空的 Z。
+//    后果: ir_rt 里 inst{k}_write_en = Z && ... = X ⇒ 改名表写使能是 X,
+//    `preg <= x_create_preg` 在 X 条件下写入 ⇒ 表项被写成 X。
+//    (本的 `mycpu.v` 历史上也栽过同一个坑: 漏声明 → 隐式线网 → 静默失效。)
+logic        ctrl_rt_inst0_vld;
+logic        ctrl_rt_inst1_vld;
+logic        ctrl_rt_inst2_vld;
 
 // Rename table signals
 logic [4:0]  dp_rt_inst0_src0_reg;
@@ -326,6 +395,21 @@ logic [6:0]   dp_ctrl_is_dis_inst2_ctrl_info;
 logic         dp_ctrl_is_inst0_dst_vld;
 logic         dp_ctrl_is_inst1_dst_vld;
 logic         dp_ctrl_is_inst2_dst_vld;
+
+// ---- 派遣记录 (2026-10-08 新增) ----
+// is_dp 按车道录出的三路原始数据 + is_ctrl 的"本路真的派发"
+logic [82:0]  dp_is_dis_inst0_data;
+logic [82:0]  dp_is_dis_inst1_data;
+logic [82:0]  dp_is_dis_inst2_data;
+logic [31:0]  dp_is_dis_inst0_pc;
+logic [31:0]  dp_is_dis_inst1_pc;
+logic [31:0]  dp_is_dis_inst2_pc;
+logic [24:0]  dp_is_dis_inst0_chk;
+logic [24:0]  dp_is_dis_inst1_chk;
+logic [24:0]  dp_is_dis_inst2_chk;
+logic         ctrl_dp_dis_inst0_vld;
+logic         ctrl_dp_dis_inst1_vld;
+logic         ctrl_dp_dis_inst2_vld;
 
 // AIQ (ALU Issue Queue) signals
 logic        ctrl_aiq_rf_pop_vld;
@@ -475,6 +559,7 @@ ct_idu_id_dp u_ct_idu_id_dp (
 
 // Instance 1: ct_idu_ir_ctrl
 ct_idu_ir_ctrl x_ct_idu_ir_ctrl (
+  .forever_cpuclk                        (forever_cpuclk),//2026-10-08 补: IR 级流水寄存器的时钟
   .cpurst_b                              (cpurst_b),
   .ctrl_id_pipedown_inst0_vld            (id_inst0_vld),
   .ctrl_id_pipedown_inst1_vld            (id_inst1_vld),
@@ -600,11 +685,12 @@ ct_idu_ir_dp x_ct_idu_ir_dp (
 
 // Instance 3: ct_idu_ir_rt
 ct_idu_ir_rt x_ct_idu_ir_rt (
+  .forever_cpuclk                        (forever_cpuclk),//2026-10-08 补: 改名表的时钟
   .cpurst_b                              (cpurst_b),
   .ctrl_ir_stall                              (ctrl_ir_stall),
-  .ctrl_rt_inst0_vld                     (),//in
-  .ctrl_rt_inst1_vld                     (),//in
-  .ctrl_rt_inst2_vld                     (),//in
+  .ctrl_rt_inst0_vld                     (ctrl_rt_inst0_vld),//2026-10-08 补: 原来是空连接
+  .ctrl_rt_inst1_vld                     (ctrl_rt_inst1_vld),
+  .ctrl_rt_inst2_vld                     (ctrl_rt_inst2_vld),
   .dp_rt_inst0_dst_preg                  (dp_rt_inst0_dst_preg),
   .dp_rt_inst0_dst_reg                   (dp_rt_inst0_dst_reg),
   .dp_rt_inst0_dst_vld                   (dp_rt_inst0_dst_vld),
@@ -738,7 +824,11 @@ ct_idu_is_ctrl x_ct_idu_is_ctrl (
   .ctrl_dp_is_inst2_vld                  (ctrl_dp_is_inst2_vld),
   .ctrl_is_inst2_vld                     (ctrl_is_inst2_vld),
   .ctrl_is_stall                         (ctrl_is_stall),
-  .ctrl_xx_is_inst0_sel                  (ctrl_xx_is_inst0_sel)
+  .ctrl_xx_is_inst0_sel                  (ctrl_xx_is_inst0_sel),
+  // ---- 派遣记录: 本路真的派发 (2026-10-08 新增) ----
+  .ctrl_dp_dis_inst0_vld                 (ctrl_dp_dis_inst0_vld),
+  .ctrl_dp_dis_inst1_vld                 (ctrl_dp_dis_inst1_vld),
+  .ctrl_dp_dis_inst2_vld                 (ctrl_dp_dis_inst2_vld)
 );
 
 // Instance 6: ct_idu_is_dp
@@ -801,7 +891,17 @@ ct_idu_is_dp x_ct_idu_is_dp (
   .dp_mult_create0_data                  (dp_mult_create0_data),
   .dp_mult_create1_data                  (dp_mult_create1_data),
   .dp_div_create0_data                   (dp_div_create0_data),
-  .dp_div_create1_data                   (dp_div_create1_data)
+  .dp_div_create1_data                   (dp_div_create1_data),
+  // ---- 派遣记录: 按车道录出 (2026-10-08 新增) ----
+  .dp_is_dis_inst0_data                  (dp_is_dis_inst0_data),
+  .dp_is_dis_inst1_data                  (dp_is_dis_inst1_data),
+  .dp_is_dis_inst2_data                  (dp_is_dis_inst2_data),
+  .dp_is_dis_inst0_pc                    (dp_is_dis_inst0_pc),
+  .dp_is_dis_inst1_pc                    (dp_is_dis_inst1_pc),
+  .dp_is_dis_inst2_pc                    (dp_is_dis_inst2_pc),
+  .dp_is_dis_inst0_chk                   (dp_is_dis_inst0_chk),
+  .dp_is_dis_inst1_chk                   (dp_is_dis_inst1_chk),
+  .dp_is_dis_inst2_chk                   (dp_is_dis_inst2_chk)
 );
 
 // Instance 4: ct_idu_is_aiq
@@ -910,7 +1010,13 @@ ct_idu_is_lsiq x_ct_idu_is_lsiq (
 ct_idu_is_sdiq x_ct_idu_is_sdiq (
   .cpurst_b                              (cpurst_b),
   .lsu_sdiq_has_in_sq_vld                (lsu_sdiq_has_in_sq_vld),//in
-  .lsu_sq_sdiq_unalign_sdiq              (lsu_sq_sdiq_unalign_sdiq),
+  // 2026-10-08 修: 原来这里连了 .lsu_sq_sdiq_unalign_sdiq, 但该端口在
+  // ct_idu_is_sdiq 里**已经被注释掉了** (见其 :6 的注释行与 :428 的注释 assign)
+  // ⇒ VCS 报 "Undefined port in module instantiation", 整个 IDU elaborate 失败。
+  // 对应信号在顶层也没有声明 (是隐式线网)。这里跟着注释掉。
+  // 语义上它是"LSU 报回来的非对齐 SDIQ 条目号", 属于走硬件拆分的路径 ——
+  // 本核按"非对齐直接报 expt 陷入"设计 (见 RTU↔LSU 接口表), 用不到。
+//  .lsu_sq_sdiq_unalign_sdiq              (lsu_sq_sdiq_unalign_sdiq),
   .ctrl_sdiq_create0_en                              (ctrl_sdiq_create0_en),
   .ctrl_sdiq_create1_en                              (ctrl_sdiq_create1_en),
   .dp_sdiq_create0_data                              (dp_sdiq_create0_data),
@@ -1108,5 +1214,113 @@ ct_idu_rf_prf_pregfile x_ct_idu_rf_prf_pregfile (
   .prf_dp_rf_pipe6_src0_data                              (prf_dp_rf_pipe6_src0_data),
   .prf_dp_rf_pipe6_src1_data                              (prf_dp_rf_pipe6_src1_data)
 );
+
+//==========================================================
+//   派遣记录字段打包 (2026-10-08 新增)
+//==========================================================
+// 从 is_dp 按车道录出的三路 83 位原始数据里拆出 RTU 要的字段。
+// 位域见 ct_idu_is_dp.sv 的 IS_* parameter:
+//
+//   bit 77  IS_BJU            → is_branch
+//   bit 75  IS_STORE          → is_store
+//   [72:67] IS_DST_REL_PREG   → old_preg   (6 位: 被替换掉的旧映射)
+//   [66:61] IS_DST_PREG       → dst_preg   (6 位: 分到的新物理号)
+//   [60:56] IS_DST_REG        → dst_lreg   (5 位)
+//   [48:43] IS_SRC1_DATA      → src1_preg  (6 位)
+//            ⚠️ **不是 [48:42]**: 那 7 位是 `{preg[5:0], wb_valid}`, bit42 是 wb_valid!
+//                (见 ct_idu_ir_dp.sv:528-530 与 ct_idu_ir_rt.sv:338 的
+//                 `rt_dp_inst0_src1_data[6:1] = ..._read_preg[5:0]`)
+//   bit 34  IS_DST_VLD        → rf_we
+//   [31:0]  IS_OPCODE         → 原始指令字 (csr_addr/op/imm 与 JAL/JALR/SYSTEM 都从它切)
+//
+// IDU 是 6 位 preg / RTU 端口是 7 位 ⇒ 高位补 0 (PREG=64 档下本来就恒 0)。
+//
+// ⚠️ **A6d 必须在这里补**: `ct_idu_id_decd.sv:156` 是 `assign dst_reg = rd;` ——
+//    **不写寄存器时并不清零** (store 的 inst[11:7] 是立即数的一部分, 是垃圾值)。
+//    直接把它送进 `disp*_dst_lreg` 会让 RTU 按"要写 rd"去分配编号, 而退休时
+//    `wr_eff` 又不成立 ⇒ 那个编号既不转 ARCH 也不释放, **静默泄漏**。
+//    所以下面一律用 `{5{rf_we}} & dst_reg` 掩一遍 (老核 mycpu.v 也是这么接的)。
+//
+// ⚠️ flags 的位序 = RTU_define.vh 的 `RTU_FLG_*`:
+//      {is_jalr, is_jal, is_mret, is_csr, intmask, is_store, is_branch}
+//    * is_jal/jalr/csr/mret 从原始指令字现解 (IDU 里没有现成的这些标记 ——
+//      `ct_idu_ir_decd` 只出 alu_short/load/store);
+//    * `intmask` 恒 0: RTU 侧**零消费点** (全仓 grep 只有 `RTU_FLG_INTMASK` 的
+//      定义与端口注释, 没有任何读取), 所以不花力气去解它。将来 RTU 真用它时,
+//      这里要按"这条指令能不能被中断打断"重解。
+//    * is_store/is_branch 直接用 IS 级已经分类好的 IS_STORE / IS_BJU。
+//==========================================================
+
+// ---- 车道 0 (最老) ----
+assign idu_rtu_disp0_vld            = ctrl_dp_dis_inst0_vld;
+assign idu_rtu_disp0_pc[31:0]       = dp_is_dis_inst0_pc[31:0];
+assign idu_rtu_disp0_chk[24:0]      = dp_is_dis_inst0_chk[24:0];
+assign idu_rtu_disp0_rf_we          = dp_is_dis_inst0_data[34];
+assign idu_rtu_disp0_dst_lreg[4:0]  = {5{dp_is_dis_inst0_data[34]}}
+                                      & dp_is_dis_inst0_data[60:56];       // A6d
+assign idu_rtu_disp0_dst_preg[6:0]  = {1'b0, dp_is_dis_inst0_data[66:61]};
+assign idu_rtu_disp0_old_preg[6:0]  = {1'b0, dp_is_dis_inst0_data[72:67]};
+assign idu_rtu_disp0_src1_preg[6:0] = {1'b0, dp_is_dis_inst0_data[48:43]};
+assign idu_rtu_disp0_csr_addr[11:0] = dp_is_dis_inst0_data[31:20];
+assign idu_rtu_disp0_csr_imm[4:0]   = dp_is_dis_inst0_data[19:15];
+assign idu_rtu_disp0_csr_op[2:0]    = dp_is_dis_inst0_data[14:12];         // A6c: funct3 原样
+assign idu_rtu_disp0_flags[6]       = (dp_is_dis_inst0_data[6:0] == 7'b1100111); // is_jalr
+assign idu_rtu_disp0_flags[5]       = (dp_is_dis_inst0_data[6:0] == 7'b1101111); // is_jal
+assign idu_rtu_disp0_flags[4]       = (dp_is_dis_inst0_data[6:0] == 7'b1110011)  // is_mret
+                                    & (dp_is_dis_inst0_data[14:12] == 3'b000)
+                                    & (dp_is_dis_inst0_data[31:20] == 12'h302);
+assign idu_rtu_disp0_flags[3]       = (dp_is_dis_inst0_data[6:0] == 7'b1110011)  // is_csr
+                                    & (dp_is_dis_inst0_data[14:12] != 3'b000);
+assign idu_rtu_disp0_flags[2]       = 1'b0;                                      // intmask
+assign idu_rtu_disp0_flags[1]       = dp_is_dis_inst0_data[75];                  // is_store
+assign idu_rtu_disp0_flags[0]       = dp_is_dis_inst0_data[77];                  // is_branch
+
+// ---- 车道 1 (居中) ----
+assign idu_rtu_disp1_vld            = ctrl_dp_dis_inst1_vld;
+assign idu_rtu_disp1_pc[31:0]       = dp_is_dis_inst1_pc[31:0];
+assign idu_rtu_disp1_chk[24:0]      = dp_is_dis_inst1_chk[24:0];
+assign idu_rtu_disp1_rf_we          = dp_is_dis_inst1_data[34];
+assign idu_rtu_disp1_dst_lreg[4:0]  = {5{dp_is_dis_inst1_data[34]}}
+                                      & dp_is_dis_inst1_data[60:56];       // A6d
+assign idu_rtu_disp1_dst_preg[6:0]  = {1'b0, dp_is_dis_inst1_data[66:61]};
+assign idu_rtu_disp1_old_preg[6:0]  = {1'b0, dp_is_dis_inst1_data[72:67]};
+assign idu_rtu_disp1_src1_preg[6:0] = {1'b0, dp_is_dis_inst1_data[48:43]};
+assign idu_rtu_disp1_csr_addr[11:0] = dp_is_dis_inst1_data[31:20];
+assign idu_rtu_disp1_csr_imm[4:0]   = dp_is_dis_inst1_data[19:15];
+assign idu_rtu_disp1_csr_op[2:0]    = dp_is_dis_inst1_data[14:12];
+assign idu_rtu_disp1_flags[6]       = (dp_is_dis_inst1_data[6:0] == 7'b1100111);
+assign idu_rtu_disp1_flags[5]       = (dp_is_dis_inst1_data[6:0] == 7'b1101111);
+assign idu_rtu_disp1_flags[4]       = (dp_is_dis_inst1_data[6:0] == 7'b1110011)
+                                    & (dp_is_dis_inst1_data[14:12] == 3'b000)
+                                    & (dp_is_dis_inst1_data[31:20] == 12'h302);
+assign idu_rtu_disp1_flags[3]       = (dp_is_dis_inst1_data[6:0] == 7'b1110011)
+                                    & (dp_is_dis_inst1_data[14:12] != 3'b000);
+assign idu_rtu_disp1_flags[2]       = 1'b0;
+assign idu_rtu_disp1_flags[1]       = dp_is_dis_inst1_data[75];
+assign idu_rtu_disp1_flags[0]       = dp_is_dis_inst1_data[77];
+
+// ---- 车道 2 (最年轻) ----
+assign idu_rtu_disp2_vld            = ctrl_dp_dis_inst2_vld;
+assign idu_rtu_disp2_pc[31:0]       = dp_is_dis_inst2_pc[31:0];
+assign idu_rtu_disp2_chk[24:0]      = dp_is_dis_inst2_chk[24:0];
+assign idu_rtu_disp2_rf_we          = dp_is_dis_inst2_data[34];
+assign idu_rtu_disp2_dst_lreg[4:0]  = {5{dp_is_dis_inst2_data[34]}}
+                                      & dp_is_dis_inst2_data[60:56];       // A6d
+assign idu_rtu_disp2_dst_preg[6:0]  = {1'b0, dp_is_dis_inst2_data[66:61]};
+assign idu_rtu_disp2_old_preg[6:0]  = {1'b0, dp_is_dis_inst2_data[72:67]};
+assign idu_rtu_disp2_src1_preg[6:0] = {1'b0, dp_is_dis_inst2_data[48:43]};
+assign idu_rtu_disp2_csr_addr[11:0] = dp_is_dis_inst2_data[31:20];
+assign idu_rtu_disp2_csr_imm[4:0]   = dp_is_dis_inst2_data[19:15];
+assign idu_rtu_disp2_csr_op[2:0]    = dp_is_dis_inst2_data[14:12];
+assign idu_rtu_disp2_flags[6]       = (dp_is_dis_inst2_data[6:0] == 7'b1100111);
+assign idu_rtu_disp2_flags[5]       = (dp_is_dis_inst2_data[6:0] == 7'b1101111);
+assign idu_rtu_disp2_flags[4]       = (dp_is_dis_inst2_data[6:0] == 7'b1110011)
+                                    & (dp_is_dis_inst2_data[14:12] == 3'b000)
+                                    & (dp_is_dis_inst2_data[31:20] == 12'h302);
+assign idu_rtu_disp2_flags[3]       = (dp_is_dis_inst2_data[6:0] == 7'b1110011)
+                                    & (dp_is_dis_inst2_data[14:12] != 3'b000);
+assign idu_rtu_disp2_flags[2]       = 1'b0;
+assign idu_rtu_disp2_flags[1]       = dp_is_dis_inst2_data[75];
+assign idu_rtu_disp2_flags[0]       = dp_is_dis_inst2_data[77];
 
 endmodule

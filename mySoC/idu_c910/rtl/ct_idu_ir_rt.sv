@@ -1,4 +1,9 @@
 module ct_idu_ir_rt (
+  // 2026-10-08 补: 原来这个模块**没有时钟端口** —— C910 工厂版靠门控时钟单元
+  // 在内部派生 dep_clk/write_clk, 交付时那批单元被剥掉 ⇒ 32 个改名表项
+  // 全都挂在无驱动的时钟上（一个字都写不进去）。现在把时钟从顶层引进来,
+  // 由 ct_idu_dep_reg_src2_entry 内部直连 forever_cpuclk。
+  input  logic         forever_cpuclk,
   input  logic         cpurst_b,
   input  logic         ctrl_ir_stall,
   input  logic         ctrl_rt_inst0_vld,
@@ -108,8 +113,18 @@ logic         rt_recover_updt_vld;
 logic [191:0] rt_reset_updt_preg;
 
 // 数组声明
-logic [6:0]   reg_read_data [0:31];
-logic [6:0]   reg_create_data [0:31];
+// ⚠️ 2026-10-08 修: 这两个数组原来声明成 **7 位**, 而表项的端口是
+//     `x_read_data[12:0]` / `x_create_data[10:0]` (C910 的打包格式):
+//        x_read_data   = {bypass[11], issue_rdy[10], mla_rdy[9], preg[8:2], wb[1], rdy[0]}
+//        x_create_data = {                 preg[8:2], wb[1], rdy[0]}
+//     7 位连 13/11 位 ⇒ 读侧**被截断**、写侧**被错位**, 于是表项存进去和读出来都不是
+//     那个 preg。实测指纹: 给号 33 → 存进表项变成 8 → 读回来变成 16 (每一步都错位 2 位)。
+//     ⇒ 这里按 C910 的真实宽度声明, 再派生一个 7 位的"wrapper 视图"给下面那 9 个
+//        32 路 case 读口用 (视图 = {preg[5:0], wb}, 与原来那套 `[6:1]`/`[0]` 的取法一致),
+//        这样几百行 case 一行都不用改。
+logic [12:0]  reg_read_data_raw [0:31];   // 表项 x_read_data 原样
+logic [10:0]  reg_create_data    [0:31];  // 表项 x_create_data 原样
+logic [6:0]   reg_read_data      [0:31];  // wrapper 视图: {preg[5:0], wb}
 logic         reg_write_en_arr [0:31];
 
 //==========================================================
@@ -135,6 +150,7 @@ generate
   //    (reg_create_data[0] / reg_write_en_arr[0] 仍由下面的写口逻辑驱动, 不受影响。)
   for (j = 1; j < 32; j = j + 1) begin : gen_ct_idu_ir_rt_entry
     ct_idu_dep_reg_src2_entry x_ct_idu_ir_rt_entry_reg (
+      .forever_cpuclk                    (forever_cpuclk                    ),
       .cpurst_b                          (cpurst_b                          ),
       .rtu_yy_xx_flush                  (rtu_yy_xx_flush                  ),
       .iu_idu_ex2_pipe0_wb_preg_vld_dupx (iu_idu_ex2_pipe0_wb_preg_vld_dupx ),
@@ -143,9 +159,9 @@ generate
       .iu_idu_ex2_pipe1_wb_preg_dupx     (iu_idu_ex2_pipe1_wb_preg_dupx     ),
       .lsu_idu_wb_pipe3_wb_preg_dupx     (lsu_idu_wb_pipe3_wb_preg_dupx     ),
       .lsu_idu_wb_pipe3_wb_preg_vld_dupx (lsu_idu_wb_pipe3_wb_preg_vld_dupx ),
-      .x_create_data                     (reg_create_data[j]                ),
+      .x_create_data                     (reg_create_data[j]                ),  // 11 位 (2026-10-08 修宽度)
       .x_write_en                        (reg_write_en_arr[j]               ),
-      .x_read_data                       (reg_read_data[j]                  )
+      .x_read_data                       (reg_read_data_raw[j]              )  // 13 位 (2026-10-08 修宽度)
     );
   end
 endgenerate
@@ -207,32 +223,76 @@ assign reg_write_en[31:0] = {32{rt_recover_updt_vld}}
                           | reg_write1_en[31:0]
                           | reg_write2_en[31:0];
 
+// ---------------------------------------------------------------------------
+// 2026-10-08 补: 把上面这根 32 位写使能总线接到**逐表项的**写使能数组上。
+//
+// 原来这里缺一段: `reg_write_en_arr[0:31]` 只在上面的 generate 里被当
+// `x_write_en` 连进 32 个表项 (:153), 而**全文件没有任何地方给它赋值** ⇒
+// 每个表项的写使能都是悬空的 Z ⇒ `always @(posedge write_clk) ... else if(x_write_en)`
+// 里 x_write_en 为 Z ⇒ 表项**一个字都写不进去**。
+// 症状: 改名表恒等于复位值 (x_l → p_l), 参考数永远读到初始映射 ——
+// 配合"表项时钟没接"那个坑, 这两处一起让整个重命名级形同虚设。
+// 单元台 tb_idu_c910.sv 的定向判据 ("第 N 次派遣读到 old_preg == 前面写进去的号")
+// 就是为它加的: 修之前那条判据红。
+// ---------------------------------------------------------------------------
+genvar jw;
+generate
+  for (jw = 0; jw < 32; jw = jw + 1) begin : gen_reg_write_en_arr
+    assign reg_write_en_arr[jw] = reg_write_en[jw];
+  end
+endgenerate
+
+// ---------------------------------------------------------------------------
+// 表项读出的 7 位"wrapper 视图" (2026-10-08 新增)
+//   视图 = {preg[5:0], wb}  —— 与下面 9 个 case 读口 (read_wb = [0],
+//   read_preg = [6:1]) 以及 rt_dp_inst*_rel_preg 的取法完全一致, 所以那些点一行不用改。
+//   来源: 表项输出的 [8:2]=preg[6:0] (我们只用低 6 位) / [1]=wb。
+// ---------------------------------------------------------------------------
+// ⚠️ 从 1 起 —— 与上面表项例化同一个理由: 0 号 (x0) 的读数据由
+//    `assign reg_read_data[0][6:0] = 7'b0000001;` 硬接成常量, 从 0 起会 ICSD (多驱动器)。
+genvar jv;
+generate
+  for (jv = 1; jv < 32; jv = jv + 1) begin : gen_reg_read_view
+    assign reg_read_data[jv][6:0] = {reg_read_data_raw[jv][7:2], reg_read_data_raw[jv][1]};
+  end
+endgenerate
+
 // reg_create_preg 生成
+// ⚠️ 2026-10-08 修: 原来只写 `[5:0]` 且把 r_vld 塞在 bit[6] —— 那是 7 位口径的残留。
+//    表项要的是 11 位 `{preg[8:2], wb[1], rdy[0]}`:
+//      * 指令改名写进去的新映射: 生产者还没写回 ⇒ wb=0, rdy=0;
+//      * recover 写进去的是**架构映射**: 值就在 PRF 里、没有在途生产者 ⇒ wb=1, rdy=1。
+//    (原来那个 bit[6]=r_vld 的写法在正确打包下会落进 preg 字段里, 属于同一个错位 bug。)
 genvar jj;
 generate
   for(jj=0; jj<32; jj=jj+1) begin : gen_reg_create_preg
     always @(*)
     begin
-      if(reg_write2_en[jj])
-        reg_create_data[jj][5:0] = dp_rt_inst2_dst_preg[5:0];
-      else if(reg_write1_en[jj])
-        reg_create_data[jj][5:0] = dp_rt_inst1_dst_preg[5:0];
-      else if(reg_write0_en[jj])
-        reg_create_data[jj][5:0] = dp_rt_inst0_dst_preg[5:0];
-      else
-        reg_create_data[jj][5:0] = rt_recover_updt_preg[6*jj+5 : 6*jj];
+      if(reg_write2_en[jj]) begin
+        reg_create_data[jj][8:2] = {1'b0, dp_rt_inst2_dst_preg[5:0]};
+        reg_create_data[jj][1]   = 1'b0;
+        reg_create_data[jj][0]   = 1'b0;
+      end
+      else if(reg_write1_en[jj]) begin
+        reg_create_data[jj][8:2] = {1'b0, dp_rt_inst1_dst_preg[5:0]};
+        reg_create_data[jj][1]   = 1'b0;
+        reg_create_data[jj][0]   = 1'b0;
+      end
+      else if(reg_write0_en[jj]) begin
+        reg_create_data[jj][8:2] = {1'b0, dp_rt_inst0_dst_preg[5:0]};
+        reg_create_data[jj][1]   = 1'b0;
+        reg_create_data[jj][0]   = 1'b0;
+      end
+      else begin
+        reg_create_data[jj][8:2] = {1'b0, rt_recover_updt_preg[6*jj+5 : 6*jj]};
+        reg_create_data[jj][1]   = 1'b1;
+        reg_create_data[jj][0]   = 1'b1;
+      end
     end
   end
 endgenerate
 
 assign r_vld = rt_recover_updt_vld;
-
-genvar jk;
-generate
-  for(jk=0; jk<32; jk=jk+1) begin : gen_reg_create_data
-    assign reg_create_data[jk][6] = r_vld;
-  end
-endgenerate
 
 //==========================================================
 //                       Read Port

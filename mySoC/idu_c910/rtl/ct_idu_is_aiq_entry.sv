@@ -54,6 +54,18 @@ parameter AIQ_OPCODE            = 31;
     logic         entry_clk;
     logic         create_preg_clk;
     logic         create_clk;
+    // ---------------------------------------------------------------------
+    // 2026-10-08 补: 这三个不是"原代码中未生成", 而是 C910 工厂版在这里例化了
+    // 门控时钟单元 (forever_cpuclk + *_gateclk_en → ct_clk_cell), 交付时那批单元
+    // 被整体剥掉了。留着声明不接的后果是**这个表项一动不动** ——
+    // 它的 vld / 数据 / preg 全部冻结, 发射队列里永远没有有效表项。
+    // 父模块 ct_idu_is_aiq 已经把 forever_cpuclk 连进来了 (见其例化处)。
+    // 每个 always_ff 内部各自带使能条件 (create_en / update_vld / rtu_yy_xx_flush),
+    // 所以直接接 forever_cpuclk 功能等价, 只是少了时钟门控的省电效果。
+    // ---------------------------------------------------------------------
+    assign entry_clk       = forever_cpuclk;
+    assign create_preg_clk = forever_cpuclk;
+    assign create_clk      = forever_cpuclk;
     logic illegal;
     //==========================================================
     //                      Entry Valid

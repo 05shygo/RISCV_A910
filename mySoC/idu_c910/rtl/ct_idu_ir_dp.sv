@@ -396,7 +396,9 @@ assign dp_rt_inst2_src1_reg[4:0] =
 
 
 assign crtl_ir_inst2_data[96:0] = {ir_inst2_data[IR_TAKEN:IR_TAKEN-64],ir_inst2_data[IR_OPCODE:IR_OPCODE-31]};
-assign ctrl_ir_inst2_chk[24:0]  = ir_inst2_chk[24:0];
+// 2026-10-08 修: 原写成 ctrl_ir_inst2_chk (少了个 l), 与端口名 crtl_ir_inst2_chk 不符
+// ⇒ "Identifier not declared" ⇒ 整个 IDU 编不过。
+assign crtl_ir_inst2_chk[24:0]  = ir_inst2_chk[24:0];
 //==========================================================
 //                   Instance IR Decoder
 //==========================================================
