@@ -1,6 +1,6 @@
 module ct_idu_is_sdiq(
     input  logic         cpurst_b,
-    input  logic         lsu_sdiq_has_in_sq_vld,
+  //  input  logic         lsu_sdiq_has_in_sq_vld,
  //   input  logic         lsu_sq_sdiq_unalign_vld,
     input  logic [3:0]   lsu_sdiq_has_in_sq_sdiq,
  //   input  logic [3:0]   lsu_sq_sdiq_unalign_sdiq,
@@ -424,7 +424,7 @@ assign idu_rtu_pst_preg_dealloc_mask[63:0] = sdiq_src0_preg_dealloc_mask[63:0];
 //==========================================================
 //             LSU Issue Queue Entry Instance
 //==========================================================
-assign lsu_sdiq_has_in_sq = {4{lsu_sdiq_has_in_sq_vld}} & lsu_sdiq_has_in_sq_sdiq[3:0];
+assign lsu_sdiq_has_in_sq =lsu_sdiq_has_in_sq_sdiq[3:0];
 //assign lsu_sq_sdiq_unalign = {4{lsu_sq_sdiq_unalign_vld}} & lsu_sq_sdiq_unalign_sdiq[3:0];
 
 // entry 0

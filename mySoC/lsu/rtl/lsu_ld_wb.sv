@@ -43,6 +43,7 @@ module ct_lsu_ld_wb #(
     output logic [63:0]  lsu_rtu_wb_pipe3_wb_preg_expand,
     output logic         lsu_rtu_wb_pipe3_wb_preg_vld,
     output logic [5:0]   lsu_idu_wb_pipe3_wb_preg,
+    output logic         lsu_idu_wb_pipe3_wb_preg_vld_dupx,
     output logic [31:0]  lsu_idu_wb_pipe3_wb_preg_data,
     output logic [63:0]  lsu_idu_wb_pipe3_wb_preg_expand,
     output logic         lsu_idu_wb_pipe3_wb_preg_vld
@@ -285,6 +286,7 @@ assign lsu_rtu_async_expt_addr[31:0]  = (ld_wb_data_vld && ld_wb_bus_err)
 
 assign lsu_idu_wb_pipe3_wb_preg_vld          = ld_wb_pre_preg_wb_vld;
 assign lsu_idu_wb_pipe3_wb_preg[5:0]         = ld_wb_data_preg[5:0];
+assign lsu_idu_wb_pipe3_wb_preg_vld_dupx     = ld_wb_inst_vld;
 assign lsu_idu_wb_pipe3_wb_preg_expand[63:0] = ld_wb_data_preg_expand[63:0];
 assign lsu_idu_wb_pipe3_wb_preg_data[31:0]   = ld_wb_preg_data_sign_extend[31:0];
 

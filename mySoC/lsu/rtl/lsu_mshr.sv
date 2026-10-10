@@ -107,7 +107,7 @@ module lsu_mshr #(
     output logic [1:0]   rb_biu_ar_len,
     output logic [2:0]   rb_biu_ar_size,
     output logic [1:0]   rb_biu_ar_burst,
-    output logic         rb_biu_ar_lock,
+    //output logic         rb_biu_ar_lock,
     output logic [3:0]   rb_biu_ar_cache,
     output logic [2:0]   rb_biu_ar_prot,
     output logic         rb_biu_ar_req,
@@ -484,7 +484,7 @@ assign rb_biu_ar_id[3:0]    = lfb_rb_create_id[3:0];
 assign rb_biu_ar_len[1:0]   = 2'b01;
 assign rb_biu_ar_size[2:0]  = 3'b100;
 assign rb_biu_ar_burst[1:0] = 2'b10;   // WRAP
-assign rb_biu_ar_lock       = 1'b0;
+//assign rb_biu_ar_lock       = 1'b0;
 assign rb_biu_ar_cache[3:0] = 4'b1111; // cacheable + bufferable
 assign rb_biu_ar_prot[2:0]  = 3'b000;
 

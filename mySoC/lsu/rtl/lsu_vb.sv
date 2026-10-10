@@ -71,7 +71,7 @@ module ct_lsu_vb #(
     output logic [3:0]   vb_biu_aw_cache,
     output logic [3:0]   vb_biu_aw_id,
     output logic [1:0]   vb_biu_aw_len,
-    output logic         vb_biu_aw_lock,
+   // output logic         vb_biu_aw_lock,
     output logic [2:0]   vb_biu_aw_prot,
     output logic         vb_biu_aw_req,
     output logic [2:0]   vb_biu_aw_size,
@@ -445,7 +445,7 @@ assign vb_biu_aw_addr[31:0]    = {vb_addr_tto5[26:0], 5'b0};
 assign vb_biu_aw_len[1:0]      = 2'b01;   // 2-beat burst (32B)
 assign vb_biu_aw_size[2:0]     = 3'b100;  // 16B/beat
 assign vb_biu_aw_burst[1:0]    = 2'b01;   // INCR
-assign vb_biu_aw_lock          = 1'b0;
+//assign vb_biu_aw_lock          = 1'b0;
 assign vb_biu_aw_cache[3:0]    = 4'b0011;
 assign vb_biu_aw_prot[2:0]     = 3'b000;
 

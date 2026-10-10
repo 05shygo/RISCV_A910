@@ -29,7 +29,7 @@ module ct_biu_top #(
     input  logic [2:0]               ifu_biu_arprot,
     input  logic                     ifu_biu_arvalid,
     output logic                     ifu_biu_arready,
-    input  logic                     ifu_biu_rid,
+    input  logic [ID_WIDTH-1:0]      ifu_biu_rid,
 
     //---------------------------------------------------------
     // IFU read response

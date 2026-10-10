@@ -72,46 +72,46 @@ module lsu_top #(
 
     // BIU AR 输出
   output logic [31:0]  lsu_biu_ar_addr,
-  output logic [1:0]   lsu_biu_ar_bar,
+ // output logic [1:0]   lsu_biu_ar_bar,
   output logic [1:0]   lsu_biu_ar_burst,
   output logic [3:0]   lsu_biu_ar_cache,
-  output logic [1:0]   lsu_biu_ar_domain,
+ // output logic [1:0]   lsu_biu_ar_domain,
   output logic [3:0]   lsu_biu_ar_id,
   output logic [1:0]   lsu_biu_ar_len,
-  output logic         lsu_biu_ar_lock,
+ // output logic         lsu_biu_ar_lock,
   output logic [2:0]   lsu_biu_ar_prot,
   output logic         lsu_biu_ar_req,
   output logic [2:0]   lsu_biu_ar_size,
-  output logic [2:0]   lsu_biu_ar_user,
+//  output logic [2:0]   lsu_biu_ar_user,
   output logic         lsu_biu_r_ready,
 
   // BIU AW store 输出
   output logic [31:0]  lsu_biu_aw_st_addr,
-  output logic [1:0]   lsu_biu_aw_st_bar,
+ // output logic [1:0]   lsu_biu_aw_st_bar,
   output logic [1:0]   lsu_biu_aw_st_burst,
   output logic [3:0]   lsu_biu_aw_st_cache,
-  output logic [1:0]   lsu_biu_aw_st_domain,
+ // output logic [1:0]   lsu_biu_aw_st_domain,
   output logic [3:0]   lsu_biu_aw_st_id,
   output logic [1:0]   lsu_biu_aw_st_len,
-  output logic         lsu_biu_aw_st_lock,
+//  output logic         lsu_biu_aw_st_lock,
   output logic [2:0]   lsu_biu_aw_st_prot,
   output logic         lsu_biu_aw_st_req,
   output logic [2:0]   lsu_biu_aw_st_size,
-  output logic         lsu_biu_aw_st_user,
+//  output logic         lsu_biu_aw_st_user,
 
   // BIU AW victim 输出
   output logic [31:0]  lsu_biu_aw_vict_addr,
-  output logic [1:0]   lsu_biu_aw_vict_bar,
+//  output logic [1:0]   lsu_biu_aw_vict_bar,
   output logic [1:0]   lsu_biu_aw_vict_burst,
   output logic [3:0]   lsu_biu_aw_vict_cache,
-  output logic [1:0]   lsu_biu_aw_vict_domain,
+ // output logic [1:0]   lsu_biu_aw_vict_domain,
   output logic [3:0]   lsu_biu_aw_vict_id,
   output logic [1:0]   lsu_biu_aw_vict_len,
-  output logic         lsu_biu_aw_vict_lock,
+ // output logic         lsu_biu_aw_vict_lock,
   output logic [2:0]   lsu_biu_aw_vict_prot,
   output logic         lsu_biu_aw_vict_req,
   output logic [2:0]   lsu_biu_aw_vict_size,
-  output logic         lsu_biu_aw_vict_user,
+ // output logic         lsu_biu_aw_vict_user,
 
   // BIU W store 输出
   output logic [127:0] lsu_biu_w_st_data,
@@ -214,6 +214,7 @@ module lsu_top #(
 
   // LSU to IDU - Writeback pipe3
   output logic [5:0]           lsu_idu_wb_pipe3_wb_preg,
+  output logic                 lsu_idu_wb_pipe3_wb_preg_vld_dupx,
   output logic [31:0]          lsu_idu_wb_pipe3_wb_preg_data,
   output logic [63:0]          lsu_idu_wb_pipe3_wb_preg_expand,
   output logic                 lsu_idu_wb_pipe3_wb_preg_vld,
@@ -224,15 +225,15 @@ module lsu_top #(
   output logic [31:0]          lsu_rtu_wb_pipe4_expt_addr,
   output logic                 lsu_rtu_wb_pipe4_flush,
   output logic [6:0]           lsu_rtu_wb_pipe4_iid,
-  output logic                 lsu_rtu_wb_pipe4_spec_fail,
+  output logic                 lsu_rtu_wb_pipe4_spec_fail
 
   // Store queue wakeup
-  output logic [LSIQ_ENTRY-1:0]sq_data_depd_wakeup,
-  output logic [LSIQ_ENTRY-1:0]sq_global_depd_wakeup,
+//  output logic [LSIQ_ENTRY-1:0]sq_data_depd_wakeup,
+ // output logic [LSIQ_ENTRY-1:0]sq_global_depd_wakeup,
 
 
   // LFB dependency wakeup
-  output logic [LSIQ_ENTRY-1:0] lfb_depd_wakeup
+ // output logic [LSIQ_ENTRY-1:0] lfb_depd_wakeup
 );
 
 // Derived parameters
@@ -258,7 +259,10 @@ logic [LSIQ_ENTRY-1:0]ld_ag_stall_restart_entry;
 logic [LSIQ_ENTRY-1:0]ld_dc_imme_wakeup;
 assign lsu_idu_imme_wakeup[LSIQ_ENTRY-1:0] = ld_dc_imme_wakeup[LSIQ_ENTRY-1:0] |
                                             st_ag_stall_restart_entry[LSIQ_ENTRY-1:0] |
-                                            ld_ag_stall_restart_entry[LSIQ_ENTRY-1:0];
+                                            ld_ag_stall_restart_entry[LSIQ_ENTRY-1:0] |
+                                            sq_data_depd_wakeup[LSIQ_ENTRY-1:0] |
+                                            sq_global_depd_wakeup[LSIQ_ENTRY-1:0] | 
+                                            lfb_depd_wakeup[LSIQ_ENTRY-1:0];
 
 logic [LSIQ_ENTRY-1:0]ld_da_idu_pop_entry;
 logic [LSIQ_ENTRY-1:0]st_da_idu_pop_entry;
@@ -294,31 +298,31 @@ assign lsu_idu_lsiq_pop_vld = lsu_idu_lsiq_pop0_vld | lsu_idu_lsiq_pop1_vld;
 //==========================================================
 // RB -> BIU AR request
 logic [31:0]  rb_biu_ar_addr;
-logic [1:0]   rb_biu_ar_bar;
+//logic [1:0]   rb_biu_ar_bar;
 logic [1:0]   rb_biu_ar_burst;
 logic [3:0]   rb_biu_ar_cache;
-logic [1:0]   rb_biu_ar_domain;
+//logic [1:0]   rb_biu_ar_domain;
 logic [3:0]   rb_biu_ar_id;
 logic [1:0]   rb_biu_ar_len;
-logic         rb_biu_ar_lock;
+//logic         rb_biu_ar_lock;
 logic [2:0]   rb_biu_ar_prot;
 logic         rb_biu_ar_req;
 logic [2:0]   rb_biu_ar_size;
-logic [2:0]   rb_biu_ar_user;
+//logic [2:0]   rb_biu_ar_user;
 
 // VB -> BIU AW/W request
 logic [31:0]  vb_biu_aw_addr;
-logic [1:0]   vb_biu_aw_bar;
+//logic [1:0]   vb_biu_aw_bar;
 logic [1:0]   vb_biu_aw_burst;
 logic [3:0]   vb_biu_aw_cache;
-logic [1:0]   vb_biu_aw_domain;
+//logic [1:0]   vb_biu_aw_domain;
 logic [3:0]   vb_biu_aw_id;
 logic [1:0]   vb_biu_aw_len;
-logic         vb_biu_aw_lock;
+//logic         vb_biu_aw_lock;
 logic [2:0]   vb_biu_aw_prot;
 logic         vb_biu_aw_req;
 logic [2:0]   vb_biu_aw_size;
-logic         vb_biu_aw_user;
+//logic         vb_biu_aw_user;
 logic [127:0] vb_biu_w_data;
 logic [3:0]   vb_biu_w_id;
 logic         vb_biu_w_last;
@@ -328,18 +332,18 @@ logic         vb_biu_w_vld;
 
 // WMB -> BIU AW/W request
 logic [31:0]  wmb_biu_aw_addr;
-logic [1:0]   wmb_biu_aw_bar;
+//logic [1:0]   wmb_biu_aw_bar;
 logic [1:0]   wmb_biu_aw_burst;
 logic [3:0]   wmb_biu_aw_cache;
-logic [1:0]   wmb_biu_aw_domain;
+//logic [1:0]   wmb_biu_aw_domain;
 logic [3:0]   wmb_biu_aw_id;
 logic [1:0]   wmb_biu_aw_len;
-logic         wmb_biu_aw_lock;
+//logic         wmb_biu_aw_lock;
 logic [2:0]   wmb_biu_aw_prot;
 logic         wmb_biu_aw_req;
 logic [2:0]   wmb_biu_aw_size;
 logic [2:0]   wmb_biu_aw_snoop;
-logic         wmb_biu_aw_user;
+//logic         wmb_biu_aw_user;
 logic [127:0] wmb_biu_w_data;
 logic [3:0]   wmb_biu_w_id;
 logic         wmb_biu_w_last;
@@ -831,31 +835,31 @@ ct_lsu_bus_arb u_ct_lsu_bus_arb (
 
   // RB AR 请求
   .rb_biu_ar_addr            (rb_biu_ar_addr           ),
-  .rb_biu_ar_bar             (rb_biu_ar_bar            ),
+ // .rb_biu_ar_bar             (rb_biu_ar_bar            ),
   .rb_biu_ar_burst           (rb_biu_ar_burst          ),
   .rb_biu_ar_cache           (rb_biu_ar_cache          ),
-  .rb_biu_ar_domain          (rb_biu_ar_domain         ),
+//  .rb_biu_ar_domain          (rb_biu_ar_domain         ),
   .rb_biu_ar_id              (rb_biu_ar_id             ),
   .rb_biu_ar_len             (rb_biu_ar_len            ),
-  .rb_biu_ar_lock            (rb_biu_ar_lock           ),
+  //.rb_biu_ar_lock            (rb_biu_ar_lock           ),
   .rb_biu_ar_prot            (rb_biu_ar_prot           ),
   .rb_biu_ar_req             (rb_biu_ar_req            ),
   .rb_biu_ar_size            (rb_biu_ar_size           ),
-  .rb_biu_ar_user            (rb_biu_ar_user           ),
+ // .rb_biu_ar_user            (rb_biu_ar_user           ),
 
   // VB AW 请求
   .vb_biu_aw_addr            (vb_biu_aw_addr           ),
-  .vb_biu_aw_bar             (vb_biu_aw_bar            ),
+ // .vb_biu_aw_bar             (vb_biu_aw_bar            ),
   .vb_biu_aw_burst           (vb_biu_aw_burst          ),
   .vb_biu_aw_cache           (vb_biu_aw_cache          ),
-  .vb_biu_aw_domain          (vb_biu_aw_domain         ),
+ // .vb_biu_aw_domain          (vb_biu_aw_domain         ),
   .vb_biu_aw_id              (vb_biu_aw_id             ),
   .vb_biu_aw_len             (vb_biu_aw_len            ),
-  .vb_biu_aw_lock            (vb_biu_aw_lock           ),
+ // .vb_biu_aw_lock            (vb_biu_aw_lock           ),
   .vb_biu_aw_prot            (vb_biu_aw_prot           ),
   .vb_biu_aw_req             (vb_biu_aw_req            ),
   .vb_biu_aw_size            (vb_biu_aw_size           ),
-  .vb_biu_aw_user            (vb_biu_aw_user           ),
+ // .vb_biu_aw_user            (vb_biu_aw_user           ),
 
   // VB W 请求
   .vb_biu_w_data             (vb_biu_w_data            ),
@@ -866,17 +870,17 @@ ct_lsu_bus_arb u_ct_lsu_bus_arb (
 
   // WMB AW 请求
   .wmb_biu_aw_addr           (wmb_biu_aw_addr          ),
-  .wmb_biu_aw_bar            (wmb_biu_aw_bar           ),
+//  .wmb_biu_aw_bar            (wmb_biu_aw_bar           ),
   .wmb_biu_aw_burst          (wmb_biu_aw_burst         ),
   .wmb_biu_aw_cache          (wmb_biu_aw_cache         ),
-  .wmb_biu_aw_domain         (wmb_biu_aw_domain        ),
+  //.wmb_biu_aw_domain         (wmb_biu_aw_domain        ),
   .wmb_biu_aw_id             (wmb_biu_aw_id            ),
   .wmb_biu_aw_len            (wmb_biu_aw_len           ),
-  .wmb_biu_aw_lock           (wmb_biu_aw_lock          ),
+  //.wmb_biu_aw_lock           (wmb_biu_aw_lock          ),
   .wmb_biu_aw_prot           (wmb_biu_aw_prot          ),
   .wmb_biu_aw_req            (wmb_biu_aw_req           ),
   .wmb_biu_aw_size           (wmb_biu_aw_size          ),
-  .wmb_biu_aw_user           (wmb_biu_aw_user          ),
+ // .wmb_biu_aw_user           (wmb_biu_aw_user          ),
 
   // WMB W 请求
   .wmb_biu_w_data            (wmb_biu_w_data           ),
@@ -898,45 +902,45 @@ ct_lsu_bus_arb u_ct_lsu_bus_arb (
 
   // BIU AR 输出
   .lsu_biu_ar_addr           (lsu_biu_ar_addr          ),
-  .lsu_biu_ar_bar            (lsu_biu_ar_bar           ),
+ // .lsu_biu_ar_bar            (lsu_biu_ar_bar           ),
   .lsu_biu_ar_burst          (lsu_biu_ar_burst         ),
   .lsu_biu_ar_cache          (lsu_biu_ar_cache         ),
-  .lsu_biu_ar_domain         (lsu_biu_ar_domain        ),
+ // .lsu_biu_ar_domain         (lsu_biu_ar_domain        ),
   .lsu_biu_ar_id             (lsu_biu_ar_id            ),
   .lsu_biu_ar_len            (lsu_biu_ar_len           ),
-  .lsu_biu_ar_lock           (lsu_biu_ar_lock          ),
+ // .lsu_biu_ar_lock           (lsu_biu_ar_lock          ),
   .lsu_biu_ar_prot           (lsu_biu_ar_prot          ),
   .lsu_biu_ar_req            (lsu_biu_ar_req           ),
   .lsu_biu_ar_size           (lsu_biu_ar_size          ),
-  .lsu_biu_ar_user           (lsu_biu_ar_user          ),
+//  .lsu_biu_ar_user           (lsu_biu_ar_user          ),
 
   // BIU AW store 输出
   .lsu_biu_aw_st_addr        (lsu_biu_aw_st_addr       ),
-  .lsu_biu_aw_st_bar         (lsu_biu_aw_st_bar        ),
+ // .lsu_biu_aw_st_bar         (lsu_biu_aw_st_bar        ),
   .lsu_biu_aw_st_burst       (lsu_biu_aw_st_burst      ),
   .lsu_biu_aw_st_cache       (lsu_biu_aw_st_cache      ),
-  .lsu_biu_aw_st_domain      (lsu_biu_aw_st_domain     ),
+  //.lsu_biu_aw_st_domain      (lsu_biu_aw_st_domain     ),
   .lsu_biu_aw_st_id          (lsu_biu_aw_st_id         ),
   .lsu_biu_aw_st_len         (lsu_biu_aw_st_len        ),
-  .lsu_biu_aw_st_lock        (lsu_biu_aw_st_lock       ),
+  //.lsu_biu_aw_st_lock        (lsu_biu_aw_st_lock       ),
   .lsu_biu_aw_st_prot        (lsu_biu_aw_st_prot       ),
   .lsu_biu_aw_st_req         (lsu_biu_aw_st_req        ),
   .lsu_biu_aw_st_size        (lsu_biu_aw_st_size       ),
-  .lsu_biu_aw_st_user        (lsu_biu_aw_st_user       ),
+  //.lsu_biu_aw_st_user        (lsu_biu_aw_st_user       ),
 
   // BIU AW victim 输出
   .lsu_biu_aw_vict_addr      (lsu_biu_aw_vict_addr     ),
-  .lsu_biu_aw_vict_bar       (lsu_biu_aw_vict_bar      ),
+ // .lsu_biu_aw_vict_bar       (lsu_biu_aw_vict_bar      ),
   .lsu_biu_aw_vict_burst     (lsu_biu_aw_vict_burst    ),
   .lsu_biu_aw_vict_cache     (lsu_biu_aw_vict_cache    ),
-  .lsu_biu_aw_vict_domain    (lsu_biu_aw_vict_domain   ),
+  //.lsu_biu_aw_vict_domain    (lsu_biu_aw_vict_domain   ),
   .lsu_biu_aw_vict_id        (lsu_biu_aw_vict_id       ),
   .lsu_biu_aw_vict_len       (lsu_biu_aw_vict_len      ),
-  .lsu_biu_aw_vict_lock      (lsu_biu_aw_vict_lock     ),
+  //.lsu_biu_aw_vict_lock      (lsu_biu_aw_vict_lock     ),
   .lsu_biu_aw_vict_prot      (lsu_biu_aw_vict_prot     ),
   .lsu_biu_aw_vict_req       (lsu_biu_aw_vict_req      ),
   .lsu_biu_aw_vict_size      (lsu_biu_aw_vict_size     ),
-  .lsu_biu_aw_vict_user      (lsu_biu_aw_vict_user     ),
+//  .lsu_biu_aw_vict_user      (lsu_biu_aw_vict_user     ),
 
   // BIU W store 输出
   .lsu_biu_w_st_data         (lsu_biu_w_st_data        ),
@@ -1252,6 +1256,7 @@ ct_lsu_ld_wb #(
   .lsu_rtu_wb_pipe3_wb_preg_expand(lsu_rtu_wb_pipe3_wb_preg_expand),
   .lsu_rtu_wb_pipe3_wb_preg_vld(lsu_rtu_wb_pipe3_wb_preg_vld),
   .lsu_idu_wb_pipe3_wb_preg(lsu_idu_wb_pipe3_wb_preg),
+  .lsu_idu_wb_pipe3_wb_preg_vld_dupx(lsu_idu_wb_pipe3_wb_preg_vld_dupx),
   .lsu_idu_wb_pipe3_wb_preg_data(lsu_idu_wb_pipe3_wb_preg_data),
   .lsu_idu_wb_pipe3_wb_preg_expand(lsu_idu_wb_pipe3_wb_preg_expand),
   .lsu_idu_wb_pipe3_wb_preg_vld(lsu_idu_wb_pipe3_wb_preg_vld)
@@ -1766,18 +1771,18 @@ lsu_wmb #(
 
   // BIU interface
   .wmb_biu_aw_addr(wmb_biu_aw_addr),
-  .wmb_biu_aw_bar(wmb_biu_aw_bar),
+ // .wmb_biu_aw_bar(wmb_biu_aw_bar),
   .wmb_biu_aw_burst(wmb_biu_aw_burst),
   .wmb_biu_aw_cache(wmb_biu_aw_cache),
-  .wmb_biu_aw_domain(wmb_biu_aw_domain),
+ // .wmb_biu_aw_domain(wmb_biu_aw_domain),
   .wmb_biu_aw_id(wmb_biu_aw_id),
   .wmb_biu_aw_len(wmb_biu_aw_len),
-  .wmb_biu_aw_lock(wmb_biu_aw_lock),
+ // .wmb_biu_aw_lock(wmb_biu_aw_lock),
   .wmb_biu_aw_prot(wmb_biu_aw_prot),
   .wmb_biu_aw_req(wmb_biu_aw_req),
   .wmb_biu_aw_size(wmb_biu_aw_size),
   .wmb_biu_aw_snoop(wmb_biu_aw_snoop),
-  .wmb_biu_aw_user(wmb_biu_aw_user),
+  //.wmb_biu_aw_user(wmb_biu_aw_user),
   .wmb_biu_w_data(wmb_biu_w_data),
   .wmb_biu_w_id(wmb_biu_w_id),
   .wmb_biu_w_req(wmb_biu_w_req),
@@ -1922,7 +1927,7 @@ ct_lsu_vb #(
   .vb_biu_aw_cache(vb_biu_aw_cache),
   .vb_biu_aw_id(vb_biu_aw_id),
   .vb_biu_aw_len(vb_biu_aw_len),
-  .vb_biu_aw_lock(vb_biu_aw_lock),
+ // .vb_biu_aw_lock(vb_biu_aw_lock),
   .vb_biu_aw_prot(vb_biu_aw_prot),
   .vb_biu_aw_req(vb_biu_aw_req),
   .vb_biu_aw_size(vb_biu_aw_size),
@@ -2186,7 +2191,7 @@ lsu_mshr #(
   .rb_biu_ar_len(rb_biu_ar_len),
   .rb_biu_ar_size(rb_biu_ar_size),
   .rb_biu_ar_burst(rb_biu_ar_burst),
-  .rb_biu_ar_lock(rb_biu_ar_lock),
+ // .rb_biu_ar_lock(rb_biu_ar_lock),
   .rb_biu_ar_cache(rb_biu_ar_cache),
   .rb_biu_ar_prot(rb_biu_ar_prot),
   .rb_biu_ar_req(rb_biu_ar_req),

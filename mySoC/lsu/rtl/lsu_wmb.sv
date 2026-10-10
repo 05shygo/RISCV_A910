@@ -108,18 +108,18 @@ module lsu_wmb #(
 
   // BIU AW channel
   output logic [PA_WIDTH-1:0]  wmb_biu_aw_addr,
-  output logic [1:0]           wmb_biu_aw_bar,
+ // output logic [1:0]           wmb_biu_aw_bar,
   output logic [1:0]           wmb_biu_aw_burst,
   output logic [3:0]           wmb_biu_aw_cache,
-  output logic [1:0]           wmb_biu_aw_domain,
+ // output logic [1:0]           wmb_biu_aw_domain,
   output logic [3:0]           wmb_biu_aw_id,
   output logic [1:0]           wmb_biu_aw_len,
-  output logic                 wmb_biu_aw_lock,
+ // output logic                 wmb_biu_aw_lock,
   output logic [2:0]           wmb_biu_aw_prot,
   output logic                 wmb_biu_aw_req,
   output logic [2:0]           wmb_biu_aw_size,
   output logic [2:0]           wmb_biu_aw_snoop,
-  output logic                 wmb_biu_aw_user,
+ // output logic                 wmb_biu_aw_user,
 
   // BIU W channel
   output logic [127:0]         wmb_biu_w_data,
@@ -495,13 +495,13 @@ assign wmb_rb_biu_req_hit_idx = |wmb_entry_rb_biu_req_hit_idx;
   assign wmb_biu_aw_len = 2'b00;  // Single beat
   assign wmb_biu_aw_size = 3'b100;  // 16 bytes
   assign wmb_biu_aw_burst = 2'b01;  // INCR
-  assign wmb_biu_aw_lock = 1'b0;
+  //assign wmb_biu_aw_lock = 1'b0;
   assign wmb_biu_aw_cache = 4'b1111;  // All cacheable
   assign wmb_biu_aw_prot = 3'b000;
   assign wmb_biu_aw_snoop = 3'b000;  // No snoop
-  assign wmb_biu_aw_domain = 2'b00;
-  assign wmb_biu_aw_bar = 2'b00;
-  assign wmb_biu_aw_user = 1'b0;
+ // assign wmb_biu_aw_domain = 2'b00;
+ // assign wmb_biu_aw_bar = 2'b00;
+ // assign wmb_biu_aw_user = 1'b0;
 
   //==========================================================
   //          BIU W channel

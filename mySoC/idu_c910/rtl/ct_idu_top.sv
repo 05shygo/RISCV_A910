@@ -81,7 +81,7 @@ module ct_idu_top(
   //==========================================================
   // Interface with LSU - SDIQ control
   //==========================================================
-  input  logic         lsu_sdiq_has_in_sq_vld,
+ // input  logic         lsu_sdiq_has_in_sq_vld,
   input  logic [3:0]   lsu_sdiq_has_in_sq_sdiq,
 
   //==========================================================
@@ -137,7 +137,7 @@ module ct_idu_top(
   //==========================================================
   output logic         idu_lsu_st_sel,
   output logic [6:0]   idu_lsu_st_iid,
-  output logic [5:0]   idu_lsu_st_preg,
+//  output logic [5:0]   idu_lsu_st_preg,
   output logic [31:0]  idu_lsu_st_src0,
   output logic [11:0]  idu_lsu_st_offset,
   output logic [12:0]  idu_lsu_st_offset_plus,
@@ -1109,7 +1109,7 @@ ct_idu_is_lsiq x_ct_idu_is_lsiq (
 // Instance 8: ct_idu_is_sdiq
 ct_idu_is_sdiq x_ct_idu_is_sdiq (
   .cpurst_b                              (cpurst_b),
-  .lsu_sdiq_has_in_sq_vld                (lsu_sdiq_has_in_sq_vld),//in
+ // .lsu_sdiq_has_in_sq_vld                (lsu_sdiq_has_in_sq_vld),//in
   .lsu_sdiq_has_in_sq_sdiq(lsu_sdiq_has_in_sq_sdiq),
   // 2026-10-08 修: 原来这里连了 .lsu_sq_sdiq_unalign_sdiq, 但该端口在
   // ct_idu_is_sdiq 里**已经被注释掉了** (见其 :6 的注释行与 :428 的注释 assign)
@@ -1246,7 +1246,7 @@ ct_idu_rf_dp x_ct_idu_rf_dp (
   .prf_dp_rf_pipe4_src0_data                              (prf_dp_rf_pipe4_src0_data),
   .dp_prf_rf_pipe4_src0_preg                              (dp_prf_rf_pipe4_src0_preg),
   .idu_lsu_st_iid                        (idu_lsu_st_iid),//out
-  .idu_lsu_st_preg                       (idu_lsu_st_preg),//out
+ // .idu_lsu_st_preg                       (idu_lsu_st_preg),//out
   .idu_lsu_st_src0                       (idu_lsu_st_src0),//out
   .idu_lsu_st_offset                     (idu_lsu_st_offset),//out
   .idu_lsu_st_offset_plus                (idu_lsu_st_offset_plus),//out

@@ -22,31 +22,31 @@ module ct_lsu_bus_arb (
 
   // RB AR request
   input  logic [31:0]  rb_biu_ar_addr,
-  input  logic [1:0]   rb_biu_ar_bar,
+//  input  logic [1:0]   rb_biu_ar_bar,
   input  logic [1:0]   rb_biu_ar_burst,
   input  logic [3:0]   rb_biu_ar_cache,
-  input  logic [1:0]   rb_biu_ar_domain,
+ // input  logic [1:0]   rb_biu_ar_domain,
   input  logic [3:0]   rb_biu_ar_id,
   input  logic [1:0]   rb_biu_ar_len,
   input  logic         rb_biu_ar_lock,
   input  logic [2:0]   rb_biu_ar_prot,
   input  logic         rb_biu_ar_req,
   input  logic [2:0]   rb_biu_ar_size,
-  input  logic [2:0]   rb_biu_ar_user,
+ // input  logic [2:0]   rb_biu_ar_user,
 
   // VB AW request
   input  logic [31:0]  vb_biu_aw_addr,
-  input  logic [1:0]   vb_biu_aw_bar,
+ // input  logic [1:0]   vb_biu_aw_bar,
   input  logic [1:0]   vb_biu_aw_burst,
   input  logic [3:0]   vb_biu_aw_cache,
-  input  logic [1:0]   vb_biu_aw_domain,
+ // input  logic [1:0]   vb_biu_aw_domain,
   input  logic [3:0]   vb_biu_aw_id,
   input  logic [1:0]   vb_biu_aw_len,
   input  logic         vb_biu_aw_lock,
   input  logic [2:0]   vb_biu_aw_prot,
   input  logic         vb_biu_aw_req,
   input  logic [2:0]   vb_biu_aw_size,
-  input  logic         vb_biu_aw_user,
+ // input  logic         vb_biu_aw_user,
 
   // VB W request
   input  logic [127:0] vb_biu_w_data,
@@ -57,17 +57,17 @@ module ct_lsu_bus_arb (
 
   // WMB AW request
   input  logic [31:0]  wmb_biu_aw_addr,
-  input  logic [1:0]   wmb_biu_aw_bar,
+//  input  logic [1:0]   wmb_biu_aw_bar,
   input  logic [1:0]   wmb_biu_aw_burst,
   input  logic [3:0]   wmb_biu_aw_cache,
-  input  logic [1:0]   wmb_biu_aw_domain,
+ // input  logic [1:0]   wmb_biu_aw_domain,
   input  logic [3:0]   wmb_biu_aw_id,
   input  logic [1:0]   wmb_biu_aw_len,
   input  logic         wmb_biu_aw_lock,
   input  logic [2:0]   wmb_biu_aw_prot,
   input  logic         wmb_biu_aw_req,
   input  logic [2:0]   wmb_biu_aw_size,
-  input  logic         wmb_biu_aw_user,
+ // input  logic         wmb_biu_aw_user,
 
   // WMB W request
   input  logic [127:0] wmb_biu_w_data,
@@ -89,45 +89,45 @@ module ct_lsu_bus_arb (
 
   // BIU AR outputs
   output logic [31:0]  lsu_biu_ar_addr,
-  output logic [1:0]   lsu_biu_ar_bar,
+  //output logic [1:0]   lsu_biu_ar_bar,
   output logic [1:0]   lsu_biu_ar_burst,
   output logic [3:0]   lsu_biu_ar_cache,
-  output logic [1:0]   lsu_biu_ar_domain,
+ // output logic [1:0]   lsu_biu_ar_domain,
   output logic [3:0]   lsu_biu_ar_id,
   output logic [1:0]   lsu_biu_ar_len,
   output logic         lsu_biu_ar_lock,
   output logic [2:0]   lsu_biu_ar_prot,
   output logic         lsu_biu_ar_req,
   output logic [2:0]   lsu_biu_ar_size,
-  output logic [2:0]   lsu_biu_ar_user,
+ // output logic [2:0]   lsu_biu_ar_user,
 
   // BIU AW store outputs
   output logic [31:0]  lsu_biu_aw_st_addr,
-  output logic [1:0]   lsu_biu_aw_st_bar,
+//  output logic [1:0]   lsu_biu_aw_st_bar,
   output logic [1:0]   lsu_biu_aw_st_burst,
   output logic [3:0]   lsu_biu_aw_st_cache,
-  output logic [1:0]   lsu_biu_aw_st_domain,
+ // output logic [1:0]   lsu_biu_aw_st_domain,
   output logic [3:0]   lsu_biu_aw_st_id,
   output logic [1:0]   lsu_biu_aw_st_len,
   output logic         lsu_biu_aw_st_lock,
   output logic [2:0]   lsu_biu_aw_st_prot,
   output logic         lsu_biu_aw_st_req,
   output logic [2:0]   lsu_biu_aw_st_size,
-  output logic         lsu_biu_aw_st_user,
+ // output logic         lsu_biu_aw_st_user,
 
   // BIU AW victim outputs
   output logic [31:0]  lsu_biu_aw_vict_addr,
-  output logic [1:0]   lsu_biu_aw_vict_bar,
+//  output logic [1:0]   lsu_biu_aw_vict_bar,
   output logic [1:0]   lsu_biu_aw_vict_burst,
   output logic [3:0]   lsu_biu_aw_vict_cache,
-  output logic [1:0]   lsu_biu_aw_vict_domain,
+ // output logic [1:0]   lsu_biu_aw_vict_domain,
   output logic [3:0]   lsu_biu_aw_vict_id,
   output logic [1:0]   lsu_biu_aw_vict_len,
   output logic         lsu_biu_aw_vict_lock,
   output logic [2:0]   lsu_biu_aw_vict_prot,
   output logic         lsu_biu_aw_vict_req,
   output logic [2:0]   lsu_biu_aw_vict_size,
-  output logic         lsu_biu_aw_vict_user,
+ // output logic         lsu_biu_aw_vict_user,
 
   // BIU W store outputs
   output logic [127:0] lsu_biu_w_st_data,
@@ -157,9 +157,9 @@ module ct_lsu_bus_arb (
   assign lsu_biu_ar_cache     = rb_biu_ar_cache;
   assign lsu_biu_ar_prot      = rb_biu_ar_prot;
   assign lsu_biu_ar_req       = rb_biu_ar_req;
-  assign lsu_biu_ar_user      = rb_biu_ar_user;
-  assign lsu_biu_ar_domain    = rb_biu_ar_domain;
-  assign lsu_biu_ar_bar       = rb_biu_ar_bar;
+ // assign lsu_biu_ar_user      = rb_biu_ar_user;
+ // assign lsu_biu_ar_domain    = rb_biu_ar_domain;
+ // assign lsu_biu_ar_bar       = rb_biu_ar_bar;
 
   //==========================================================
   //                      AW channel
@@ -178,9 +178,9 @@ module ct_lsu_bus_arb (
   assign lsu_biu_aw_vict_lock   = vb_biu_aw_lock;
   assign lsu_biu_aw_vict_cache  = vb_biu_aw_cache;
   assign lsu_biu_aw_vict_prot   = vb_biu_aw_prot;
-  assign lsu_biu_aw_vict_user   = vb_biu_aw_user;
-  assign lsu_biu_aw_vict_domain = vb_biu_aw_domain;
-  assign lsu_biu_aw_vict_bar    = vb_biu_aw_bar;
+  //assign lsu_biu_aw_vict_user   = vb_biu_aw_user;
+ // assign lsu_biu_aw_vict_domain = vb_biu_aw_domain;
+ // assign lsu_biu_aw_vict_bar    = vb_biu_aw_bar;
 
   // WMB AW -> store
   assign lsu_biu_aw_st_req      = wmb_biu_aw_req;
@@ -192,9 +192,9 @@ module ct_lsu_bus_arb (
   assign lsu_biu_aw_st_lock     = wmb_biu_aw_lock;
   assign lsu_biu_aw_st_cache    = wmb_biu_aw_cache;
   assign lsu_biu_aw_st_prot     = wmb_biu_aw_prot;
-  assign lsu_biu_aw_st_user     = wmb_biu_aw_user;
-  assign lsu_biu_aw_st_domain   = wmb_biu_aw_domain;
-  assign lsu_biu_aw_st_bar      = wmb_biu_aw_bar;
+//  assign lsu_biu_aw_st_user     = wmb_biu_aw_user;
+ // assign lsu_biu_aw_st_domain   = wmb_biu_aw_domain;
+//  assign lsu_biu_aw_st_bar      = wmb_biu_aw_bar;
 
   //==========================================================
   //                        W channel

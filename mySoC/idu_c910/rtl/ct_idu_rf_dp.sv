@@ -88,7 +88,7 @@ module ct_idu_rf_dp (
   input  logic [31:0]    prf_dp_rf_pipe4_src0_data,
   output logic [5:0]     dp_prf_rf_pipe4_src0_preg,
   output logic [6:0]     idu_lsu_st_iid,
-  output logic [5:0]     idu_lsu_st_preg,
+  //output logic [5:0]     idu_lsu_st_preg,
   output logic [31:0]    idu_lsu_st_src0,
   output logic [11:0]    idu_lsu_st_offset,
   output logic [12:0]    idu_lsu_st_offset_plus,
@@ -702,7 +702,7 @@ assign rf_pipe4_src0_data[31:0] = prf_dp_rf_pipe4_src0_data[31:0];
 //                Output to Execution Units
 //----------------------------------------------------------
 assign idu_lsu_st_iid[6:0]          = rf_pipe4_data[LSIQ_IID:LSIQ_IID-6];
-assign idu_lsu_st_preg[5:0]         = rf_pipe4_data[LSIQ_DST_PREG:LSIQ_DST_PREG-5];
+//assign idu_lsu_st_preg[5:0]         = rf_pipe4_data[LSIQ_DST_PREG:LSIQ_DST_PREG-5];
 assign idu_lsu_st_src0[31:0]        = rf_pipe4_src0_data[31:0];
 assign idu_lsu_st_offset[11:0]      = pipe4_decd_offset[11:0];
 assign idu_lsu_st_offset_plus[12:0] = pipe4_decd_offset_plus[12:0];
