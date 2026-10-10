@@ -77,7 +77,7 @@ module tb_idu_c910;
   wire       lsu_idu_lsiq_pop0_vld;
   wire       lsu_idu_lsiq_pop1_vld;
   wire [ 7:0] lsu_idu_lsiq_pop_entry;
-  wire       lsu_sdiq_has_in_sq_vld;
+ // wire       lsu_sdiq_has_in_sq_vld;
   wire [ 3:0] lsu_sdiq_has_in_sq_sdiq;
   wire [ 5:0] rtu_preg_raddr1;
   wire [ 5:0] rtu_preg_raddr2;
@@ -123,7 +123,7 @@ module tb_idu_c910;
   wire       idu_lsu_ld_oldest;
   wire       idu_lsu_st_sel;
   wire [ 6:0] idu_lsu_st_iid;
-  wire [ 5:0] idu_lsu_st_preg;
+  //wire [ 5:0] idu_lsu_st_preg;
   wire [31:0] idu_lsu_st_src0;
   wire [11:0] idu_lsu_st_offset;
   wire [12:0] idu_lsu_st_offset_plus;
@@ -228,7 +228,7 @@ module tb_idu_c910;
   assign lsu_idu_lsiq_pop0_vld            = 1'b0;
   assign lsu_idu_lsiq_pop1_vld            = 1'b0;
   assign lsu_idu_lsiq_pop_entry           = 8'b0;
-  assign lsu_sdiq_has_in_sq_vld           = 1'b0;
+  //assign lsu_sdiq_has_in_sq_vld           = 1'b0;
   assign lsu_sdiq_has_in_sq_sdiq          = 4'b0;
   assign rtu_preg_raddr1                  = 6'b0;
   assign rtu_preg_raddr2                  = 6'b0;
@@ -285,7 +285,7 @@ module tb_idu_c910;
     .lsu_idu_lsiq_pop0_vld            (lsu_idu_lsiq_pop0_vld           ),
     .lsu_idu_lsiq_pop1_vld            (lsu_idu_lsiq_pop1_vld           ),
     .lsu_idu_lsiq_pop_entry           (lsu_idu_lsiq_pop_entry          ),
-    .lsu_sdiq_has_in_sq_vld           (lsu_sdiq_has_in_sq_vld          ),
+    //.lsu_sdiq_has_in_sq_vld           (lsu_sdiq_has_in_sq_vld          ),
     .lsu_sdiq_has_in_sq_sdiq          (lsu_sdiq_has_in_sq_sdiq         ),
     .rtu_preg_raddr1                  (rtu_preg_raddr1                 ),
     .rtu_preg_raddr2                  (rtu_preg_raddr2                 ),
@@ -344,7 +344,7 @@ module tb_idu_c910;
     .idu_lsu_ld_oldest                (idu_lsu_ld_oldest               ),
     .idu_lsu_st_sel                   (idu_lsu_st_sel                  ),
     .idu_lsu_st_iid                   (idu_lsu_st_iid                  ),
-    .idu_lsu_st_preg                  (idu_lsu_st_preg                 ),
+   // .idu_lsu_st_preg                  (idu_lsu_st_preg                 ),
     .idu_lsu_st_src0                  (idu_lsu_st_src0                 ),
     .idu_lsu_st_offset                (idu_lsu_st_offset               ),
     .idu_lsu_st_offset_plus           (idu_lsu_st_offset_plus          ),

@@ -28,7 +28,7 @@ module ct_lsu_bus_arb (
  // input  logic [1:0]   rb_biu_ar_domain,
   input  logic [3:0]   rb_biu_ar_id,
   input  logic [1:0]   rb_biu_ar_len,
-  input  logic         rb_biu_ar_lock,
+ // input  logic         rb_biu_ar_lock,
   input  logic [2:0]   rb_biu_ar_prot,
   input  logic         rb_biu_ar_req,
   input  logic [2:0]   rb_biu_ar_size,
@@ -42,7 +42,7 @@ module ct_lsu_bus_arb (
  // input  logic [1:0]   vb_biu_aw_domain,
   input  logic [3:0]   vb_biu_aw_id,
   input  logic [1:0]   vb_biu_aw_len,
-  input  logic         vb_biu_aw_lock,
+ // input  logic         vb_biu_aw_lock,
   input  logic [2:0]   vb_biu_aw_prot,
   input  logic         vb_biu_aw_req,
   input  logic [2:0]   vb_biu_aw_size,
@@ -63,7 +63,7 @@ module ct_lsu_bus_arb (
  // input  logic [1:0]   wmb_biu_aw_domain,
   input  logic [3:0]   wmb_biu_aw_id,
   input  logic [1:0]   wmb_biu_aw_len,
-  input  logic         wmb_biu_aw_lock,
+// input  logic         wmb_biu_aw_lock,
   input  logic [2:0]   wmb_biu_aw_prot,
   input  logic         wmb_biu_aw_req,
   input  logic [2:0]   wmb_biu_aw_size,
@@ -95,7 +95,7 @@ module ct_lsu_bus_arb (
  // output logic [1:0]   lsu_biu_ar_domain,
   output logic [3:0]   lsu_biu_ar_id,
   output logic [1:0]   lsu_biu_ar_len,
-  output logic         lsu_biu_ar_lock,
+ // output logic         lsu_biu_ar_lock,
   output logic [2:0]   lsu_biu_ar_prot,
   output logic         lsu_biu_ar_req,
   output logic [2:0]   lsu_biu_ar_size,
@@ -109,7 +109,7 @@ module ct_lsu_bus_arb (
  // output logic [1:0]   lsu_biu_aw_st_domain,
   output logic [3:0]   lsu_biu_aw_st_id,
   output logic [1:0]   lsu_biu_aw_st_len,
-  output logic         lsu_biu_aw_st_lock,
+ // output logic         lsu_biu_aw_st_lock,
   output logic [2:0]   lsu_biu_aw_st_prot,
   output logic         lsu_biu_aw_st_req,
   output logic [2:0]   lsu_biu_aw_st_size,
@@ -123,7 +123,7 @@ module ct_lsu_bus_arb (
  // output logic [1:0]   lsu_biu_aw_vict_domain,
   output logic [3:0]   lsu_biu_aw_vict_id,
   output logic [1:0]   lsu_biu_aw_vict_len,
-  output logic         lsu_biu_aw_vict_lock,
+ // output logic         lsu_biu_aw_vict_lock,
   output logic [2:0]   lsu_biu_aw_vict_prot,
   output logic         lsu_biu_aw_vict_req,
   output logic [2:0]   lsu_biu_aw_vict_size,
@@ -153,7 +153,7 @@ module ct_lsu_bus_arb (
   assign lsu_biu_ar_len       = rb_biu_ar_len;
   assign lsu_biu_ar_size      = rb_biu_ar_size;
   assign lsu_biu_ar_burst     = rb_biu_ar_burst;
-  assign lsu_biu_ar_lock      = rb_biu_ar_lock;
+ // assign lsu_biu_ar_lock      = rb_biu_ar_lock;
   assign lsu_biu_ar_cache     = rb_biu_ar_cache;
   assign lsu_biu_ar_prot      = rb_biu_ar_prot;
   assign lsu_biu_ar_req       = rb_biu_ar_req;
@@ -175,7 +175,7 @@ module ct_lsu_bus_arb (
   assign lsu_biu_aw_vict_len    = vb_biu_aw_len;
   assign lsu_biu_aw_vict_size   = vb_biu_aw_size;
   assign lsu_biu_aw_vict_burst  = vb_biu_aw_burst;
-  assign lsu_biu_aw_vict_lock   = vb_biu_aw_lock;
+ // assign lsu_biu_aw_vict_lock   = vb_biu_aw_lock;
   assign lsu_biu_aw_vict_cache  = vb_biu_aw_cache;
   assign lsu_biu_aw_vict_prot   = vb_biu_aw_prot;
   //assign lsu_biu_aw_vict_user   = vb_biu_aw_user;
@@ -189,7 +189,7 @@ module ct_lsu_bus_arb (
   assign lsu_biu_aw_st_len      = wmb_biu_aw_len;
   assign lsu_biu_aw_st_size     = wmb_biu_aw_size;
   assign lsu_biu_aw_st_burst    = wmb_biu_aw_burst;
-  assign lsu_biu_aw_st_lock     = wmb_biu_aw_lock;
+ // assign lsu_biu_aw_st_lock     = wmb_biu_aw_lock;
   assign lsu_biu_aw_st_cache    = wmb_biu_aw_cache;
   assign lsu_biu_aw_st_prot     = wmb_biu_aw_prot;
 //  assign lsu_biu_aw_st_user     = wmb_biu_aw_user;

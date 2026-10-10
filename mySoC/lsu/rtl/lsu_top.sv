@@ -249,7 +249,13 @@ localparam int TAG_LSB = INDEX_MSB + 1;
 localparam int TAG_WIDTH = 32 - TAG_LSB;
 localparam int LD_TAG_WIDTH = TAG_WIDTH * 2 + 2;
 localparam int ST_TAG_WIDTH = TAG_WIDTH * 2;
+  // Store queue wakeup
+logic [LSIQ_ENTRY-1:0]sq_data_depd_wakeup;
+logic [LSIQ_ENTRY-1:0]sq_global_depd_wakeup;
 
+
+  // LFB dependency wakeup
+logic [LSIQ_ENTRY-1:0] lfb_depd_wakeup;
 //==========================================================
 // Internal Signal Declarations
 //==========================================================
