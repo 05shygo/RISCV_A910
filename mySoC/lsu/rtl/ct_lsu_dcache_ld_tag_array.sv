@@ -77,7 +77,7 @@ ct_spsram_16x56  x_ct_spsram_16x56 (
 `endif//DCACHE_1KB
 
 `ifdef DCACHE_2KB
-ct_spsram_32x54  x_ct_spsram_32x54 (
+ct_spsram_32x46  x_ct_spsram_32x46 (
   `ifdef MEM_CFG_IN
   .mem_cfg_in     (mem_cfg_in  ),
   `endif

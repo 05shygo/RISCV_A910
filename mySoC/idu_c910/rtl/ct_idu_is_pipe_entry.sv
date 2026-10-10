@@ -1,11 +1,11 @@
 module ct_idu_is_pipe_entry (
   input  logic         cpurst_b,
   input  logic         forever_cpuclk,
-  input  logic [6:0]   iu_idu_ex2_pipe0_wb_preg_dupx,
+  input  logic [5:0]   iu_idu_ex2_pipe0_wb_preg_dupx,
   input  logic         iu_idu_ex2_pipe0_wb_preg_vld_dupx,
-  input  logic [6:0]   iu_idu_ex2_pipe1_wb_preg_dupx,
+  input  logic [5:0]   iu_idu_ex2_pipe1_wb_preg_dupx,
   input  logic         iu_idu_ex2_pipe1_wb_preg_vld_dupx,
-  input  logic [6:0]   lsu_idu_wb_pipe3_wb_preg_dupx,
+  input  logic [5:0]   lsu_idu_wb_pipe3_wb_preg_dupx,
   input  logic         lsu_idu_wb_pipe3_wb_preg_vld_dupx,
   // ⚠️ 原为 rtu_idu_flush_fe / rtu_idu_flush_is 两个口, 归一成 rtu_yy_xx_flush。
   //    理由: 本设计**只有一个**冲刷信号 (rtu_yy_xx_flush, 顶层端口表里没有 fe/is),

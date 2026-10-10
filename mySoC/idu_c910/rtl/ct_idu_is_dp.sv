@@ -76,8 +76,8 @@ module ct_idu_is_dp (
   output logic         dp_ctrl_is_inst0_dst_vld,
   output logic         dp_ctrl_is_inst1_dst_vld,
   output logic         dp_ctrl_is_inst2_dst_vld,
-  output logic [67:0]  dp_lsiq_create0_data,
-  output logic [67:0]  dp_lsiq_create1_data,
+  output logic [59:0]  dp_lsiq_create0_data,
+  output logic [59:0]  dp_lsiq_create1_data,
   output logic [7:0]   dp_sdiq_create0_data,
   output logic [7:0]   dp_sdiq_create1_data,
   output logic [62:0]  dp_mult_create0_data,
@@ -237,12 +237,12 @@ logic [64:0] is_inst0_read_pc;
 logic [64:0] is_inst1_read_pc;
 logic [64:0] is_inst2_read_pc;
 
-logic [64:0] is_inst0_create_chk;
-logic [64:0] is_inst1_create_chk;
-logic [64:0] is_inst2_create_chk;
-logic [64:0] is_inst0_read_chk;
-logic [64:0] is_inst1_read_chk;
-logic [64:0] is_inst2_read_chk;
+logic [24:0] is_inst0_create_chk;
+logic [24:0] is_inst1_create_chk;
+logic [24:0] is_inst2_create_chk;
+logic [24:0] is_inst0_read_chk;
+logic [24:0] is_inst1_read_chk;
+logic [24:0] is_inst2_read_chk;
 // &CombBeg; @545
 always @(*)
 begin

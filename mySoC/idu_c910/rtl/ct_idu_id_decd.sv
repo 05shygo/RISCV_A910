@@ -20,7 +20,7 @@ module ct_idu_id_decd (
     output wire        dst_x0,         // Destination is x0
 
     // Instruction type (one-hot encoding)
-    output wire [4:0]  inst_type,      // [4]:MUL [3]:DIV [2]:BR [1]:LSU [0]:ALU
+    output wire [5:0]  inst_type,      // [4]:MUL [3]:DIV [2]:BR [1]:LSU [0]:ALU
 
     // Illegal instruction flag
     output wire        illegal         // Illegal instruction detected
@@ -160,18 +160,19 @@ assign dst_x0  = (rd == 5'b0);
 // Instruction type (one-hot encoding)
 // ==============================================================================
 // [0] ALU: basic ALU operations (not MUL/DIV)
-assign inst_type[0] = is_alu && !illegal;
+assign inst_type[1] = is_alu && !illegal;
 
 // [1] LSU: load/store unit operations
-assign inst_type[1] = (load_valid || store_valid) && !illegal;
+assign inst_type[1] = store_valid && !illegal;
+assign inst_type[2] = (load_valid || store_valid) && !illegal;
 
 // [2] BRANCH: branch instructions (including JAL, JALR)
-assign inst_type[2] = (branch_valid || op_jal || jalr_valid) && !illegal;
+assign inst_type[3] = (branch_valid || op_jal || jalr_valid) && !illegal;
 
 // [3] DIV: division/remainder operations
-assign inst_type[3] = is_div_any && !illegal;
+assign inst_type[4] = is_div_any && !illegal;
 
 // [4] MUL: multiplication operations
-assign inst_type[4] = is_mul_any && !illegal;
+assign inst_type[5] = is_mul_any && !illegal;
 
 endmodule

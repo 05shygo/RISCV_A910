@@ -324,7 +324,6 @@ logic [7:0] sdiq_dp_issue_read_data;
 logic         idu_ifu_inst0_ready;
 logic         idu_ifu_inst1_ready;
 logic         idu_ifu_inst2_ready;
-logic  [1:0]  idu_accept_num;
 assign idu_accept_num[1:0] = {idu_ifu_inst2_ready | idu_ifu_inst0_ready, idu_ifu_inst2_ready};
 
 // ID Stage signals
@@ -332,11 +331,11 @@ logic        id_inst0_vld;
 logic        id_inst1_vld;
 logic        id_inst2_vld;
 logic        ctrl_dp_id_stall;
-logic [121:0] dp_id_pipedown_inst0_data;
+logic [122:0] dp_id_pipedown_inst0_data;
 logic [24:0]  dp_id_pipedown_inst0_chk;
-logic [121:0] dp_id_pipedown_inst1_data;
+logic [122:0] dp_id_pipedown_inst1_data;
 logic [24:0]  dp_id_pipedown_inst1_chk;
-logic [121:0] dp_id_pipedown_inst2_data;
+logic [122:0] dp_id_pipedown_inst2_data;
 logic [24:0]  dp_id_pipedown_inst2_chk;
 
 // IR Stage control signals
@@ -415,21 +414,21 @@ logic        dp_rt_inst2_dst_vld;
 logic [5:0]  dp_rt_inst2_dst_preg;
 logic [5:0]  rt_dp_inst0_src0_preg;
 logic [5:0]  rt_dp_inst0_src1_preg;
-logic [8:0]  rt_dp_inst0_src0_data;
-logic [8:0]  rt_dp_inst0_src1_data;
-logic [9:0]  rt_dp_inst0_src2_data;
+logic [6:0]  rt_dp_inst0_src0_data;
+logic [6:0]  rt_dp_inst0_src1_data;
+logic [6:0]  rt_dp_inst0_src2_data;
 logic [5:0]  rt_dp_inst0_rel_preg;
 logic [5:0]  rt_dp_inst1_src0_preg;
 logic [5:0]  rt_dp_inst1_src1_preg;
-logic [8:0]  rt_dp_inst1_src0_data;
-logic [8:0]  rt_dp_inst1_src1_data;
-logic [9:0]  rt_dp_inst1_src2_data;
+logic [6:0]  rt_dp_inst1_src0_data;
+logic [6:0]  rt_dp_inst1_src1_data;
+logic [6:0]  rt_dp_inst1_src2_data;
 logic [5:0]  rt_dp_inst1_rel_preg;
 logic [5:0]  rt_dp_inst2_src0_preg;
 logic [5:0]  rt_dp_inst2_src1_preg;
-logic [8:0]  rt_dp_inst2_src0_data;
-logic [8:0]  rt_dp_inst2_src1_data;
-logic [9:0]  rt_dp_inst2_src2_data;
+logic [6:0]  rt_dp_inst2_src0_data;
+logic [6:0]  rt_dp_inst2_src1_data;
+logic [6:0]  rt_dp_inst2_src2_data;
 logic [5:0]  rt_dp_inst2_rel_preg;
 
 // IS Stage control signals
@@ -473,8 +472,8 @@ logic [95:0]  dp_aiq_create0_data;   // 64 → 96 (2026-10-08 加 PC)
 logic [95:0]  dp_aiq_create1_data;
 logic [151:0] dp_biq_create0_data;
 logic [151:0] dp_biq_create1_data;
-logic [67:0]  dp_lsiq_create0_data;
-logic [67:0]  dp_lsiq_create1_data;
+logic [59:0]  dp_lsiq_create0_data;
+logic [59:0]  dp_lsiq_create1_data;
 logic [7:0]   dp_sdiq_create0_data;
 logic [7:0]   dp_sdiq_create1_data;
 logic [62:0]  dp_mult_create0_data;
@@ -738,12 +737,17 @@ ct_idu_ir_dp x_ct_idu_ir_dp (
   .dp_ctrl_ir_inst0_ctrl_info            (dp_ctrl_ir_inst0_ctrl_info),
   .dp_ctrl_ir_inst0_dst_vld              (dp_ctrl_ir_inst0_dst_vld),
   .dp_ctrl_ir_inst0_dst_x0               (dp_ctrl_ir_inst0_dst_x0),
+  .dp_ctrl_ir_inst0_illegal              (dp_ctrl_ir_inst0_illegal), // 补充
+
   .dp_ctrl_ir_inst1_ctrl_info            (dp_ctrl_ir_inst1_ctrl_info),
   .dp_ctrl_ir_inst1_dst_vld              (dp_ctrl_ir_inst1_dst_vld),
   .dp_ctrl_ir_inst1_dst_x0               (dp_ctrl_ir_inst1_dst_x0),
+  .dp_ctrl_ir_inst1_illegal              (dp_ctrl_ir_inst1_illegal), // 补充
+
   .dp_ctrl_ir_inst2_ctrl_info            (dp_ctrl_ir_inst2_ctrl_info),
   .dp_ctrl_ir_inst2_dst_vld              (dp_ctrl_ir_inst2_dst_vld),
   .dp_ctrl_ir_inst2_dst_x0               (dp_ctrl_ir_inst2_dst_x0),
+  .dp_ctrl_ir_inst2_illegal              (dp_ctrl_ir_inst2_illegal), // 补充
   .dp_ir_inst0_data                              (dp_ir_inst0_data),
   .dp_ir_inst0_pc                           (dp_ir_inst0_pc),
   .dp_ir_inst0_chk                        (dp_ir_inst0_chk),
@@ -898,7 +902,7 @@ ct_idu_is_ctrl x_ct_idu_is_ctrl (
   .ctrl_dp_dis_inst0_preg_vld            (ctrl_dp_dis_inst0_preg_vld),
   .ctrl_dp_dis_inst1_preg_vld            (ctrl_dp_dis_inst1_preg_vld),
   .ctrl_dp_dis_inst2_preg_vld            (ctrl_dp_dis_inst2_preg_vld),
-  .ctrl_dp_dis_inst3_preg_vld            (ctrl_dp_dis_inst3_preg_vld),
+  //.ctrl_dp_dis_inst3_preg_vld            (ctrl_dp_dis_inst3_preg_vld),
   .ctrl_dp_is_dis_aiq_create0_sel        (ctrl_dp_is_dis_aiq_create0_sel),
   .ctrl_dp_is_dis_aiq_create1_sel        (ctrl_dp_is_dis_aiq_create1_sel),
   .ctrl_dp_is_dis_biq_create0_sel        (ctrl_dp_is_dis_biq_create0_sel),
@@ -1078,6 +1082,7 @@ ct_idu_is_lsiq x_ct_idu_is_lsiq (
   .lsu_idu_lsiq_pop1_vld                 (lsu_idu_lsiq_pop1_vld),//in
   .lsu_idu_lsiq_pop_entry                (lsu_idu_lsiq_pop_entry),//in
   .lsu_idu_lsiq_pop_vld                  (lsu_idu_lsiq_pop_vld),//in
+  .lsu_idu_imme_wakeup(lsu_idu_imme_wakeup),
   .lsu_idu_rb_full                       (lsu_idu_rb_full),//in
   .lsu_idu_rb_not_full                   (lsu_idu_rb_not_full),//in
   .lsu_idu_secd                          (lsu_idu_secd),//in
@@ -1105,6 +1110,7 @@ ct_idu_is_lsiq x_ct_idu_is_lsiq (
 ct_idu_is_sdiq x_ct_idu_is_sdiq (
   .cpurst_b                              (cpurst_b),
   .lsu_sdiq_has_in_sq_vld                (lsu_sdiq_has_in_sq_vld),//in
+  .lsu_sdiq_has_in_sq_sdiq(lsu_sdiq_has_in_sq_sdiq),
   // 2026-10-08 修: 原来这里连了 .lsu_sq_sdiq_unalign_sdiq, 但该端口在
   // ct_idu_is_sdiq 里**已经被注释掉了** (见其 :6 的注释行与 :428 的注释 assign)
   // ⇒ VCS 报 "Undefined port in module instantiation", 整个 IDU elaborate 失败。
@@ -1126,7 +1132,7 @@ ct_idu_is_sdiq x_ct_idu_is_sdiq (
   .rtu_yy_xx_flush                              (rtu_yy_xx_flush),
   .idu_rtu_pst_preg_dealloc_mask         (idu_rtu_pst_preg_dealloc_mask),//out
   .sdiq_ctrl_1_left_updt                              (sdiq_ctrl_1_left_updt),
-  .sdiq_ctrl_full_updt                              (sdiq_ctrl_full_updt),
+  .sdiq_ctrl_full_updt                   (sdiq_ctrl_full_updt),
   .sdiq_issue_en                         (sdiq_xx_issue_en),
   .sdiq_dp_issue_entry                              (sdiq_dp_issue_entry),
   .sdiq_dp_issue_read_data                              (sdiq_dp_issue_read_data),
@@ -1189,6 +1195,7 @@ ct_idu_rf_dp x_ct_idu_rf_dp (
   .idu_aiq_dst_preg                      (idu_aiq_dst_preg),//out
   .idu_aiq_src0                          (idu_aiq_src0),//out
   .idu_aiq_src1                          (idu_aiq_src1),//out
+  .idu_aiq_pc(idu_aiq_pc),
   .idu_aiq_rslt_sel                      (idu_aiq_rslt_sel),//out
   .idu_aiq_illegal                       (idu_aiq_illegal),//out
     .mult_dp_issue_read_data             (mult_dp_issue_read_data),

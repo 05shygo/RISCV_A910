@@ -334,13 +334,13 @@ assign biq_xx_issue_en = |biq_entry_issue_en[3:0];
 always @(*)
 begin
   case (biq_entry_issue_en[3:0])
-    4'h01  : biq_entry_read_data[BIQ_WIDTH-1:0] =
+    4'h1  : biq_entry_read_data[BIQ_WIDTH-1:0] =
                biq_entry0_read_data[BIQ_WIDTH-1:0];
-    4'h02  : biq_entry_read_data[BIQ_WIDTH-1:0] =
+    4'h2  : biq_entry_read_data[BIQ_WIDTH-1:0] =
                biq_entry1_read_data[BIQ_WIDTH-1:0];
-    4'h04  : biq_entry_read_data[BIQ_WIDTH-1:0] =
+    4'h4  : biq_entry_read_data[BIQ_WIDTH-1:0] =
                biq_entry2_read_data[BIQ_WIDTH-1:0];
-    4'h08  : biq_entry_read_data[BIQ_WIDTH-1:0] =
+    4'h8  : biq_entry_read_data[BIQ_WIDTH-1:0] =
                biq_entry3_read_data[BIQ_WIDTH-1:0];
     default: biq_entry_read_data[BIQ_WIDTH-1:0] =
                                     {BIQ_WIDTH{1'bx}};

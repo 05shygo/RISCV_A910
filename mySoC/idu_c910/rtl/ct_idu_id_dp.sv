@@ -15,11 +15,11 @@ module ct_idu_id_dp(
   // 直接语法错 (token is ')')。本模块对它**只读** (见 :134 用来拼 dp_ib_inst0_chk),
   // 与 :13 的 crtl_ir_inst2_data 完全对称, 那个就是 input ⇒ 这里也改成 input。
   input  logic [24:0]  crtl_ir_inst2_chk,
-  output logic [121:0] dp_id_pipedown_inst0_data,
+  output logic [122:0] dp_id_pipedown_inst0_data,
   output logic [24:0]  dp_id_pipedown_inst0_chk,
-  output logic [121:0] dp_id_pipedown_inst1_data,
+  output logic [122:0] dp_id_pipedown_inst1_data,
   output logic [24:0]  dp_id_pipedown_inst1_chk,
-  output logic [121:0] dp_id_pipedown_inst2_data,
+  output logic [122:0] dp_id_pipedown_inst2_data,
   // 2026-10-08 修: 原来末端口后面还留了个**尾逗号**。ANSI 端口表的尾逗号在
   // IEEE 1800 里合法, 但本仓的 VCS 配置不接受 (报 "token is ')'")。
   // 全仓其它文件的端口表都没有尾逗号, 这里跟着去掉。

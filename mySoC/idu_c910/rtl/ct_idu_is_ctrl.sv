@@ -42,7 +42,7 @@ module ct_idu_is_ctrl (
   input  logic         ctrl_ir_pre_dis_inst0_vld,
   input  logic         ctrl_ir_pre_dis_inst1_vld,
   input  logic         ctrl_ir_pre_dis_inst2_vld,
-  input  logic         ctrl_ir_pre_dis_inst3_vld,
+  //input  logic         ctrl_ir_pre_dis_inst3_vld,
 
   input  logic         ctrl_ir_pre_dis_lsiq_create0_en,
   input  logic [1:0]   ctrl_ir_pre_dis_lsiq_create0_sel,
@@ -69,7 +69,7 @@ module ct_idu_is_ctrl (
   input  logic         dp_ctrl_is_inst0_dst_vld,
   input  logic         dp_ctrl_is_inst1_dst_vld,
   input  logic         dp_ctrl_is_inst2_dst_vld,
-  input  logic         dp_ctrl_is_inst3_dst_vld,
+ // input  logic         dp_ctrl_is_inst3_dst_vld,
 
 
   input  logic         lsiq_ctrl_1_left_updt,
@@ -111,7 +111,7 @@ module ct_idu_is_ctrl (
   output logic         ctrl_dp_dis_inst0_preg_vld,
   output logic         ctrl_dp_dis_inst1_preg_vld,
   output logic         ctrl_dp_dis_inst2_preg_vld,
-  output logic         ctrl_dp_dis_inst3_preg_vld,
+ // output logic         ctrl_dp_dis_inst3_preg_vld,
 
   output logic [1:0]   ctrl_dp_is_dis_aiq_create0_sel,
   output logic [1:0]   ctrl_dp_is_dis_aiq_create1_sel,

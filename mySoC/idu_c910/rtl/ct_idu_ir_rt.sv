@@ -12,29 +12,29 @@ module ct_idu_ir_rt (
   input  logic [5:0]   dp_rt_inst0_dst_preg,
   input  logic [4:0]   dp_rt_inst0_dst_reg,
   input  logic         dp_rt_inst0_dst_vld,
-  input  logic [5:0]   dp_rt_inst0_src0_reg,
+  input  logic [4:0]   dp_rt_inst0_src0_reg,
   input  logic         dp_rt_inst0_src0_vld,
-  input  logic [5:0]   dp_rt_inst0_src1_reg,
+  input  logic [4:0]   dp_rt_inst0_src1_reg,
   input  logic         dp_rt_inst0_src1_vld,
   input  logic [5:0]   dp_rt_inst1_dst_preg,
   input  logic [4:0]   dp_rt_inst1_dst_reg,
   input  logic         dp_rt_inst1_dst_vld,
-  input  logic [5:0]   dp_rt_inst1_src0_reg,
+  input  logic [4:0]   dp_rt_inst1_src0_reg,
   input  logic         dp_rt_inst1_src0_vld,
-  input  logic [5:0]   dp_rt_inst1_src1_reg,
+  input  logic [4:0]   dp_rt_inst1_src1_reg,
   input  logic         dp_rt_inst1_src1_vld,
   input  logic [5:0]   dp_rt_inst2_dst_preg,
   input  logic [4:0]   dp_rt_inst2_dst_reg,
   input  logic         dp_rt_inst2_dst_vld,
-  input  logic [5:0]   dp_rt_inst2_src0_reg,
+  input  logic [4:0]   dp_rt_inst2_src0_reg,
   input  logic         dp_rt_inst2_src0_vld,
-  input  logic [5:0]   dp_rt_inst2_src1_reg,
+  input  logic [4:0]   dp_rt_inst2_src1_reg,
   input  logic         dp_rt_inst2_src1_vld,
-  input  logic [6:0]   iu_idu_ex2_pipe0_wb_preg_dupx,
+  input  logic [5:0]   iu_idu_ex2_pipe0_wb_preg_dupx,
   input  logic         iu_idu_ex2_pipe0_wb_preg_vld_dupx,
-  input  logic [6:0]   iu_idu_ex2_pipe1_wb_preg_dupx,
+  input  logic [5:0]   iu_idu_ex2_pipe1_wb_preg_dupx,
   input  logic         iu_idu_ex2_pipe1_wb_preg_vld_dupx,
-  input  logic [6:0]   lsu_idu_wb_pipe3_wb_preg_dupx,
+  input  logic [5:0]   lsu_idu_wb_pipe3_wb_preg_dupx,
   input  logic         lsu_idu_wb_pipe3_wb_preg_vld_dupx,
   input  logic [191:0] rtu_idu_rt_recover_preg,
   input  logic         rtu_yy_xx_flush,
@@ -123,8 +123,8 @@ logic         rt_reset_updt_vld;   // 2026-10-08 补: 复位映射的写窗口 (
 //     ⇒ 这里按 C910 的真实宽度声明, 再派生一个 7 位的"wrapper 视图"给下面那 9 个
 //        32 路 case 读口用 (视图 = {preg[5:0], wb}, 与原来那套 `[6:1]`/`[0]` 的取法一致),
 //        这样几百行 case 一行都不用改。
-logic [12:0]  reg_read_data_raw [0:31];   // 表项 x_read_data 原样
-logic [10:0]  reg_create_data    [0:31];  // 表项 x_create_data 原样
+logic [6:0]  reg_read_data_raw [0:31];   // 表项 x_read_data 原样
+logic [6:0]  reg_create_data    [0:31];  // 表项 x_create_data 原样
 logic [6:0]   reg_read_data      [0:31];  // wrapper 视图: {preg[5:0], wb}
 logic         reg_write_en_arr [0:31];
 
@@ -150,7 +150,7 @@ generate
   //    C910 原版的例化编号也确实是 _reg_1 .. _reg_31。
   //    (reg_create_data[0] / reg_write_en_arr[0] 仍由下面的写口逻辑驱动, 不受影响。)
   for (j = 1; j < 32; j = j + 1) begin : gen_ct_idu_ir_rt_entry
-    ct_idu_dep_reg_src2_entry x_ct_idu_ir_rt_entry_reg (
+    ct_idu_dep_reg_entry x_ct_idu_ir_rt_entry_reg (
       .forever_cpuclk                    (forever_cpuclk                    ),
       .cpurst_b                          (cpurst_b                          ),
       .rtu_yy_xx_flush                  (rtu_yy_xx_flush                  ),
@@ -278,7 +278,7 @@ endgenerate
 genvar jv;
 generate
   for (jv = 1; jv < 32; jv = jv + 1) begin : gen_reg_read_view
-    assign reg_read_data[jv][6:0] = {reg_read_data_raw[jv][7:2], reg_read_data_raw[jv][1]};
+    assign reg_read_data[jv][6:0] = {reg_read_data_raw[jv][6:1], reg_read_data_raw[jv][0]};
   end
 endgenerate
 
@@ -294,26 +294,22 @@ generate
     always @(*)
     begin
       if(reg_write2_en[jj]) begin
-        reg_create_data[jj][8:2] = {1'b0, dp_rt_inst2_dst_preg[5:0]};
-        reg_create_data[jj][1]   = 1'b0;
+        reg_create_data[jj][6:1] = dp_rt_inst2_dst_preg[5:0];
         reg_create_data[jj][0]   = 1'b0;
       end
       else if(reg_write1_en[jj]) begin
-        reg_create_data[jj][8:2] = {1'b0, dp_rt_inst1_dst_preg[5:0]};
-        reg_create_data[jj][1]   = 1'b0;
+        reg_create_data[jj][6:1] = dp_rt_inst1_dst_preg[5:0];
         reg_create_data[jj][0]   = 1'b0;
       end
       else if(reg_write0_en[jj]) begin
-        reg_create_data[jj][8:2] = {1'b0, dp_rt_inst0_dst_preg[5:0]};
-        reg_create_data[jj][1]   = 1'b0;
+        reg_create_data[jj][6:1] = dp_rt_inst0_dst_preg[5:0];
         reg_create_data[jj][0]   = 1'b0;
       end
       else begin
         // 复位窗口优先于 recover(冲刷): 两者同拍时灌复位映射
-        reg_create_data[jj][8:2] = rt_reset_updt_vld
-                                 ? {1'b0, rt_reset_updt_preg[6*jj+5 : 6*jj]}
-                                 : {1'b0, rt_recover_updt_preg[6*jj+5 : 6*jj]};
-        reg_create_data[jj][1]   = 1'b1;   // 架构映射: 值已在 PRF
+        reg_create_data[jj][6:1] = rt_reset_updt_vld
+                                 ? rt_reset_updt_preg[6*jj+5 : 6*jj]
+                                 : rt_recover_updt_preg[6*jj+5 : 6*jj];
         reg_create_data[jj][0]   = 1'b1;   // rdy
       end
     end

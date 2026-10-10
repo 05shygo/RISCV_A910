@@ -342,13 +342,13 @@ assign md_xx_issue_en = |md_entry_issue_en[3:0] & ~ctrl_md_unit_stall;
 always @(*)
 begin
   case (md_entry_issue_en[3:0])
-    4'h01  : md_entry_read_data[AIQ_WIDTH-1:0] =
+    4'h1  : md_entry_read_data[AIQ_WIDTH-1:0] =
                md_entry0_read_data[AIQ_WIDTH-1:0];
-    4'h02  : md_entry_read_data[AIQ_WIDTH-1:0] =
+    4'h2  : md_entry_read_data[AIQ_WIDTH-1:0] =
                md_entry1_read_data[AIQ_WIDTH-1:0];
-    4'h04  : md_entry_read_data[AIQ_WIDTH-1:0] =
+    4'h4  : md_entry_read_data[AIQ_WIDTH-1:0] =
                md_entry2_read_data[AIQ_WIDTH-1:0];
-    4'h08  : md_entry_read_data[AIQ_WIDTH-1:0] =
+    4'h8  : md_entry_read_data[AIQ_WIDTH-1:0] =
                md_entry3_read_data[AIQ_WIDTH-1:0];
     default: md_entry_read_data[AIQ_WIDTH-1:0] =
                                     {AIQ_WIDTH{1'bx}};

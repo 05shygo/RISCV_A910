@@ -149,6 +149,15 @@ parameter AIQ_SRC1_VLD          = 33;
 parameter AIQ_SRC0_VLD          = 32;
 parameter AIQ_OPCODE            = 31;
 
+parameter MD_WIDTH              = 63;   // 2026-10-08: 64 → 96 (高 32 位给 PC)
+parameter MD_IID               = 62;
+parameter MD_SRC2_DATA         = 55;
+parameter MD_SRC1_DATA         = 48;
+parameter MD_SRC0_DATA         = 41;
+parameter MD_DST_VLD           = 34;
+parameter MD_SRC1_VLD          = 33;
+parameter MD_SRC0_VLD          = 32;
+parameter MD_OPCODE            = 31;
 //----------------------------------------------------------
 //                    BIQ Parameters
 //----------------------------------------------------------
@@ -217,7 +226,7 @@ logic [31:0]           rf_pipe0_src1_data;
 // Pipe1
 //----------------------------------------------------------
 logic [3:0]            rf_pipe1_iq_entry;
-logic [AIQ_WIDTH-1:0]  rf_pipe1_data;
+logic [MD_WIDTH-1:0]  rf_pipe1_data;
 logic                  rf_pipe1_prf_src0_preg_updt_vld;
 logic                  rf_pipe1_prf_src1_preg_updt_vld;
 logic [5:0]            rf_pipe1_prf_src0_preg;
@@ -231,7 +240,7 @@ logic [31:0]           rf_pipe1_src1_data;
 //----------------------------------------------------------
 // Pipe2
 //----------------------------------------------------------
-logic [AIQ_WIDTH-1:0]  rf_pipe2_data;
+logic [MD_WIDTH-1:0]  rf_pipe2_data;
 logic                  rf_pipe2_prf_src0_preg_updt_vld;
 logic                  rf_pipe2_prf_src1_preg_updt_vld;
 logic [5:0]            rf_pipe2_prf_src0_preg;
@@ -283,7 +292,7 @@ logic [31:0]           rf_pipe5_src0_data;
 //----------------------------------------------------------
 // Pipe6
 //----------------------------------------------------------
-logic [AIQ_WIDTH-1:0]  rf_pipe6_data;
+logic [BIQ_WIDTH-1:0]  rf_pipe6_data;
 logic                  rf_pipe6_prf_src0_preg_updt_vld;
 logic                  rf_pipe6_prf_src1_preg_updt_vld;
 logic [5:0]            rf_pipe6_prf_src0_preg;
@@ -394,7 +403,7 @@ assign idu_aiq_illegal               = rf_pipe0_data[AIQ_ILLEGAL];
 //----------------------------------------------------------
 //                  Rename Pipedown Data
 //----------------------------------------------------------
-assign dp_ctrl_is_mult_issue_dst_vld = mult_dp_issue_read_data[AIQ_DST_VLD];
+assign dp_ctrl_is_mult_issue_dst_vld = mult_dp_issue_read_data[MD_DST_VLD];
 
 //----------------------------------------------------------
 //                   Pipeline Registers
@@ -402,13 +411,13 @@ assign dp_ctrl_is_mult_issue_dst_vld = mult_dp_issue_read_data[AIQ_DST_VLD];
 always @(posedge forever_cpuclk or negedge cpurst_b)
 begin
   if(!cpurst_b) begin
-    rf_pipe1_data[AIQ_WIDTH-1:0] <= {AIQ_WIDTH{1'b0}};
+    rf_pipe1_data[MD_WIDTH-1:0] <= {MD_WIDTH{1'b0}};
   end
   else if(aiq_xx_issue_en) begin
-    rf_pipe1_data[AIQ_WIDTH-1:0] <= mult_dp_issue_read_data[AIQ_WIDTH-1:0];
+    rf_pipe1_data[MD_WIDTH-1:0] <= mult_dp_issue_read_data[MD_WIDTH-1:0];
   end
   else begin
-    rf_pipe1_data[AIQ_WIDTH-1:0] <= rf_pipe1_data[AIQ_WIDTH-1:0];
+    rf_pipe1_data[MD_WIDTH-1:0] <= rf_pipe1_data[MD_WIDTH-1:0];
   end
 end
 
@@ -423,7 +432,7 @@ begin
   if(!cpurst_b)
     rf_pipe1_prf_src0_preg[5:0] <= 6'b0;
   else if(rf_pipe1_prf_src0_preg_updt_vld)
-    rf_pipe1_prf_src0_preg[5:0] <= mult_dp_issue_read_data[AIQ_SRC0_DATA:AIQ_SRC0_DATA-5];
+    rf_pipe1_prf_src0_preg[5:0] <= mult_dp_issue_read_data[MD_SRC0_DATA:MD_SRC0_DATA-5];
   else
     rf_pipe1_prf_src0_preg[5:0] <= rf_pipe1_prf_src0_preg[5:0];
 end
@@ -433,7 +442,7 @@ begin
   if(!cpurst_b)
     rf_pipe1_prf_src1_preg[5:0] <= 6'b0;
   else if(rf_pipe1_prf_src1_preg_updt_vld)
-    rf_pipe1_prf_src1_preg[5:0] <= mult_dp_issue_read_data[AIQ_SRC1_DATA:AIQ_SRC1_DATA-5];
+    rf_pipe1_prf_src1_preg[5:0] <= mult_dp_issue_read_data[MD_SRC1_DATA:MD_SRC1_DATA-5];
   else
     rf_pipe1_prf_src1_preg[5:0] <= rf_pipe1_prf_src1_preg[5:0];
 end
@@ -450,7 +459,7 @@ ct_idu_rf_pipe1_decd  x_ct_idu_rf_pipe1_decd (
   .pipe1_decd_mul_sel      (pipe1_decd_sel     )
 );
 
-assign pipe1_decd_opcode[31:0] = rf_pipe1_data[AIQ_OPCODE:AIQ_OPCODE-31];
+assign pipe1_decd_opcode[31:0] = rf_pipe1_data[MD_OPCODE:MD_OPCODE-31];
 
 //----------------------------------------------------------
 //                    Source Operand 0/1
@@ -461,8 +470,8 @@ assign rf_pipe1_src1_data[31:0] = prf_dp_rf_pipe1_src1_data[31:0];
 //----------------------------------------------------------
 //                Output to Execution Units
 //----------------------------------------------------------
-assign idu_mult_iid[6:0]      = rf_pipe1_data[AIQ_IID:AIQ_IID-6];
-assign idu_mult_dst_preg[5:0] = rf_pipe1_data[AIQ_SRC2_DATA:AIQ_SRC2_DATA-5];
+assign idu_mult_iid[6:0]      = rf_pipe1_data[MD_IID:MD_IID-6];
+assign idu_mult_dst_preg[5:0] = rf_pipe1_data[MD_SRC2_DATA:MD_SRC2_DATA-5];
 assign idu_mult_src0[31:0]    = rf_pipe1_src0_data[31:0];
 assign idu_mult_src1[31:0]    = rf_pipe1_src1_data[31:0];
 assign idu_mult_rslt_sel[3:0] = pipe1_decd_sel[3:0];
@@ -473,7 +482,7 @@ assign idu_mult_rslt_sel[3:0] = pipe1_decd_sel[3:0];
 //----------------------------------------------------------
 //                  Rename Pipedown Data
 //----------------------------------------------------------
-assign dp_ctrl_is_div_issue_dst_vld = div_dp_issue_read_data[AIQ_DST_VLD];
+assign dp_ctrl_is_div_issue_dst_vld = div_dp_issue_read_data[MD_DST_VLD];
 // 补: 把这个值接到新加的输出端口上 (原来这根线没有任何消费者)
 assign idu_div_dst_vld              = dp_ctrl_is_div_issue_dst_vld;
 
@@ -483,13 +492,13 @@ assign idu_div_dst_vld              = dp_ctrl_is_div_issue_dst_vld;
 always @(posedge forever_cpuclk or negedge cpurst_b)
 begin
   if(!cpurst_b) begin
-    rf_pipe2_data[AIQ_WIDTH-1:0] <= {AIQ_WIDTH{1'b0}};
+    rf_pipe2_data[MD_WIDTH-1:0] <= {MD_WIDTH{1'b0}};
   end
   else if(div_xx_issue_en) begin
-    rf_pipe2_data[AIQ_WIDTH-1:0] <= div_dp_issue_read_data[AIQ_WIDTH-1:0];
+    rf_pipe2_data[MD_WIDTH-1:0] <= div_dp_issue_read_data[MD_WIDTH-1:0];
   end
   else begin
-    rf_pipe2_data[AIQ_WIDTH-1:0] <= rf_pipe2_data[AIQ_WIDTH-1:0];
+    rf_pipe2_data[MD_WIDTH-1:0] <= rf_pipe2_data[MD_WIDTH-1:0];
   end
 end
 
@@ -504,7 +513,7 @@ begin
   if(!cpurst_b)
     rf_pipe2_prf_src0_preg[5:0] <= 6'b0;
   else if(rf_pipe2_prf_src0_preg_updt_vld)
-    rf_pipe2_prf_src0_preg[5:0] <= div_dp_issue_read_data[AIQ_SRC0_DATA:AIQ_SRC0_DATA-5];
+    rf_pipe2_prf_src0_preg[5:0] <= div_dp_issue_read_data[MD_SRC0_DATA:MD_SRC0_DATA-5];
   else
     rf_pipe2_prf_src0_preg[5:0] <= rf_pipe2_prf_src0_preg[5:0];
 end
@@ -514,7 +523,7 @@ begin
   if(!cpurst_b)
     rf_pipe2_prf_src1_preg[5:0] <= 6'b0;
   else if(rf_pipe2_prf_src1_preg_updt_vld)
-    rf_pipe2_prf_src1_preg[5:0] <= div_dp_issue_read_data[AIQ_SRC1_DATA:AIQ_SRC1_DATA-5];
+    rf_pipe2_prf_src1_preg[5:0] <= div_dp_issue_read_data[MD_SRC1_DATA:MD_SRC1_DATA-5];
   else
     rf_pipe2_prf_src1_preg[5:0] <= rf_pipe2_prf_src1_preg[5:0];
 end
@@ -531,7 +540,7 @@ ct_idu_rf_pipe2_decd  x_ct_idu_rf_pipe2_decd (
   .pipe2_decd_div_sel      (pipe2_decd_sel     )
 );
 
-assign pipe2_decd_opcode[31:0] = rf_pipe2_data[AIQ_OPCODE:AIQ_OPCODE-31];
+assign pipe2_decd_opcode[31:0] = rf_pipe2_data[MD_OPCODE:MD_OPCODE-31];
 
 //----------------------------------------------------------
 //                    Source Operand 0/1
@@ -542,8 +551,8 @@ assign rf_pipe2_src1_data[31:0] = prf_dp_rf_pipe2_src1_data[31:0];
 //----------------------------------------------------------
 //                Output to Execution Units
 //----------------------------------------------------------
-assign idu_div_iid[6:0]      = rf_pipe2_data[AIQ_IID:AIQ_IID-6];
-assign idu_div_dst_preg[5:0] = rf_pipe2_data[AIQ_SRC2_DATA:AIQ_SRC2_DATA-5];
+assign idu_div_iid[6:0]      = rf_pipe2_data[MD_IID:MD_IID-6];
+assign idu_div_dst_preg[5:0] = rf_pipe2_data[MD_SRC2_DATA:MD_SRC2_DATA-5];
 assign idu_div_src0[31:0]    = rf_pipe2_src0_data[31:0];
 assign idu_div_src1[31:0]    = rf_pipe2_src1_data[31:0];
 assign idu_div_rslt_sel[3:0] = pipe2_decd_sel[3:0];

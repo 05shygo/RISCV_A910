@@ -552,10 +552,10 @@ assign rb_ld_wb_inst_size[1:0]
     | {2{rb_ld_wb_data_ptr[3]}} & rb_entry_inst_size[3][1:0];
 
 assign rb_ld_wb_preg[5:0]
-    = {7{rb_ld_wb_data_ptr[0]}} & rb_entry_preg[0][6:0]
-    | {7{rb_ld_wb_data_ptr[1]}} & rb_entry_preg[1][6:0]
-    | {7{rb_ld_wb_data_ptr[2]}} & rb_entry_preg[2][6:0]
-    | {7{rb_ld_wb_data_ptr[3]}} & rb_entry_preg[3][6:0];
+    = {7{rb_ld_wb_data_ptr[0]}} & rb_entry_preg[0][5:0]
+    | {7{rb_ld_wb_data_ptr[1]}} & rb_entry_preg[1][5:0]
+    | {7{rb_ld_wb_data_ptr[2]}} & rb_entry_preg[2][5:0]
+    | {7{rb_ld_wb_data_ptr[3]}} & rb_entry_preg[3][5:0];
 
 assign rb_ld_wb_sign_extend = |(rb_ld_wb_data_ptr[RB_ENTRY-1:0] & rb_entry_sign_extend[RB_ENTRY-1:0]);
 assign rb_ld_wb_bus_err     = |(rb_ld_wb_data_ptr[RB_ENTRY-1:0] & rb_entry_bus_err[RB_ENTRY-1:0]);

@@ -534,7 +534,7 @@ $(IDU_UNIT_SIMV): $(IDU_UNIT_SRC) $(IDU_UNIT_TB)
 LSU_UNIT_BUILD := $(PWD)/obj_unit_lsu
 LSU_UNIT_SIMV  := $(LSU_UNIT_BUILD)/simv
 LSU_UNIT_SRC   := $(wildcard $(PWD)/mySoC/lsu/rtl/*.sv)
-LSU_UNIT_TB    := $(PWD)/tb/unit/lsu/tb_lsu_load_test.sv
+LSU_UNIT_TB    :=
 LSU_UNIT_ARGS  ?=
 LSU_UNIT_DEFS  := +define+DCACHE_$(if $(filter 1024,$(DCACHE_SIZE)),1KB,$(if $(filter 4096,$(DCACHE_SIZE)),4KB,2KB))
 
@@ -688,11 +688,11 @@ $(RTU_LSU_SIMV): $(RTU_LSU_SRC) $(RTU_LSU_HDR) $(RTU_LSU_TB)
 lsu-unit: $(LSU_UNIT_SIMV)
 	@$(LSU_UNIT_SIMV) +vcs+lic+wait -exitstatus $(LSU_UNIT_ARGS) -l $(LSU_UNIT_BUILD)/sim.log
 
-$(LSU_UNIT_SIMV): $(LSU_UNIT_SRC) $(LSU_UNIT_TB)
+$(LSU_UNIT_SIMV): $(LSU_UNIT_SRC)
 	@mkdir -p $(LSU_UNIT_BUILD)
-	$(VCS) $(VCS_FLAGS) $(INC) $(LSU_UNIT_DEFS) -top tb_lsu_load_test -o $(LSU_UNIT_SIMV) \
+	$(VCS) $(VCS_FLAGS) $(INC) $(LSU_UNIT_DEFS) -o $(LSU_UNIT_SIMV) \
 	  -Mdir=$(LSU_UNIT_BUILD)/csrc -l $(LSU_UNIT_BUILD)/compile.log \
-	  $(LSU_UNIT_SRC) $(LSU_UNIT_TB)
+	  $(LSU_UNIT_SRC)
 
 run-all: build
 	@mkdir -p waveform

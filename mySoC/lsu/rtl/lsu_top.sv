@@ -342,7 +342,7 @@ logic st_dc_borrow_vld;
 logic st_dc_secd;
 logic [6:0] st_dc_iid;
 logic [LSIQ_ENTRY-1:0] st_dc_lsid;
-logic [LSIQ_ENTRY-1:0] st_dc_sdid_oh;
+logic [SDIQ_ENTRY-1:0] st_dc_sdid_oh;
 logic st_dc_old;
 logic st_dc_expt;
 logic [15:0] st_dc_bytes_vld;

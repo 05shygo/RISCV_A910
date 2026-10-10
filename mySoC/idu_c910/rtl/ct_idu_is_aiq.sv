@@ -332,13 +332,13 @@ assign aiq_xx_issue_en = |aiq_entry_issue_en[3:0];
 always @(*)
 begin
   case (aiq_entry_issue_en[3:0])
-    4'h01  : aiq_entry_read_data[AIQ_WIDTH-1:0] =
+    4'h1  : aiq_entry_read_data[AIQ_WIDTH-1:0] =
                aiq_entry0_read_data[AIQ_WIDTH-1:0];
-    4'h02  : aiq_entry_read_data[AIQ_WIDTH-1:0] =
+    4'h2  : aiq_entry_read_data[AIQ_WIDTH-1:0] =
                aiq_entry1_read_data[AIQ_WIDTH-1:0];
-    4'h04  : aiq_entry_read_data[AIQ_WIDTH-1:0] =
+    4'h4  : aiq_entry_read_data[AIQ_WIDTH-1:0] =
                aiq_entry2_read_data[AIQ_WIDTH-1:0];
-    4'h08  : aiq_entry_read_data[AIQ_WIDTH-1:0] =
+    4'h8  : aiq_entry_read_data[AIQ_WIDTH-1:0] =
                aiq_entry3_read_data[AIQ_WIDTH-1:0];
     default: aiq_entry_read_data[AIQ_WIDTH-1:0] =
                                     {AIQ_WIDTH{1'bx}};
