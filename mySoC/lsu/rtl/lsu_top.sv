@@ -51,8 +51,8 @@ module lsu_top #(
   input  logic                 cpurst_b,
 
   // BIU read interface (from bus to LSU)
-  input  logic                 bus_arb_rb_ar_grnt,
-  input  logic                 bus_arb_rb_ar_sel,
+ // input  logic                 bus_arb_rb_ar_grnt,
+ // input  logic                 bus_arb_rb_ar_sel,
   input  logic [127:0]         biu_lsu_r_data,
   input  logic [3:0]           biu_lsu_r_id,
   input  logic                 biu_lsu_r_last,
@@ -64,6 +64,67 @@ module lsu_top #(
   input  logic [1:0]           biu_lsu_b_resp,
   input  logic                 biu_lsu_b_vld,
 
+  input  logic                 biu_lsu_ar_ready,
+  input  logic                 biu_lsu_aw_vb_grnt,
+  input  logic                 biu_lsu_aw_wmb_grnt,
+  input  logic                 biu_lsu_w_vb_grnt,
+  input  logic                 biu_lsu_w_wmb_grnt,
+
+    // BIU AR 输出
+  output logic [31:0]  lsu_biu_ar_addr,
+  output logic [1:0]   lsu_biu_ar_bar,
+  output logic [1:0]   lsu_biu_ar_burst,
+  output logic [3:0]   lsu_biu_ar_cache,
+  output logic [1:0]   lsu_biu_ar_domain,
+  output logic [3:0]   lsu_biu_ar_id,
+  output logic [1:0]   lsu_biu_ar_len,
+  output logic         lsu_biu_ar_lock,
+  output logic [2:0]   lsu_biu_ar_prot,
+  output logic         lsu_biu_ar_req,
+  output logic [2:0]   lsu_biu_ar_size,
+  output logic [2:0]   lsu_biu_ar_user,
+  output logic         lsu_biu_r_ready,
+
+  // BIU AW store 输出
+  output logic [31:0]  lsu_biu_aw_st_addr,
+  output logic [1:0]   lsu_biu_aw_st_bar,
+  output logic [1:0]   lsu_biu_aw_st_burst,
+  output logic [3:0]   lsu_biu_aw_st_cache,
+  output logic [1:0]   lsu_biu_aw_st_domain,
+  output logic [3:0]   lsu_biu_aw_st_id,
+  output logic [1:0]   lsu_biu_aw_st_len,
+  output logic         lsu_biu_aw_st_lock,
+  output logic [2:0]   lsu_biu_aw_st_prot,
+  output logic         lsu_biu_aw_st_req,
+  output logic [2:0]   lsu_biu_aw_st_size,
+  output logic         lsu_biu_aw_st_user,
+
+  // BIU AW victim 输出
+  output logic [31:0]  lsu_biu_aw_vict_addr,
+  output logic [1:0]   lsu_biu_aw_vict_bar,
+  output logic [1:0]   lsu_biu_aw_vict_burst,
+  output logic [3:0]   lsu_biu_aw_vict_cache,
+  output logic [1:0]   lsu_biu_aw_vict_domain,
+  output logic [3:0]   lsu_biu_aw_vict_id,
+  output logic [1:0]   lsu_biu_aw_vict_len,
+  output logic         lsu_biu_aw_vict_lock,
+  output logic [2:0]   lsu_biu_aw_vict_prot,
+  output logic         lsu_biu_aw_vict_req,
+  output logic [2:0]   lsu_biu_aw_vict_size,
+  output logic         lsu_biu_aw_vict_user,
+
+  // BIU W store 输出
+  output logic [127:0] lsu_biu_w_st_data,
+  output logic         lsu_biu_w_st_last,
+  output logic [15:0]  lsu_biu_w_st_strb,
+  output logic         lsu_biu_w_st_vld,
+
+  // BIU W victim 输出
+  output logic [127:0] lsu_biu_w_vict_data,
+  output logic         lsu_biu_w_vict_last,
+  output logic [15:0]  lsu_biu_w_vict_strb,
+  output logic         lsu_biu_w_vict_vld
+/*
   // BIU write address grant (from bus to LSU)
   input  logic                 bus_arb_wmb_aw_grnt,
   input  logic                 bus_arb_wmb_w_grnt,
@@ -121,7 +182,7 @@ module lsu_top #(
   output logic                 vb_biu_w_req,
   output logic [15:0]          vb_biu_w_strb,
   output logic                 vb_biu_w_vld,
-
+*/
   // LSU to IDU - Load queue status
   output logic [LSIQ_ENTRY-1:0]lsu_idu_imme_wakeup,
   output logic                 lsu_idu_lsiq_pop_vld,
@@ -228,6 +289,74 @@ logic st_da_idu_pop_vld;
 assign lsu_idu_lsiq_pop1_vld =st_da_idu_pop_vld;
 assign lsu_idu_lsiq_pop_vld = lsu_idu_lsiq_pop0_vld | lsu_idu_lsiq_pop1_vld;
 
+//==========================================================
+// BIU interface internal signals
+//==========================================================
+// RB -> BIU AR request
+logic [31:0]  rb_biu_ar_addr;
+logic [1:0]   rb_biu_ar_bar;
+logic [1:0]   rb_biu_ar_burst;
+logic [3:0]   rb_biu_ar_cache;
+logic [1:0]   rb_biu_ar_domain;
+logic [3:0]   rb_biu_ar_id;
+logic [1:0]   rb_biu_ar_len;
+logic         rb_biu_ar_lock;
+logic [2:0]   rb_biu_ar_prot;
+logic         rb_biu_ar_req;
+logic [2:0]   rb_biu_ar_size;
+logic [2:0]   rb_biu_ar_user;
+
+// VB -> BIU AW/W request
+logic [31:0]  vb_biu_aw_addr;
+logic [1:0]   vb_biu_aw_bar;
+logic [1:0]   vb_biu_aw_burst;
+logic [3:0]   vb_biu_aw_cache;
+logic [1:0]   vb_biu_aw_domain;
+logic [3:0]   vb_biu_aw_id;
+logic [1:0]   vb_biu_aw_len;
+logic         vb_biu_aw_lock;
+logic [2:0]   vb_biu_aw_prot;
+logic         vb_biu_aw_req;
+logic [2:0]   vb_biu_aw_size;
+logic         vb_biu_aw_user;
+logic [127:0] vb_biu_w_data;
+logic [3:0]   vb_biu_w_id;
+logic         vb_biu_w_last;
+logic         vb_biu_w_req;
+logic [15:0]  vb_biu_w_strb;
+logic         vb_biu_w_vld;
+
+// WMB -> BIU AW/W request
+logic [31:0]  wmb_biu_aw_addr;
+logic [1:0]   wmb_biu_aw_bar;
+logic [1:0]   wmb_biu_aw_burst;
+logic [3:0]   wmb_biu_aw_cache;
+logic [1:0]   wmb_biu_aw_domain;
+logic [3:0]   wmb_biu_aw_id;
+logic [1:0]   wmb_biu_aw_len;
+logic         wmb_biu_aw_lock;
+logic [2:0]   wmb_biu_aw_prot;
+logic         wmb_biu_aw_req;
+logic [2:0]   wmb_biu_aw_size;
+logic [2:0]   wmb_biu_aw_snoop;
+logic         wmb_biu_aw_user;
+logic [127:0] wmb_biu_w_data;
+logic [3:0]   wmb_biu_w_id;
+logic         wmb_biu_w_last;
+logic         wmb_biu_w_req;
+logic [15:0]  wmb_biu_w_strb;
+logic         wmb_biu_w_vld;
+
+// BIU arbiter grants
+logic         bus_arb_rb_ar_grnt;
+logic         bus_arb_vb_aw_grnt;
+logic         bus_arb_wmb_aw_grnt;
+logic         bus_arb_vb_w_grnt;
+logic         bus_arb_wmb_w_grnt;
+logic         bus_arb_rb_ar_sel;
+
+// VB W ID (used only by lsu_vb output)
+// (already covered above as vb_biu_w_id)
 // Previously-implicit inter-module wires (declared at correct widths)
 logic                        dcache_arb_ld_ag_borrow_addr_vld;
 logic [31:0]                 dcache_arb_ld_ag_addr;
@@ -686,13 +815,141 @@ logic [31:0] lsu_rtu_async_expt_addr;
 logic lsu_rtu_async_expt_vld;
 logic ld_da_wb_expt_vld;
 logic [31:0] ld_da_wb_expt_addr;
-
+assign lsu_biu_r_ready = 1'b1;
 // Control signals (placeholder)
-
+assign bus_arb_rb_ar_sel = bus_arb_rb_ar_grnt;
 //==========================================================
 // Module Instantiations
 //==========================================================
+ct_lsu_bus_arb u_ct_lsu_bus_arb (
+  // 输入：BIU 握手/授权
+  .biu_lsu_ar_ready          (biu_lsu_ar_ready         ),
+  .biu_lsu_aw_vb_grnt        (biu_lsu_aw_vb_grnt       ),
+  .biu_lsu_aw_wmb_grnt       (biu_lsu_aw_wmb_grnt      ),
+  .biu_lsu_w_vb_grnt         (biu_lsu_w_vb_grnt        ),
+  .biu_lsu_w_wmb_grnt        (biu_lsu_w_wmb_grnt       ),
 
+  // RB AR 请求
+  .rb_biu_ar_addr            (rb_biu_ar_addr           ),
+  .rb_biu_ar_bar             (rb_biu_ar_bar            ),
+  .rb_biu_ar_burst           (rb_biu_ar_burst          ),
+  .rb_biu_ar_cache           (rb_biu_ar_cache          ),
+  .rb_biu_ar_domain          (rb_biu_ar_domain         ),
+  .rb_biu_ar_id              (rb_biu_ar_id             ),
+  .rb_biu_ar_len             (rb_biu_ar_len            ),
+  .rb_biu_ar_lock            (rb_biu_ar_lock           ),
+  .rb_biu_ar_prot            (rb_biu_ar_prot           ),
+  .rb_biu_ar_req             (rb_biu_ar_req            ),
+  .rb_biu_ar_size            (rb_biu_ar_size           ),
+  .rb_biu_ar_user            (rb_biu_ar_user           ),
+
+  // VB AW 请求
+  .vb_biu_aw_addr            (vb_biu_aw_addr           ),
+  .vb_biu_aw_bar             (vb_biu_aw_bar            ),
+  .vb_biu_aw_burst           (vb_biu_aw_burst          ),
+  .vb_biu_aw_cache           (vb_biu_aw_cache          ),
+  .vb_biu_aw_domain          (vb_biu_aw_domain         ),
+  .vb_biu_aw_id              (vb_biu_aw_id             ),
+  .vb_biu_aw_len             (vb_biu_aw_len            ),
+  .vb_biu_aw_lock            (vb_biu_aw_lock           ),
+  .vb_biu_aw_prot            (vb_biu_aw_prot           ),
+  .vb_biu_aw_req             (vb_biu_aw_req            ),
+  .vb_biu_aw_size            (vb_biu_aw_size           ),
+  .vb_biu_aw_user            (vb_biu_aw_user           ),
+
+  // VB W 请求
+  .vb_biu_w_data             (vb_biu_w_data            ),
+  .vb_biu_w_last             (vb_biu_w_last            ),
+  .vb_biu_w_req              (vb_biu_w_req             ),
+  .vb_biu_w_strb             (vb_biu_w_strb            ),
+  .vb_biu_w_vld              (vb_biu_w_vld             ),
+
+  // WMB AW 请求
+  .wmb_biu_aw_addr           (wmb_biu_aw_addr          ),
+  .wmb_biu_aw_bar            (wmb_biu_aw_bar           ),
+  .wmb_biu_aw_burst          (wmb_biu_aw_burst         ),
+  .wmb_biu_aw_cache          (wmb_biu_aw_cache         ),
+  .wmb_biu_aw_domain         (wmb_biu_aw_domain        ),
+  .wmb_biu_aw_id             (wmb_biu_aw_id            ),
+  .wmb_biu_aw_len            (wmb_biu_aw_len           ),
+  .wmb_biu_aw_lock           (wmb_biu_aw_lock          ),
+  .wmb_biu_aw_prot           (wmb_biu_aw_prot          ),
+  .wmb_biu_aw_req            (wmb_biu_aw_req           ),
+  .wmb_biu_aw_size           (wmb_biu_aw_size          ),
+  .wmb_biu_aw_user           (wmb_biu_aw_user          ),
+
+  // WMB W 请求
+  .wmb_biu_w_data            (wmb_biu_w_data           ),
+  .wmb_biu_w_last            (wmb_biu_w_last           ),
+  .wmb_biu_w_req             (wmb_biu_w_req            ),
+  .wmb_biu_w_strb            (wmb_biu_w_strb           ),
+  .wmb_biu_w_vld             (wmb_biu_w_vld            ),
+
+  // AR 授权
+  .bus_arb_rb_ar_grnt        (bus_arb_rb_ar_grnt       ),
+
+  // AW 授权
+  .bus_arb_vb_aw_grnt        (bus_arb_vb_aw_grnt       ),
+  .bus_arb_wmb_aw_grnt       (bus_arb_wmb_aw_grnt      ),
+
+  // W 授权
+  .bus_arb_vb_w_grnt         (bus_arb_vb_w_grnt        ),
+  .bus_arb_wmb_w_grnt        (bus_arb_wmb_w_grnt       ),
+
+  // BIU AR 输出
+  .lsu_biu_ar_addr           (lsu_biu_ar_addr          ),
+  .lsu_biu_ar_bar            (lsu_biu_ar_bar           ),
+  .lsu_biu_ar_burst          (lsu_biu_ar_burst         ),
+  .lsu_biu_ar_cache          (lsu_biu_ar_cache         ),
+  .lsu_biu_ar_domain         (lsu_biu_ar_domain        ),
+  .lsu_biu_ar_id             (lsu_biu_ar_id            ),
+  .lsu_biu_ar_len            (lsu_biu_ar_len           ),
+  .lsu_biu_ar_lock           (lsu_biu_ar_lock          ),
+  .lsu_biu_ar_prot           (lsu_biu_ar_prot          ),
+  .lsu_biu_ar_req            (lsu_biu_ar_req           ),
+  .lsu_biu_ar_size           (lsu_biu_ar_size          ),
+  .lsu_biu_ar_user           (lsu_biu_ar_user          ),
+
+  // BIU AW store 输出
+  .lsu_biu_aw_st_addr        (lsu_biu_aw_st_addr       ),
+  .lsu_biu_aw_st_bar         (lsu_biu_aw_st_bar        ),
+  .lsu_biu_aw_st_burst       (lsu_biu_aw_st_burst      ),
+  .lsu_biu_aw_st_cache       (lsu_biu_aw_st_cache      ),
+  .lsu_biu_aw_st_domain      (lsu_biu_aw_st_domain     ),
+  .lsu_biu_aw_st_id          (lsu_biu_aw_st_id         ),
+  .lsu_biu_aw_st_len         (lsu_biu_aw_st_len        ),
+  .lsu_biu_aw_st_lock        (lsu_biu_aw_st_lock       ),
+  .lsu_biu_aw_st_prot        (lsu_biu_aw_st_prot       ),
+  .lsu_biu_aw_st_req         (lsu_biu_aw_st_req        ),
+  .lsu_biu_aw_st_size        (lsu_biu_aw_st_size       ),
+  .lsu_biu_aw_st_user        (lsu_biu_aw_st_user       ),
+
+  // BIU AW victim 输出
+  .lsu_biu_aw_vict_addr      (lsu_biu_aw_vict_addr     ),
+  .lsu_biu_aw_vict_bar       (lsu_biu_aw_vict_bar      ),
+  .lsu_biu_aw_vict_burst     (lsu_biu_aw_vict_burst    ),
+  .lsu_biu_aw_vict_cache     (lsu_biu_aw_vict_cache    ),
+  .lsu_biu_aw_vict_domain    (lsu_biu_aw_vict_domain   ),
+  .lsu_biu_aw_vict_id        (lsu_biu_aw_vict_id       ),
+  .lsu_biu_aw_vict_len       (lsu_biu_aw_vict_len      ),
+  .lsu_biu_aw_vict_lock      (lsu_biu_aw_vict_lock     ),
+  .lsu_biu_aw_vict_prot      (lsu_biu_aw_vict_prot     ),
+  .lsu_biu_aw_vict_req       (lsu_biu_aw_vict_req      ),
+  .lsu_biu_aw_vict_size      (lsu_biu_aw_vict_size     ),
+  .lsu_biu_aw_vict_user      (lsu_biu_aw_vict_user     ),
+
+  // BIU W store 输出
+  .lsu_biu_w_st_data         (lsu_biu_w_st_data        ),
+  .lsu_biu_w_st_last         (lsu_biu_w_st_last        ),
+  .lsu_biu_w_st_strb         (lsu_biu_w_st_strb        ),
+  .lsu_biu_w_st_vld          (lsu_biu_w_st_vld         ),
+
+  // BIU W victim 输出
+  .lsu_biu_w_vict_data       (lsu_biu_w_vict_data      ),
+  .lsu_biu_w_vict_last       (lsu_biu_w_vict_last      ),
+  .lsu_biu_w_vict_strb       (lsu_biu_w_vict_strb      ),
+  .lsu_biu_w_vict_vld        (lsu_biu_w_vict_vld       )
+);
 //----------------------------------------------------------
 // Load Address Generation
 //----------------------------------------------------------
