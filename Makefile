@@ -175,7 +175,7 @@ CROSS     ?= riscv32-unknown-elf-
 ASM_SRCS  := $(wildcard $(PWD)/asm/*.S)
 ASM_BINS  := $(patsubst $(PWD)/asm/%.S,$(PWD)/bin/%.bin,$(ASM_SRCS))
 
-.PHONY: all build run run-all verdi clean help coremark asm muldiv-unit rtu-unit rtu-lsu-unit rtu-adapter-unit iu-alu-unit iu-beu-unit iu-md-unit rtu-subsys-elab
+.PHONY: all build run run-all verdi clean help coremark asm muldiv-unit rtu-unit rtu-lsu-unit rtu-adapter-unit iu-alu-unit iu-beu-unit iu-md-unit rtu-subsys-elab biu-unit
 
 asm: $(ASM_BINS)
 
@@ -693,6 +693,26 @@ $(LSU_UNIT_SIMV): $(LSU_UNIT_SRC)
 	$(VCS) $(VCS_FLAGS) $(INC) $(LSU_UNIT_DEFS) -o $(LSU_UNIT_SIMV) \
 	  -Mdir=$(LSU_UNIT_BUILD)/csrc -l $(LSU_UNIT_BUILD)/compile.log \
 	  $(LSU_UNIT_SRC)
+
+# ---------------------------------------------------------------------------
+# BIU 单元 TB (2026-10-10 立): BIU (总线接口单元) 的 elaborate 检查。
+# BIU 负责仲裁 IFU 和 LSU 的 AXI 读写请求。
+# 这个目标进行 elaborate 检查，确保端口连接正确。
+#
+#   make biu-unit
+# ---------------------------------------------------------------------------
+BIU_UNIT_BUILD := $(PWD)/obj_unit_biu
+BIU_UNIT_SIMV  := $(BIU_UNIT_BUILD)/simv
+BIU_UNIT_SRC   := $(wildcard $(PWD)/mySoC/biu/rtl/*.sv)
+
+biu-unit: $(BIU_UNIT_SIMV)
+	@echo "✅ BIU 单元编译成功"
+
+$(BIU_UNIT_SIMV): $(BIU_UNIT_SRC)
+	@mkdir -p $(BIU_UNIT_BUILD)
+	$(VCS) $(VCS_FLAGS) $(INC) -top ct_biu_top -o $(BIU_UNIT_SIMV) \
+	  -Mdir=$(BIU_UNIT_BUILD)/csrc -l $(BIU_UNIT_BUILD)/compile.log \
+	  $(BIU_UNIT_SRC)
 
 run-all: build
 	@mkdir -p waveform

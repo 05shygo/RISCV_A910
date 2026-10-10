@@ -123,7 +123,7 @@ module lsu_top #(
   output logic [127:0] lsu_biu_w_vict_data,
   output logic         lsu_biu_w_vict_last,
   output logic [15:0]  lsu_biu_w_vict_strb,
-  output logic         lsu_biu_w_vict_vld
+  output logic         lsu_biu_w_vict_vld,
 /*
   // BIU write address grant (from bus to LSU)
   input  logic                 bus_arb_wmb_aw_grnt,
