@@ -53,7 +53,7 @@ module RTU_flush (
     input  wire         flush_trig,
     input  wire [2:0]   flush_src,
     input  wire [31:0]  flush_pc,
-    input  wire [223:0] amt_flat,        // 架构映射表 (RTU_preg 出)
+    input  wire [32*`RTU_PREG_W-1:0] amt_flat,   // 架构映射表 (RTU_preg 出), 宽度随档
     input  wire         beu_redirect_vld,// D13: EX 级真的发出误预测重定向的那一拍
 
     output wire         fsm_busy,        // 非 IDLE: 判退要停
@@ -65,7 +65,7 @@ module RTU_flush (
     output wire         flush_lvl,       // T+2: ALLOC->FREE / RAT 覆盖 / 指针复位
     output wire         ren_flush,
     output wire         ren_recover_vld,
-    output wire [223:0] ren_recover_map,
+    output wire [32*`RTU_PREG_W-1:0] ren_recover_map,   // 宽度随档 (32 × `RTU_PREG_W)
     output wire         beu_mask,
     output wire         ifu_flush,       // 陷阱/中断/mret 才拉 (D13)
     output wire         ifu_chgflw_vld,  // 同上

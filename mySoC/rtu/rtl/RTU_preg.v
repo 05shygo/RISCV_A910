@@ -60,16 +60,16 @@ module RTU_preg (
 
     // ---- 派遣认领 (号走到 ROB 那一拍, 与取走相隔任意拍) ----
     input  wire [2:0]  disp_vld,
-    input  wire [6:0]  disp_dst_preg0,
-    input  wire [6:0]  disp_dst_preg1,
-    input  wire [6:0]  disp_dst_preg2,
+    input  wire [`RTU_PREG_W-1:0] disp_dst_preg0,
+    input  wire [`RTU_PREG_W-1:0] disp_dst_preg1,
+    input  wire [`RTU_PREG_W-1:0] disp_dst_preg2,
 
     // ---- 退休 ----
     input  wire [2:0]  ret_arch_vld,     // dst_preg -> ARCH (+ AMT 写)
     input  wire [2:0]  ret_kill_vld,     // 陷阱那条: 分配过但没写的 dst_preg -> FREE
     input  wire [2:0]  ret_free_vld,     // old_preg (调用方已判 != dst_preg) -> RELEASE
-    input  wire [6:0]  ret_dst_preg0, ret_dst_preg1, ret_dst_preg2,
-    input  wire [6:0]  ret_old_preg0, ret_old_preg1, ret_old_preg2,
+    input  wire [`RTU_PREG_W-1:0] ret_dst_preg0, ret_dst_preg1, ret_dst_preg2,
+    input  wire [`RTU_PREG_W-1:0] ret_old_preg0, ret_old_preg1, ret_old_preg2,
     input  wire [4:0]  ret_dst_lreg0, ret_dst_lreg1, ret_dst_lreg2,
 
     // ---- store 数据读的 WAR 否决 (来自 IDU 的 idu_rtu_pst_preg_dealloc_mask) ----
@@ -92,15 +92,18 @@ module RTU_preg (
     input  wire        flush_lvl,
 
     // ---- 输出 (2026-10-07 起都是**寄存值** = 门房 tap 里备着的号) ----
-    output wire [6:0]  rtu_preg_alloc0,
-    output wire [6:0]  rtu_preg_alloc1,
-    output wire [6:0]  rtu_preg_alloc2,
+    output wire [`RTU_PREG_W-1:0] rtu_preg_alloc0,
+    output wire [`RTU_PREG_W-1:0] rtu_preg_alloc1,
+    output wire [`RTU_PREG_W-1:0] rtu_preg_alloc2,
     output wire        rtu_preg_alloc_vld0,
     output wire        rtu_preg_alloc_vld1,
     output wire        rtu_preg_alloc_vld2,
     output wire [6:0]  free_cnt,               // 7 位真值 (给自检/TB)
     output wire [1:0]  rtu_preg_free_cnt,      // §6.0 的口径: 饱和到 3
-    output wire [223:0] amt_flat               // 32 × 7bit, amt_flat[7*l +: 7] = AMT[l]
+    // 32 × `RTU_PREG_W bit。⚠️ 步长**必须跟着 `RTU_PREG_W 走**: 写死 7 的话 64 档下
+    // 每槽只填低 6 位、高位留窟窿, 拼出来是 224 位而消费方只取 192 位 ⇒ 整张 AMT
+    // 逐槽错位 (而 AMT 只在冲刷后用, 症状是"冲完之后映射全错", 单元台必抓)。
+    output wire [32*`RTU_PREG_W-1:0] amt_flat  // amt_flat[`RTU_PREG_W*l +: `RTU_PREG_W] = AMT[l]
 );
 
     reg  [2:0]  st [0:`RTU_NUM_PREG-1];
@@ -109,9 +112,9 @@ module RTU_preg (
     // 它备着一个已经出池(WF_ALLOC)、等着被取走的号。消费者**当拍取走**;
     // 取走(或空着)的那一拍边沿才补下一个。于是许可与编号都不依赖本拍请求
     // ⇒ 与 IDU 停顿链之间的组合环断开 (那是本次改造的首要目的)。
-    reg  [6:0]  tap_num0, tap_num1, tap_num2;
+    reg  [`RTU_PREG_W-1:0] tap_num0, tap_num1, tap_num2;
     reg         tap_vld0, tap_vld1, tap_vld2;
-    reg  [6:0]  amt[0:31];
+    reg  [`RTU_PREG_W-1:0] amt[0:31];
     reg  [6:0]  free_cnt_q;
 
     integer     i;
@@ -168,8 +171,11 @@ module RTU_preg (
     //
     // ⚠️ 2026-10-08: 池子大小可配 (64/96)。64 档的图案就是 96 档的**低 64 位**
     //    (周期图案的周期是 2 的幂, 截断不改变任何一位), 而 BM6 **恒 0** ——
-    //    64 档下没有任何编号的第 6 位是 1。这正是"端口固定 7 位"能成立的前提,
-    //    下面有配置自检盯着它 (改了 `RTU_NUM_PREG` 而忘了改掩码, elaborate 就炸)。
+    //    64 档下没有任何编号的第 6 位是 1。
+    //    ⚠️ 2026-10-10 起 BM6 的作用变了: 端口位宽跟着档走 (`RTU_PREG_W`=6),
+    //       所以下面 `pop_num*` 是**先拼满 7 位 (`RTU_PREG_EW`) 再切到 6 位** ——
+    //       "切掉的那一位恒 0 ⇒ 无损"就是靠 BM6 恒 0 保证的。
+    //       下面有配置自检盯着它 (改了 `RTU_NUM_PREG` 而忘了改掩码, elaborate 就炸)。
 `ifdef RTU_PREG64
     localparam [`RTU_NUM_PREG-1:0] PREG_BM0 = 64'hAAAA_AAAA_AAAA_AAAA;
     localparam [`RTU_NUM_PREG-1:0] PREG_BM1 = 64'hCCCC_CCCC_CCCC_CCCC;
@@ -358,20 +364,29 @@ module RTU_preg (
     wire [`RTU_NUM_PREG-1:0] g_sel2 = sel2_oh & {`RTU_NUM_PREG{pop_lane[2] & (|cand2)}};
     wire [`RTU_NUM_PREG-1:0] sel_oh = g_sel0 | g_sel1 | g_sel2;
 
-    // 独热 -> 7 位编号: 第 k 位 = "选中的那一位, 它的编号第 k 位是 1" (见 PREG_BM*)。
-    // 一个都没选中时 7 位全 0, 与历次实现一致。这是"这一拍要装进门房的号"。
-    wire [6:0] pop_num0 = { |(g_sel0 & PREG_BM6), |(g_sel0 & PREG_BM5),
+    // 独热 -> 编号: 第 k 位 = "选中的那一位, 它的编号第 k 位是 1" (见 PREG_BM*)。
+    // 一个都没选中时全 0, 与历次实现一致。这是"这一拍要装进门房的号"。
+    //
+    // ⚠️ 拼接一律拼满 `RTU_PREG_EW`(7) 位, 再切到端口宽 `RTU_PREG_W`。
+    //    不写成"64 档就少拼一项"的理由: 那要用 `ifdef 把这个表达式包起来, 而
+    //    下面 `PREG_BM6` 在两档里**都有定义** (64 档恒 0), 所以拼满再切是**无损**的
+    //    —— 切掉的那一位永远是 0。这样两档共用一份表达式。
+    //    (64 档下 PREG_BM6 必须为 0 这件事有自检盯着, 见本文件末尾的 generate。)
+    wire [`RTU_PREG_EW-1:0] pop_num0_v7 = { |(g_sel0 & PREG_BM6), |(g_sel0 & PREG_BM5),
                             |(g_sel0 & PREG_BM4), |(g_sel0 & PREG_BM3),
                             |(g_sel0 & PREG_BM2), |(g_sel0 & PREG_BM1),
                             |(g_sel0 & PREG_BM0) };
-    wire [6:0] pop_num1 = { |(g_sel1 & PREG_BM6), |(g_sel1 & PREG_BM5),
+    wire [`RTU_PREG_EW-1:0] pop_num1_v7 = { |(g_sel1 & PREG_BM6), |(g_sel1 & PREG_BM5),
                             |(g_sel1 & PREG_BM4), |(g_sel1 & PREG_BM3),
                             |(g_sel1 & PREG_BM2), |(g_sel1 & PREG_BM1),
                             |(g_sel1 & PREG_BM0) };
-    wire [6:0] pop_num2 = { |(g_sel2 & PREG_BM6), |(g_sel2 & PREG_BM5),
+    wire [`RTU_PREG_EW-1:0] pop_num2_v7 = { |(g_sel2 & PREG_BM6), |(g_sel2 & PREG_BM5),
                             |(g_sel2 & PREG_BM4), |(g_sel2 & PREG_BM3),
                             |(g_sel2 & PREG_BM2), |(g_sel2 & PREG_BM1),
                             |(g_sel2 & PREG_BM0) };
+    wire [`RTU_PREG_W-1:0] pop_num0 = pop_num0_v7[`RTU_PREG_W-1:0];
+    wire [`RTU_PREG_W-1:0] pop_num1 = pop_num1_v7[`RTU_PREG_W-1:0];
+    wire [`RTU_PREG_W-1:0] pop_num2 = pop_num2_v7[`RTU_PREG_W-1:0];
 
     // 出端口的是**门房寄存器的内容**, 不是本拍选出来的那个 —— 这一行就是"断环"本身:
     // `rtu_preg_alloc*` / `_vld*` 与 `ren_preg_req` 之间不再有组合路径。
@@ -611,7 +626,7 @@ module RTU_preg (
     // -----------------------------------------------------------------------
     always @(posedge cpu_clk or posedge cpu_rst) begin
         if (cpu_rst) begin
-            for (i = 0; i < 32; i = i + 1) amt[i] <= i[6:0];
+            for (i = 0; i < 32; i = i + 1) amt[i] <= i[`RTU_PREG_W-1:0];
         end else begin
             // ⚠️ 优先级必须**倒过来**: 同一拍退掉的多条指令可能写同一个 lreg
             //    (`addi x8..; addi x8..` 相邻两条), 架构上最后留下的是**程序序最年轻**
@@ -627,7 +642,7 @@ module RTU_preg (
 
     generate
         for (gv = 0; gv < 32; gv = gv + 1) begin : g_amt
-            assign amt_flat[7*gv +: 7] = amt[gv];
+            assign amt_flat[`RTU_PREG_W*gv +: `RTU_PREG_W] = amt[gv];
         end
     endgenerate
 

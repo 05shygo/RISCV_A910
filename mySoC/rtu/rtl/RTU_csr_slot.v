@@ -20,7 +20,7 @@ module RTU_csr_slot (
 
     // 派遣 (已按车道拆好; 父模块保证 lane_vld 只对"要写槽"的那条有效)
     input  wire [2:0]  disp_csr_vld,       // 三条里 is_csr 的那条
-    input  wire [6:0]  disp_src1_preg0, disp_src1_preg1, disp_src1_preg2,
+    input  wire [`RTU_PREG_W-1:0] disp_src1_preg0, disp_src1_preg1, disp_src1_preg2,
     input  wire [11:0] disp_csr_addr0,  disp_csr_addr1,  disp_csr_addr2,
     input  wire [2:0]  disp_csr_op0,    disp_csr_op1,    disp_csr_op2,
     input  wire [4:0]  disp_csr_imm0,   disp_csr_imm1,   disp_csr_imm2,
@@ -29,20 +29,20 @@ module RTU_csr_slot (
     input  wire        flush_clr,          // FLUSH_2
 
     output wire        csr_inflight,
-    output wire [6:0]  slot_src1_preg,
+    output wire [`RTU_PREG_W-1:0] slot_src1_preg,
     output wire [11:0] slot_csr_addr,
     output wire [2:0]  slot_csr_op,
     output wire [4:0]  slot_csr_imm
 );
 
     reg        vld_q;
-    reg [6:0]  src1_q;
+    reg [`RTU_PREG_W-1:0] src1_q;
     reg [11:0] addr_q;
     reg [2:0]  op_q;
     reg [4:0]  imm_q;
 
     wire [2:0]  d_vld   = disp_csr_vld;
-    wire [6:0]  d_src1  = d_vld[0] ? disp_src1_preg0 : d_vld[1] ? disp_src1_preg1 : disp_src1_preg2;
+    wire [`RTU_PREG_W-1:0] d_src1  = d_vld[0] ? disp_src1_preg0 : d_vld[1] ? disp_src1_preg1 : disp_src1_preg2;
     wire [11:0] d_addr  = d_vld[0] ? disp_csr_addr0  : d_vld[1] ? disp_csr_addr1  : disp_csr_addr2;
     wire [2:0]  d_op    = d_vld[0] ? disp_csr_op0    : d_vld[1] ? disp_csr_op1    : disp_csr_op2;
     wire [4:0]  d_imm   = d_vld[0] ? disp_csr_imm0   : d_vld[1] ? disp_csr_imm1   : disp_csr_imm2;

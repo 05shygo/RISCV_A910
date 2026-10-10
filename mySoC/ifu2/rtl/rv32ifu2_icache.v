@@ -121,7 +121,9 @@ wire [SET_BITS-1:0] rd_set = rd_addr[SET_MSB:SET_LSB];
 // 赋值点按逻辑顺序排在后面 —— 位置本身不影响语义, 但没有声明就会被 VCS
 // 当成 1 位隐式线网。
 // ---------------------------------------------------------------------------
-wire                  q_hit;
+// ⚠️ 这里**不要**再写一遍 `wire q_hit;` —— 它在上面已经是 output 端口了,
+//    重复声明会被 VCS 报 `Warning-[IPDW] Identifier previously declared`
+//    (第二次声明被忽略, 功能无影响, 但每次 elaborate 都会带一条噪声警告)。
 wire                  q_hit0, q_hit1;
 wire                  ram_hit;
 wire                  capacity_conflict;

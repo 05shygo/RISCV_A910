@@ -43,13 +43,13 @@ module RTU_ROB (
 
     // ---- 完成 (7 路, D1.3) ----
     input  wire [6:0]          cmplt_vld,
-    input  wire [6:0]          cmplt_iid0,
-    input  wire [6:0]          cmplt_iid1,
-    input  wire [6:0]          cmplt_iid2,
-    input  wire [6:0]          cmplt_iid3,
-    input  wire [6:0]          cmplt_iid4,
-    input  wire [6:0]          cmplt_iid5,
-    input  wire [6:0]          cmplt_iid6,
+    input  wire [6:0] cmplt_iid0,
+    input  wire [6:0] cmplt_iid1,
+    input  wire [6:0] cmplt_iid2,
+    input  wire [6:0] cmplt_iid3,
+    input  wire [6:0] cmplt_iid4,
+    input  wire [6:0] cmplt_iid5,
+    input  wire [6:0] cmplt_iid6,
 
     // ---- 解析结果 (BEU) ----
     // ⚠️ **1 路**: 解析吞吐 = 分支执行单元数 (本核 1 个 BEU, 单发射一拍最多一条
@@ -61,10 +61,10 @@ module RTU_ROB (
     // 之后它不能退休, 等它走到退休窗口最前面时由 RTU_commit 触发一次重放冲刷。
     // 与完成口同构地**按 iid 寻址** (表项只存回绕位 ⇒ 必须比回绕位)。
     input  wire                lsu_replay_vld,
-    input  wire [6:0]          lsu_replay_iid,
+    input  wire [6:0] lsu_replay_iid,
 
     input  wire                resolve_vld,
-    input  wire [6:0]          resolve_iid,
+    input  wire [6:0] resolve_iid,
     input  wire                resolve_taken,
     input  wire                resolve_mispred,
     input  wire [31:0]         resolve_target,
@@ -74,10 +74,10 @@ module RTU_ROB (
     input  wire                flush_lvl,      // FLUSH_2: 全清 + 指针复位
 
     // ---- 输出 ----
-    output wire [6:0]          rtu_beu_retire_iid,   // = {rptr_msb, rptr}
-    output wire [6:0]          win_iid0,
-    output wire [6:0]          win_iid1,
-    output wire [6:0]          win_iid2,
+    output wire [6:0] rtu_beu_retire_iid,   // = {rptr_msb, rptr}
+    output wire [6:0] win_iid0,
+    output wire [6:0] win_iid1,
+    output wire [6:0] win_iid2,
     output wire [`RTU_E_W-1:0] win_q0,
     output wire [`RTU_E_W-1:0] win_q1,
     output wire [`RTU_E_W-1:0] win_q2,

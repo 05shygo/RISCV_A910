@@ -207,29 +207,33 @@ LSU = [
      "（对我们这条路径是同一个动作），iid 原样送。⚠️ 它跟完成**同拍**报 ⇒ RTU 里有一条"
      "同拍命中路径（否则那条 store 会在同一个边沿就退休、把内存写提交掉）"),
 
-    ("## 访存异常（LSU → RTU）—— 2026-10-08 新增，commit 3e605a0 \"expt\"", None),
-    ("已有·需适配", "LSU→RTU", "expt_vld / expt_iid[6:0] / expt_cause[4:0] / expt_tval[31:0]",
+    ("## 访存异常（LSU → RTU）—— 2026-10-08 新增；2026-10-10 改成三路平行", None),
+    ("已有·需适配", "LSU→RTU", "expt_ld_vld / expt_ld_iid[6:0] / expt_ld_cause[4:0] / expt_ld_tval[31:0]",
      "1 / 7 / 5 / 32", "lsu_rtu_wb_pipe3_expt_vld / _expt_addr[31:0]", "1 / 32",
      "**load 侧异常**（新加的两根）。语义 = **地址非对齐**：`ld_ag_expt = !ld_ag_align`"
      "（`lsu_ld_ag.sv:286-297`，按 `{inst_size, addr[2:0]}` 判：BYTE 任意 / HALF 需 "
      "`addr[0]=0` / WORD 需 `addr[1:0]=00`），随流水 AG→DC→DA→WB 打到底，"
      "**与 `lsu_rtu_wb_pipe3_cmplt` 同拍、同 iid**。⇒ 映射："
-     "`expt_iid` = 同拍 `lsu_rtu_wb_pipe3_iid`（**原样，不许重编码**）；"
-     "`expt_cause` = **5'd4**（`EXC_LOAD_MISALIGNED`，defines.vh:301）；"
-     "`expt_tval` = `_expt_addr`（= `ld_da_addr`）"),
-    ("已有·需适配", "LSU→RTU", "expt_vld / expt_iid[6:0] / expt_cause[4:0] / expt_tval[31:0]",
+     "`expt_ld_iid` = 同拍 `lsu_rtu_wb_pipe3_iid`（**原样，不许重编码**）；"
+     "`expt_ld_cause` = **5'd4**（`EXC_LOAD_MISALIGNED`，defines.vh:301）；"
+     "`expt_ld_tval` = `_expt_addr`（= `ld_da_addr`）"),
+    ("已有·需适配", "LSU→RTU", "expt_st_vld / expt_st_iid[6:0] / expt_st_cause[4:0] / expt_st_tval[31:0]",
      "1 / 7 / 5 / 32", "lsu_rtu_wb_pipe4_expt_vld / _expt_addr[31:0]", "1 / 32",
      "**store 侧异常**（同上）。`st_ag_expt = !st_ag_align`（`lsu_st_ag.sv:142-153`）。"
-     "⇒ 映射：iid 取同拍 `lsu_rtu_wb_pipe4_iid`；cause = **5'd6**"
-     "（`EXC_STORE_MISALIGNED`，defines.vh:303）；tval = `_expt_addr`（= `st_da_addr0`）"),
+     "⇒ 映射：`expt_st_iid` 取同拍 `lsu_rtu_wb_pipe4_iid`；`expt_st_cause` = **5'd6**"
+     "（`EXC_STORE_MISALIGNED`，defines.vh:303）；`expt_st_tval` = `_expt_addr`（= `st_da_addr0`）"),
     ("约束（非端口）", "适配层", "—", "—", "—", "—",
-     "🔴 **同拍两源必须比 iid 取最旧**。RTU 的异常口是**单路**（D9 的"
-     "\"全局单表项、最旧者胜\"，`RTU_expt.v` 用 `RTU_iid_cmp` 跟手里的比），"
-     "而 LSU 现在有**两个**源（load pipe3 / store pipe4）且两条流水独立、可以同拍都报。"
-     "RTU 只能跟**已经收下的**比年龄 —— 所以**丢哪一条是适配层决定的**。"
-     "若丢的是年长那条：RTU 手里只有年轻的，年长的那条**按正常流程退休走掉、异常永久丢失**"
-     "（它不会被重取 —— 冲刷只冲比 trap 那条更年轻的）。用 `RTU_iid_cmp` 同款模比较。"
-     "另一条路是把 RTU 的异常口加宽到 2 路（改 RTU 侧，动 §6.1 的 D9）"),
+     "✅ **2026-10-10 已落地：适配层不再仲裁，三路平行送进 RTU**。"
+     "原来的做法是「两源取最旧 + 再与其它源取最旧」，两个 `RTU_iid_cmp` 都在适配层 —— "
+     "**那是个补不回来的窟窿**：load 与 store 是两条独立流水、可以同拍都报，上游只能送一条；"
+     "若送的是年轻那条，年长那条的异常信息当场丢失、且**以后不会再报**（它已离开流水），"
+     "而它比 trap 那条老 ⇒ **不在冲刷范围内** ⇒ 带着「无异常」的表项正常退休，异常**永久丢失**。"
+     "RTU 内部那级（保持项「更老才覆盖」）只救得了**跨拍**冲突。"
+     "⇒ 现在 RTU 的异常口是**三路**（`expt_iu_*` / `expt_ld_*` / `expt_st_*`），"
+     "与 C910 的 `iu_rtu_pipe0 / pipe3 / pipe4_expt_*` 一一对应，锦标赛在 `RTU_expt` 里做"
+     "（`cmp(iu,ld) → w1`、`cmp(w1,st) → w2`、`cmp(w2,held) → take`）。"
+     "适配层只留「完成门控 + cause 编码」两件跨界必需的事。"
+     "⚠️ 这正是本表原来写的「另一条路」（那时说的是加宽到 2 路），2026-10-10 按 3 路做了"),
     ("约束（非端口）", "LSU 侧", "—", "—", "—", "—",
      "✅ **报异常时 LSU 会压掉访存**，口径自洽、不用 RTU 兜底："
      "`st_da_rb_create_vld_unmask ... && !st_da_expt`（不发总线写，`lsu_st_da.sv:293`）、"

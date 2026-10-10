@@ -89,10 +89,13 @@ module tb_rtu_rob;
     logic        rp_pend;                                  // 已决定, 下一拍摆上口
     logic [6:0]  rp_pend_iid;
     logic [31:0] rp_pend_pc;
-    logic        ex_vld;
-    logic [6:0]  ex_iid;
-    logic [4:0]  ex_cause;
-    logic [31:0] ex_tval;
+    // 异常三路平行 (2026-10-10: 由 1 路扩到 3 路, 仲裁在 RTU_expt 里)。
+    // 本台逐拍**随机挑一路**注入, 目的是让三路都跑到; 三源同拍冲突的锦标赛
+    // 正确性由 tb_rtu_expt 定向钉。
+    logic        ex_iu_vld, ex_ld_vld, ex_st_vld;
+    logic [6:0]  ex_iu_iid, ex_ld_iid, ex_st_iid;
+    logic [4:0]  ex_iu_cause, ex_ld_cause, ex_st_cause;
+    logic [31:0] ex_iu_tval, ex_ld_tval, ex_st_tval;
 
     logic        sq_rdy0, sq_rdy1, sq_rdy2, sq_stall;
     logic [63:0] dealloc_mask;                             // 第 5 态: 1 = 这个号还被 store 引用, 押住
@@ -111,7 +114,9 @@ module tb_rtu_rob;
     wire         beu_mask;
     wire         disp_stall;
     wire         ren_recover_vld, ren_flush;
-    wire [223:0] ren_recover_map;
+    // ⚠️ AMT 的打包步长随 PREG 档变 (`RTU_PREG_W`), 这里必须跟着 —— 写死 7 的话
+    //    64 档下从槽 1 开始整体错位, 表现成 "AMT[l] 广播不符" 的假 FAIL。
+    wire [32*`RTU_PREG_W-1:0] ren_recover_map;
     wire [6:0]   ren_free_preg0, ren_free_preg1, ren_free_preg2;
     wire         ren_free_vld0, ren_free_vld1, ren_free_vld2;
     wire [6:0]   praddr0, praddr1, praddr2, csr_src_raddr;
@@ -175,7 +180,12 @@ module tb_rtu_rob;
         .cmplt_vld5(cv5), .cmplt_iid5(ci5), .cmplt_vld6(cv6), .cmplt_iid6(ci6),
         .resolve_vld(rsv_vld), .resolve_iid(rsv_iid), .resolve_taken(rsv_taken),
         .resolve_mispred(rsv_misp), .resolve_target(rsv_tgt),
-        .expt_vld(ex_vld), .expt_iid(ex_iid), .expt_cause(ex_cause), .expt_tval(ex_tval),
+        .expt_iu_vld(ex_iu_vld), .expt_iu_iid(ex_iu_iid),
+        .expt_iu_cause(ex_iu_cause), .expt_iu_tval(ex_iu_tval),
+        .expt_ld_vld(ex_ld_vld), .expt_ld_iid(ex_ld_iid),
+        .expt_ld_cause(ex_ld_cause), .expt_ld_tval(ex_ld_tval),
+        .expt_st_vld(ex_st_vld), .expt_st_iid(ex_st_iid),
+        .expt_st_cause(ex_st_cause), .expt_st_tval(ex_st_tval),
         .sq_rdy0(sq_rdy0), .sq_rdy1(sq_rdy1), .sq_rdy2(sq_rdy2), .sq_stall(sq_stall),
         .preg_dealloc_mask(dealloc_mask),
         .csr_rdata(csr_rdata), .int_pending(int_pending),
@@ -408,7 +418,7 @@ module tb_rtu_rob;
     logic [2:0]  ret_fsrc_q = 3'd0;   // 那一拍冲刷的来源 (判 D13 用)
     logic        ret_iflush_d1_q = 1'b0;   // 冲刷窗口的第二拍 (见"早就完成却不退休"那条)
     logic        ret_ifu_vld_q = 1'b0;   // D13: DUT 这一拍有没有重启前端
-    logic [223:0] ret_rmap_q;            // 恢复广播的锁存 (F1/F2 合并后只维持一拍)
+    logic [32*`RTU_PREG_W-1:0] ret_rmap_q;   // 恢复广播的锁存 (F1/F2 合并后只维持一拍)
     logic        ret_rvld_q = 1'b0;
     logic [31:0] ret_ipc_q = 32'd0;
     logic [2:0]  ret_sw_q = 3'd0;
@@ -529,12 +539,12 @@ module tb_rtu_rob;
     // 在负沿直接读 st[] 必然读到 FREE (等于拿结果去问原因, 恒假)。所以留一份边沿前的副本。
     // 池子大小可配 (64/96) ⇒ 快照宽度跟着走; 2026-10-08 每项 2 → 3 bit (第 5 态)。
     logic [3*`RTU_NUM_PREG-1:0] st_snap_q = {3*`RTU_NUM_PREG{1'b0}};
-    logic [223:0] amt_snap_q = 224'd0;
+    logic [32*`RTU_PREG_W-1:0] amt_snap_q = {32*`RTU_PREG_W{1'b0}};
     always @(posedge clk) begin
         for (int si = 0; si < `RTU_NUM_PREG; si = si + 1)
             st_snap_q[3*si +: 3] <= dut.u_preg.st[si];
         for (int ai = 0; ai < 32; ai = ai + 1)
-            amt_snap_q[7*ai +: 7] <= dut.u_preg.amt[ai];
+            amt_snap_q[`RTU_PREG_W*ai +: `RTU_PREG_W] <= dut.u_preg.amt[ai];
     end
 
     // 采样时机: 进入 D_DISP 时"上膛", 紧随其后的那个 posedge 采一次然后卸膛。
@@ -1099,9 +1109,9 @@ module tb_rtu_rob;
             // 两边同帧。比"只在冲刷那拍比"强得多: 映射一旦发散, 当场就能指出来,
             // 而不是等到某次冲刷时看到一堆 exp/got 对不上。
             for (int l = 0; l < 32; l = l + 1)
-                if (amt_snap_q[7*l +: 7] !== ref_amt[l]) begin
+                if (amt_snap_q[`RTU_PREG_W*l +: `RTU_PREG_W] !== ref_amt[l]) begin
                     err($sformatf("AMT[%0d] 与参考模型不符 (边沿前): exp=%0d got=%0d",
-                                  l, ref_amt[l], amt_snap_q[7*l +: 7]));
+                                  l, ref_amt[l], amt_snap_q[`RTU_PREG_W*l +: `RTU_PREG_W]));
                     if (!log_dumped) dump_log();
                 end
 
@@ -1138,9 +1148,9 @@ module tb_rtu_rob;
                     // 到这一拍 ref_retire() 已经跑过, ref_amt 才是"含本拍退休"的值。
                     if (ret_rvld_q)
                         for (int l = 0; l < 32; l = l + 1)
-                            if (ret_rmap_q[7*l +: 7] !== ref_amt[l]) begin
+                            if (ret_rmap_q[`RTU_PREG_W*l +: `RTU_PREG_W] !== ref_amt[l]) begin
                                 err($sformatf("AMT[%0d] 广播不符: exp=%0d got=%0d",
-                                              l, ref_amt[l], ret_rmap_q[7*l +: 7]));
+                                              l, ref_amt[l], ret_rmap_q[`RTU_PREG_W*l +: `RTU_PREG_W]));
                                 if (!log_dumped) dump_log();
                             end
                     fl_state = 2;
@@ -1994,25 +2004,34 @@ module tb_rtu_rob;
     task automatic gen_expt;
         int unsigned span;
         int pick;
+        logic [6:0]  iid;
+        logic [4:0]  cause;
+        logic [31:0] tval;
         begin
-            ex_vld = 0;
+            ex_iu_vld = 0; ex_ld_vld = 0; ex_st_vld = 0;
             if (!allow_exc || (n_ready <= n_ret) || (fl_state != 0)) return;
             if (({$urandom} % 100) >= 30) return;
             span = n_ready - n_ret;
             pick = n_ret + ({$urandom} % span);
             if (x_exc[pick]) return;
-            ex_vld   = 1'b1;
-            ex_iid   = x_iid[pick];
-            ex_cause = 5'd2 + ({$urandom} % 10);
+            iid   = x_iid[pick];
+            cause = 5'd2 + ({$urandom} % 10);
             // ⚠️ 同步异常的 cause 不能撞上 `RTU_CAUSE_MTIP` (=7): DUT 的 trap_cause 是
             //    二选一 (trap_hit ? expt_cause : MTIP), 参考模型只能靠这个值区分
             //    "同步异常"和"取中断"。撞上就会把一次同步异常当成中断 (n_ret = n_inst,
             //    整条流抹掉)。换一个等价的非 7 值, 覆盖度不变。
-            if (ex_cause == `RTU_CAUSE_MTIP) ex_cause = 5'd12;
-            ex_tval  = {$urandom};
+            if (cause == `RTU_CAUSE_MTIP) cause = 5'd12;
+            tval  = {$urandom};
+            // 三路里随机挑一路注入 —— 三条路都要跑到。参考模型只看
+            // "哪条指令上有异常 + 它的 cause/tval", 与走哪一路无关。
+            case (({$urandom} % 3))
+              0: begin ex_iu_vld=1'b1; ex_iu_iid=iid; ex_iu_cause=cause; ex_iu_tval=tval; end
+              1: begin ex_ld_vld=1'b1; ex_ld_iid=iid; ex_ld_cause=cause; ex_ld_tval=tval; end
+              default: begin ex_st_vld=1'b1; ex_st_iid=iid; ex_st_cause=cause; ex_st_tval=tval; end
+            endcase
             x_exc[pick] = 1'b1;
-            x_ec[pick]  = ex_cause;
-            x_etv[pick] = ex_tval;
+            x_ec[pick]  = cause;
+            x_etv[pick] = tval;
         end
     endtask
 
@@ -2043,7 +2062,9 @@ module tb_rtu_rob;
                          dut.u_rob.win_q1[`RTU_E_VLD], dut.u_rob.win_q1[`RTU_E_CMPLT],
                          dut.u_flush.st_q, dut.u_commit.flush_trig, dut.u_commit.trap_hit,
                          dut.u_commit.int_take, dut.u_commit.ok0, dut.u_commit.ok1, dut.u_commit.ok2,
-                         int_pending, sq_rdy0, sq_stall, ex_vld, ex_iid, dut.u_rob.win_iid0);
+                         int_pending, sq_rdy0, sq_stall,
+                         ex_iu_vld, ex_iu_iid, ex_ld_vld, ex_ld_iid, ex_st_vld, ex_st_iid,
+                         dut.u_rob.win_iid0);
 
             check_after_retire();   // 指针位置 / iid 约定 (必须在记账之后比)
 
@@ -2075,7 +2096,9 @@ module tb_rtu_rob;
         cv0=0; cv1=0; cv2=0; cv3=0; cv4=0; cv5=0; cv6=0;
         ci0=0; ci1=0; ci2=0; ci3=0; ci4=0; ci5=0; ci6=0;
         rsv_vld=0; rsv_iid=0; rsv_taken=0; rsv_misp=0; rsv_tgt=0;
-        ex_vld=0; ex_iid=0; ex_cause=0; ex_tval=0;
+        ex_iu_vld=0; ex_iu_iid=0; ex_iu_cause=0; ex_iu_tval=0;
+        ex_ld_vld=0; ex_ld_iid=0; ex_ld_cause=0; ex_ld_tval=0;
+        ex_st_vld=0; ex_st_iid=0; ex_st_cause=0; ex_st_tval=0;
         rp_vld=0; rp_iid=0;
         sq_rdy0=1; sq_rdy1=1; sq_rdy2=1; sq_stall=0;
         int_pending=0;

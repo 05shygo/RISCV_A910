@@ -31,16 +31,16 @@ module RTU_commit (
     input  wire [`RTU_E_W-1:0] win2,
     // store 重放请求 (LSU 跟完成**同拍**报) —— 见下面 rp_now 的注释
     input  wire                lsu_replay_vld,
-    input  wire [6:0]          lsu_replay_iid,
-    input  wire [6:0]          win_iid0,
-    input  wire [6:0]          win_iid1,
-    input  wire [6:0]          win_iid2,
+    input  wire [6:0] lsu_replay_iid,
+    input  wire [6:0] win_iid0,
+    input  wire [6:0] win_iid1,
+    input  wire [6:0] win_iid2,
 
     input  wire                fsm_busy,        // 冲刷状态机非 IDLE
 
     // ---- 异常 / 中断 / 存储队列 ----
     input  wire                expt_vld,
-    input  wire [6:0]          expt_iid,
+    input  wire [6:0] expt_iid,
     input  wire [4:0]          expt_cause,
     input  wire [31:0]         expt_tval,
     input  wire                sq_rdy0,
@@ -50,7 +50,7 @@ module RTU_commit (
     input  wire                int_pending,
 
     // ---- CSR ----
-    input  wire [6:0]          slot_src1_preg,
+    input  wire [`RTU_PREG_W-1:0] slot_src1_preg,
     input  wire [11:0]         slot_csr_addr,
     input  wire [2:0]          slot_csr_op,
     input  wire [4:0]          slot_csr_imm,
@@ -85,12 +85,12 @@ module RTU_commit (
     output wire [2:0]          ret_arch_vld,
     output wire [2:0]          ret_kill_vld,
     output wire [2:0]          ret_free_vld,
-    output wire [6:0]          ret_dst_preg0,
-    output wire [6:0]          ret_dst_preg1,
-    output wire [6:0]          ret_dst_preg2,
-    output wire [6:0]          ret_old_preg0,
-    output wire [6:0]          ret_old_preg1,
-    output wire [6:0]          ret_old_preg2,
+    output wire [`RTU_PREG_W-1:0] ret_dst_preg0,
+    output wire [`RTU_PREG_W-1:0] ret_dst_preg1,
+    output wire [`RTU_PREG_W-1:0] ret_dst_preg2,
+    output wire [`RTU_PREG_W-1:0] ret_old_preg0,
+    output wire [`RTU_PREG_W-1:0] ret_old_preg1,
+    output wire [`RTU_PREG_W-1:0] ret_old_preg2,
     output wire [4:0]          ret_dst_lreg0,
     output wire [4:0]          ret_dst_lreg1,
     output wire [4:0]          ret_dst_lreg2,
@@ -104,15 +104,15 @@ module RTU_commit (
     output wire [11:0]         csr_addr,
     output wire [31:0]         csr_wdata,
     output wire                csr_rd_we,
-    output wire [6:0]          csr_rd_addr,
+    output wire [`RTU_PREG_W-1:0] csr_rd_addr,
     output wire [31:0]         csr_rd_wdata,
     output wire [2:0]          csr_slot_retire, // 给 RTU_csr_slot 清槽
 
     // ---- 物理寄存器堆读地址 (difftest / CSR 源) ----
-    output wire [6:0]          preg_raddr0,
-    output wire [6:0]          preg_raddr1,
-    output wire [6:0]          preg_raddr2,
-    output wire [6:0]          csr_src_raddr,
+    output wire [`RTU_PREG_W-1:0] preg_raddr0,
+    output wire [`RTU_PREG_W-1:0] preg_raddr1,
+    output wire [`RTU_PREG_W-1:0] preg_raddr2,
+    output wire [`RTU_PREG_W-1:0] csr_src_raddr,
 
     // ---- difftest ----
     output wire [2:0]          commit_ena,
@@ -340,9 +340,9 @@ module RTU_commit (
     //
     //    (中间网线必须先声明再用 —— 双重 part-select `win2[..][6:5]` 是非法语法,
     //     而漏声明会退化成 1 位隐式线网, 症状是静默错。)
-    wire [6:0] old0 = win0[`RTU_E_OLD_PREG];
-    wire [6:0] old1 = win1[`RTU_E_OLD_PREG];
-    wire [6:0] old2 = win2[`RTU_E_OLD_PREG];
+    wire [`RTU_PREG_W-1:0] old0 = win0[`RTU_E_OLD_PREG];
+    wire [`RTU_PREG_W-1:0] old1 = win1[`RTU_E_OLD_PREG];
+    wire [`RTU_PREG_W-1:0] old2 = win2[`RTU_E_OLD_PREG];
 
     assign ret_free_vld = wr_eff & { (old2 != ret_dst_preg2),
                                      (old1 != ret_dst_preg1),
@@ -378,7 +378,7 @@ module RTU_commit (
 
     // CSR 的 rd 值 = **旧值**, 三种 op 一样; 它到退休这拍才算得出来, 所以走独立写口
     wire csr_hit      = csr_in0 | csr_in1 | csr_in2;
-    wire [6:0] csr_dp  = csr_in0 ? win0[`RTU_E_DST_PREG] :
+    wire [`RTU_PREG_W-1:0] csr_dp  = csr_in0 ? win0[`RTU_E_DST_PREG] :
                          csr_in1 ? win1[`RTU_E_DST_PREG] : win2[`RTU_E_DST_PREG];
     wire [4:0] csr_dl  = csr_in0 ? lreg0 : csr_in1 ? lreg1 : lreg2;
     wire       csr_rfw = csr_in0 ? win0[`RTU_E_RF_WE] :

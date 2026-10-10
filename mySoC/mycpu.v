@@ -1,6 +1,9 @@
 `timescale 1ns / 1ps
 
 `include "defines.vh"
+// ⚠️ 无条件 include: 下面 RTU 实例的几个 preg 常量按 `RTU_PREG_W 展开 (见 RTU_define.vh)。
+//    文件里另有一处 `include 在 `ifdef RTU_DBG 里 (调试打印用), 那处**不能**顶替这一处。
+`include "RTU_define.vh"
 
 // 取指级的三选一 (由 Makefile 的 IFU= 选择):
 //   IFU=0       旧 PC/NPC/IROM 通路
@@ -1328,9 +1331,9 @@ RTU u_rtu (
     // 读法 A 的恒等映射: dst_preg = old_preg = p_<lreg>。
     // p0..p31 恒为 ARCH, 所以 ret_arch_vld 是幂等的、ret_free_vld 恒 0
     // (被 old_preg >= 32 那道门控挡住) —— 见 §7 的那张"惰性"表。
-    .disp0_dst_preg ({2'b0, id_dst_lreg}),
-    .disp0_old_preg ({2'b0, id_dst_lreg}),
-    .disp0_src1_preg({2'b0, id_inst[19:15]}),  // CSR 的 rs1 (= uimm5 for csrr*i)
+    .disp0_dst_preg ({{(7-`RTU_PREG_W){1'b0}}, id_dst_lreg}),   // 位宽随 PREG 档
+    .disp0_old_preg ({{(7-`RTU_PREG_W){1'b0}}, id_dst_lreg}),
+    .disp0_src1_preg({{(7-`RTU_PREG_W){1'b0}}, id_inst[19:15]}),  // CSR 的 rs1 (= uimm5 for csrr*i)
     .disp0_csr_addr (id_csr_addr),
     // ⚠️ A6c: disp*_csr_op 要的是 **funct3 原样** (001=RW 010=RS 011=RC
     //    101=RWI 110=RSI 111=RCI), 不是 Control.v 译出来的 CSR_OP_* 两位码 ——
@@ -1346,13 +1349,15 @@ RTU u_rtu (
 
     .disp1_vld (1'b0), .disp1_pc (32'd0), .disp1_chk (25'd0),
     .disp1_dst_lreg (5'd0), .disp1_rf_we (1'b0),
-    .disp1_dst_preg (7'd0), .disp1_old_preg (7'd0), .disp1_src1_preg (7'd0),
+    .disp1_dst_preg ({`RTU_PREG_W{1'b0}}), .disp1_old_preg ({`RTU_PREG_W{1'b0}}),
+    .disp1_src1_preg({`RTU_PREG_W{1'b0}}),
     .disp1_csr_addr (12'd0), .disp1_csr_op (3'd0), .disp1_csr_imm (5'd0),
     .disp1_flags (7'd0), .disp1_sq_id (3'd0),
 
     .disp2_vld (1'b0), .disp2_pc (32'd0), .disp2_chk (25'd0),
     .disp2_dst_lreg (5'd0), .disp2_rf_we (1'b0),
-    .disp2_dst_preg (7'd0), .disp2_old_preg (7'd0), .disp2_src1_preg (7'd0),
+    .disp2_dst_preg ({`RTU_PREG_W{1'b0}}), .disp2_old_preg ({`RTU_PREG_W{1'b0}}),
+    .disp2_src1_preg({`RTU_PREG_W{1'b0}}),
     .disp2_csr_addr (12'd0), .disp2_csr_op (3'd0), .disp2_csr_imm (5'd0),
     .disp2_flags (7'd0), .disp2_sq_id (3'd0),
 
@@ -1372,11 +1377,22 @@ RTU u_rtu (
     .resolve_taken  (rtu_resolve_taken),
     .resolve_mispred(rtu_resolve_mispred),
     .resolve_target (rtu_resolve_target),
-    // ---- §6.1 异常 (MEM 级; 一级流水内天然"老级优先", 见 §6.3 ④) ----
-    .expt_vld   (rtu_expt_vld),
-    .expt_iid   (mem_iid),
-    .expt_cause ({1'b0, mem_exc_cause}),
-    .expt_tval  (mem_exc_tval),
+    // ---- §6.1 异常 (MEM 级) ----
+    // ⚠️ 2026-10-10: RTU 的异常口由 1 路扩成 3 路 (IU / load / store), 多源在
+    //    `RTU_expt` 里做锦标赛 —— 因为乱序核里 load 与 store 是两条独立流水、
+    //    可以同拍都报, 上游先合成一路会在同拍冲突时永久丢异常。
+    //    **本核是顺序核**, 异常只有 MEM 级这一路、天然"老级优先", 没有多源冲突
+    //    ⇒ 全部接到 **IU 那一路** (语义上它承载"非访存流水检出的异常"), 另两路恒 0。
+    //    这里**不拆 load/store**: 顺序核在 MEM 级已经分不出这条指令是不是访存,
+    //    而拆错的代价 (报错的 cause) 比不拆大。
+    .expt_iu_vld (rtu_expt_vld),
+    .expt_iu_iid (mem_iid),
+    .expt_iu_cause({1'b0, mem_exc_cause}),
+    .expt_iu_tval(mem_exc_tval),
+    .expt_ld_vld (1'b0), .expt_ld_iid (7'd0),
+    .expt_ld_cause(5'd0), .expt_ld_tval(32'd0),
+    .expt_st_vld (1'b0), .expt_st_iid (7'd0),
+    .expt_st_cause(5'd0), .expt_st_tval(32'd0),
 
     // ---- §6.1 存储队列 / CSR / 中断 ----
     // 阶段 1 还没有存储队列: 每个 store 的数据在 EX 级就算好了、直接随流水带下来,

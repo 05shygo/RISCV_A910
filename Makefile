@@ -42,8 +42,10 @@ BP ?= 1
 # PREG=64|96: **物理寄存器数量** (RTU_preg 的池子大小), 构建期可配。
 #   64 档与同事交付的 C910 IDU 的 6 位 preg 直接对得上 (IDU 一行不用改);
 #   默认 96 保持与 D-cache LSU 的 96 preg 一致。
-#   ⚠️ 只参数化**池子** (RTU_preg 内部): 端口位宽/ROB 表项位域/AMT 一律固定取最大值 7 位,
-#      所以 64 档下编号的最高位恒 0, 且不碰任何其它模块。
+#   ⚠️ 2026-10-10 改: **端口与内部信号的编号位宽也跟着档走** (`RTU_PREG_W`: 64→6 / 96→7),
+#      ROB 表项位域仍固定 7 位 (`RTU_PREG_EW`, 位域是位置宏, 一缩就整体挪格)。
+#      好处是 64 档下 RTU 与交付的 IDU 天然同宽 —— 位宽差全部显式收在适配层里,
+#      不再靠端口处的隐式截断 (a910-elab 的 PCWM 判据因此从 5 收紧到 0)。
 #   完整说明与代价见 doc/rtu_preg_size_config_zh.md。
 #   ⚠️ 它只改 DEFINES ⇒ **必须有配置戳** (见下面的 PREG_CFG), 否则切档不会重编译。
 PREG ?= 96
@@ -175,7 +177,7 @@ CROSS     ?= riscv32-unknown-elf-
 ASM_SRCS  := $(wildcard $(PWD)/asm/*.S)
 ASM_BINS  := $(patsubst $(PWD)/asm/%.S,$(PWD)/bin/%.bin,$(ASM_SRCS))
 
-.PHONY: all build run run-all verdi clean help coremark asm muldiv-unit rtu-unit rtu-lsu-unit rtu-adapter-unit iu-alu-unit iu-beu-unit iu-md-unit rtu-subsys-elab biu-unit
+.PHONY: all build run run-all verdi clean help coremark asm muldiv-unit rtu-unit rtu-lsu-unit rtu-adapter-unit rtu-expt-unit iu-alu-unit iu-beu-unit iu-md-unit rtu-subsys-elab biu-unit a910-elab
 
 asm: $(ASM_BINS)
 
@@ -635,11 +637,89 @@ rtu-subsys-elab:
 	   echo "  ⚠️ RTU_subsys.v 里 PCWM-W = $$P, 预期 5 (PREG=64 下 RTU 7 位 → IDU 6 位的\n     有意直连: rtu_preg_raddr0/1/2 + rtu_csr_src_raddr + rtu_csr_rd_addr)"; fi; \
 	 echo "  ✅ RTU_subsys elaborate 通过 (RTU ↔ IDU/LSU 连线已接死)"
 
+# ---------------------------------------------------------------------------
+# A910_cpu 顶层 elaborate 检查 (2026-10-10 立)
+# ---------------------------------------------------------------------------
+# 守的是 mySoC/A910_cpu.sv 里 RTU 与 IFU 的对外连线 —— 那个文件先前是个空壳
+# (RTU 的 130 个端口全空、IFU 只接了一半, 且第 1 行少了 m、端口表里没有时钟
+# 复位)。这里把接线锁成可回归的判据。
+#
+# Criteria :
+#   * Error-[ 必须为 0。
+#
+#   * Warning-[IWNF] (隐式线网没有驱动) 必须为 0。它有来历: 交付的 IDU 里 3 根
+#     create1_en 只在消费侧连了、生产侧漏连, 悬空 Z 让那三条队列的第二 create 口
+#     整个变成死的, 而"未声明且多位"那个扫描器抓不到 1 位信号。
+#
+#     ⚠️ 它抓的是"端口上写了一个没声明过的名字"(笔误或漏声明)。A910_cpu.sv 里
+#        那批有意不接的待接口是显式声明过的, 所以不会在这里报出来 —— 它们登记在
+#        A910_cpu.sv 末尾的"待接清单"里, 由人复核, 不靠这条判据。
+#
+#   * Warning-[DCTTSW] (常量被静默截断) 必须为 0。例如往 2 位寄存器里塞 2'd4 会
+#     变成 0, 状态机于是永远走不到那一支, 既不报错也不变成 X。(2026-10-10 真
+#     踩过: ifu_biu_axi 的 beat_left_q 少了 1 位, 4 拍请求走完之后 busy 落不下来,
+#     取指通路就此卡死。)
+#
+#   * PCWM-W 必须为 0。
+#     ⚠️ 2026-10-10 前这里写的是"恰好 5 条" —— 那 5 条是 RTU 端口固定 7 位、而交付的
+#        IDU PRF 是 6 位, 靠端口处的隐式截位凑出来的。现在 RTU 的 preg 端口**随
+#        `RTU_PREG_W 走** (64 档 = 6 位), 两侧天然同宽 ⇒ 那 5 条消失, 判据收紧到 0。
+#        跨模块的位宽差现在**全部显式**落在适配层里 (切位/重排), 不再有隐式截断。
+#
+# Defines :
+#   两个都必需, 少一个都会得到"看起来通过、实际错"的结果。
+#
+#   * +define+RTU_PREG64 —— 适配层里有配置守卫, RTU_NUM_PREG != 64 时 elaborate
+#     直接失败; 而交付的 C910 IDU 的 PRF 是 64 项 / 6 位。
+#
+#   * +define+DCACHE_2KB —— lsu 的 dcache 阵列整个包在 `ifdef DCACHE_* 里, 一个
+#     都不定义则阵列一片不例化, 输出悬空 (Z), 读出来全是 X 且不报错。与 lsu_top
+#     的 DCACHE_SIZE 默认值 (2048) 配套。
+#
+#   make a910-elab
+# ---------------------------------------------------------------------------
+A910_BUILD := $(PWD)/obj_a910
+A910_LOG   := $(A910_BUILD)/elab.log
+A910_SRC   := $(PWD)/mySoC/A910_cpu.sv \
+              $(wildcard $(PWD)/mySoC/ifu2/rtl/*.v) \
+              $(wildcard $(PWD)/mySoC/rtu/rtl/*.v) \
+              $(wildcard $(PWD)/mySoC/idu_c910/rtl/*.sv) \
+              $(wildcard $(PWD)/mySoC/lsu/rtl/*.sv) \
+              $(wildcard $(PWD)/mySoC/biu/rtl/*.sv)
+
+a910-elab:
+	@mkdir -p $(A910_BUILD)
+	# ⚠️ 必须先删增量目录: VCS 看到"设计没变"会直接回一句
+	#    "The design hasn't changed and need not be recompiled" 并**一条警告都不重发**,
+	#    于是下面的计数全是 0, 这个目标就成了永远绿的假检查。
+	#    (本机时钟偏移还会让 VCS 更爱走这条捷径, 见 memory `eda-env-csh-vcs`。)
+	@rm -rf $(A910_BUILD)/simv.daidir $(A910_BUILD)/simv
+	@$(VCS) $(VCS_FLAGS) $(INC) +define+RTU_PREG64 +define+DCACHE_2KB \
+	  -top A910_cpu -o $(A910_BUILD)/simv $(A910_SRC) > $(A910_LOG) 2>&1 || true
+	@E=$$(grep -cE 'Error-\[' $(A910_LOG) || true); \
+	 W=$$(grep -cE 'Warning-\[IWNF\]' $(A910_LOG) || true); \
+	 T=$$(grep -cE 'Warning-\[DCTTSW\]' $(A910_LOG) || true); \
+	 P=$$(grep -A2 'Warning-\[PCWM-W\]' $(A910_LOG) | grep -c 'A910_cpu.sv' || true); \
+	 echo "  Error=$$E  IWNF(悬空线)=$$W  DCTTSW(常量截断)=$$T  PCWM-W(A910_cpu.sv 里)=$$P"; \
+	 if [ "$$E" != "0" ]; then echo "  ❌ elaborate 失败, 见 $(A910_LOG)"; exit 1; fi; \
+	 if [ "$$W" != "0" ]; then \
+	   echo "  ❌ 有悬空线 —— 某个信号连了但没驱动 (症状是静默的, 见本目标的注释)"; \
+	   grep -A3 'Warning-\[IWNF\]' $(A910_LOG) | grep 'Implicit wire' | sort -u; exit 1; fi; \
+	 if [ "$$T" != "0" ]; then \
+	   echo "  ❌ 有常量被静默截断 (例如往 2 位寄存器里塞 2'd4 ⇒ 变成 0)。"; \
+	   echo "     这类错**不报错、也不变成 X**, 只会让状态机永远走不到那一支。"; \
+	   grep -A4 'Warning-\[DCTTSW\]' $(A910_LOG) | head -20; exit 1; fi; \
+	 if [ "$$P" != "0" ]; then \
+	   echo "  ❌ A910_cpu.sv 里 PCWM-W = $$P, 预期 0 (2026-10-10 起 RTU 的 preg 端口\n     随 PREG 档走, 与 IDU 天然同宽; 位宽差全部显式落在适配层)。\n     逐条查上面的日志 —— 每一条都可能是隐式截断。"; exit 1; fi; \
+	 echo "  ✅ A910_cpu elaborate 通过 (RTU ↔ IDU/LSU/IFU/BIU 连线已接死)"
+
 # RTU 适配层单元台 (2026-10-08 立): 直接驱动 RTU_idu_lsu_adapter 两侧端口, 不经整核。
 # 它守的是适配层里**有真逻辑**的四类变换 (不是纯接线):
-#   请求计数 / 映射恢复表逐槽重排 / 异常两源取最旧 / store 重放两根来源。
+#   请求计数 / 映射恢复表逐槽重排 / 异常三路平行 + 门控 + cause 编码 / store 重放两根来源。
 # 为什么单开: 这几条在整核 difftest 里只表现成"某条指令结果不对", 定位不到适配层;
 #   其中"恢复表逐槽重排"写成切低位也能跑过功能测试 (恢复表只在冲刷时用)。
+# ⚠️ 异常那条 2026-10-10 改过方向: 原来查"两源取最旧", 现在查"**同拍两路都送出去**"
+#   (仲裁已搬进 RTU_expt) —— 有人把仲裁加回适配层的话, 这个台会报 FAIL。
 #
 #   make rtu-adapter-unit
 # ---------------------------------------------------------------------------
@@ -661,6 +741,34 @@ $(RTU_ADP_SIMV): $(RTU_ADP_SRC) $(RTU_ADP_HDR) $(RTU_ADP_TB)
 	@mkdir -p $(RTU_ADP_BUILD)
 	$(VCS) $(VCS_FLAGS) $(INC) $(RTU_ADP_PREG_DEFS) -top tb_rtu_adapter -o $(RTU_ADP_SIMV) \
 	  $(RTU_ADP_SRC) $(RTU_ADP_TB)
+
+# ---------------------------------------------------------------------------
+# RTU 异常收集单元台 (2026-10-10 立): 三源锦标赛取最旧
+#
+# 为什么单开: 2026-10-10 把异常的仲裁从 `RTU_idu_lsu_adapter` **搬进了 RTU_expt**
+# (上游先合成一路会在**同拍冲突**时永久丢异常 —— 被丢的那条比 trap 那条老,
+#  不在冲刷范围内, 会带着"无异常"的表项正常退休)。
+# 搬进来之后适配层那个台**不再覆盖**这段逻辑, 所以这里补上。
+#
+# 判据分四组: 单源三路 / **同拍两两与三路组合** / 跨拍"更老才覆盖" / 冲刷清空。
+# 中间那组是重点 —— 它查的是"**收下的是最老那条, 且 cause/tval 也一起选对**",
+# 不是"选了哪一条"。
+#
+#   make rtu-expt-unit
+# ---------------------------------------------------------------------------
+RTU_EXPT_BUILD := $(PWD)/obj_unit_rtu_expt
+RTU_EXPT_SIMV  := $(RTU_EXPT_BUILD)/simv
+RTU_EXPT_SRC   := $(wildcard $(PWD)/mySoC/rtu/rtl/*.v)
+RTU_EXPT_HDR   := $(wildcard $(PWD)/mySoC/rtu/rtl/*.vh)
+RTU_EXPT_TB    := $(PWD)/tb/unit/tb_rtu_expt.sv
+
+rtu-expt-unit: $(RTU_EXPT_SIMV)
+	@$(RTU_EXPT_SIMV) +vcs+lic+wait -exitstatus -l $(RTU_EXPT_BUILD)/sim.log
+
+$(RTU_EXPT_SIMV): $(RTU_EXPT_SRC) $(RTU_EXPT_HDR) $(RTU_EXPT_TB)
+	@mkdir -p $(RTU_EXPT_BUILD)
+	$(VCS) $(VCS_FLAGS) $(INC) -top tb_rtu_expt -o $(RTU_EXPT_SIMV) \
+	  $(RTU_EXPT_SRC) $(RTU_EXPT_TB)
 
 # RTU + LSU 联合单元台 (2026-10-08 立): 把两个交付物**真的连起来** elaborate
 #
