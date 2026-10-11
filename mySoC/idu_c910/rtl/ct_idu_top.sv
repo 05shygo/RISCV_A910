@@ -346,7 +346,7 @@ logic [24:0]  dp_id_pipedown_inst2_chk;
 // IR Stage control signals
 logic        ctrl_ir_stall;
 logic        ctrl_ir_pipedown;
-logic        ctrl_ir_inst2_vld;
+//logic        ctrl_ir_inst2_vld;
 logic        ctrl_ir_pre_dis_aiq0_create0_en;
 logic        ctrl_ir_pre_dis_aiq0_create1_en;
 logic        ctrl_ir_pre_dis_aiq1_create0_en;
@@ -606,7 +606,7 @@ ct_idu_id_ctrl u_ct_idu_id_ctrl (
     // 来自 CTRL 的控制信号
     .ctrl_xx_is_inst0_sel (ctrl_xx_is_inst0_sel),
     .ctrl_ir_stall        (ctrl_ir_stall       ),
-    .ctrl_ir_inst2_vld    (ctrl_ir_inst2_vld   ),
+    .ctrl_ir_inst2_vld    (ctrl_rt_inst2_vld   ),
     .rtu_yy_xx_flush      (rtu_yy_xx_flush     ),
     
     // 输出到 IDU (Instruction Decode Unit) 内部的有效信号
