@@ -291,8 +291,9 @@ module tb_a910_smoke;
                dut.idu_rtu_disp2_vld, dut.idu_rtu_disp1_vld, dut.idu_rtu_disp0_vld);
       // ⚠️ 原来这里是 `ctrl_ir_inst2_vld` —— 那根在 IDU 侧是悬空的, 同事 7c54bec
       //    已把它换成 `ctrl_rt_inst2_vld` (ir_ctrl 里 `ir_inst2_vld` 的导出)。
-      $display("           ctrl_rt_inst2_vld=%b pd2=%b pre_pipedown2=%b ir_stall=%b ir_pipedown=%b",
+      $display("           ctrl_rt_inst2_vld=%b (内部ir_inst2_vld=%b) pd2=%b pre_pipedown2=%b ir_stall=%b ir_pipedown=%b",
                dut.u_ct_idu_top.ctrl_rt_inst2_vld,
+               dut.u_ct_idu_top.x_ct_idu_ir_ctrl.ir_inst2_vld,
                dut.u_ct_idu_top.ctrl_xx_is_inst0_sel[0],
                dut.u_ct_idu_top.ctrl_ir_pre_dis_pipedown2,
                dut.u_ct_idu_top.ctrl_ir_stall,
@@ -367,6 +368,22 @@ module tb_a910_smoke;
   // 主流程
   // -------------------------------------------------------------------------
   integer i;
+
+`ifdef FSDB
+  // FSDB 波形 dump
+  reg [8*100:1] wave_file;
+  initial begin
+    if ($value$plusargs("WAVE=%s", wave_file)) begin
+      $sformat(wave_file, "waveform/%0s.fsdb", wave_file);
+    end else begin
+      wave_file = "waveform/a910_smoke.fsdb";
+    end
+    $fsdbDumpfile(wave_file);
+    $fsdbDumpvars(0, tb_a910_smoke);
+    $display("  📊 FSDB 波形已启用: %0s", wave_file);
+  end
+`endif
+
   initial begin
     if (!$value$plusargs("MAX_CYCLES=%d", max_cycles)) max_cycles = 200000;
 

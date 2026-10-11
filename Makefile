@@ -4,7 +4,7 @@ VERDI ?= verdi
 PWD := $(shell pwd)
 TOP ?= tb_miniRV_dpi
 TEST ?= addi
-WAVE ?= waves
+WAVE ?=
 FMT ?= auto
 MAX_CYCLES ?= 1000000
 # CoreMark 是唯一需要跑上千万周期的用例 (ITERATIONS=25 时约 11.0M 周期, 实测 ~41s).
@@ -749,10 +749,22 @@ a910-run: $(A910_SIMV) $(PWD)/bin/$(TEST).hex128 $(PWD)/bin/$(TEST).hex
 	@$(A910_SIMV) +vcs+lic+wait -exitstatus $(A910_SIM_ARGS) \
 	  +MAX_CYCLES=$(MAX_CYCLES) -l $(A910_SIM_BUILD)/sim.log
 
+# 一键运行 a910_smoke 测试并自动打开波形
+a910-run_smoke:
+	@echo "===================================================="
+	@echo "  运行 a910_smoke 测试并生成波形..."
+	@echo "===================================================="
+	@$(MAKE) a910-run TEST=a910_smoke || true
+	@echo ""
+	@echo "===================================================="
+	@echo "  打开 Verdi 查看波形..."
+	@echo "===================================================="
+	@$(MAKE) verdi
+
 $(A910_SIMV): $(A910_SRC) $(A910_TB_SRC)
 	@mkdir -p $(A910_SIM_BUILD)
-	$(VCS) $(VCS_FLAGS) $(VCS_FLAGS_EXTRA) $(INC) \
-	  +define+RTU_PREG64 +define+DCACHE_2KB \
+	$(VCS) $(VCS_FLAGS) $(VCS_FLAGS_EXTRA) $(INC) $(FSDB_VCS) \
+	  +define+RTU_PREG64 +define+DCACHE_2KB +define+FSDB \
 	  +define+PATH=$(TESTFILE) +define+PATHHEX=$(TESTHEX) +define+PATH128=$(TESTHEX128) \
 	  -top tb_a910_smoke -o $(A910_SIMV) -Mdir=$(A910_SIM_BUILD)/csrc \
 	  -l $(A910_SIM_BUILD)/compile.log \
@@ -892,22 +904,34 @@ run-all: build
 
 WAVE_SSF := $(if $(wildcard waveform/waves.fsdb),-ssf waveform/waves.fsdb,)
 
-verdi: build
-	# Open the specific waveform based on WAVE/FMT; prefer the newest name
-	if [ "$(FMT)" = "fsdb" ] && [ -f waveform/$(WAVE).fsdb ]; then \
-	  $(VERDI) -sverilog $(INC) $(VSRC) $(SVSRC) -top $(TOP) -ssf waveform/$(WAVE).fsdb ; \
+# A910 专用的源文件列表
+A910_VERDI_SRC := $(A910_SRC) $(A910_TB_SRC)
+A910_VERDI_TOP := tb_a910_smoke
+
+verdi:
+	# 如果没有指定 WAVE，自动找最新的波形文件
+	@if [ -z "$(WAVE)" ]; then \
+	  LATEST=$$(ls -t waveform/*.fsdb 2>/dev/null | head -1); \
+	  if [ -n "$$LATEST" ]; then \
+	    echo "打开最新波形: $$LATEST"; \
+	    verdi -sverilog -ssf $$LATEST -top $(A910_VERDI_TOP) $(A910_VERDI_SRC) & \
+	  else \
+	    echo "No FSDB found under waveform/. Run simulation first." ; \
+	  fi; \
+	elif [ "$(FMT)" = "fsdb" ] && [ -f waveform/$(WAVE).fsdb ]; then \
+	  verdi -sverilog -ssf waveform/$(WAVE).fsdb -top $(A910_VERDI_TOP) $(A910_VERDI_SRC) & \
 	elif [ "$(FMT)" = "vcd" ] && [ -f waveform/$(WAVE).vcd ]; then \
-	  $(VERDI) -sverilog $(INC) $(VSRC) $(SVSRC) -top $(TOP) -vcd waveform/$(WAVE).vcd ; \
+	  verdi -sverilog -vcd waveform/$(WAVE).vcd -top $(A910_VERDI_TOP) $(A910_VERDI_SRC) & \
 	elif [ -f waveform/$(WAVE).fsdb ]; then \
-	  $(VERDI) -sverilog $(INC) $(VSRC) $(SVSRC) -top $(TOP) -ssf waveform/$(WAVE).fsdb ; \
+	  verdi -sverilog -ssf waveform/$(WAVE).fsdb -top $(A910_VERDI_TOP) $(A910_VERDI_SRC) & \
 	elif [ -f waveform/$(WAVE).vcd ]; then \
-	  $(VERDI) -sverilog $(INC) $(VSRC) $(SVSRC) -top $(TOP) -vcd waveform/$(WAVE).vcd ; \
+	  verdi -sverilog -vcd waveform/$(WAVE).vcd -top $(A910_VERDI_TOP) $(A910_VERDI_SRC) & \
 	elif [ -f waveform/waves.fsdb ]; then \
-	  $(VERDI) -sverilog $(INC) $(VSRC) $(SVSRC) -top $(TOP) -ssf waveform/waves.fsdb ; \
+	  verdi -sverilog -ssf waveform/waves.fsdb -top $(A910_VERDI_TOP) $(A910_VERDI_SRC) & \
 	elif [ -f waveform/waves.vcd ]; then \
-	  $(VERDI) -sverilog $(INC) $(VSRC) $(SVSRC) -top $(TOP) -vcd waveform/waves.vcd ; \
+	  verdi -sverilog -vcd waveform/waves.vcd -top $(A910_VERDI_TOP) $(A910_VERDI_SRC) & \
 	else \
-	  echo "No FSDB/VCD found under waveform/. Run 'make run' first." ; \
+	  echo "No FSDB/VCD found: waveform/$(WAVE). Run simulation first." ; \
 	fi
 
 clean:

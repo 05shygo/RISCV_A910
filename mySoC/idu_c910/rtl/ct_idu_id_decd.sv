@@ -160,10 +160,11 @@ assign dst_x0  = (rd == 5'b0);
 // Instruction type (one-hot encoding)
 // ==============================================================================
 // [0] ALU: basic ALU operations (not MUL/DIV)
-assign inst_type[1] = is_alu && !illegal;
+assign inst_type[0] = is_alu && !illegal;
 
 // [1] LSU: load/store unit operations
 assign inst_type[1] = store_valid && !illegal;
+
 assign inst_type[2] = (load_valid || store_valid) && !illegal;
 
 // [2] BRANCH: branch instructions (including JAL, JALR)

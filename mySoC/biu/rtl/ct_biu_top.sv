@@ -38,6 +38,7 @@ module ct_biu_top #(
     output logic                     biu_ifu_rvalid,
     output logic                     biu_ifu_rlast,
     output logic [1:0]               biu_ifu_rresp,
+    
     output logic                     biu_ifu_rid,
     input  logic                     ifu_biu_rready,
 

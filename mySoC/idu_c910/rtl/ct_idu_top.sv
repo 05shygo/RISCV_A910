@@ -707,8 +707,14 @@ ct_idu_ir_ctrl x_ct_idu_ir_ctrl (
   .idu_rtu_ir_preg1_alloc_vld            (idu_rtu_ir_preg1_alloc_vld),//out
   .idu_rtu_ir_preg2_alloc_vld            (idu_rtu_ir_preg2_alloc_vld),//out
   .ctrl_ir_pre_dis_sdiq_create1_en       (ctrl_ir_pre_dis_sdiq_create1_en),   // 2026-10-09 补: 原来只在 is_ctrl 那侧连了, 生产侧漏连 ⇒ 悬空 Z
+  .ctrl_ir_pre_dis_mult_create0_en       (ctrl_ir_pre_dis_mult_create0_en),
+  .ctrl_ir_pre_dis_mult_create0_sel      (ctrl_ir_pre_dis_mult_create0_sel),
   .ctrl_ir_pre_dis_mult_create1_en       (ctrl_ir_pre_dis_mult_create1_en),
-  .ctrl_ir_pre_dis_div_create1_en        (ctrl_ir_pre_dis_div_create1_en)
+  .ctrl_ir_pre_dis_mult_create1_sel      (ctrl_ir_pre_dis_mult_create1_sel),
+  .ctrl_ir_pre_dis_div_create0_en       (ctrl_ir_pre_dis_div_create0_en),
+  .ctrl_ir_pre_dis_div_create0_sel      (ctrl_ir_pre_dis_div_create0_sel),
+  .ctrl_ir_pre_dis_div_create1_en       (ctrl_ir_pre_dis_div_create1_en),
+  .ctrl_ir_pre_dis_div_create1_sel      (ctrl_ir_pre_dis_div_create1_sel)
 );
 
 // Instance 2: ct_idu_ir_dp
@@ -1091,6 +1097,8 @@ ct_idu_is_lsiq x_ct_idu_is_lsiq (
   .iu_idu_ex2_pipe0_wb_preg_vld_dupx                              (iu_idu_ex2_pipe0_wb_preg_vld_dupx),
   .iu_idu_ex2_pipe1_wb_preg_dupx                              (iu_idu_ex2_pipe1_wb_preg_dupx),
   .iu_idu_ex2_pipe1_wb_preg_vld_dupx                              (iu_idu_ex2_pipe1_wb_preg_vld_dupx),
+    .iu_idu_ex2_pipe2_wb_preg_dupx                              (iu_idu_ex2_pipe2_wb_preg_dupx),
+  .iu_idu_ex2_pipe2_wb_preg_vld_dupx                              (iu_idu_ex2_pipe2_wb_preg_vld_dupx),
   .lsu_idu_lq_full                       (lsu_idu_lq_full),//in
   .lsu_idu_lq_not_full                   (lsu_idu_lq_not_full),//in
   .lsu_idu_lsiq_pop0_vld                 (lsu_idu_lsiq_pop0_vld),//in

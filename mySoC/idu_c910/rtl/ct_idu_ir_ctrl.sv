@@ -45,6 +45,14 @@ module ct_idu_ir_ctrl (
   output logic [1:0]   ctrl_ir_pre_dis_lsiq_create0_sel,
   output logic         ctrl_ir_pre_dis_lsiq_create1_en,
   output logic [1:0]   ctrl_ir_pre_dis_lsiq_create1_sel,
+  output logic         ctrl_ir_pre_dis_mult_create0_en,
+  output logic [1:0]   ctrl_ir_pre_dis_mult_create0_sel,
+  output logic         ctrl_ir_pre_dis_mult_create1_en,
+  output logic [1:0]   ctrl_ir_pre_dis_mult_create1_sel,
+  output logic         ctrl_ir_pre_dis_div_create0_en,
+  output logic [1:0]   ctrl_ir_pre_dis_div_create0_sel,
+  output logic         ctrl_ir_pre_dis_div_create1_en,
+  output logic [1:0]   ctrl_ir_pre_dis_div_create1_sel,
   // ⚠️ 2026-10-09 补: 下面这三根在模块**内部算了却没引出来** (只在 :140/:147/:162
   //    声明成内部 logic 并赋值), 于是顶层同名的那几根线**没有驱动** ⇒ 悬空 Z
   //    ⇒ SDIQ / MULT / DIV 三条队列的**第二 create 口整个是死的**
@@ -53,8 +61,8 @@ module ct_idu_ir_ctrl (
   //    这一类的检验: VCS 的 `Warning-[IWNF] Implicit wire has no fanin` ——
   //    1 位信号不会被截断, 所以"未声明且多位"那个扫描器**抓不到它**。
   output logic         ctrl_ir_pre_dis_sdiq_create1_en,
-  output logic         ctrl_ir_pre_dis_mult_create1_en,
-  output logic         ctrl_ir_pre_dis_div_create1_en,
+  //output logic         ctrl_ir_pre_dis_mult_create1_en,
+ // output logic         ctrl_ir_pre_dis_div_create1_en,
   output logic         ctrl_ir_pre_dis_pipedown2,
   output logic         ctrl_ir_pre_dis_sdiq_create0_en,
   output logic [1:0]   ctrl_ir_pre_dis_sdiq_create0_sel,
@@ -146,15 +154,15 @@ logic             ctrl_ir_pre_dis_al_1_div_inst;
 logic             ctrl_ir_pre_dis_al_2_div_inst;
 
 logic [1:0]       ctrl_ir_pre_dis_aiq0_create1_sel;
-logic             ctrl_ir_pre_dis_mult_create0_en;
-logic [1:0]       ctrl_ir_pre_dis_mult_create0_sel;
-logic [1:0]       ctrl_ir_pre_dis_mult_create1_sel;
+//logic             ctrl_ir_pre_dis_mult_create0_en;
+//logic [1:0]       ctrl_ir_pre_dis_mult_create0_sel;
+//logic [1:0]       ctrl_ir_pre_dis_mult_create1_sel;
 logic             ctrl_ir_pre_dis_mult_create0_sel_inst0;
 logic             ctrl_ir_pre_dis_mult_create0_sel_inst1;
 logic             ctrl_ir_pre_dis_mult_create1_sel_inst1;
-logic             ctrl_ir_pre_dis_div_create0_en;
-logic [1:0]       ctrl_ir_pre_dis_div_create0_sel;
-logic [1:0]       ctrl_ir_pre_dis_div_create1_sel;
+//logic             ctrl_ir_pre_dis_div_create0_en;
+//logic [1:0]       ctrl_ir_pre_dis_div_create0_sel;
+//logic [1:0]       ctrl_ir_pre_dis_div_create1_sel;
 logic             ctrl_ir_pre_dis_div_create0_sel_inst0;
 logic             ctrl_ir_pre_dis_div_create0_sel_inst1;
 logic             ctrl_ir_pre_dis_div_create1_sel_inst1;
