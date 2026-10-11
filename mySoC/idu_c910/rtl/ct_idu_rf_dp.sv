@@ -413,7 +413,7 @@ begin
   if(!cpurst_b) begin
     rf_pipe1_data[MD_WIDTH-1:0] <= {MD_WIDTH{1'b0}};
   end
-  else if(aiq_xx_issue_en) begin
+  else if(mult_xx_issue_en) begin
     rf_pipe1_data[MD_WIDTH-1:0] <= mult_dp_issue_read_data[MD_WIDTH-1:0];
   end
   else begin
