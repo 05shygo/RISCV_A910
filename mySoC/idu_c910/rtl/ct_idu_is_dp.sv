@@ -37,9 +37,9 @@ module ct_idu_is_dp (
   input  logic         lsu_idu_wb_pipe3_wb_preg_vld_dupx,
 
   // Control signals
-  input  logic         ctrl_dp_is_inst0_vld,
-  input  logic         ctrl_dp_is_inst1_vld,
-  input  logic         ctrl_dp_is_inst2_vld,
+  input  logic         ctrl_ir_pipedown_inst0_vld,
+  input  logic         ctrl_ir_pipedown_inst1_vld,
+  input  logic         ctrl_ir_pipedown_inst2_vld,
   input  logic         ctrl_dp_is_dis_stall,
   input  logic         ctrl_ir_pipedown,
   input  logic [1:0]   ctrl_xx_is_inst0_sel,
@@ -214,10 +214,15 @@ logic is_inst0_create_dp_en;
 logic is_inst1_create_dp_en;
 logic is_inst2_create_dp_en;
 logic is_inst_create_dp_en;
-
+/*
 assign is_inst0_create_dp_en      = ctrl_dp_is_inst0_vld && !ctrl_dp_is_dis_stall;
 assign is_inst1_create_dp_en      = ctrl_dp_is_inst1_vld && !ctrl_dp_is_dis_stall;
 assign is_inst2_create_dp_en      = ctrl_dp_is_inst2_vld && !ctrl_dp_is_dis_stall;
+assign is_inst_create_dp_en       = ctrl_ir_pipedown && !ctrl_dp_is_dis_stall;
+*/
+assign is_inst0_create_dp_en      = ctrl_ir_pipedown_inst0_vld && !ctrl_dp_is_dis_stall;
+assign is_inst1_create_dp_en      = ctrl_ir_pipedown_inst1_vld && !ctrl_dp_is_dis_stall;
+assign is_inst2_create_dp_en      = ctrl_ir_pipedown_inst2_vld && !ctrl_dp_is_dis_stall;
 assign is_inst_create_dp_en       = ctrl_ir_pipedown && !ctrl_dp_is_dis_stall;
 
 //----------------------------------------------------------

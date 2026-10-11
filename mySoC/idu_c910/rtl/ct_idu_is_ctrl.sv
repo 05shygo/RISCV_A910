@@ -127,11 +127,11 @@ module ct_idu_is_ctrl (
   output logic [1:0]   ctrl_dp_is_dis_div_create1_sel,
 
   output logic         ctrl_dp_is_dis_stall,
-
+/*
   output logic         ctrl_dp_is_inst0_vld,
   output logic         ctrl_dp_is_inst1_vld,
   output logic         ctrl_dp_is_inst2_vld,
-
+*/
   output logic         ctrl_is_inst2_vld,
   output logic         ctrl_is_stall,
 
@@ -244,11 +244,11 @@ begin
     is_inst2_vld <= is_inst2_vld;
   end
 end
-
+/*
 assign ctrl_dp_is_inst0_vld = is_inst0_vld;
 assign ctrl_dp_is_inst1_vld = is_inst1_vld;
 assign ctrl_dp_is_inst2_vld = is_inst2_vld;
-
+*/
 assign ctrl_is_inst2_vld = is_inst2_vld;
 
 //==========================================================

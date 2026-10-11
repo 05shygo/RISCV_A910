@@ -289,9 +289,9 @@ module tb_a910_smoke;
       $display("      T%0d | IFU inst=%b%b%b cnt=%0d av=%b | IDreg=%b%b%b | disp=%b%b%b",
                cycles, dut.idu_inst2_vld, dut.idu_inst1_vld, dut.idu_inst0_vld,
                dut.u_rv32ifu2_top.u_ibuf.cnt_q, dut.idu_accept_num,
-               dut.u_ct_idu_top.x_ct_idu_id_ctrl.id_inst2_vld,   // ← 修: 穿到 id_ctrl 实例
-               dut.u_ct_idu_top.x_ct_idu_id_ctrl.id_inst1_vld,   // ← 修
-               dut.u_ct_idu_top.x_ct_idu_id_ctrl.id_inst0_vld,   // ← 修
+               dut.u_ct_idu_top.u_ct_idu_id_ctrl.id_inst2_vld,   // ← 修: 穿到 id_ctrl 实例
+               dut.u_ct_idu_top.u_ct_idu_id_ctrl.id_inst1_vld,   // ← 修
+               dut.u_ct_idu_top.u_ct_idu_id_ctrl.id_inst0_vld,   // ← 修
                dut.idu_rtu_disp2_vld, dut.idu_rtu_disp1_vld, dut.idu_rtu_disp0_vld);
       // ⚠️ 原来这里是 `ctrl_ir_inst2_vld` —— 那根在 IDU 侧是悬空的, 同事 7c54bec
       //    已把它换成 `ctrl_rt_inst2_vld` (ir_ctrl 里 `ir_inst2_vld` 的导出)。
@@ -341,7 +341,7 @@ module tb_a910_smoke;
       $display("          IDpipedown: data=%08x pc64=%08x vld0=%b",
                dut.u_ct_idu_top.dp_id_pipedown_inst0_data[31:0],
                dut.u_ct_idu_top.dp_id_pipedown_inst0_data[63:32],
-               dut.u_ct_idu_top.x_ct_idu_id_ctrl.id_inst0_vld);   // ← 修: 穿到 id_ctrl 实例
+               dut.u_ct_idu_top.u_ct_idu_id_ctrl.id_inst0_vld);   // ← 修: 穿到 id_ctrl 实例
       // 有效位那条链 (与数据不同源 —— 嫌疑点)
       $display("          VLD链: ir_inst0_vld=%b ir_pipe_stall=%b pipedown0_vld=%b pre_dis0_vld=%b disp0_vld=%b",
                dut.u_ct_idu_top.x_ct_idu_ir_ctrl.ir_inst0_vld,

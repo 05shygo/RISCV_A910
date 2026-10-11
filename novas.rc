@@ -228,8 +228,8 @@ autoSaveSession = FALSE
 TclAutoSource = 
 cmd_enter_form = FALSE
 SyncBrowserDir = TRUE
-recent_commands_nWave = digitalFBin,editCut,nextEvent,saveSignal
-recent_commands_Verdi = verdiSearchPaneAct,UndoTraceGroup,RedoTraceGroup,SearchPaneMatchCaseAct,TextShowCallingScopeGroup,srcShowFile
+recent_commands_Verdi = UndoTraceGroup,verdiSearchPaneAct,RedoTraceGroup,SearchPaneMatchCaseAct,TextShowCallingScopeGroup,srcShowFile
+recent_commands_nWave = editCut,nextEvent,digitalFBin,saveSignal
 ColorTheme = classic
 version = Verdi_V-2023.12-SP2
 prevColorTheme = classic
@@ -376,8 +376,8 @@ savePropStat = FALSE
 savePropDtl = TRUE
 [QtDialog]
 Verdi_OpenFile = 985,644,590,340
-QwWarnMsgDlg = 979,669,600,250
 saveSigDlg = 1003,619,551,386
+QwWarnMsgDlg = 979,706,600,250
 QwUserAskDlg = 1118,750,324,127
 [Relationship]
 hideRecursiceNode = FALSE
@@ -667,9 +667,9 @@ isOneSearchVisible = FALSE
 [VIA.oneSearch.preference.vgifColumnSettingRC.setting0]
 parRuleSets = ""
 [VIA.oneSearch.preference.vgifColumnSettingRC.setting0.column0]
-name = "Severity"
-width = 60
-visualIndex = 2
+name = "Message"
+width = 2000
+visualIndex = 5
 isHidden = FALSE
 isUserChangeColumnVisible = FALSE
 [VIA.oneSearch.preference.vgifColumnSettingRC.setting0.column1]
@@ -685,10 +685,10 @@ visualIndex = 4
 isHidden = TRUE
 isUserChangeColumnVisible = FALSE
 [VIA.oneSearch.preference.vgifColumnSettingRC.setting0.column3]
-name = "Block's First Line"
-width = 120
-visualIndex = 1
-isHidden = TRUE
+name = "Severity"
+width = 60
+visualIndex = 2
+isHidden = FALSE
 isUserChangeColumnVisible = FALSE
 [VIA.oneSearch.preference.vgifColumnSettingRC.setting0.column4]
 name = "Time"
@@ -697,10 +697,10 @@ visualIndex = 0
 isHidden = FALSE
 isUserChangeColumnVisible = FALSE
 [VIA.oneSearch.preference.vgifColumnSettingRC.setting0.column5]
-name = "Message"
-width = 2000
-visualIndex = 5
-isHidden = FALSE
+name = "Block's First Line"
+width = 120
+visualIndex = 1
+isHidden = TRUE
 isUserChangeColumnVisible = FALSE
 [Vi]
 ViFont = "Clean 14"
