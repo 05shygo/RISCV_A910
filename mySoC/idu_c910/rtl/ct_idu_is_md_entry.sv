@@ -12,28 +12,28 @@ module ct_idu_is_md_entry (
     input  logic         lsu_idu_wb_pipe3_wb_preg_vld_dupx,
     input  logic         rtu_yy_xx_flush,
     input  logic [2:0]   x_create_agevec,
-    input  logic [62:0]  x_create_data,
+    input  logic [61:0]  x_create_data,
     input  logic         x_create_en,
     input  logic         x_pop_cur_entry,
     input  logic [2:0]   x_pop_other_entry,
     output logic         x_rdy,
     output logic [2:0]   x_agevec,
-    output logic [62:0]  x_read_data,
+    output logic [61:0]  x_read_data,
     output logic         x_vld
 );
 
     //==========================================================
     //                       Parameters
     //==========================================================
-    parameter int AIQ_WIDTH       = 63;
-    parameter int AIQ_IID         = 62;
-    parameter int AIQ_SRC2_DATA   = 55;
-    parameter int AIQ_SRC1_DATA   = 48;
-    parameter int AIQ_SRC0_DATA   = 41;
-    parameter int AIQ_DST_VLD     = 34;
-    parameter int AIQ_SRC1_VLD    = 33;
-    parameter int AIQ_SRC0_VLD    = 32;
-    parameter int AIQ_OPCODE      = 31;
+parameter MD_WIDTH              = 62;
+parameter MD_IID                = 61;
+parameter MD_PREG               = 54;
+parameter MD_SRC1_DATA          = 48;
+parameter MD_SRC0_DATA          = 41;
+parameter MD_DST_VLD            = 34;
+parameter MD_SRC1_VLD           = 33;
+parameter MD_SRC0_VLD           = 32;
+parameter MD_OPCODE             = 31;
 
 
     //==========================================================
@@ -102,11 +102,11 @@ module ct_idu_is_md_entry (
     //==========================================================
     always_ff @(posedge create_preg_clk or negedge cpurst_b) begin
         if (!cpurst_b)
-            dst_data[6:0] <= 7'b0;
+            dst_data[5:0] <= 6'b0;
         else if (x_create_en)
-            dst_data[6:0] <= x_create_data[AIQ_SRC2_DATA:AIQ_SRC2_DATA-6];
+            dst_data[5:0] <= x_create_data[MD_PREG:MD_PREG-5];
         else
-            dst_data[6:0] <= dst_data[6:0];
+            dst_data[5:0] <= dst_data[5:0];
     end
 
     always_ff @(posedge create_clk or negedge cpurst_b) begin
@@ -118,11 +118,11 @@ module ct_idu_is_md_entry (
             dst_vld      <= 1'b0;
         end
         else if (x_create_en) begin
-            opcode[31:0] <= x_create_data[AIQ_OPCODE:AIQ_OPCODE-31];
-            iid[6:0]     <= x_create_data[AIQ_IID:AIQ_IID-6];
-            src0_vld     <= x_create_data[AIQ_SRC0_VLD];
-            src1_vld     <= x_create_data[AIQ_SRC1_VLD];
-            dst_vld      <= x_create_data[AIQ_DST_VLD];
+            opcode[31:0] <= x_create_data[MD_OPCODE:MD_OPCODE-31];
+            iid[6:0]     <= x_create_data[MD_IID:MD_IID-6];
+            src0_vld     <= x_create_data[MD_SRC0_VLD];
+            src1_vld     <= x_create_data[MD_SRC1_VLD];
+            dst_vld      <= x_create_data[MD_DST_VLD];
         end
         else begin
             opcode[31:0] <= opcode[31:0];
@@ -134,18 +134,18 @@ module ct_idu_is_md_entry (
     end
 
     // rename for read output
-    assign x_read_data[AIQ_OPCODE:AIQ_OPCODE-31]     = opcode[31:0];
-    assign x_read_data[AIQ_IID:AIQ_IID-6]            = iid[6:0];
-    assign x_read_data[AIQ_SRC0_VLD]                 = src0_vld;
-    assign x_read_data[AIQ_SRC1_VLD]                 = src1_vld;
-    assign x_read_data[AIQ_DST_VLD]                  = dst_vld;
-    assign x_read_data[AIQ_SRC2_DATA:AIQ_SRC2_DATA-6] = dst_data[6:0];
+    assign x_read_data[MD_OPCODE:MD_OPCODE-31]     = opcode[31:0];
+    assign x_read_data[MD_IID:MD_IID-6]            = iid[6:0];
+    assign x_read_data[MD_SRC0_VLD]                 = src0_vld;
+    assign x_read_data[MD_SRC1_VLD]                 = src1_vld;
+    assign x_read_data[MD_DST_VLD]                  = dst_vld;
+    assign x_read_data[MD_PREG:MD_PREG-5] = dst_data[5:0];
 
     //==========================================================
     //              Source Dependency Information
     //==========================================================
     //------------------------source 0--------------------------
-    assign create_src0_data[6:0] = x_create_data[AIQ_SRC0_DATA:AIQ_SRC0_DATA-6];
+    assign create_src0_data[6:0] = x_create_data[MD_SRC0_DATA:MD_SRC0_DATA-6];
 
     //----------------------------------------------------------------------
     // Instance : ct_idu_dep_reg_entry
@@ -183,10 +183,10 @@ module ct_idu_is_md_entry (
     );
 
 
-    assign x_read_data[AIQ_SRC0_DATA:AIQ_SRC0_DATA-6] = read_src0_data[6:0];
+    assign x_read_data[MD_SRC0_DATA:MD_SRC0_DATA-6] = read_src0_data[6:0];
 
     //------------------------source 1--------------------------
-    assign create_src1_data[6:0] = x_create_data[AIQ_SRC1_DATA:AIQ_SRC1_DATA-6];
+    assign create_src1_data[6:0] = x_create_data[MD_SRC1_DATA:MD_SRC1_DATA-6];
 
     //----------------------------------------------------------------------
     // Instance : ct_idu_dep_reg_entry
@@ -223,7 +223,7 @@ module ct_idu_is_md_entry (
         .x_read_data                      (read_src1_data[6:0]              )
     );
 
-    assign x_read_data[AIQ_SRC1_DATA:AIQ_SRC1_DATA-6] = read_src1_data[6:0];
+    assign x_read_data[MD_SRC1_DATA:MD_SRC1_DATA-6] = read_src1_data[6:0];
 //==========================================================
 //                  Entry Ready Signal
 //==========================================================

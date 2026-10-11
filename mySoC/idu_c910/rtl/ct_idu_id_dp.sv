@@ -10,7 +10,7 @@ module ct_idu_id_dp(
   input  logic [96:0]  ifu_idu_ib_inst2_data,
   input  logic [24:0]  ifu_idu_if_inst2_chk,
   input  logic         rtu_yy_xx_flush,
-  input  logic [96:0]  crtl_ir_inst2_data,
+  input  logic [122:0]  crtl_ir_inst2_data,
   // 2026-10-08 修: 原来这里是 `inout logic` —— inout 端口在 SV 里不能带 logic 数据类型,
   // 直接语法错 (token is ')')。本模块对它**只读** (见 :134 用来拼 dp_ib_inst0_chk),
   // 与 :13 的 crtl_ir_inst2_data 完全对称, 那个就是 input ⇒ 这里也改成 input。
@@ -136,8 +136,8 @@ always @(*)
 begin
   case(ctrl_xx_is_inst0_sel[1:0])
     2'b01  : begin
-               dp_ib_inst0_data[ID_WIDTH-1:0] = crtl_ir_inst2_data[ID_WIDTH-1:0];
-               dp_ib_inst0_chk[24:0]          = crtl_ir_inst2_chk[24:0];
+               dp_ib_inst0_data[ID_WIDTH-1:0] = id_inst2_data[ID_WIDTH-1:0];
+               dp_ib_inst0_chk[24:0]          = id_inst2_chk[24:0];
                dp_ib_inst1_data[ID_WIDTH-1:0] = ifu_idu_ib_inst0_data[ID_WIDTH-1:0];
                dp_ib_inst1_chk[24:0]          = ifu_idu_if_inst0_chk[24:0];
                dp_ib_inst2_data[ID_WIDTH-1:0] = ifu_idu_ib_inst1_data[ID_WIDTH-1:0];
@@ -195,11 +195,11 @@ begin
     id_inst2_chk[24:0]          <= id_inst2_chk[24:0];
   end
 end
-
+/*
 assign dp_id_pipedown_inst0_chk[24:0] = id_inst0_chk[24:0];
 assign dp_id_pipedown_inst1_chk[24:0] = id_inst1_chk[24:0];
 assign dp_id_pipedown_inst2_chk[24:0] = id_inst2_chk[24:0];
-
+*/
 
 //==========================================================
 //                    Normal Data Path
@@ -256,7 +256,7 @@ ct_idu_id_decd u_ct_idu_id_decd_2 (
 assign id_inst0_taken = id_inst0_data[ID_TAKEN];
 assign id_inst0_npc = id_inst0_data[ID_NPC:ID_NPC-31];
 assign id_inst0_pc  = id_inst0_data[ID_PC:ID_PC-31];
-assign dp_id_pipedown_inst0_data[IR_WIDTH-1:0] = {
+assign dp_id_pipedown_inst0_data_raw[IR_WIDTH-1:0] = {
     id_inst0_taken,
     id_inst0_npc,
     id_inst0_pc,
@@ -275,7 +275,7 @@ assign dp_id_pipedown_inst0_data[IR_WIDTH-1:0] = {
 assign id_inst1_taken = id_inst1_data[ID_TAKEN];
 assign id_inst1_npc = id_inst1_data[ID_NPC:ID_NPC-31];
 assign id_inst1_pc  = id_inst1_data[ID_PC:ID_PC-31];
-assign dp_id_pipedown_inst1_data[IR_WIDTH-1:0] = {
+assign dp_id_pipedown_inst1_data_raw[IR_WIDTH-1:0] = {
     id_inst1_taken,
     id_inst1_npc,
     id_inst1_pc,
@@ -294,7 +294,7 @@ assign dp_id_pipedown_inst1_data[IR_WIDTH-1:0] = {
 assign id_inst2_taken = id_inst2_data[ID_TAKEN];
 assign id_inst2_npc = id_inst2_data[ID_NPC:ID_NPC-31];
 assign id_inst2_pc  = id_inst2_data[ID_PC:ID_PC-31];
-assign dp_id_pipedown_inst2_data[IR_WIDTH-1:0] = {
+assign dp_id_pipedown_inst2_data_raw[IR_WIDTH-1:0] = {
     id_inst2_taken,
     id_inst2_npc,
     id_inst2_pc,
@@ -309,5 +309,46 @@ assign dp_id_pipedown_inst2_data[IR_WIDTH-1:0] = {
     id_inst2_src0_vld,
     id_inst2_inst
 };
+
+always @(*)
+begin
+  case(ctrl_xx_is_inst0_sel[1:0])
+    2'b01  : begin
+                dp_id_pipedown_inst0_data[IR_WIDTH-1:0] = crtl_ir_inst2_data[IR_WIDTH-1:0];
+                dp_id_pipedown_inst1_data[IR_WIDTH-1:0] = dp_id_pipedown_inst0_data_raw[IR_WIDTH-1:0];
+                dp_id_pipedown_inst2_data[IR_WIDTH-1:0] = dp_id_pipedown_inst1_data_raw[IR_WIDTH-1:0];
+             end
+    2'b10  : begin
+                dp_id_pipedown_inst0_data[IR_WIDTH-1:0] = dp_id_pipedown_inst0_data_raw[IR_WIDTH-1:0];
+                dp_id_pipedown_inst1_data[IR_WIDTH-1:0] = dp_id_pipedown_inst1_data_raw[IR_WIDTH-1:0];
+                dp_id_pipedown_inst2_data[IR_WIDTH-1:0] = dp_id_pipedown_inst2_data_raw[IR_WIDTH-1:0];
+             end
+    default: begin
+                dp_id_pipedown_inst0_data[IR_WIDTH-1:0] = {IR_WIDTH{1'bx}};
+                dp_id_pipedown_inst1_data[IR_WIDTH-1:0] = {IR_WIDTH{1'bx}};
+                dp_id_pipedown_inst2_data[IR_WIDTH-1:0] = {IR_WIDTH{1'bx}};
+             end
+  endcase
+end
+always @(*)
+begin
+  case(ctrl_xx_is_inst0_sel[1:0])
+    2'b01  : begin
+                dp_id_pipedown_inst0_chk[24:0] = crtl_ir_inst2_chk[24:0];
+                dp_id_pipedown_inst1_chk[24:0] = id_inst0_chk[24:0];
+                dp_id_pipedown_inst2_chk[24:0] = id_inst1_chk[24:0];
+             end
+    2'b10  : begin
+                dp_id_pipedown_inst0_chk[24:0] = id_inst0_chk[24:0];
+                dp_id_pipedown_inst1_chk[24:0] = id_inst1_chk[24:0];
+                dp_id_pipedown_inst2_chk[24:0] = id_inst2_chk[24:0];
+             end
+    default: begin
+                dp_id_pipedown_inst0_chk[24:0] = {25{1'bx}};
+                dp_id_pipedown_inst1_chk[24:0] = {25{1'bx}};
+                dp_id_pipedown_inst2_chk[24:0] = {25{1'bx}};
+             end
+  endcase
+end
 
 endmodule

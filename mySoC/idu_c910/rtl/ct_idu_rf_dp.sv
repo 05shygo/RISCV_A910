@@ -25,7 +25,7 @@ module ct_idu_rf_dp (
   //==========================================================
   // Pipe1: AIQ1 / MULT
   //==========================================================
-  input  logic [62:0]    mult_dp_issue_read_data,
+  input  logic [61:0]    mult_dp_issue_read_data,
   input  logic           mult_xx_issue_en,
   input  logic [31:0]    prf_dp_rf_pipe1_src0_data,
   input  logic [31:0]    prf_dp_rf_pipe1_src1_data,
@@ -40,7 +40,7 @@ module ct_idu_rf_dp (
   //==========================================================
   // Pipe2: DIV
   //==========================================================
-  input  logic [62:0]    div_dp_issue_read_data,
+  input  logic [61:0]    div_dp_issue_read_data,
   input  logic           div_xx_issue_en,
   input  logic [31:0]    prf_dp_rf_pipe2_src0_data,
   input  logic [31:0]    prf_dp_rf_pipe2_src1_data,
@@ -137,11 +137,11 @@ module ct_idu_rf_dp (
 //----------------------------------------------------------
 //                    AIQ Parameters
 //----------------------------------------------------------
-parameter AIQ_WIDTH             = 96;   // 2026-10-08: 64 → 96 (高 32 位给 PC)
-parameter AIQ_PC                = 95;   // 2026-10-08 新增
-parameter AIQ_ILLEGAL           = 63;
-parameter AIQ_IID               = 62;
-parameter AIQ_SRC2_DATA         = 55;
+parameter AIQ_WIDTH             = 95;   // 2026-10-08: 64 → 96 (高 32 位给 PC)
+parameter AIQ_PC                = 94;   // 2026-10-08 新增: AUIPC 的 PC (高 32 位, 其余字段不动)
+parameter AIQ_ILLEGAL           = 62; // 修正：补上分号
+parameter AIQ_IID               = 61;
+parameter AIQ_PREG              = 54;
 parameter AIQ_SRC1_DATA         = 48;
 parameter AIQ_SRC0_DATA         = 41;
 parameter AIQ_DST_VLD           = 34;
@@ -149,15 +149,15 @@ parameter AIQ_SRC1_VLD          = 33;
 parameter AIQ_SRC0_VLD          = 32;
 parameter AIQ_OPCODE            = 31;
 
-parameter MD_WIDTH              = 63;   // 2026-10-08: 64 → 96 (高 32 位给 PC)
-parameter MD_IID               = 62;
-parameter MD_SRC2_DATA         = 55;
-parameter MD_SRC1_DATA         = 48;
-parameter MD_SRC0_DATA         = 41;
-parameter MD_DST_VLD           = 34;
-parameter MD_SRC1_VLD          = 33;
-parameter MD_SRC0_VLD          = 32;
-parameter MD_OPCODE            = 31;
+parameter MD_WIDTH              = 62;
+parameter MD_IID                = 61;
+parameter MD_PREG               = 54;
+parameter MD_SRC1_DATA          = 48;
+parameter MD_SRC0_DATA          = 41;
+parameter MD_DST_VLD            = 34;
+parameter MD_SRC1_VLD           = 33;
+parameter MD_SRC0_VLD           = 32;
+parameter MD_OPCODE             = 31;
 //----------------------------------------------------------
 //                    BIQ Parameters
 //----------------------------------------------------------
@@ -388,7 +388,7 @@ end
 //                Output to Execution Units
 //----------------------------------------------------------
 assign idu_aiq_iid[6:0]              = rf_pipe0_data[AIQ_IID:AIQ_IID-6];
-assign idu_aiq_dst_preg[5:0]         = rf_pipe0_data[AIQ_SRC2_DATA:AIQ_SRC2_DATA-5];
+assign idu_aiq_dst_preg[5:0]         = rf_pipe0_data[AIQ_PREG:AIQ_PREG-5];
 // 2026-10-08 新增: 把表项里存的 PC 引出来。C910 里 AUIPC 的 PC 来自 BJU 的
 // PC FIFO, 交付的 IDU 没有那一路 ⇒ 这里照 chk 的做法随指令带进 AIQ 表项。
 assign idu_aiq_pc[31:0]              = rf_pipe0_data[AIQ_PC:AIQ_PC-31];
@@ -471,7 +471,7 @@ assign rf_pipe1_src1_data[31:0] = prf_dp_rf_pipe1_src1_data[31:0];
 //                Output to Execution Units
 //----------------------------------------------------------
 assign idu_mult_iid[6:0]      = rf_pipe1_data[MD_IID:MD_IID-6];
-assign idu_mult_dst_preg[5:0] = rf_pipe1_data[MD_SRC2_DATA:MD_SRC2_DATA-5];
+assign idu_mult_dst_preg[5:0] = rf_pipe1_data[MD_PREG:MD_PREG-5];
 assign idu_mult_src0[31:0]    = rf_pipe1_src0_data[31:0];
 assign idu_mult_src1[31:0]    = rf_pipe1_src1_data[31:0];
 assign idu_mult_rslt_sel[3:0] = pipe1_decd_sel[3:0];
@@ -552,7 +552,7 @@ assign rf_pipe2_src1_data[31:0] = prf_dp_rf_pipe2_src1_data[31:0];
 //                Output to Execution Units
 //----------------------------------------------------------
 assign idu_div_iid[6:0]      = rf_pipe2_data[MD_IID:MD_IID-6];
-assign idu_div_dst_preg[5:0] = rf_pipe2_data[MD_SRC2_DATA:MD_SRC2_DATA-5];
+assign idu_div_dst_preg[5:0] = rf_pipe2_data[MD_PREG:MD_PREG-5];
 assign idu_div_src0[31:0]    = rf_pipe2_src0_data[31:0];
 assign idu_div_src1[31:0]    = rf_pipe2_src1_data[31:0];
 assign idu_div_rslt_sel[3:0] = pipe2_decd_sel[3:0];

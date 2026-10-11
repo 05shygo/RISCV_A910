@@ -12,30 +12,24 @@ module ct_idu_is_aiq_entry (
     input  logic         lsu_idu_wb_pipe3_wb_preg_vld_dupx,
     input  logic         rtu_yy_xx_flush,
     input  logic [2:0]   x_create_agevec,
-    input  logic [95:0]  x_create_data,      // 64 → 96 (2026-10-08: 加 PC 字段)
+    input  logic [94:0]  x_create_data,      // 64 → 96 (2026-10-08: 加 PC 字段)
     input  logic         x_create_en,
     input  logic         x_pop_cur_entry,
     input  logic [2:0]   x_pop_other_entry,
     output logic         x_rdy,
     output logic [2:0]   x_agevec,
-    output logic [95:0]  x_read_data,   // 64 → 96
+    output logic [94:0]  x_read_data,   // 64 → 96
     output logic         x_vld
 );
 
     //==========================================================
     //                       Parameters
     //==========================================================
-parameter AIQ_WIDTH             = 96;   // 2026-10-08: 64 → 96 (高 32 位给 PC)
-// 2026-10-08 新增: **PC**。为什么 ALU 表项要存 PC —— C910 里 AUIPC 走独立的
-// ct_iu_special 单元, 它的 PC 来自 **BJU 的 PC FIFO**(`bju_special_pc`); 而交付的
-// IDU **完全没有这一路**(顶层没有 special 端口组) ⇒ AUIPC 的 PC 无源。
-// 这里照同事给 BIQ 加 chk 的同一套做法: 把 PC 随指令带进队列表项。
-// ⚠️ 放在**高 32 位**(AIQ_PC=95), 其余字段位置**一位不动** —— 改动最小, 不会
-//    把已有的 ILLEGAL/IID/SRC*/DST_VLD/OPCODE 全部错位。
-parameter AIQ_PC                = 95;
-parameter AIQ_ILLEGAL           = 63;
-parameter AIQ_IID               = 62;
-parameter AIQ_SRC2_DATA         = 55;
+parameter AIQ_WIDTH             = 95;   // 2026-10-08: 64 → 96 (高 32 位给 PC)
+parameter AIQ_PC                = 94;   // 2026-10-08 新增: AUIPC 的 PC (高 32 位, 其余字段不动)
+parameter AIQ_ILLEGAL           = 62; // 修正：补上分号
+parameter AIQ_IID               = 61;
+parameter AIQ_PREG              = 54;
 parameter AIQ_SRC1_DATA         = 48;
 parameter AIQ_SRC0_DATA         = 41;
 parameter AIQ_DST_VLD           = 34;
@@ -54,7 +48,7 @@ parameter AIQ_OPCODE            = 31;
     logic         src0_vld;
     logic         src1_vld;
     logic         dst_vld;
-    logic [6:0]   dst_data;
+    logic [5:0]   dst_data;
     logic [6:0]   create_src0_data;
     logic [6:0]   create_src1_data;
     logic [6:0]   read_src0_data;
@@ -116,11 +110,11 @@ parameter AIQ_OPCODE            = 31;
     //==========================================================
     always_ff @(posedge create_preg_clk or negedge cpurst_b) begin
         if (!cpurst_b)
-            dst_data[6:0] <= 7'b0;
+            dst_data[5:0] <= 6'b0;
         else if (x_create_en)
-            dst_data[6:0] <= x_create_data[AIQ_SRC2_DATA:AIQ_SRC2_DATA-6];
+            dst_data[5:0] <= x_create_data[AIQ_PREG:AIQ_PREG-5];
         else
-            dst_data[6:0] <= dst_data[6:0];
+            dst_data[5:0] <= dst_data[5:0];
     end
 
     always_ff @(posedge create_clk or negedge cpurst_b) begin
@@ -160,7 +154,7 @@ parameter AIQ_OPCODE            = 31;
     assign x_read_data[AIQ_SRC1_VLD]                 = src1_vld;
     assign x_read_data[AIQ_DST_VLD]                  = dst_vld;
     assign x_read_data[AIQ_ILLEGAL]                  = illegal;
-    assign x_read_data[AIQ_SRC2_DATA:AIQ_SRC2_DATA-6] = dst_data[6:0];
+    assign x_read_data[AIQ_PREG:AIQ_PREG-5]          = dst_data[5:0];
     assign x_read_data[AIQ_PC:AIQ_PC-31]             = pc[31:0];   // 2026-10-08
 
     //==========================================================

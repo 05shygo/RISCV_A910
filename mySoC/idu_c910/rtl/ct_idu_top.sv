@@ -287,7 +287,7 @@ module ct_idu_top(
 //    本仓历史上栽过三次同一类坑 (漏声明 → 隐式线网 → 静默失效, 见 mycpu.v 的注释),
 //    这是第四次, 而且是面积最大的一次。宽度取自各自的端口定义 (取最宽的那个口)。
 //==========================================================
-logic [95:0] aiq_dp_issue_read_data;
+logic [94:0] aiq_dp_issue_read_data;
 logic [151:0] biq_dp_issue_read_data;
 logic [1:0] ctrl_dp_is_dis_aiq_create0_sel;
 logic [1:0] ctrl_dp_is_dis_aiq_create1_sel;
@@ -332,9 +332,9 @@ logic         idu_ifu_inst2_ready;
 assign idu_accept_num[1:0] = {idu_ifu_inst2_ready | idu_ifu_inst0_ready, idu_ifu_inst2_ready};
 
 // ID Stage signals
-logic        id_inst0_vld;
-logic        id_inst1_vld;
-logic        id_inst2_vld;
+logic        id_ir_inst0_vld;
+logic        id_ir_inst1_vld;
+logic        id_ir_inst2_vld;
 logic        ctrl_dp_id_stall;
 logic [122:0] dp_id_pipedown_inst0_data;
 logic [24:0]  dp_id_pipedown_inst0_chk;
@@ -372,7 +372,7 @@ logic        dp_ctrl_ir_inst2_dst_x0;
 logic        dp_ctrl_ir_inst0_illegal;
 logic        dp_ctrl_ir_inst1_illegal;
 logic        dp_ctrl_ir_inst2_illegal;
-logic [96:0] crtl_ir_inst2_data;
+logic [122:0] crtl_ir_inst2_data;
 logic [24:0] crtl_ir_inst2_chk;
 logic [82:0] dp_ir_inst0_data;
 logic [64:0] dp_ir_inst0_pc;
@@ -473,18 +473,18 @@ logic [1:0]  ctrl_sdiq_create1_sel;
 logic [1:0]  ctrl_sdiq_create2_sel;
 
 // IS Stage create data signals
-logic [95:0]  dp_aiq_create0_data;   // 64 → 96 (2026-10-08 加 PC)
-logic [95:0]  dp_aiq_create1_data;
+logic [94:0]  dp_aiq_create0_data;   // 64 → 96 (2026-10-08 加 PC)
+logic [94:0]  dp_aiq_create1_data;
 logic [151:0] dp_biq_create0_data;
 logic [151:0] dp_biq_create1_data;
 logic [59:0]  dp_lsiq_create0_data;
 logic [59:0]  dp_lsiq_create1_data;
 logic [7:0]   dp_sdiq_create0_data;
 logic [7:0]   dp_sdiq_create1_data;
-logic [62:0]  dp_mult_create0_data;
-logic [62:0]  dp_mult_create1_data;
-logic [62:0]  dp_div_create0_data;
-logic [62:0]  dp_div_create1_data;
+logic [61:0]  dp_mult_create0_data;
+logic [61:0]  dp_mult_create1_data;
+logic [61:0]  dp_div_create0_data;
+logic [61:0]  dp_div_create1_data;
 logic [6:0]   dp_ctrl_is_dis_inst2_ctrl_info;
 logic         dp_ctrl_is_inst0_dst_vld;
 logic         dp_ctrl_is_inst1_dst_vld;
@@ -610,9 +610,9 @@ ct_idu_id_ctrl u_ct_idu_id_ctrl (
     .rtu_yy_xx_flush      (rtu_yy_xx_flush     ),
     
     // 输出到 IDU (Instruction Decode Unit) 内部的有效信号
-    .id_inst0_vld         (id_inst0_vld        ),
-    .id_inst1_vld         (id_inst1_vld        ),
-    .id_inst2_vld         (id_inst2_vld        ),
+    .id_ir_inst0_vld         (id_ir_inst0_vld        ),
+    .id_ir_inst1_vld         (id_ir_inst1_vld        ),
+    .id_ir_inst2_vld         (id_ir_inst2_vld        ),
     
     // 输出到 IFU 的 ready 信号
     .idu_ifu_inst0_ready  (idu_ifu_inst0_ready ),//out
@@ -655,9 +655,9 @@ ct_idu_id_dp u_ct_idu_id_dp (
 ct_idu_ir_ctrl x_ct_idu_ir_ctrl (
   .forever_cpuclk                        (forever_cpuclk),//2026-10-08 补: IR 级流水寄存器的时钟
   .cpurst_b                              (cpurst_b),
-  .ctrl_id_pipedown_inst0_vld            (id_inst0_vld),
-  .ctrl_id_pipedown_inst1_vld            (id_inst1_vld),
-  .ctrl_id_pipedown_inst2_vld            (id_inst2_vld),
+  .ctrl_id_pipedown_inst0_vld            (id_ir_inst0_vld),
+  .ctrl_id_pipedown_inst1_vld            (id_ir_inst1_vld),
+  .ctrl_id_pipedown_inst2_vld            (id_ir_inst2_vld),
   .ctrl_is_inst2_vld                     (ctrl_is_inst2_vld),
   .ctrl_is_stall                         (ctrl_is_stall),
   .ctrl_xx_is_inst0_sel                  (ctrl_xx_is_inst0_sel),

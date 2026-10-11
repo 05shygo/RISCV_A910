@@ -5,7 +5,7 @@ module ct_idu_is_md (
   output logic         md_ctrl_1_left_updt,
   output logic         md_ctrl_full_updt,
   output logic         md_xx_issue_en,
-  output logic [62:0]  md_dp_issue_read_data,
+  output logic [61:0]  md_dp_issue_read_data,
 
   //----------------------------------------------------------------------------
   // Inputs
@@ -13,8 +13,8 @@ module ct_idu_is_md (
   input  logic         cpurst_b,
   input  logic         ctrl_md_create0_en,
   input  logic         ctrl_md_create1_en,
-  input  logic [62:0]  dp_md_create0_data,
-  input  logic [62:0]  dp_md_create1_data,
+  input  logic [61:0]  dp_md_create0_data,
+  input  logic [61:0]  dp_md_create1_data,
   input  logic         forever_cpuclk,
   input  logic [5:0]   iu_idu_ex2_pipe0_wb_preg_dupx,
   input  logic         iu_idu_ex2_pipe0_wb_preg_vld_dupx,
@@ -36,15 +36,15 @@ module ct_idu_is_md (
   //    在飞的那条"。两道合起来才闭环。
   input  logic         ctrl_md_unit_stall
 );
-    parameter int AIQ_WIDTH       = 63;
-    parameter int AIQ_IID         = 62;
-    parameter int AIQ_SRC2_DATA   = 55;
-    parameter int AIQ_SRC1_DATA   = 48;
-    parameter int AIQ_SRC0_DATA   = 41;
-    parameter int AIQ_DST_VLD     = 34;
-    parameter int AIQ_SRC1_VLD    = 33;
-    parameter int AIQ_SRC0_VLD    = 32;
-    parameter int AIQ_OPCODE      = 31;
+parameter MD_WIDTH              = 62;
+parameter MD_IID                = 61;
+parameter MD_PREG               = 54;
+parameter MD_SRC1_DATA          = 48;
+parameter MD_SRC0_DATA          = 41;
+parameter MD_DST_VLD            = 34;
+parameter MD_SRC1_VLD           = 33;
+parameter MD_SRC0_VLD           = 32;
+parameter MD_OPCODE             = 31;
 
     //----------------------------------------------------------------------------
     // Internal signals
@@ -82,10 +82,10 @@ module ct_idu_is_md (
     logic [2:0]  md_entry2_create_agevec;
     logic [2:0]  md_entry3_create_agevec;
 
-    logic [AIQ_WIDTH-1:0] md_entry0_create_data;
-    logic [AIQ_WIDTH-1:0] md_entry1_create_data;
-    logic [AIQ_WIDTH-1:0] md_entry2_create_data;
-    logic [AIQ_WIDTH-1:0] md_entry3_create_data;
+    logic [MD_WIDTH-1:0] md_entry0_create_data;
+    logic [MD_WIDTH-1:0] md_entry1_create_data;
+    logic [MD_WIDTH-1:0] md_entry2_create_data;
+    logic [MD_WIDTH-1:0] md_entry3_create_data;
 
     logic [2:0]  md_entry0_pop_other_entry;
     logic [2:0]  md_entry1_pop_other_entry;
@@ -98,17 +98,17 @@ module ct_idu_is_md (
 
     logic [3:0]  md_older_entry_ready;
     logic [3:0]  md_entry_issue_en;
-    logic [AIQ_WIDTH-1:0] md_entry_read_data;
+    logic [MD_WIDTH-1:0] md_entry_read_data;
 
     logic [3:0]  md_entry_ready;
     logic [2:0]  md_entry0_agevec;
     logic [2:0]  md_entry1_agevec;
     logic [2:0]  md_entry2_agevec;
     logic [2:0]  md_entry3_agevec;
-    logic [AIQ_WIDTH-1:0] md_entry0_read_data;
-    logic [AIQ_WIDTH-1:0] md_entry1_read_data;
-    logic [AIQ_WIDTH-1:0] md_entry2_read_data;
-    logic [AIQ_WIDTH-1:0] md_entry3_read_data;
+    logic [MD_WIDTH-1:0] md_entry0_read_data;
+    logic [MD_WIDTH-1:0] md_entry1_read_data;
+    logic [MD_WIDTH-1:0] md_entry2_read_data;
+    logic [MD_WIDTH-1:0] md_entry3_read_data;
 
 //--------------------md entry counter--------------------
 //if create, add entry counter
@@ -239,13 +239,13 @@ always @(*)
 begin
   if(md_entry_create0_in[0]) begin
     md_entry0_create_agevec[2:0] = md_entry_create0_agevec[3:1];
-    md_entry0_create_data[AIQ_WIDTH-1:0] = 
-       dp_md_create0_data[AIQ_WIDTH-1:0];
+    md_entry0_create_data[MD_WIDTH-1:0] = 
+       dp_md_create0_data[MD_WIDTH-1:0];
   end
   else begin
     md_entry0_create_agevec[2:0] = md_entry_create1_agevec[3:1];
-    md_entry0_create_data[AIQ_WIDTH-1:0] = 
-       dp_md_create1_data[AIQ_WIDTH-1:0];
+    md_entry0_create_data[MD_WIDTH-1:0] = 
+       dp_md_create1_data[MD_WIDTH-1:0];
   end
 // &CombEnd; @310
 end
@@ -257,14 +257,14 @@ begin
   if(md_entry_create0_in[1]) begin
     md_entry1_create_agevec[2:0] = {md_entry_create0_agevec[3:2],
                                       md_entry_create0_agevec[0]};
-    md_entry1_create_data[AIQ_WIDTH-1:0] =
-       dp_md_create0_data[AIQ_WIDTH-1:0];
+    md_entry1_create_data[MD_WIDTH-1:0] =
+       dp_md_create0_data[MD_WIDTH-1:0];
   end
   else begin
     md_entry1_create_agevec[2:0] = {md_entry_create1_agevec[3:2],
                                       md_entry_create1_agevec[0]};
-    md_entry1_create_data[AIQ_WIDTH-1:0] =
-       dp_md_create1_data[AIQ_WIDTH-1:0];
+    md_entry1_create_data[MD_WIDTH-1:0] =
+       dp_md_create1_data[MD_WIDTH-1:0];
   end
 // &CombEnd; @328
 end
@@ -276,14 +276,14 @@ begin
   if(md_entry_create0_in[2]) begin
     md_entry2_create_agevec[2:0] = {md_entry_create0_agevec[3],
                                       md_entry_create0_agevec[1:0]};
-    md_entry2_create_data[AIQ_WIDTH-1:0] =
-       dp_md_create0_data[AIQ_WIDTH-1:0];
+    md_entry2_create_data[MD_WIDTH-1:0] =
+       dp_md_create0_data[MD_WIDTH-1:0];
   end
   else begin
     md_entry2_create_agevec[2:0] = {md_entry_create1_agevec[3],
                                       md_entry_create1_agevec[1:0]};
-    md_entry2_create_data[AIQ_WIDTH-1:0] =
-       dp_md_create1_data[AIQ_WIDTH-1:0];
+    md_entry2_create_data[MD_WIDTH-1:0] =
+       dp_md_create1_data[MD_WIDTH-1:0];
   end
 // &CombEnd; @346
 end
@@ -294,13 +294,13 @@ always @(*)
 begin
   if(md_entry_create0_in[3]) begin
     md_entry3_create_agevec[2:0] = md_entry_create0_agevec[2:0];
-    md_entry3_create_data[AIQ_WIDTH-1:0] =
-       dp_md_create0_data[AIQ_WIDTH-1:0];
+    md_entry3_create_data[MD_WIDTH-1:0] =
+       dp_md_create0_data[MD_WIDTH-1:0];
   end
   else begin
     md_entry3_create_agevec[2:0] = md_entry_create1_agevec[2:0];
-    md_entry3_create_data[AIQ_WIDTH-1:0] =
-       dp_md_create1_data[AIQ_WIDTH-1:0];
+    md_entry3_create_data[MD_WIDTH-1:0] =
+       dp_md_create1_data[MD_WIDTH-1:0];
   end
 // &CombEnd; @364
 end
@@ -344,20 +344,20 @@ assign md_xx_issue_en = |md_entry_issue_en[3:0] & ~ctrl_md_unit_stall;
 always @(*)
 begin
   case (md_entry_issue_en[3:0])
-    4'h1  : md_entry_read_data[AIQ_WIDTH-1:0] =
-               md_entry0_read_data[AIQ_WIDTH-1:0];
-    4'h2  : md_entry_read_data[AIQ_WIDTH-1:0] =
-               md_entry1_read_data[AIQ_WIDTH-1:0];
-    4'h4  : md_entry_read_data[AIQ_WIDTH-1:0] =
-               md_entry2_read_data[AIQ_WIDTH-1:0];
-    4'h8  : md_entry_read_data[AIQ_WIDTH-1:0] =
-               md_entry3_read_data[AIQ_WIDTH-1:0];
-    default: md_entry_read_data[AIQ_WIDTH-1:0] =
-                                    {AIQ_WIDTH{1'bx}};
+    4'h1  : md_entry_read_data[MD_WIDTH-1:0] =
+               md_entry0_read_data[MD_WIDTH-1:0];
+    4'h2  : md_entry_read_data[MD_WIDTH-1:0] =
+               md_entry1_read_data[MD_WIDTH-1:0];
+    4'h4  : md_entry_read_data[MD_WIDTH-1:0] =
+               md_entry2_read_data[MD_WIDTH-1:0];
+    4'h8  : md_entry_read_data[MD_WIDTH-1:0] =
+               md_entry3_read_data[MD_WIDTH-1:0];
+    default: md_entry_read_data[MD_WIDTH-1:0] =
+                                    {MD_WIDTH{1'bx}};
   endcase
 // &CombEnd; @548
 end
-assign md_dp_issue_read_data[AIQ_WIDTH-1:0] = md_entry_read_data[AIQ_WIDTH-1:0];
+assign md_dp_issue_read_data[MD_WIDTH-1:0] = md_entry_read_data[MD_WIDTH-1:0];
 
 //==========================================================
 //             ALU Issue Queue 0 Entry Instance

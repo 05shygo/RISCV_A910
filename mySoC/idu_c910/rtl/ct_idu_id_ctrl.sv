@@ -8,9 +8,9 @@ module ct_idu_id_ctrl (
   input  logic        ctrl_ir_stall,
   input  logic        ctrl_ir_inst2_vld,
   input  logic        rtu_yy_xx_flush,
-  output logic        id_inst0_vld,
-  output logic        id_inst1_vld, 
-  output logic        id_inst2_vld,
+  output logic        id_ir_inst0_vld,
+  output logic        id_ir_inst1_vld, 
+  output logic        id_ir_inst2_vld,
   output logic        idu_ifu_inst0_ready,
   output logic        idu_ifu_inst1_ready,
   output logic        idu_ifu_inst2_ready,
@@ -23,7 +23,7 @@ module ct_idu_id_ctrl (
 //                 ID pipeline registers
 //==========================================================
 assign ctrl_ib_pipedown_inst0_vld =
-            ctrl_xx_is_inst0_sel[0] && ctrl_ir_inst2_vld
+            ctrl_xx_is_inst0_sel[0] && id_inst2_vld
          || ctrl_xx_is_inst0_sel[1] && ifu_idu_ib_inst0_vld;
 
 assign ctrl_ib_pipedown_inst1_vld =
@@ -73,6 +73,18 @@ begin
     id_inst2_vld <= id_inst2_vld;
   end
 end
+
+assign id_ir_inst0_vld =   
+          ctrl_xx_is_inst0_sel[0] && ctrl_ir_inst2_vld
+         || ctrl_xx_is_inst0_sel[1] && id_inst0_vld;
+
+assign id_ir_inst1_vld =   
+          ctrl_xx_is_inst0_sel[0] && id_inst0_vld
+         || ctrl_xx_is_inst0_sel[1] && id_inst1_vld;
+
+assign id_ir_inst2_vld =   
+          ctrl_xx_is_inst0_sel[0] && id_inst1_vld
+         || ctrl_xx_is_inst0_sel[1] && id_inst2_vld;
 
 assign ctrl_id_pipedown_stall = ctrl_ir_stall;
 assign ctrl_dp_id_stall = ctrl_ir_stall;

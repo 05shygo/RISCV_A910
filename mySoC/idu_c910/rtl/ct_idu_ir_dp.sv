@@ -2,7 +2,7 @@ module ct_idu_ir_dp (
   input  logic            cpurst_b,
   input  logic            forever_clk,
   input  logic            ctrl_ir_stall,
-  output logic [96:0]     crtl_ir_inst2_data,
+  output logic [122:0]     crtl_ir_inst2_data,
   output logic [24:0]     crtl_ir_inst2_chk,
 
   input  logic [122:0]     dp_id_pipedown_inst0_data,
@@ -395,7 +395,7 @@ assign dp_rt_inst2_src1_reg[4:0] =
        ir_inst2_data[IR_SRC1_REG:IR_SRC1_REG-4];
 
 
-assign crtl_ir_inst2_data[96:0] = {ir_inst2_data[IR_TAKEN:IR_TAKEN-64],ir_inst2_data[IR_OPCODE:IR_OPCODE-31]};
+assign crtl_ir_inst2_data[122:0] = ir_inst2_data[IR_WIDTH-1:0];
 // 2026-10-08 修: 原写成 ctrl_ir_inst2_chk (少了个 l), 与端口名 crtl_ir_inst2_chk 不符
 // ⇒ "Identifier not declared" ⇒ 整个 IDU 编不过。
 assign crtl_ir_inst2_chk[24:0]  = ir_inst2_chk[24:0];
