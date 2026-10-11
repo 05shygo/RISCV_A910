@@ -52,6 +52,11 @@ module ct_idu_top(
   input  logic [31:0]  iu_idu_ex2_pipe1_wb_preg_data,
   input  logic [63:0]  iu_idu_ex2_pipe1_wb_preg_expand,
   input  logic         iu_idu_ex2_pipe1_wb_preg_vld,
+  input  logic [5:0]   iu_idu_ex2_pipe2_wb_preg_dupx,
+  input  logic         iu_idu_ex2_pipe2_wb_preg_vld_dupx,
+  input  logic [31:0]  iu_idu_ex2_pipe2_wb_preg_data,
+  input  logic [63:0]  iu_idu_ex2_pipe2_wb_preg_expand,
+  input  logic         iu_idu_ex2_pipe2_wb_preg_vld,
 
   //==========================================================
   // Interface with LSU (Load Store Unit) - Writeback
@@ -813,6 +818,8 @@ ct_idu_ir_rt x_ct_idu_ir_rt (
   .iu_idu_ex2_pipe0_wb_preg_vld_dupx                              (iu_idu_ex2_pipe0_wb_preg_vld_dupx),//in
   .iu_idu_ex2_pipe1_wb_preg_dupx                              (iu_idu_ex2_pipe1_wb_preg_dupx),//in
   .iu_idu_ex2_pipe1_wb_preg_vld_dupx                              (iu_idu_ex2_pipe1_wb_preg_vld_dupx),//in
+  .iu_idu_ex2_pipe2_wb_preg_dupx                              (iu_idu_ex2_pipe2_wb_preg_dupx),//in
+  .iu_idu_ex2_pipe2_wb_preg_vld_dupx                              (iu_idu_ex2_pipe2_wb_preg_vld_dupx),//in
   .lsu_idu_wb_pipe3_wb_preg_dupx                              (lsu_idu_wb_pipe3_wb_preg_dupx),//in
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx                              (lsu_idu_wb_pipe3_wb_preg_vld_dupx),//in
   .rtu_idu_rt_recover_preg                              (rtu_idu_rt_recover_preg),//in
@@ -949,6 +956,8 @@ ct_idu_is_dp x_ct_idu_is_dp (
   .iu_idu_ex2_pipe0_wb_preg_vld_dupx                              (iu_idu_ex2_pipe0_wb_preg_vld_dupx),
   .iu_idu_ex2_pipe1_wb_preg_dupx                              (iu_idu_ex2_pipe1_wb_preg_dupx),
   .iu_idu_ex2_pipe1_wb_preg_vld_dupx                              (iu_idu_ex2_pipe1_wb_preg_vld_dupx),
+  .iu_idu_ex2_pipe2_wb_preg_dupx                              (iu_idu_ex2_pipe2_wb_preg_dupx),
+  .iu_idu_ex2_pipe2_wb_preg_vld_dupx                              (iu_idu_ex2_pipe2_wb_preg_vld_dupx),
   .lsu_idu_wb_pipe3_wb_preg_dupx                              (lsu_idu_wb_pipe3_wb_preg_dupx),
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx                              (lsu_idu_wb_pipe3_wb_preg_vld_dupx),
   .ctrl_dp_is_inst0_vld                  (ctrl_dp_is_inst0_vld),
@@ -1017,6 +1026,8 @@ ct_idu_is_aiq x_ct_idu_is_aiq (
   .iu_idu_ex2_pipe0_wb_preg_vld_dupx                              (iu_idu_ex2_pipe0_wb_preg_vld_dupx),
   .iu_idu_ex2_pipe1_wb_preg_dupx                              (iu_idu_ex2_pipe1_wb_preg_dupx),
   .iu_idu_ex2_pipe1_wb_preg_vld_dupx                              (iu_idu_ex2_pipe1_wb_preg_vld_dupx),
+  .iu_idu_ex2_pipe2_wb_preg_dupx                              (iu_idu_ex2_pipe2_wb_preg_dupx),
+  .iu_idu_ex2_pipe2_wb_preg_vld_dupx                              (iu_idu_ex2_pipe2_wb_preg_vld_dupx),
   .lsu_idu_wb_pipe3_wb_preg_dupx                              (lsu_idu_wb_pipe3_wb_preg_dupx),
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx                              (lsu_idu_wb_pipe3_wb_preg_vld_dupx),
   .rtu_yy_xx_flush                              (rtu_yy_xx_flush)
@@ -1037,6 +1048,8 @@ ct_idu_is_md x_ct_idu_is_mult (
   .iu_idu_ex2_pipe0_wb_preg_vld_dupx                              (iu_idu_ex2_pipe0_wb_preg_vld_dupx),
   .iu_idu_ex2_pipe1_wb_preg_dupx                              (iu_idu_ex2_pipe1_wb_preg_dupx),
   .iu_idu_ex2_pipe1_wb_preg_vld_dupx                              (iu_idu_ex2_pipe1_wb_preg_vld_dupx),
+  .iu_idu_ex2_pipe2_wb_preg_dupx                              (iu_idu_ex2_pipe2_wb_preg_dupx),
+  .iu_idu_ex2_pipe2_wb_preg_vld_dupx                              (iu_idu_ex2_pipe2_wb_preg_vld_dupx),
   .lsu_idu_wb_pipe3_wb_preg_dupx                              (lsu_idu_wb_pipe3_wb_preg_dupx),
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx                              (lsu_idu_wb_pipe3_wb_preg_vld_dupx),
   .rtu_yy_xx_flush                              (rtu_yy_xx_flush),
@@ -1058,6 +1071,8 @@ ct_idu_is_md x_ct_idu_is_div (
   .iu_idu_ex2_pipe0_wb_preg_vld_dupx                              (iu_idu_ex2_pipe0_wb_preg_vld_dupx),
   .iu_idu_ex2_pipe1_wb_preg_dupx                              (iu_idu_ex2_pipe1_wb_preg_dupx),
   .iu_idu_ex2_pipe1_wb_preg_vld_dupx                              (iu_idu_ex2_pipe1_wb_preg_vld_dupx),
+  .iu_idu_ex2_pipe2_wb_preg_dupx                              (iu_idu_ex2_pipe2_wb_preg_dupx),
+  .iu_idu_ex2_pipe2_wb_preg_vld_dupx                              (iu_idu_ex2_pipe2_wb_preg_vld_dupx),
   .lsu_idu_wb_pipe3_wb_preg_dupx                              (lsu_idu_wb_pipe3_wb_preg_dupx),
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx                              (lsu_idu_wb_pipe3_wb_preg_vld_dupx),
   .rtu_yy_xx_flush                              (rtu_yy_xx_flush),
@@ -1127,6 +1142,8 @@ ct_idu_is_sdiq x_ct_idu_is_sdiq (
   .iu_idu_ex2_pipe0_wb_preg_vld_dupx                              (iu_idu_ex2_pipe0_wb_preg_vld_dupx),
   .iu_idu_ex2_pipe1_wb_preg_dupx                              (iu_idu_ex2_pipe1_wb_preg_dupx),
   .iu_idu_ex2_pipe1_wb_preg_vld_dupx                              (iu_idu_ex2_pipe1_wb_preg_vld_dupx),
+  .iu_idu_ex2_pipe2_wb_preg_dupx                              (iu_idu_ex2_pipe2_wb_preg_dupx),
+  .iu_idu_ex2_pipe2_wb_preg_vld_dupx                              (iu_idu_ex2_pipe2_wb_preg_vld_dupx),
   .lsu_idu_wb_pipe3_wb_preg_dupx                              (lsu_idu_wb_pipe3_wb_preg_dupx),
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx                              (lsu_idu_wb_pipe3_wb_preg_vld_dupx),
   .rtu_yy_xx_flush                              (rtu_yy_xx_flush),
@@ -1155,6 +1172,8 @@ ct_idu_is_biq x_ct_idu_is_biq (
   .iu_idu_ex2_pipe0_wb_preg_vld_dupx                              (iu_idu_ex2_pipe0_wb_preg_vld_dupx),
   .iu_idu_ex2_pipe1_wb_preg_dupx                              (iu_idu_ex2_pipe1_wb_preg_dupx),
   .iu_idu_ex2_pipe1_wb_preg_vld_dupx                              (iu_idu_ex2_pipe1_wb_preg_vld_dupx),
+  .iu_idu_ex2_pipe2_wb_preg_dupx                              (iu_idu_ex2_pipe2_wb_preg_dupx),
+  .iu_idu_ex2_pipe2_wb_preg_vld_dupx                              (iu_idu_ex2_pipe2_wb_preg_vld_dupx),
   .lsu_idu_wb_pipe3_wb_preg_dupx                              (lsu_idu_wb_pipe3_wb_preg_dupx),
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx                              (lsu_idu_wb_pipe3_wb_preg_vld_dupx),
   .rtu_yy_xx_flush                              (rtu_yy_xx_flush)
@@ -1301,6 +1320,9 @@ ct_idu_rf_prf_pregfile x_ct_idu_rf_prf_pregfile (
   .iu_idu_ex2_pipe1_wb_preg_data                              (iu_idu_ex2_pipe1_wb_preg_data),//in
   .iu_idu_ex2_pipe1_wb_preg_expand                              (iu_idu_ex2_pipe1_wb_preg_expand),//in
   .iu_idu_ex2_pipe1_wb_preg_vld                              (iu_idu_ex2_pipe1_wb_preg_vld),//in
+  .iu_idu_ex2_pipe2_wb_preg_data                              (iu_idu_ex2_pipe2_wb_preg_data),//in
+  .iu_idu_ex2_pipe2_wb_preg_expand                              (iu_idu_ex2_pipe2_wb_preg_expand),//in
+  .iu_idu_ex2_pipe2_wb_preg_vld                              (iu_idu_ex2_pipe2_wb_preg_vld),//in
   .lsu_idu_wb_pipe3_wb_preg_data                              (lsu_idu_wb_pipe3_wb_preg_data),//in
   .lsu_idu_wb_pipe3_wb_preg_expand                              (lsu_idu_wb_pipe3_wb_preg_expand),//in
   .lsu_idu_wb_pipe3_wb_preg_vld                              (lsu_idu_wb_pipe3_wb_preg_vld),//in

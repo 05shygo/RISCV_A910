@@ -28,6 +28,9 @@ module ct_idu_rf_prf_pregfile (
   input  logic [31:0]  iu_idu_ex2_pipe1_wb_preg_data,
   input  logic [63:0]  iu_idu_ex2_pipe1_wb_preg_expand,
   input  logic         iu_idu_ex2_pipe1_wb_preg_vld,
+  input  logic [31:0]  iu_idu_ex2_pipe2_wb_preg_data,
+  input  logic [63:0]  iu_idu_ex2_pipe2_wb_preg_expand,
+  input  logic         iu_idu_ex2_pipe2_wb_preg_vld,
   input  logic [31:0]  lsu_idu_wb_pipe3_wb_preg_data,
   input  logic [63:0]  lsu_idu_wb_pipe3_wb_preg_expand,
   input  logic         lsu_idu_wb_pipe3_wb_preg_vld,
@@ -83,7 +86,7 @@ logic [31:0] preg_reg_dout [0:63];
 // ⚠️ 2026-10-08: 3 → **4** 位。第 4 位是 RTU 的 CSR rd 写口 ——
 //    忘了改这里的话，下面 `assign preg_wb_vld[j] = {csr, pipe3, pipe1, pipe0}`
 //    会被**静默截断**成 3 位（丢掉最高位），于是 CSR 的 rd 永远写不进 PRF。
-logic [3:0]  preg_wb_vld   [0:63];
+logic [4:0]  preg_wb_vld   [0:63];
 
 //----------------------------------------------------------
 //                         Preg 0
@@ -101,6 +104,7 @@ generate
       .forever_cpuclk                (forever_cpuclk               ),
       .iu_idu_ex2_pipe0_wb_preg_data (iu_idu_ex2_pipe0_wb_preg_data),
       .iu_idu_ex2_pipe1_wb_preg_data (iu_idu_ex2_pipe1_wb_preg_data),
+      .iu_idu_ex2_pipe2_wb_preg_data (iu_idu_ex2_pipe2_wb_preg_data),
       .lsu_idu_wb_pipe3_wb_preg_data (lsu_idu_wb_pipe3_wb_preg_data),
       .rtu_csr_rd_wdata              (rtu_csr_rd_wdata             ), // 2026-10-08 第 4 写口
       .x_reg_dout                    (preg_reg_dout[i]             ),
@@ -115,6 +119,7 @@ endgenerate
 // 3 write ports（+ 2026-10-08 的第 4 个: RTU 的 CSR rd）
 logic [63:0] pipe0_wb_vld;
 logic [63:0] pipe1_wb_vld;
+logic [63:0] pipe2_wb_vld;
 logic [63:0] pipe3_wb_vld;
 logic [63:0] csr_rd_wb_vld;   // 2026-10-08 新增
 
@@ -122,6 +127,8 @@ assign pipe0_wb_vld = {64{iu_idu_ex2_pipe0_wb_preg_vld}}
                       & iu_idu_ex2_pipe0_wb_preg_expand;
 assign pipe1_wb_vld = {64{iu_idu_ex2_pipe1_wb_preg_vld}}
                       & iu_idu_ex2_pipe1_wb_preg_expand;
+assign pipe2_wb_vld = {64{iu_idu_ex2_pipe2_wb_preg_vld}}
+                      & iu_idu_ex2_pipe2_wb_preg_expand;
 assign pipe3_wb_vld = {64{lsu_idu_wb_pipe3_wb_preg_vld}}
                       & lsu_idu_wb_pipe3_wb_preg_expand;
 
@@ -130,13 +137,13 @@ assign pipe3_wb_vld = {64{lsu_idu_wb_pipe3_wb_preg_vld}}
 assign csr_rd_wb_vld = {64{rtu_csr_rd_we}} & (64'd1 << rtu_csr_rd_addr);
 
 // preg0 恒为常量 0，不写入
-assign preg_wb_vld[0] = 4'b0000;
+assign preg_wb_vld[0] = 5'b00000;
 
 genvar j;
 generate
   for (j = 1; j < 64; j = j + 1) begin : gen_wb_vld
     assign preg_wb_vld[j] = {csr_rd_wb_vld[j], pipe3_wb_vld[j],
-                             pipe1_wb_vld[j], pipe0_wb_vld[j]};
+                             pipe2_wb_vld[j], pipe1_wb_vld[j], pipe0_wb_vld[j]};
   end
 endgenerate
 

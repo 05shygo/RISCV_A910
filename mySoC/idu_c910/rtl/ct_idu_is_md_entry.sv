@@ -6,6 +6,8 @@ module ct_idu_is_md_entry (
     input  logic         iu_idu_ex2_pipe0_wb_preg_vld_dupx,
     input  logic [5:0]   iu_idu_ex2_pipe1_wb_preg_dupx,
     input  logic         iu_idu_ex2_pipe1_wb_preg_vld_dupx,
+    input  logic [5:0]   iu_idu_ex2_pipe2_wb_preg_dupx,
+    input  logic         iu_idu_ex2_pipe2_wb_preg_vld_dupx,
     input  logic [5:0]   lsu_idu_wb_pipe3_wb_preg_dupx,
     input  logic         lsu_idu_wb_pipe3_wb_preg_vld_dupx,
     input  logic         rtu_yy_xx_flush,
@@ -161,6 +163,10 @@ module ct_idu_is_md_entry (
         .iu_idu_ex2_pipe1_wb_preg_dupx    (iu_idu_ex2_pipe1_wb_preg_dupx    ),
         .iu_idu_ex2_pipe1_wb_preg_vld_dupx(iu_idu_ex2_pipe1_wb_preg_vld_dupx),
 
+        // 写端口：IU pipe2 ex2 wb
+        .iu_idu_ex2_pipe2_wb_preg_dupx    (iu_idu_ex2_pipe2_wb_preg_dupx    ),
+        .iu_idu_ex2_pipe2_wb_preg_vld_dupx(iu_idu_ex2_pipe2_wb_preg_vld_dupx),
+
         // 写端口：LSU pipe3 wb
         .lsu_idu_wb_pipe3_wb_preg_dupx    (lsu_idu_wb_pipe3_wb_preg_dupx    ),
         .lsu_idu_wb_pipe3_wb_preg_vld_dupx(lsu_idu_wb_pipe3_wb_preg_vld_dupx),
@@ -197,6 +203,10 @@ module ct_idu_is_md_entry (
         // 写端口：IU pipe1 ex2 wb
         .iu_idu_ex2_pipe1_wb_preg_dupx    (iu_idu_ex2_pipe1_wb_preg_dupx    ),
         .iu_idu_ex2_pipe1_wb_preg_vld_dupx(iu_idu_ex2_pipe1_wb_preg_vld_dupx),
+
+        // 写端口：IU pipe2 ex2 wb
+        .iu_idu_ex2_pipe2_wb_preg_dupx    (iu_idu_ex2_pipe2_wb_preg_dupx    ),
+        .iu_idu_ex2_pipe2_wb_preg_vld_dupx(iu_idu_ex2_pipe2_wb_preg_vld_dupx),
 
         // 写端口：LSU pipe3 wb
         .lsu_idu_wb_pipe3_wb_preg_dupx    (lsu_idu_wb_pipe3_wb_preg_dupx    ),

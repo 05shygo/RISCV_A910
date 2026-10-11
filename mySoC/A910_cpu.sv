@@ -594,6 +594,10 @@ module A910_cpu
   logic [ 31:0] dbg_commit_value2;
 
   // ---- 待接 IDU 的执行单元侧 (这些线在 IDU 上是输入, 归执行单元驱动) ----
+  // 执行单元写回 IDU 的端口分配 (2026-10-11):
+  //   - pipe0 → ALU
+  //   - pipe1 → BEU
+  //   - pipe2 → MUL/DIV
   logic [  5:0] iu_idu_ex2_pipe0_wb_preg_dupx;
   logic         iu_idu_ex2_pipe0_wb_preg_vld_dupx;
   logic [ 31:0] iu_idu_ex2_pipe0_wb_preg_data;
@@ -604,6 +608,11 @@ module A910_cpu
   logic [ 31:0] iu_idu_ex2_pipe1_wb_preg_data;
   logic [ 63:0] iu_idu_ex2_pipe1_wb_preg_expand;
   logic         iu_idu_ex2_pipe1_wb_preg_vld;
+  logic [  5:0] iu_idu_ex2_pipe2_wb_preg_dupx;
+  logic         iu_idu_ex2_pipe2_wb_preg_vld_dupx;
+  logic [ 31:0] iu_idu_ex2_pipe2_wb_preg_data;
+  logic [ 63:0] iu_idu_ex2_pipe2_wb_preg_expand;
+  logic         iu_idu_ex2_pipe2_wb_preg_vld;
   logic         md_unit_stall;
 
   // ---- 待接 IDU 的执行单元发射口 (IDU 输出) ----
@@ -831,6 +840,11 @@ module A910_cpu
   .iu_idu_ex2_pipe1_wb_preg_data      (iu_idu_ex2_pipe1_wb_preg_data),
   .iu_idu_ex2_pipe1_wb_preg_expand    (iu_idu_ex2_pipe1_wb_preg_expand),
   .iu_idu_ex2_pipe1_wb_preg_vld       (iu_idu_ex2_pipe1_wb_preg_vld),
+  .iu_idu_ex2_pipe2_wb_preg_dupx      (iu_idu_ex2_pipe2_wb_preg_dupx),
+  .iu_idu_ex2_pipe2_wb_preg_vld_dupx  (iu_idu_ex2_pipe2_wb_preg_vld_dupx),
+  .iu_idu_ex2_pipe2_wb_preg_data      (iu_idu_ex2_pipe2_wb_preg_data),
+  .iu_idu_ex2_pipe2_wb_preg_expand    (iu_idu_ex2_pipe2_wb_preg_expand),
+  .iu_idu_ex2_pipe2_wb_preg_vld       (iu_idu_ex2_pipe2_wb_preg_vld),
 
   //==========================================================
   // Interface with LSU - Writeback
@@ -1631,6 +1645,147 @@ module A910_cpu
   );
 
   // ============================================================
+  // 执行单元 (IU)
+  // ============================================================
+  // 当前配置 (2026-10-11):
+  //   - 例化 1 个 ALU (完成口 0)、1 个 BEU (完成口 3)、1 个 MD (完成口 4)
+  //   - 写回端口分配: ALU → pipe0, BEU → pipe1, MD → pipe2
+  //   - 完成口 1/2 暂时悬空 (后续若需要可再例化 ALU)
+
+  // ------------------------------------------------------------
+  // ALU (完成口 0, 写回 pipe0)
+  // ------------------------------------------------------------
+  IU_alu_pipe u_iu_alu_pipe (
+    .cpu_clk            (clk),
+    .cpu_rst            (rst),
+    .idu_flush          (rtu_yy_xx_flush),
+
+    // IDU 发射口
+    .idu_sel            (idu_aiq_sel),
+    .idu_iid            (idu_aiq_iid),
+    .idu_dst_preg       (idu_aiq_dst_preg),
+    .idu_src0           (idu_aiq_src0),
+    .idu_src1           (idu_aiq_src1),
+    .idu_pc             (idu_aiq_pc),
+    .idu_rslt_sel       (idu_aiq_rslt_sel),
+    .idu_illegal        (idu_aiq_illegal),
+
+    // 写回 IDU (pipe0)
+    .wb_preg_vld        (iu_idu_ex2_pipe0_wb_preg_vld),
+    .wb_preg_data       (iu_idu_ex2_pipe0_wb_preg_data),
+    .wb_preg_expand     (iu_idu_ex2_pipe0_wb_preg_expand),
+    .wb_preg_dupx       (iu_idu_ex2_pipe0_wb_preg_dupx),
+    .wb_preg_vld_dupx   (iu_idu_ex2_pipe0_wb_preg_vld_dupx),
+
+    // 完成口 → RTU
+    .cmplt_vld          (cmplt_vld0),
+    .cmplt_iid          (cmplt_iid0),
+
+    // 观察口
+    .o_alu_result       ()
+  );
+
+  // ------------------------------------------------------------
+  // BEU (完成口 3, 写回 pipe1)
+  // ------------------------------------------------------------
+  IU_beu_pipe u_iu_beu_pipe (
+    .cpu_clk            (clk),
+    .cpu_rst            (rst),
+    .idu_flush          (rtu_yy_xx_flush),
+
+    // IDU BIQ 发射口
+    .idu_sel            (idu_biq_sel),
+    .idu_iid            (idu_biq_iid),
+    .idu_src0           (idu_biq_src0),
+    .idu_src1           (idu_biq_src1),
+    .idu_pc             (idu_biq_pc),
+    .idu_npc            (idu_biq_npc),
+    .idu_taken          (idu_biq_taken),
+    .idu_rslt_sel       (idu_biq_rslt_sel),
+    .idu_br_imme        (idu_biq_br_imme),
+    .idu_dst_vld        (idu_biq_dst_vld),
+    .idu_dst_preg       (idu_biq_dst_preg),
+
+    // 重定向握手
+    .redirect_in_progress (rtu_ifu_chgflw_vld),  // RTU 本拍在发 trap/mret
+    .chgflw_mask          (rtu_beu_flush_chgflw_mask),
+
+    // 写回 IDU (pipe1)
+    .wb_preg_vld        (iu_idu_ex2_pipe1_wb_preg_vld),
+    .wb_preg_data       (iu_idu_ex2_pipe1_wb_preg_data),
+    .wb_preg_expand     (iu_idu_ex2_pipe1_wb_preg_expand),
+    .wb_preg_dupx       (iu_idu_ex2_pipe1_wb_preg_dupx),
+    .wb_preg_vld_dupx   (iu_idu_ex2_pipe1_wb_preg_vld_dupx),
+
+    // 完成 / 解析 → RTU
+    .cmplt_vld          (cmplt_vld3),
+    .cmplt_iid          (cmplt_iid3),
+    .resolve_vld        (resolve_vld),
+    .resolve_iid        (resolve_iid),
+    .resolve_taken      (resolve_taken),
+    .resolve_mispred    (resolve_mispred),
+    .resolve_target     (resolve_target),
+
+    // 重定向 → RTU / IFU
+    .beu_redirect_vld   (beu_redirect_vld),
+    .iu_chgflw_vld      (iu_chgflw_vld),
+    .iu_chgflw_pc       (iu_chgflw_pc),
+
+    // 异常源: 取指地址非对齐
+    .expt_vld           (other_expt_vld),
+    .expt_iid           (other_expt_iid),
+    .expt_cause         (other_expt_cause),
+    .expt_tval          (other_expt_tval),
+
+    // 观察口
+    .o_actual_npc       (),
+    .o_br_taken         ()
+  );
+
+  // ------------------------------------------------------------
+  // MUL/DIV (完成口 4, 写回 pipe2)
+  // ------------------------------------------------------------
+  IU_md_pipe u_iu_md_pipe (
+    .cpu_clk            (clk),
+    .cpu_rst            (rst),
+    .idu_flush          (rtu_yy_xx_flush),
+
+    // IDU mult 发射口
+    .idu_mult_sel       (idu_mult_sel),
+    .idu_mult_iid       (idu_mult_iid),
+    .idu_mult_dst_preg  (idu_mult_dst_preg),
+    .idu_mult_src0      (idu_mult_src0),
+    .idu_mult_src1      (idu_mult_src1),
+    .idu_mult_rslt_sel  (idu_mult_rslt_sel),
+
+    // IDU div 发射口
+    .idu_div_sel        (idu_div_sel),
+    .idu_div_iid        (idu_div_iid),
+    .idu_div_dst_vld    (idu_div_dst_vld),
+    .idu_div_dst_preg   (idu_div_dst_preg),
+    .idu_div_src0       (idu_div_src0),
+    .idu_div_src1       (idu_div_src1),
+    .idu_div_rslt_sel   (idu_div_rslt_sel),
+
+    // 写回 IDU (pipe2)
+    .wb_preg_vld        (iu_idu_ex2_pipe2_wb_preg_vld),
+    .wb_preg_dupx       (iu_idu_ex2_pipe2_wb_preg_dupx),
+    .wb_preg_vld_dupx   (iu_idu_ex2_pipe2_wb_preg_vld_dupx),
+    .wb_preg_data       (iu_idu_ex2_pipe2_wb_preg_data),
+    .wb_preg_expand     (iu_idu_ex2_pipe2_wb_preg_expand),
+
+    // 完成口 → RTU
+    .cmplt_vld          (cmplt_vld4),
+    .cmplt_iid          (cmplt_iid4),
+
+    // 观察 / 发射准入
+    .mul_ready          (),
+    .div_busy           (),
+    .resp_is_div        (),
+    .md_unit_stall      (md_unit_stall)
+  );
+
+  // ============================================================
   // BIU
   // ============================================================
   ct_biu_top #(
@@ -1733,7 +1888,7 @@ module A910_cpu
     .biu_lsu_bid            (biu_lsu_bid),
     .biu_lsu_bresp          (biu_lsu_bresp),
     .biu_lsu_bvalid         (biu_lsu_bvalid),
-    .lsu_biu_bready         (lsu_biu_bready),
+    .lsu_biu_bready         (1'b1),
 
     //---------------------------------------------------------
     // AXI master read address

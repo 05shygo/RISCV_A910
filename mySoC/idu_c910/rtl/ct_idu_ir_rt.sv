@@ -34,6 +34,8 @@ module ct_idu_ir_rt (
   input  logic         iu_idu_ex2_pipe0_wb_preg_vld_dupx,
   input  logic [5:0]   iu_idu_ex2_pipe1_wb_preg_dupx,
   input  logic         iu_idu_ex2_pipe1_wb_preg_vld_dupx,
+  input  logic [5:0]   iu_idu_ex2_pipe2_wb_preg_dupx,
+  input  logic         iu_idu_ex2_pipe2_wb_preg_vld_dupx,
   input  logic [5:0]   lsu_idu_wb_pipe3_wb_preg_dupx,
   input  logic         lsu_idu_wb_pipe3_wb_preg_vld_dupx,
   input  logic [191:0] rtu_idu_rt_recover_preg,
@@ -158,6 +160,8 @@ generate
       .iu_idu_ex2_pipe0_wb_preg_dupx     (iu_idu_ex2_pipe0_wb_preg_dupx     ),
       .iu_idu_ex2_pipe1_wb_preg_vld_dupx (iu_idu_ex2_pipe1_wb_preg_vld_dupx ),
       .iu_idu_ex2_pipe1_wb_preg_dupx     (iu_idu_ex2_pipe1_wb_preg_dupx     ),
+      .iu_idu_ex2_pipe2_wb_preg_vld_dupx (iu_idu_ex2_pipe2_wb_preg_vld_dupx ),
+      .iu_idu_ex2_pipe2_wb_preg_dupx     (iu_idu_ex2_pipe2_wb_preg_dupx     ),
       .lsu_idu_wb_pipe3_wb_preg_dupx     (lsu_idu_wb_pipe3_wb_preg_dupx     ),
       .lsu_idu_wb_pipe3_wb_preg_vld_dupx (lsu_idu_wb_pipe3_wb_preg_vld_dupx ),
       .x_create_data                     (reg_create_data[j]                ),  // 11 位 (2026-10-08 修宽度)

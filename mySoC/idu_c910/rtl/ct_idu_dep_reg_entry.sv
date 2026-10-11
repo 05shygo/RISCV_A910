@@ -5,6 +5,8 @@ module ct_idu_dep_reg_entry (
   input  logic         iu_idu_ex2_pipe0_wb_preg_vld_dupx,
   input  logic [5:0]   iu_idu_ex2_pipe1_wb_preg_dupx,
   input  logic         iu_idu_ex2_pipe1_wb_preg_vld_dupx,
+  input  logic [5:0]   iu_idu_ex2_pipe2_wb_preg_dupx,
+  input  logic         iu_idu_ex2_pipe2_wb_preg_vld_dupx,
   input  logic [5:0]   lsu_idu_wb_pipe3_wb_preg_dupx,
   input  logic         lsu_idu_wb_pipe3_wb_preg_vld_dupx,
   input  logic         rtu_yy_xx_flush,
@@ -24,6 +26,7 @@ logic [5:0]  preg;
 logic        wb;
 logic        pipe0_wb;
 logic        pipe1_wb;
+logic        pipe2_wb;
 logic        pipe3_wb;
 logic        write_back;
 logic        wb_update;
@@ -49,11 +52,14 @@ assign pipe0_wb = iu_idu_ex2_pipe0_wb_preg_vld_dupx
                   && (iu_idu_ex2_pipe0_wb_preg_dupx[5:0] == preg[5:0]);
 assign pipe1_wb = iu_idu_ex2_pipe1_wb_preg_vld_dupx
                   && (iu_idu_ex2_pipe1_wb_preg_dupx[5:0] == preg[5:0]);
+assign pipe2_wb = iu_idu_ex2_pipe2_wb_preg_vld_dupx
+                  && (iu_idu_ex2_pipe2_wb_preg_dupx[5:0] == preg[5:0]);
 assign pipe3_wb = lsu_idu_wb_pipe3_wb_preg_vld_dupx
                   && (lsu_idu_wb_pipe3_wb_preg_dupx[5:0] == preg[5:0]);
 assign write_back = wb
                     || pipe0_wb
                     || pipe1_wb
+                    || pipe2_wb
                     || pipe3_wb;
 //1.if wb_vld is already be 1, just hold 1
 //2.if this result is writing back to PRF, set wb to 1
