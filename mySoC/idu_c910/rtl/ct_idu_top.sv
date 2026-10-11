@@ -279,15 +279,21 @@ module ct_idu_top(
 // ⚠️ 这些信号在本文件里**从来没被声明过**，而它们是 Verilog 的**隐式 1 位线网**
 //    （`default_nettype wire`）⇒ 连到多位端口时**被静默截断成 1 位**。
 //    后果: **整条发射通路是断的** ——
-//      * `aiq_dp_issue_read_data` 应该是 96 位 (AIQ 读出的整条指令信息),
+//      * `aiq_dp_issue_read_data` 应该是 95 位 (AIQ 读出的整条指令信息),
 //        截成 1 位后 ALU 拿到的 iid/src/preg/opcode 全是垃圾;
 //      * 所有 `*_create*_sel[1:0]` 截成 1 位 ⇒ 2 选 1 的 create 口 mux
 //        永远只能区分 0/1 两路, 第 3 路选不中;
 //      * biq/mult/div/lsiq/sdiq 的读出数据同理。
 //    本仓历史上栽过三次同一类坑 (漏声明 → 隐式线网 → 静默失效, 见 mycpu.v 的注释),
 //    这是第四次, 而且是面积最大的一次。宽度取自各自的端口定义 (取最宽的那个口)。
+//
+//  【2026-10-11 修】aiq/mult/div 的 read data 位宽各减 1:
+//      aiq_dp_issue_read_data  : 95 → 94
+//      mult_dp_issue_read_data : 63 → 62
+//      div_dp_issue_read_data  : 63 → 62
+//    (与各自消费侧 rf_dp 的端口位宽对齐)
 //==========================================================
-logic [94:0] aiq_dp_issue_read_data;
+logic [93:0] aiq_dp_issue_read_data;      // ★ 由 [94:0] 减 1 → [93:0]
 logic [151:0] biq_dp_issue_read_data;
 logic [1:0] ctrl_dp_is_dis_aiq_create0_sel;
 logic [1:0] ctrl_dp_is_dis_aiq_create1_sel;
@@ -313,14 +319,14 @@ logic [1:0] ctrl_ir_pre_dis_mult_create0_sel;
 logic [1:0] ctrl_ir_pre_dis_mult_create1_sel;
 logic [1:0] ctrl_ir_pre_dis_sdiq_create0_sel;
 logic [1:0] ctrl_ir_pre_dis_sdiq_create1_sel;
-logic [62:0] div_dp_issue_read_data;
+logic [61:0] div_dp_issue_read_data;      // ★ 由 [62:0] 减 1 → [61:0]
 logic [59:0] lsiq_dp_pipe3_entry_read_data;
 logic [7:0] lsiq_dp_pipe3_issue_entry;
 logic [59:0] lsiq_dp_pipe3_issue_read_data;
 logic [59:0] lsiq_dp_pipe4_entry_read_data;
 logic [7:0] lsiq_dp_pipe4_issue_entry;
 logic [59:0] lsiq_dp_pipe4_issue_read_data;
-logic [62:0] mult_dp_issue_read_data;
+logic [61:0] mult_dp_issue_read_data;     // ★ 由 [62:0] 减 1 → [61:0]
 logic [3:0] sdiq_create0_entry;
 logic [3:0] sdiq_create1_entry;
 logic [3:0] sdiq_dp_issue_entry;
@@ -579,17 +585,6 @@ logic [31:0] prf_dp_rf_pipe5_src0_data;
 logic [31:0] prf_dp_rf_pipe6_src0_data;
 logic [31:0] prf_dp_rf_pipe6_src1_data;
 
-
-
-
-
-
-
-
-
-
-
-
 //==========================================================
 // Module Instantiations
 //==========================================================
@@ -597,23 +592,23 @@ ct_idu_id_ctrl u_ct_idu_id_ctrl (
     // 时钟与复位
     .forever_cpuclk       (forever_cpuclk      ),//in
     .cpurst_b             (cpurst_b            ),//in
-    
+
     // 来自 IFU (Instruction Fetch Unit) 的握手与指令有效信号
     .ifu_idu_ib_inst0_vld (ifu_idu_ib_inst0_vld),//in
     .ifu_idu_ib_inst1_vld (ifu_idu_ib_inst1_vld),//in
     .ifu_idu_ib_inst2_vld (ifu_idu_ib_inst2_vld),//in
-    
+
     // 来自 CTRL 的控制信号
     .ctrl_xx_is_inst0_sel (ctrl_xx_is_inst0_sel),
     .ctrl_ir_stall        (ctrl_ir_stall       ),
     .ctrl_ir_inst2_vld    (ctrl_rt_inst2_vld   ),
     .rtu_yy_xx_flush      (rtu_yy_xx_flush     ),
-    
+
     // 输出到 IDU (Instruction Decode Unit) 内部的有效信号
     .id_ir_inst0_vld         (id_ir_inst0_vld        ),
     .id_ir_inst1_vld         (id_ir_inst1_vld        ),
     .id_ir_inst2_vld         (id_ir_inst2_vld        ),
-    
+
     // 输出到 IFU 的 ready 信号
     .idu_ifu_inst0_ready  (idu_ifu_inst0_ready ),//out
     .idu_ifu_inst1_ready  (idu_ifu_inst1_ready ),//out
@@ -625,11 +620,11 @@ ct_idu_id_dp u_ct_idu_id_dp (
     // 时钟与复位
     .cpurst_b                  (cpurst_b                 ),
     .forever_cpuclk            (forever_cpuclk           ),
-    
+
     // 控制信号 (来自 Control 模块的流水线阻塞信号)
     .ctrl_dp_id_stall          (ctrl_dp_id_stall         ),
     .ctrl_xx_is_inst0_sel       (ctrl_xx_is_inst0_sel),
-    
+
     // 从 IFU 输入的数据 (97 bits x 3)
     .ifu_idu_ib_inst0_data     (ifu_idu_ib_inst0_data    ),//in
     .ifu_idu_if_inst0_chk       (ifu_idu_if_inst0_chk),
@@ -640,7 +635,7 @@ ct_idu_id_dp u_ct_idu_id_dp (
     .rtu_yy_xx_flush           (rtu_yy_xx_flush          ),
     .crtl_ir_inst2_data         (crtl_ir_inst2_data),
     .crtl_ir_inst2_chk          (crtl_ir_inst2_chk),
-    
+
     // 向下游流水线输出的数据 (122 bits x 3)
     .dp_id_pipedown_inst0_data (dp_id_pipedown_inst0_data),
     .dp_id_pipedown_inst0_chk   (dp_id_pipedown_inst0_chk),
@@ -723,7 +718,7 @@ ct_idu_ir_dp x_ct_idu_ir_dp (
   .forever_clk                           (forever_cpuclk),   // 该模块端口名就是 forever_clk
   .ctrl_ir_stall                         (ctrl_ir_stall),
   .crtl_ir_inst2_data                    (crtl_ir_inst2_data),
-  .crtl_ir_inst2_chk                     (crtl_ir_inst2_chk),  
+  .crtl_ir_inst2_chk                     (crtl_ir_inst2_chk),
   .dp_id_pipedown_inst0_data             (dp_id_pipedown_inst0_data),
   .dp_id_pipedown_inst0_chk               (dp_id_pipedown_inst0_chk),
   .dp_id_pipedown_inst1_data             (dp_id_pipedown_inst1_data),
