@@ -8,7 +8,7 @@ module ct_idu_rf_dp (
   //==========================================================
   // Pipe0: AIQ
   //==========================================================
-  input  logic [95:0]    aiq_dp_issue_read_data,   // 64 → 96 (2026-10-08 加 PC)
+  input  logic [94:0]    aiq_dp_issue_read_data,   // 64 → 96 (2026-10-08 加 PC)
   input  logic           aiq_xx_issue_en,
   input  logic [31:0]    prf_dp_rf_pipe0_src0_data,
   input  logic [31:0]    prf_dp_rf_pipe0_src1_data,

@@ -293,7 +293,7 @@ module ct_idu_top(
 //      div_dp_issue_read_data  : 63 → 62
 //    (与各自消费侧 rf_dp 的端口位宽对齐)
 //==========================================================
-logic [93:0] aiq_dp_issue_read_data;      // ★ 由 [94:0] 减 1 → [93:0]
+logic [94:0] aiq_dp_issue_read_data;      // ★ 由 [94:0] 减 1 → [93:0]
 logic [151:0] biq_dp_issue_read_data;
 logic [1:0] ctrl_dp_is_dis_aiq_create0_sel;
 logic [1:0] ctrl_dp_is_dis_aiq_create1_sel;
