@@ -132,6 +132,7 @@ logic [31:0]         id_inst2_pc;
 //----------------------------------------------------------
 //            ID Pipedown Instruction Selection
 //----------------------------------------------------------
+logic [24:0] id_inst2_chk;
 always @(*)
 begin
   case(ctrl_xx_is_inst0_sel[1:0])
@@ -167,7 +168,7 @@ end
 //----------------------------------------------------------
 logic [24:0] id_inst0_chk;
 logic [24:0] id_inst1_chk;
-logic [24:0] id_inst2_chk;
+//logic [24:0] id_inst2_chk;
 always_ff @(posedge forever_cpuclk or negedge cpurst_b)
 begin
   if(!cpurst_b | rtu_yy_xx_flush) begin
