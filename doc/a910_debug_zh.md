@@ -220,44 +220,145 @@ assign ctrl_ib_pipedown_inst0_vld =
 交付版把"用 ID 级自己的 `id_inst2_vld`"改写成了"用 IR 级的 `ctrl_ir_inst2_vld`"，
 **而新引入的这根信号没接线**。
 
-### 两个候选改法（**待 IDU 侧定语义，未动**）
+### 已修（同事 `7c54bec`，2026-10-11）
 
-**(a) 改回 `id_inst2_vld`** —— ID 级自己的寄存器，`ct_idu_id_ctrl.sv:68` 那行就在写它，
-和 C910 逐字一致。**推荐**：用 IR 级的信号会让 `ID → IR → ID` 形成**跨级组合环**
-（ID 级的 pipedown 依赖 IR 级的寄存器状态，而 IR 级的输入又来自 ID 级），
-C910 特意用 ID 级自己的寄存器应该就是为了避开它。
-
-**(b) 接上 `ctrl_rt_inst2_vld`** —— `ct_idu_ir_ctrl.sv:243`
-`assign ctrl_rt_inst2_vld = ir_inst2_vld;` 才是"IR 级那个寄存器"的导出。
-若确实要 IR 级语义，源应该是它。
+采用 **(b)**：`ct_idu_top.sv` 里把悬空的 `ctrl_ir_inst2_vld` 注释掉，
+ID 级那个输入改接 `ctrl_rt_inst2_vld`（`ct_idu_ir_ctrl.sv:243` 的 `ir_inst2_vld` 导出）。
+实测该信号从 X 变成干净的 `0`。
 
 ---
 
-## 5. 改动与回归清单
+## 5. Bug 4（**已修**）：`_3_mult_inst` / `_3_div_inst` 少了 `vld` 门控
+
+Bug 3 修完仍不跑。逐拍追到 IR 级：
+
+```
+T85~T88  mult=xxx div=xxx   | 带vld的兄弟项: biq_vld=000 lsiq_vld=000
+T89      mult=100 div=000   ← 来了真指令就变已知
+```
+
+**兄弟项干净、它俩脏** —— 一眼看出差在门控。`ct_idu_ir_ctrl.sv:353-361`：
+
+```verilog
+// 三个兄弟都走 `_vld` 版本
+assign ctrl_ir_inst0_biq_vld  = ir_pipedown_inst0_vld && ctrl_ir_inst0_biq;
+assign ctrl_ir_pre_dis_3_biq_inst  = inst0_biq_vld && inst1_biq_vld && inst2_biq_vld;
+assign ctrl_ir_pre_dis_3_lsiq_inst = ...同样门了...;
+assign ctrl_ir_pre_dis_3_aiq_inst  = ...同样门了...;
+
+// 这两个**没门** —— 直接用裸标志
+assign ctrl_ir_pre_dis_3_mult_inst = ctrl_ir_inst0_mult && ctrl_ir_inst1_mult && ctrl_ir_inst2_mult;
+assign ctrl_ir_pre_dis_3_div_inst  = ctrl_ir_inst0_div  && ctrl_ir_inst1_div  && ctrl_ir_inst2_div;
+```
+
+`ctrl_ir_instN_mult = ir_pipedown_instN_ctrl_info[IS_CTRL_MULT]` 是 IR 级译码出来的位。
+槽位无效时那几位是 X（**IR 级的数据寄存器不复位，只有 vld 复位**）⇒ 三个 X 相与 = X
+⇒ `type_stall_pipedown2` = X（五项相或）⇒ `pre_pipedown2` X ⇒ `is_dis_pipedown2` X
+⇒ `idu_accept_num` X ⇒ IDU/RTU 全线 X。
+
+**修法**：照三个兄弟项的写法补门控（`ct_idu_ir_ctrl.sv`）。
+
+**验证**：修完 `mult=0 div=0` 干净了，X 转移到 `aiq` 那一项（见 Bug 5）。
+
+---
+
+## 6. Bug 5（**当前卡在这**）：`_3_aiq_inst` = X
+
+```
+T89  五项: biq=0 aiq=x lsiq=0 mult=0 div=0 ⇒ type_stall=x
+```
+
+`_3_aiq_inst` 本身**是**门了 vld 的（`ctrl_ir_instN_aiq_vld = ir_pipedown_instN_vld && ctrl_ir_instN_aiq`），
+所以 X 只可能来自：`ir_pipedown_instN_vld` 本身带 X，或 `ctrl_ir_instN_aiq` 在 vld=1 时是 X。
+**未查完。**
+
+---
+
+## 7. ⚠️ 系统性结论：这不是"某个信号接错了"
+
+上面 5 层里有 **3 层是同一个病**：
+
+> **这个 IDU 的寄存器普遍只复位 `vld`、不复位数据**（省面积 —— 复位一个几十上百位的
+> 寄存器要占很多触发器）。约定是"数据可以不复位，但消费方**必须**门 `vld`"。
+> 实际有若干处没门，于是 X 从无效槽位漏出来。
+
+已踩到的三处：
+
+| 位置 | 漏门的形式 |
+|---|---|
+| `ct_idu_ir_ctrl.sv` `_3_mult/div_inst` | 用裸标志，兄弟项都门了（Bug 4，已修） |
+| `rv32ifu2_ibuf.v` `ent_q` | 阵列明写不复位，靠"消费方只弹有效条数"兜（Bug 1，已修） |
+| `_3_aiq_inst` | 门了 vld 但上游仍带 X（Bug 5，未查完） |
+
+**为什么一漏就是整核死、而且回不去**：X 只要进了这两类地方就永远出不来 ——
+
+- **反馈计数器**：`RTU_ROB.v:311` `occ_q <= occ_q + ndisp - pop_n`，一次 X 之后
+  `X + 任何数 = X`，只有 `rst`/`flush` 能清
+- **状态寄存器**：`RTU_flush` 的 `st_q`，进了 X 态就再也匹配不上任何 `case`
+
+而它们又反过来喂冲刷、`accept_num`、取指 PC ⇒ 全链 X ⇒ **一条指令都退休不了**。
+
+**建议**：别一个 X 一个 X 地打地鼠，把 IR/IS 级"**用数据但不门 vld**"的地方系统性扫一遍。
+或者反过来，把这类数据寄存器改成复位到 0（费面积但一劳永逸）。
+
+---
+
+## 8. 改动与回归清单
 
 | 文件 | 改动 | 状态 |
 |---|---|---|
-| `mySoC/ifu2/rtl/rv32ifu2_ibuf.v` | `pop_eff = min(pop_num, 有效前缀)`，端口语义改为 cap | ✅ 已验证 |
-| `mySoC/idu_c910/rtl/ct_idu_id_ctrl.sv` | `idu_ifu_inst2_ready` 的 `\|` → `&` | ✅ 已验证 |
+| `mySoC/ifu2/rtl/rv32ifu2_ibuf.v` | `pop_eff = min(pop_num, 有效前缀)`，端口语义改为 cap | ✅ |
+| `mySoC/idu_c910/rtl/ct_idu_id_ctrl.sv` | `idu_ifu_inst2_ready` 的 `\|` → `&` | ✅ |
+| `mySoC/idu_c910/rtl/ct_idu_ir_ctrl.sv` | `_3_mult/div_inst` 补 `vld` 门控 | ✅ |
+| `mySoC/idu_c910/rtl/ct_idu_top.sv` | `ctrl_ir_inst2_vld` 悬空 → 接 `ctrl_rt_inst2_vld`（同事 `7c54bec`） | ✅ |
 | `tb/unit/tb_idu_c910.sv` | 更正"2 不可达"的旧断言 | ✅ |
 | `mySoC/A910_cpu.sv` | **一行未动**（中途怀疑过 `rst_b` 悬空，查下来它由适配层的输出驱动，已完整还原） | — |
 
 | 回归 | 结果 |
 |---|---|
+| **`run TEST=coremark IFU=2`** | **PASS，11,438,398 拍 —— 与既有基线逐位相同** |
 | `run TEST={muldiv_edge,div,mul,c3_only} IFU=2` | 4/4 PASS |
 | `a910-run` 不变量（`accept_num` 只出 0/2/3） | ✅ `1` 从未出现 |
 | `make iu-md-unit` / `make muldiv-unit` / `make a910-elab` | 全绿 |
+
+> CoreMark 那条是这次最硬的证据：**11,438,398 与 memory 里记的基线逐位相同**，
+> 说明 `rv32ifu2_ibuf.v` 那个"`pop_num` 从确数改成上限"的语义改动在顺序核上
+> **行为零影响**。（顺序核 `mycpu.v` **不例化 `ct_idu_top`**，所以 IDU 侧的改动
+> 与它无关 —— CoreMark 保的是 IFU。）
 
 ### 一笔无关的旧账
 
 `make idu-unit` 的 `PRF 走访存失败: 写入 deadbeef, 读回 xxxxxxxx (地址 9)` 是**既有**红 ——
 把本次改动 stash 掉重跑一样红。与上面这些链都无关，是独立的一笔。
+**副作用**：IDU 现在**没有绿的单测信号**，只能靠 `a910-run` 的 `+TRACE_EARLY` 现场。
 
 ---
 
-## 6. 下一步
+## 9. 复现命令（给接手的人）
 
-修完 Bug 3 之后，三层坑就都填上了，整核理论上能真正跑起来。之后：
+```bash
+# 整核现在挂在哪 (超时即 FAIL, 正常现象)
+make a910-run TEST=a910_smoke
+
+# ★ 最关键: 逐拍到现场
+make a910-run TEST=a910_smoke A910_SIM_ARGS=+TRACE_EARLY
+
+# 对照组 (证明已修掉的层不是死因)
+make a910-run TEST=a910_smoke A910_SIM_ARGS=+FIX_ACCEPT    # 夹 accept_num ⇒ X 风暴消失
+make a910-run TEST=a910_smoke A910_SIM_ARGS=+FIX_ACCEPT2   # 按 {0,2,3} 造 ⇒ 仍死
+make a910-run TEST=a910_smoke A910_SIM_ARGS=+KILL_FLUSH    # 钉死 rtu.flush_trig
+
+# 门禁
+make a910-elab        # 判据: Error=0  IWNF=0  DCTTSW=0  PCWM-W=0
+
+# 顺序核回归 (保 IFU, 与 IDU 无关)
+for t in muldiv_edge div mul c3_only; do make run TEST=$t IFU=2; done
+make run TEST=coremark IFU=2 MAX_CYCLES=15000000    # 基线 11,438,398 拍, 须逐位不变
+```
+
+## 10. 下一步
+
+Bug 5 之后再往下追。跑通之后：
 
 1. 跑现成用例（`muldiv_edge` / `mul` / `div`）。
    ⚠️ 它们**开头就是 `jal`、中间有 `beq`**，会踩 `idu_accept_num` 那个已知契约问题

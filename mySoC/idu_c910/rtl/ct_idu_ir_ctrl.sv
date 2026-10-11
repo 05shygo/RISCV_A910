@@ -354,10 +354,24 @@ assign ctrl_ir_pre_dis_3_biq_inst =
             ctrl_ir_inst0_biq_vld && ctrl_ir_inst1_biq_vld && ctrl_ir_inst2_biq_vld;
 assign ctrl_ir_pre_dis_3_aiq_inst =
             ctrl_ir_inst0_aiq_vld && ctrl_ir_inst1_aiq_vld && ctrl_ir_inst2_aiq_vld;
+// ⚠️ 2026-10-11 修: 这两项原来**少了 `_vld` 门控** —— 只 `ctrl_ir_instN_{mult,div}`
+//    三个裸标志相与, 而它们的三个兄弟 (`_3_biq_inst` / `_3_aiq_inst` / `_3_lsiq_inst`)
+//    都走 `ctrl_ir_instN_xx_vld = ir_pipedown_instN_vld && ctrl_ir_instN_xx`。
+//    IR 级的指令**数据**寄存器不复位 (只有 vld 复位), 所以槽位无效时那几位是 X
+//    ⇒ 三个 X 相与 ⇒ `ctrl_ir_pre_dis_3_{mult,div}_inst` = X
+//    ⇒ `ctrl_ir_pre_dis_type_stall_pipedown2` = X (五项相或)
+//    ⇒ `ctrl_ir_pre_dis_pipedown2` X ⇒ `is_dis_pipedown2` X
+//    ⇒ **`idu_accept_num` X ⇒ IDU/RTU 全线 X, 整核一条都退休不了。**
+//    实测: 整核冒烟台 `+TRACE_EARLY` 在 T85~T88 看到 `mult=xxx div=xxx`, 而同一拍
+//    带门控的 `biq_vld=000 lsiq_vld=000` 是干净的 —— 一眼看出差在门控。
 assign ctrl_ir_pre_dis_3_mult_inst =
-             ctrl_ir_inst0_mult && ctrl_ir_inst1_mult && ctrl_ir_inst2_mult;
+             (ctrl_ir_inst0_mult && ir_pipedown_inst0_vld)
+          && (ctrl_ir_inst1_mult && ir_pipedown_inst1_vld)
+          && (ctrl_ir_inst2_mult && ir_pipedown_inst2_vld);
 assign ctrl_ir_pre_dis_3_div_inst =
-             ctrl_ir_inst0_div && ctrl_ir_inst1_div && ctrl_ir_inst2_div;             
+             (ctrl_ir_inst0_div && ir_pipedown_inst0_vld)
+          && (ctrl_ir_inst1_div && ir_pipedown_inst1_vld)
+          && (ctrl_ir_inst2_div && ir_pipedown_inst2_vld);
 assign ctrl_ir_pre_dis_3_lsiq_inst =
             ctrl_ir_inst0_lsiq_vld && ctrl_ir_inst1_lsiq_vld && ctrl_ir_inst2_lsiq_vld;
 

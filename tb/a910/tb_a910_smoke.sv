@@ -289,12 +289,21 @@ module tb_a910_smoke;
                dut.u_ct_idu_top.id_inst2_vld, dut.u_ct_idu_top.id_inst1_vld,
                dut.u_ct_idu_top.id_inst0_vld,
                dut.idu_rtu_disp2_vld, dut.idu_rtu_disp1_vld, dut.idu_rtu_disp0_vld);
-      $display("           ctrl_ir_inst2_vld=%b pd2=%b pre_pipedown2=%b ir_stall=%b ir_pipedown=%b",
-               dut.u_ct_idu_top.ctrl_ir_inst2_vld,
+      // ⚠️ 原来这里是 `ctrl_ir_inst2_vld` —— 那根在 IDU 侧是悬空的, 同事 7c54bec
+      //    已把它换成 `ctrl_rt_inst2_vld` (ir_ctrl 里 `ir_inst2_vld` 的导出)。
+      $display("           ctrl_rt_inst2_vld=%b pd2=%b pre_pipedown2=%b ir_stall=%b ir_pipedown=%b",
+               dut.u_ct_idu_top.ctrl_rt_inst2_vld,
                dut.u_ct_idu_top.ctrl_xx_is_inst0_sel[0],
                dut.u_ct_idu_top.ctrl_ir_pre_dis_pipedown2,
                dut.u_ct_idu_top.ctrl_ir_stall,
                dut.u_ct_idu_top.ctrl_ir_pipedown);
+      $display("           五项: biq=%b aiq=%b lsiq=%b mult=%b div=%b ⇒ type_stall=%b",
+               dut.u_ct_idu_top.x_ct_idu_ir_ctrl.ctrl_ir_pre_dis_3_biq_inst,
+               dut.u_ct_idu_top.x_ct_idu_ir_ctrl.ctrl_ir_pre_dis_3_aiq_inst,
+               dut.u_ct_idu_top.x_ct_idu_ir_ctrl.ctrl_ir_pre_dis_3_lsiq_inst,
+               dut.u_ct_idu_top.x_ct_idu_ir_ctrl.ctrl_ir_pre_dis_3_mult_inst,
+               dut.u_ct_idu_top.x_ct_idu_ir_ctrl.ctrl_ir_pre_dis_3_div_inst,
+               dut.u_ct_idu_top.x_ct_idu_ir_ctrl.ctrl_ir_pre_dis_type_stall_pipedown2);
       $display("           IFUdata0=%08x IDdata0=%08x type_stall_pd2=%b",
                dut.idu_inst0_data[31:0],
                dut.u_ct_idu_top.dp_id_pipedown_inst0_data[31:0],
