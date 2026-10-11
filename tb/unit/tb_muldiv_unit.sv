@@ -507,6 +507,135 @@ task automatic latency_report;
 endtask
 
 // ===========================================================================
+// 【写回保持】把 `wb_grant` 拉低, 除法必须把结果**举住**而不是丢掉
+// ===========================================================================
+// 为什么要这一段: 乘除同拍那条路是**结构性不可达**的 (见 `probe_overlap`),
+// 所以"响应撞车时除法让路"那半边逻辑**永远走不到** —— 一段没人走过的保持逻辑
+// 等于没写。这里换 `wb_grant` 这条**可达**的入口把它走通:
+//   `div_resp_gnt = wb_grant & ~mul_resp_mld`, 撤掉 wb_grant 就能让除法停在 ST_RESP。
+// 守住两件事:
+//   1. 未授权期间 **不写回** (否则等于没保持, 结果照丢);
+//   2. 未授权期间 `div_busy` **保持 1** (占着单元, 上层不会以为它空了);
+//   3. 解除授权后结果立刻出来, 且**值是对的** (证明 ST_RESP 里 q_r/r_r 没被搅动)。
+task automatic wb_hold_check;
+    logic [31:0] got;
+    integer g, stray;
+    begin
+        $display("---- 写回保持: wb_grant 拉低时除法必须举住结果 ----");
+        idle_req();
+        wb_grant = 1'b1;
+        repeat (3) @(negedge clk);
+        @(negedge clk);
+        req_valid = 1'b1; req_op = `MD_OP_DIVU;
+        src0 = 32'd7; src1 = 32'd100; req_tag = 7'd3;    // n=0 ⇒ 接受后 3 拍进 ST_RESP
+        n_req = n_req + 1;
+        @(negedge clk);
+        wb_grant = 1'b0;                                 // 撤授权, 一直举着
+        stray = 0;
+        for (g = 0; g < 8; g = g + 1) begin
+            if (resp_valid) stray = stray + 1;
+            @(negedge clk);
+        end
+        if (stray !== 0) begin
+            errors = errors + 1;
+            $display("[FATAL] wb_grant=0 期间仍写回了 %0d 次 —— 写回保持没生效", stray);
+        end
+        else if (!div_busy) begin
+            errors = errors + 1;
+            $display("[FATAL] wb_grant=0 期间 div_busy 掉了 —— 结果没被举住");
+        end
+        else $display("     未授权 8 拍: 无写回, div_busy 保持 1");
+        wb_grant = 1'b1;                                 // 放开
+        g = 0;
+        while (!(resp_valid && resp_is_div) && g < 20) begin @(negedge clk); g = g + 1; end
+        if (resp_valid && resp_is_div) begin
+            got = resp_data;
+            if (got !== 32'd0) begin
+                errors = errors + 1;
+                $display("[FATAL] 解除授权后结果错: exp=00000000 got=%08x", got);
+            end
+            else begin
+                n_resp = n_resp + 1;
+                $display("  ✅ 解除授权后 %0d 拍取出结果 %08x (7/100)", g, got);
+            end
+        end
+        else begin
+            errors = errors + 1;
+            $display("[FATAL] 解除授权后除法再也没出来 —— 保持没有出口");
+        end
+        req_valid = 1'b0;
+        @(negedge clk);
+    end
+endtask
+
+// ===========================================================================
+// 【不变量监视器】乘、除两条流水的响应**永远不允许同拍**
+// ===========================================================================
+// 为什么要有: `MUL_DIV` 的两条流水共用一个写回口 (`resp_valid`), 合并是
+// `mul_resp_mld | div_resp_mld` 的**优先级多选**, 输的那条**直接丢** —— 不是保持。
+// 一旦同拍, 除法的结果会被静默吃掉, 而且消费侧 (IU_md_pipe) 的 `div_resp_vld`
+// 是 `resp_valid & resp_is_div`, 丢掉 ⇒ `div_hold_vld` 永远清不掉 ⇒ 整条 MD 通路卡死。
+//
+// 目前它是**结构性不可达**的, 原因见文件末尾 `probe_overlap` 的注释 —— 但那个理由
+// 依赖两处分散的实现细节, 任何一侧改动都可能悄悄破坏它。所以这里常驻监视:
+// 与其将来靠"除法偶尔丢结果"去查, 不如让它当场响。
+//
+// ⚠️ 这个监视器只在**单元 TB** 里。整核跑起来后没有等价检查 —— 真要保险,
+//    应该把它做成 `MUL_DIV` 里的 SVA (或至少 IU_md_pipe 的断言)。
+integer cyc_cnt = 0;
+integer ovl_cnt = 0;
+always @(posedge clk) if (!rst) cyc_cnt = cyc_cnt + 1;
+always @(posedge clk) if (!rst && dut.mul_resp_vld && dut.div_resp_vld) begin
+    ovl_cnt = ovl_cnt + 1;
+    $display("  ❌ [OVERLAP] 第 %0d 拍: mul_resp_vld 与 div_resp_vld **同拍** —— 除法结果会被丢弃",
+             cyc_cnt);
+end
+
+// ===========================================================================
+// 【探测】乘除响应同拍到底可不可达
+// ===========================================================================
+// 做法: 起一条除法并把请求口**钉住**, 然后在它在飞的每一拍分别插入**一拍的乘 op**
+// (唯一能制造"两条流水同时在飞"的手段), 再复原除 op 让它跑完。
+// 每一轮都换一个插入点, 覆盖整个飞行窗口。
+//
+// 预期 (若"不可达"成立): 同拍一次都不出现。
+//   * 插乘的那一拍 `req_is_div` 掉 0 ⇒ `div_req=0` ⇒ `div_pipe` 的 `abort` 拉高 ⇒
+//     除法被打回 ST_IDLE (插一次就丢一段进度, 靠复原 op 重新起跑);
+//   * 乘 op 这一拍被收进乘法流水 ⇒ 它 2 拍后写回;
+//   * 等除法重新起跑到 ST_RESP 时, 早过了乘法那一拍 ⇒ **撞不上**。
+// 换句话说: 请求口是**严格时分复用**的, 除法在飞期间乘法根本进不来 ——
+// 这正是"响应不可能同拍"的根据。
+task automatic probe_overlap(input integer max_off);
+    integer k, g;
+    integer s_req, s_resp, s_kill;
+    begin
+        $display("---- 探测: 在除法在飞的第 1..%0d 拍各插一拍乘 op ----", max_off);
+        // 这一段是"故意违规"的激励, 不计入 n_req/n_resp 总账
+        s_req = n_req; s_resp = n_resp; s_kill = n_killed;
+        for (k = 1; k <= max_off; k = k + 1) begin
+            idle_req(); repeat (3) @(negedge clk);
+            @(negedge clk);
+            req_valid = 1'b1; req_op = `MD_OP_DIVU;
+            src0 = 32'd7; src1 = 32'd100; req_tag = 7'd5;     // n=0, 最快
+            g = 0;
+            while (g < k) begin @(negedge clk); g = g + 1; end
+            // 插一拍乘 op (故意打断除法的请求保持)
+            req_op = `MD_OP_MUL; src0 = 32'd6; src1 = 32'd9; req_tag = 7'd6;
+            @(negedge clk);
+            // 复原除 op, 等它跑完
+            req_op = `MD_OP_DIVU; src0 = 32'd7; src1 = 32'd100; req_tag = 7'd5;
+            g = 0;
+            while (!(resp_valid && resp_is_div) && g < 300) begin @(negedge clk); g = g + 1; end
+            if (g >= 300) $display("     (插入点 %0d: 除法没回来)", k);
+            req_valid = 1'b0;
+            @(negedge clk);
+        end
+        n_req = s_req; n_resp = s_resp; n_killed = s_kill;
+        $display("  探测完毕: 共插入 %0d 次, 同拍写回 %0d 次", max_off, ovl_cnt);
+    end
+endtask
+
+// ===========================================================================
 initial begin
     idle_req();
     wb_grant    = 1'b1;
@@ -525,7 +654,14 @@ initial begin
     back_to_back();
     flush_check();
     div_mul_overlap();
+    wb_hold_check();
+    probe_overlap(12);
     latency_report();
+
+    if (ovl_cnt !== 0) begin
+        errors = errors + 1;
+        $display("  [FATAL] 出现过 %0d 次乘除响应同拍 —— 写回口的仲裁撑不住", ovl_cnt);
+    end
 
     $display("");
     $display("==================================================");

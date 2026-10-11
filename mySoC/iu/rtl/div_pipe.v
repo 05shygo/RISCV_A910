@@ -69,6 +69,11 @@ module div_pipe #(
     output wire [31:0]       resp_data,
     output wire [TAG_W-1:0]  resp_tag,
 
+    // 写回授权: ST_RESP 里**结果一直举着**, 直到这一根拉高才放行 (见下面的长注)。
+    // 接 `MUL_DIV` 的 `div_resp_gnt` = `wb_grant & ~mul_resp_mld` —— 共用写回口
+    // 被乘法占着的那一拍, 除法就多举一拍等它。
+    input  wire              resp_gnt,
+
     input  wire              flush_vld
 );
 
@@ -195,7 +200,17 @@ always @(posedge clk or posedge rst) begin
             ST_PREP : state <= (n_iter == 6'd0) ? ST_FIXUP : ST_ITER;
             ST_ITER : if (last_iter) state <= ST_FIXUP;
             ST_FIXUP: state <= ST_RESP;
-            default : state <= ST_IDLE;      // ST_RESP
+            // ⚠️ ST_RESP **不是单拍** —— 要等写回授权 (`resp_gnt`) 才能走。
+            //    结果寄存器 (q_r/r_r) 在 ST_RESP 里本来就保持不动, 所以"多举一拍"
+            //    不需要额外的保持寄存器, 只是把状态多停一拍。
+            //    为什么必须能停: 乘除共用 `MUL_DIV` 的写回口, 乘法是定延迟 2 拍、
+            //    输出直接寄存、**没有输出缓冲** ⇒ 它收下之后必然要在那一拍占口,
+            //    抢不回来; 除法慢且延迟不定, 给它一个状态位就能等。**谁等得起谁让路。**
+            //    (当前配置下这个等待其实不会发生 —— 见 `MUL_DIV.v` 写回口那段。
+            //      但少了它, 一旦同拍就是**静默丢结果**, 且消费侧的 `div_hold_vld`
+            //      会永远清不掉、整条 MD 通路卡死。所以留着, 让它变成"等一拍"。)
+            ST_RESP : if (resp_gnt) state <= ST_IDLE;
+            default : state <= ST_IDLE;
         endcase
     end
 end

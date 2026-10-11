@@ -13,6 +13,13 @@
 //      difftest 读到旧值。
 //   4. **div_busy 的可见性** —— 交付的 MD 队列没有反压口, 除法口只在 IDLE 那拍
 //      收请求; 这里至少要把 div_busy 引出来, 接线时能拿它设闸。
+//   5. **反压闭环: `md_unit_stall` 必须覆盖除法在飞的全过程, 一拍都不能漏**
+//      (2026-10-11 立)。IDU 只看这一个信号, 且**当拍就 pop 表项** ⇒ 它认为能发
+//      而 wrapper 没收下 = 那条指令蒸发、RTU 表项永不完成 = 死等。
+//      ⚠️ 光接 `div_busy` 不够: 保持了请求、但 div_pipe 还在 ST_IDLE 的那一拍
+//      `div_busy` 仍是 0。这就是下面"反压闭环"一段专治的洞 —— 上面那个
+//      `issue_wait` 抓不到它, 因为它每次都等单元空了才发、发一条等一条,
+//      **永远构不成背靠背**。改这一段的驱动方式前请先读那段长注。
 //==========================================================
 module tb_iu_md_pipe;
 
@@ -41,6 +48,7 @@ module tb_iu_md_pipe;
   wire        cm_vld;
   wire [6:0]  cm_iid;
   wire        mul_ready, div_busy, resp_is_div;
+  wire        md_unit_stall;
 
   // 位序照 ct_idu_rf_pipe1_decd (乘) / pipe2_decd (除)
   localparam [3:0] M_MUL=4'd1<<0, M_MULH=4'd1<<1, M_MULHSU=4'd1<<2, M_MULHU=4'd1<<3;
@@ -56,10 +64,21 @@ module tb_iu_md_pipe;
     .wb_preg_vld(wb_vld), .wb_preg_dupx(wb_dupx), .wb_preg_vld_dupx(wb_vld_dupx),
     .wb_preg_data(wb_data), .wb_preg_expand(wb_expand),
     .cmplt_vld(cm_vld), .cmplt_iid(cm_iid),
-    .mul_ready(mul_ready), .div_busy(div_busy), .resp_is_div(resp_is_div)
+    .mul_ready(mul_ready), .div_busy(div_busy), .resp_is_div(resp_is_div),
+    .md_unit_stall(md_unit_stall)
   );
 
   integer errs = 0, nchk = 0;
+
+  // ---------------------------------------------------------------------
+  // 写回计数器 —— 给下面"反压闭环"那一段用
+  //   wb_vld 每条结果只脉冲一拍 (乘: resp_vld_r 寄存器; 除: state==ST_RESP 单拍),
+  //   所以按拍数就是按条数。乘 II=1 连发时它会连续拉高, 那也是对的 —— 每拍一条。
+  // ---------------------------------------------------------------------
+  integer n_issue = 0, n_wb = 0;
+  always @(posedge clk) begin
+    if (!rst && wb_vld === 1'b1) n_wb = n_wb + 1;
+  end
 
   // 发一条乘/除, 等写回, 查结果 + tag 拆包 + 完成口
   task automatic issue_wait(
@@ -104,6 +123,95 @@ module tb_iu_md_pipe;
       else
         $display("  ✅ %0s → %h (且完成与写回同拍)", name, wb_data);
       @(negedge clk);
+    end
+  endtask
+
+  // ---------------------------------------------------------------------
+  // 【反压闭环】按**真实 IDU 的语义**驱动, 不再"等单元空了才发"
+  // ---------------------------------------------------------------------
+  // 为什么必须单开一段: 上面的 `issue_wait` 每次都等 `!div_busy` 才发、且发一条
+  // 等一条, 于是**永远构不成背靠背** —— 而恰恰是背靠背那一拍有洞。
+  //
+  // 真实 IDU (`ct_idu_is_md`) 只看 `md_unit_stall`: 它低就发, 并且**当拍就把表项
+  // pop 掉** (`md_xx_issue_en` 是单拍脉冲, ct_idu_is_md.sv:143)。所以
+  //     "IDU 认为能发" 与 "wrapper 真的收下" 必须**逐拍一致**;
+  // 差一拍, 那条指令就凭空蒸发, RTU 的表项永远不完成 ⇒ 死等。
+  //
+  // 判据: **发出去的条数 == 写回来的条数**。本段没有冲刷, 单元里也不该有
+  //       被丢弃的在飞项, 所以这个等式必须严格成立。
+  //
+  // ⚠️ 除法要发的条数按"队列里总有货"算 —— 模拟 `md_xx_issue_en` 每拍都可能拉高。
+  task automatic idu_style_issue(
+      input integer n_div,
+      input integer n_mul,
+      input integer max_cyc
+  );
+    integer cyc, di, mi;
+    begin
+      di = 0; mi = 0; cyc = 0;
+      d_sel = 1'b0; m_sel = 1'b0;
+      while (((di < n_div) || (mi < n_mul)) && (cyc < max_cyc)) begin
+        // 只认 md_unit_stall —— 这就是 IDU 的全部视角 (它没有别的反压输入)
+        if (md_unit_stall === 1'b0) begin
+          d_sel = 1'b0; m_sel = 1'b0;
+          // 乘、除是两条独立队列, **可以同拍都发**
+          if (di < n_div) begin
+            d_iid  = 7'h30 + di[6:0];
+            d_preg = 6'd10 + di[5:0];
+            d_s0   = 32'd1000 + di;  d_s1 = 32'd7;
+            d_rs   = D_DIV;          d_dvld = 1'b1;
+            d_sel  = 1'b1;
+            di = di + 1;  n_issue = n_issue + 1;
+          end
+          if (mi < n_mul) begin
+            m_iid  = 7'h30 + mi[6:0];
+            m_preg = 6'd40 + mi[5:0];
+            m_s0   = 32'd3 + mi;     m_s1 = 32'd5;
+            m_rs   = M_MUL;
+            m_sel  = 1'b1;
+            mi = mi + 1;  n_issue = n_issue + 1;
+          end
+        end
+        @(negedge clk);
+        cyc = cyc + 1;
+      end
+      d_sel = 1'b0; m_sel = 1'b0;
+      if ((di < n_div) || (mi < n_mul))
+        $display("  ⚠️ 驱动超时: 只发出 %0d/%0d 除 + %0d/%0d 乘", di, n_div, mi, n_mul);
+    end
+  endtask
+
+  // 等管道排空: 连续 `quiet` 拍没有写回就算空了 (最后一条除法最多 ~35 拍)
+  task automatic drain(input integer quiet);
+    integer q, g;
+    begin
+      q = 0; g = 0;
+      while ((q < quiet) && (g < 600)) begin
+        @(negedge clk);
+        if (wb_vld === 1'b1) q = 0; else q = q + 1;
+        g = g + 1;
+      end
+    end
+  endtask
+
+  // 一段"按 IDU 语义发 + 排空 + 对数"的完整检查
+  task automatic check_backpressure(
+      input integer n_div, input integer n_mul, input [8*48-1:0] name
+  );
+    integer iss, got;
+    begin
+      drain(8);                      // 先把上一段的残留排干净, 再清计数
+      n_issue = 0; n_wb = 0;
+      idu_style_issue(n_div, n_mul, 400);
+      drain(8);
+      iss = n_issue; got = n_wb;
+      nchk = nchk + 1;
+      if (got !== iss) begin
+        errs = errs + 1;
+        $display("  ❌ %0s: IDU 发出 %0d 条, 单元只写回 %0d 条 —— **%0d 条被静默丢弃** (那条永远不会完成)",
+                 name, iss, got, iss - got);
+      end
+      else $display("  ✅ %0s: 发 %0d 回 %0d (逐拍对齐)", name, iss, got);
     end
   endtask
 
@@ -169,6 +277,14 @@ module tb_iu_md_pipe;
         $display("  ❌ 被冲刷的乘法还报了 %0d 次写回 —— RTU 会收到一条不该有的完成", seen);
       end else $display("  ✅ 被冲刷的乘法没有写回");
     end
+
+    $display("---- 反压闭环: 按 IDU 语义驱动, 发出条数必须等于写回条数 ----");
+    // 这三种是同一个洞的三个入口: div_hold_vld 已置起、而 div_pipe 还在 ST_IDLE
+    // 的那一拍 (`md_unit_stall` 若只接 div_busy, 这拍是 0)。IDU 会照发并 pop 表项,
+    // 而 wrapper 两个口都不收 ⇒ 指令蒸发。
+    check_backpressure(2, 0, "背靠背两条除");
+    check_backpressure(1, 2, "同拍发一除一乘 + 次拍再来一条乘");
+    check_backpressure(3, 4, "除乘混发若干条");
 
     if (errs == 0)
       $display("=== IU-MD-PIPE UNIT: ALL PASS (%0d 项判据) ===", nchk);

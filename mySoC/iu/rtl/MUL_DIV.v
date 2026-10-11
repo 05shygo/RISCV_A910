@@ -27,7 +27,10 @@
 //   * resp_valid 的条数 == 被接受的请求条数 − 被冲刷掉的条数;
 //   * 同一 tag 在一次生命周期里最多写回一次;
 //   * 被 flush 掉的乘法**绝不出现** resp_valid (mul_pipe 里清在飞项);
-//   * div_busy 期间请求不会被 div 口吃掉 (= 请求只在 IDLE 那一拍被接受)。
+//   * div_busy 期间请求不会被 div 口吃掉 (= 请求只在 IDLE 那一拍被接受);
+//   * **乘、除的响应永不同拍** —— 请求口严格时分复用 (除法在飞期间 `req_op` 必须
+//     一直是除 op), 两条流水不可能同时在飞。TB 里有常驻监视器 + `probe_overlap`
+//     定向探测; 写回口的让路机制见下面"写回口合并"那段。
 //
 // P1 (当前 5 级顺序核) 的接线方式见 mycpu.v: `wb_grant` 接 1、`req_src2` 接 0、
 // `req_acc_mode` 接 `MD_ACC_NONE`、`flush_tag` 不参与比较 (顺序核重定向即全清)。
@@ -59,7 +62,13 @@ module MUL_DIV #(
     output wire              resp_is_div,   // 1 = 这条响应来自除法 (调试/仲裁用)
 
     // ---- 控制 ----
-    input  wire              wb_grant,      // 写回总线仲裁 (§9.7: 要真做, 别接常量)
+    // 写回总线授权 (doc §3.2/§9.7: 要真做, 别接常量)。两处生效, 方向不同:
+    //   * 乘法端 (输入侧): `mul_ready = wb_grant` —— 没授权就不收新的乘法;
+    //   * 除法端 (输出侧): `div_resp_gnt = wb_grant & ~mul_resp_mld` ——
+    //     没授权就把结果举在 `div_pipe` 的 ST_RESP 里等。
+    // ⚠️ 乘法**没有输出缓冲**, 已经收下的那 ≤2 条照样会在 T+2 写回, 授权拦不住 ——
+    //    这是本单元接口的固有语义, 外部仲裁要按"最多再放 2 拍"来设计。
+    input  wire              wb_grant,
     input  wire              flush_valid,
     input  wire [TAG_W-1:0]  flush_tag      // 只冲刷比它年轻的在飞项 (乱序必需)
 );
@@ -87,6 +96,13 @@ wire [TAG_W-1:0] mul_resp_tag;
 wire             div_resp_vld;
 wire [DATA_W-1:0] div_resp_data;
 wire [TAG_W-1:0] div_resp_tag;
+
+// ⚠️ 这两根**必须在这里声明** —— 下面 `U_DIV_PIPE` 就要用 `div_resp_gnt`。
+//    放到例化之后再 `wire x = ...` 会变成"先用后声明", Verilog 静默造一根 1 位
+//    隐式线网, 端口接上去是 Z/X。本仓栽过四次 (见 `eda-env-csh-vcs`)。
+//    含义与理由见文件下方"写回口合并"那段长注。
+wire div_resp_gnt;                   // 写回口这一拍归除法 → 见下方 assign
+wire div_resp_take;                  // 除法响应**真被取走** (= vld & gnt)
 
 // ---------------------------------------------------------------------------
 // 两条独立流水
@@ -119,14 +135,40 @@ div_pipe #(.TAG_W(TAG_W)) U_DIV_PIPE (
     .resp_vld   (div_resp_vld),
     .resp_data  (div_resp_data),
     .resp_tag   (div_resp_tag),
+    .resp_gnt   (div_resp_gnt),
     .flush_vld  (flush_valid)
 );
 
 // ---------------------------------------------------------------------------
-// 写回口合并 (仲裁: mul > div, doc §6.1)
+// 写回口合并 (doc §6.1)
 // ---------------------------------------------------------------------------
-assign resp_valid  = mul_resp_vld | div_resp_vld;
-assign resp_is_div = ~mul_resp_vld & div_resp_vld;
+// 【仲裁规则: 不是"谁优先级高", 而是"谁等得起"】
+//   写回口只有一个 (`resp_valid`)。两条流水同时在飞时谁让路, 判据是**物理能不能等**:
+//     * `mul_pipe` 定延迟 2 拍、响应直接寄存、**没有输出缓冲** ⇒ 收下之后 T+2 那一拍
+//       **必然**要口, 没有任何机制能让它推迟。它**等不起** ⇒ 乘法有响应时永远赢。
+//     * `div_pipe` 慢、延迟不定 (n+4 拍), 但它的结果寄存器在 ST_RESP 里本来就是
+//       静止的 ⇒ 给它一个 `resp_gnt` 就能等。所以除法让路, **举着结果等一拍**。
+//   丢掉这条规则的后果是**静默的**: 老写法 `resp_is_div = ~mul_resp_mld & div_resp_mld`
+//   在撞车时 `resp_valid` 照样拉高、但数据/tag 全是乘法的 ⇒ 除法的响应凭空消失,
+//   而且消费侧 (`IU_md_pipe`) 的 `div_hold_vld` 靠 `resp_valid & resp_is_div` 清,
+//   清不掉 ⇒ **整条 MD 通路永久卡死**。
+//
+// ⚠️ **当前配置下 `div_resp_gnt` 恒真、除法的等待一次也不会发生**, 因为:
+//      `div_req = req_valid & req_is_div` (本文件 :76) —— 除法在飞期间 `req_op`
+//      必须一直是除 op, 插一拍乘 op 就会让 `div_req` 掉 0、`abort` 拉高把除法打回
+//      IDLE。**请求口是严格时分复用的 ⇒ 两条流水根本不可能同时在飞。**
+//      所以 `mul_resp_mld & div_resp_mld` 恒假 (单元 TB 的 `probe_overlap` 在除法
+//      飞行窗口的每一拍都插过一次乘 op, 实测 0 次同拍)。
+//    ⇒ 这段保持是**防御性**的, 不是当前 bug 的修复。留着它的真正理由是让
+//      `wb_grant` 这个端口**名副其实** —— 它的文档语义是"写回总线仲裁" (doc §3.2),
+//      而在此之前它只门了乘法的**输入端** (`mul_ready`), **输出侧完全无视它**。
+//    ⚠️ 换句话说: **别把这段当成"当前在修什么"来读**。它是把"静默丢结果 + 死锁"
+//      换成"多举一拍", 代价是一个几乎走不到的状态。
+assign div_resp_gnt  = wb_grant & ~mul_resp_vld;  // 口被乘法占着 / 外部未授权 ⇒ 除法等
+assign div_resp_take = div_resp_vld & div_resp_gnt;
+
+assign resp_valid  = mul_resp_vld | div_resp_take;
+assign resp_is_div = div_resp_take;              // 只有**真被取走**的才算除法响应
 assign resp_data   = mul_resp_vld ? mul_resp_data : div_resp_data;
 assign resp_tag    = mul_resp_vld ? mul_resp_tag  : div_resp_tag;
 
