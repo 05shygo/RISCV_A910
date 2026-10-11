@@ -108,7 +108,9 @@ logic                id_inst2_dst_x0;    // 补齐
 logic [5:0]          id_inst0_inst_type;
 logic [5:0]          id_inst1_inst_type;
 logic [5:0]          id_inst2_inst_type;  // 补齐
-
+logic [IR_WIDTH-1:0] dp_id_pipedown_inst0_data_raw;
+logic [IR_WIDTH-1:0] dp_id_pipedown_inst1_data_raw;
+logic [IR_WIDTH-1:0] dp_id_pipedown_inst2_data_raw;
 // 解码器输出：非法指令与分支预测
 logic                id_inst0_illegal;    // 补齐
 logic                id_inst1_illegal;    // 补齐

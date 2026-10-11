@@ -16,7 +16,18 @@ module ct_idu_id_ctrl (
   output logic        idu_ifu_inst2_ready,
   output logic        ctrl_dp_id_stall
 );
+//==========================================================
+//                 Internal Signal Declarations
+//==========================================================
+logic ctrl_ib_pipedown_inst0_vld;
+logic ctrl_ib_pipedown_inst1_vld;
+logic ctrl_ib_pipedown_inst2_vld;
 
+logic id_inst0_vld;
+logic id_inst1_vld;
+logic id_inst2_vld;
+
+logic ctrl_id_pipedown_stall;
 
 
 //==========================================================
