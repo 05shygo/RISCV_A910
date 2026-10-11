@@ -177,7 +177,7 @@ CROSS     ?= riscv32-unknown-elf-
 ASM_SRCS  := $(wildcard $(PWD)/asm/*.S)
 ASM_BINS  := $(patsubst $(PWD)/asm/%.S,$(PWD)/bin/%.bin,$(ASM_SRCS))
 
-.PHONY: all build run run-all verdi clean help coremark asm muldiv-unit rtu-unit rtu-lsu-unit rtu-adapter-unit rtu-expt-unit iu-alu-unit iu-beu-unit iu-md-unit rtu-subsys-elab biu-unit a910-elab
+.PHONY: all build run run-all verdi clean help coremark asm muldiv-unit rtu-unit rtu-lsu-unit rtu-adapter-unit rtu-expt-unit iu-alu-unit iu-beu-unit iu-md-unit rtu-subsys-elab biu-unit a910-elab a910-run
 
 asm: $(ASM_BINS)
 
@@ -684,6 +684,7 @@ A910_SRC   := $(PWD)/mySoC/A910_cpu.sv \
               $(wildcard $(PWD)/mySoC/ifu2/rtl/*.v) \
               $(wildcard $(PWD)/mySoC/rtu/rtl/*.v) \
               $(wildcard $(PWD)/mySoC/idu_c910/rtl/*.sv) \
+              $(wildcard $(PWD)/mySoC/iu/rtl/*.v) \
               $(wildcard $(PWD)/mySoC/lsu/rtl/*.sv) \
               $(wildcard $(PWD)/mySoC/biu/rtl/*.sv)
 
@@ -712,6 +713,50 @@ a910-elab:
 	 if [ "$$P" != "0" ]; then \
 	   echo "  ❌ A910_cpu.sv 里 PCWM-W = $$P, 预期 0 (2026-10-10 起 RTU 的 preg 端口\n     随 PREG 档走, 与 IDU 天然同宽; 位宽差全部显式落在适配层)。\n     逐条查上面的日志 —— 每一条都可能是隐式截断。"; exit 1; fi; \
 	 echo "  ✅ A910_cpu elaborate 通过 (RTU ↔ IDU/LSU/IFU/BIU 连线已接死)"
+
+# ---------------------------------------------------------------------------
+# A910_cpu 整核**冒烟台** (2026-10-11 立): 乱序多发射新顶层的第一个能跑的 TB。
+#
+# 为什么之前没有: 全仓没有任何 TB 例化 A910_cpu, `a910-elab` 只 elaborate 不仿真
+#   ⇒ 这个核一次都没跑过。本目标补上"能跑起来 + 能自动判 PASS/FAIL"。
+#
+#   make a910-run TEST=a910_smoke        # 直线自检用例 (先跑这个)
+#   make a910-run TEST=muldiv_edge       # 现成用例 (⚠️ 见下)
+#
+# 【怎么判对错】不接 difftest —— 顶层 `dbg_commit_*` 是架构寄存器视角的退休 trace,
+#   TB 盯 `dbg_commit_reg==5'd10` 抓 a0 即可。用例把自检压进 a0 (无分支自检)。
+#
+# ⚠️ 现成用例**可能失败, 而且大概率不是 TB 的问题**: `ct_idu_top.sv:332` 的
+#    `idu_accept_num` 只有 2'b00/2'b11 且不看 `ifu_idu_ib_inst*_vld` (见记忆
+#    `idu-accept-num-contract`), IBUF 半满时会丢指令。现成用例开头就有 `jal` +
+#    中间有 `beq`, 正好踩那个窗口 ⇒ 那是该 bug 在全核层面的**复现**, 不是回归。
+#    `a910_smoke.S` 特意做成纯直线无跳转, 就是为了能把这个区分开。
+#
+# ⚠️ 独立 BUILD_DIR: 别和 `a910-elab` 的 obj_a910/ 共用 (会互相覆盖 simv)。
+# ⚠️ TB 放在 tb/a910/ 子目录: `SVSRC := $(wildcard $(PWD)/tb/*.sv)` 会把 tb/ 平级的
+#    所有 .sv 收进主构建, 放外面会污染 tb_miniRV_dpi 的编译。
+# ---------------------------------------------------------------------------
+A910_SIM_BUILD := $(PWD)/obj_a910_sim
+A910_SIMV      := $(A910_SIM_BUILD)/simv
+A910_TB_SRC    := $(PWD)/tb/a910/tb_a910_smoke.sv $(PWD)/tb/a910/axi_slave_128.v
+# 只给本台用的仿真参数; 不要用 SIM_ARGS (那是主流程的, 改了会连 -exitstatus 一起吃掉)
+A910_SIM_ARGS  ?=
+
+a910-run: $(A910_SIMV) $(PWD)/bin/$(TEST).hex128 $(PWD)/bin/$(TEST).hex
+	@ln -sf $(PWD)/bin/$(TEST).bin    $(TESTFILE)
+	@ln -sf $(PWD)/bin/$(TEST).hex    $(TESTHEX)
+	@ln -sf $(PWD)/bin/$(TEST).hex128 $(TESTHEX128)
+	@$(A910_SIMV) +vcs+lic+wait -exitstatus $(A910_SIM_ARGS) \
+	  +MAX_CYCLES=$(MAX_CYCLES) -l $(A910_SIM_BUILD)/sim.log
+
+$(A910_SIMV): $(A910_SRC) $(A910_TB_SRC)
+	@mkdir -p $(A910_SIM_BUILD)
+	$(VCS) $(VCS_FLAGS) $(VCS_FLAGS_EXTRA) $(INC) \
+	  +define+RTU_PREG64 +define+DCACHE_2KB \
+	  +define+PATH=$(TESTFILE) +define+PATHHEX=$(TESTHEX) +define+PATH128=$(TESTHEX128) \
+	  -top tb_a910_smoke -o $(A910_SIMV) -Mdir=$(A910_SIM_BUILD)/csrc \
+	  -l $(A910_SIM_BUILD)/compile.log \
+	  $(A910_SRC) $(A910_TB_SRC)
 
 # RTU 适配层单元台 (2026-10-08 立): 直接驱动 RTU_idu_lsu_adapter 两侧端口, 不经整核。
 # 它守的是适配层里**有真逻辑**的四类变换 (不是纯接线):
