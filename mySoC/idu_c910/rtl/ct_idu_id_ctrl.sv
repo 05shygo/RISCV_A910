@@ -35,7 +35,17 @@ assign ctrl_ib_pipedown_inst2_vld =
 logic ctrl_id_pipedown_stall;
 assign idu_ifu_inst0_ready = !ctrl_id_pipedown_stall;
 assign idu_ifu_inst1_ready = !ctrl_id_pipedown_stall;
-assign idu_ifu_inst2_ready = !ctrl_id_pipedown_stall | !ctrl_xx_is_inst0_sel[0];
+// ⚠️ 2026-10-11 修: 原来是 `!stall | !pipedown2`, 那个 `|` 让 inst2_ready 恒为 1
+//    (只要不停顿), 而 `ct_idu_top.sv:332` 的编码是
+//        accept_num = {inst2_ready | inst0_ready, inst2_ready}
+//    它要给出 {0,2,3} 需要一条不变量: **inst2_ready ⇒ inst0_ready** (b 只有 a 为 1
+//    时才许为 1)。`!stall | !pd2` **不小于** `!stall`, 正好把不变量顶穿:
+//        stall=0 & pd2=1 : inst2_ready=1 ⇒ 报 3, 应为 2  ⇒ **IFU 多弹一条, 丢指令**
+//        stall=1 & pd2=0 : inst2_ready=1 ⇒ 报 3, 应为 0
+//    改成 `&` 后 inst2_ready = !stall & !pd2 ≤ !stall = inst0_ready, 不变量成立,
+//    四象限恰好是 3 / 2 / 0 / 0。
+//    这三根 ready 全设计**只被 `idu_accept_num` 一处消费**, 无其它影响面。
+assign idu_ifu_inst2_ready = !ctrl_id_pipedown_stall & !ctrl_xx_is_inst0_sel[0];
 
 //----------------------------------------------------------
 //               Pipeline register implement

@@ -546,10 +546,16 @@ module tb_idu_c910;
     rtu_idu_alloc_preg0_vld = 1'b0;
     repeat (5) @(posedge clk);
 
+    // `idu_accept_num` 的合法取值只有 **0 / 2 / 3** (理由见 `ct_idu_id_ctrl.sv` 里
+    // `idu_ifu_inst2_ready` 的注释): 2 = pipedown2 模式 IDU 只吃 IFU 的 inst0/inst1;
+    // 0 = 停顿; 3 = 正常。**1 才是那个不该出现的编码。**
+    // ⚠️ 2026-10-11 更正: 这里原来写的是"2 是不可达编码" —— 那是**修之前**的行为
+    //    (`inst2_ready` 误用 `|` ⇒ 恒 1 ⇒ 只出 0/3), 而且引用的行号早已漂移。
+    //    顺带一提, 报 3 而实际只吃 2 会让 IFU **多弹一条 = 丢指令**, 不是无害的。
     if (^idu_accept_num === 1'bx)
       $display("TB-IDU: 注意 — idu_accept_num 含 X");
-    else if (idu_accept_num === 2'b10)
-      $display("TB-IDU: 警告 — idu_accept_num = 2 是不可达编码 (见 ct_idu_top.sv:180)");
+    else if (idu_accept_num === 2'b01)
+      $display("TB-IDU: ❌ idu_accept_num = 1 —— 非法编码, 只允许 0/2/3 (见 ct_idu_id_ctrl.sv)");
 
     if (n_disp < 2) begin
       $display("TB-IDU: FAIL — 只观测到 %0d 次派遣, 定向判据没跑到 (期望 >= 2)", n_disp);

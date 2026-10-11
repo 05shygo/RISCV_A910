@@ -49,7 +49,9 @@ module rv32ifu2_ibuf #(
     output wire [W-1:0] out_data1,
     output wire [W-1:0] out_data2,
     output wire [  2:0] out_vld,
-    input  wire [  1:0] pop_num,       // 必须是 out_vld 的连续前缀
+    // ⚠️ 2026-10-11 **语义变更**: `pop_num` 从"必须正好是 out_vld 的连续前缀"
+    //    (义务在消费端) 改成**上限 (cap)** —— 本模块按有效前缀截断, 见 `pop_eff`。
+    input  wire [  1:0] pop_num,       // 最多弹几条; 实际按 out_vld 的有效前缀截断
 
     // ---- 状态 ----
     // 端口表里不能用 localparam (声明顺序在它之前), 直接写 $clog2
@@ -96,6 +98,34 @@ assign out_vld[0] = empty ? push_mask[0] : 1'b1;
 assign out_vld[1] = empty ? push_mask[1] : (cnt_q >= 2);
 assign out_vld[2] = empty ? push_mask[2] : (cnt_q >= 3);
 
+// ---------------------------------------------------------------------------
+// 实际弹出条数 = min(pop_num, 有效前缀数)      [2026-10-11 新增]
+// ---------------------------------------------------------------------------
+// `pop_num` 是**上限**而不是确数, 这里做截断。为什么必须自己截 (整核冒烟台实测):
+//
+//   消费端 (C910 IDU) 的 `idu_accept_num` 是**纯组合**地从它自己的停顿/模式算出来的,
+//   **完全不看 IFU 手上到底有几条有效**。复位后本队列是空的 (`out_vld=000`)、
+//   IDU 又没停顿 ⇒ 它报"收 3 条"。而下面的
+//       cnt_q <= cnt_q + acc_push - pop_num
+//   **没有下溢保护**: 0 - 3 在 5 位无符号里回卷成 **29** ⇒ `empty` 永远为假 ⇒
+//   `out_vld[0]` **无条件**拉 1 ⇒ 读出从没写过的 `ent_q[head_q]` = **X**, 整核死。
+//   而且**回不去**: cnt_q 每拍 -3 却永远踩不到 0, 只有 rst/flush 能清。
+//
+// 消费端那边也在修 cap (`ct_idu_id_ctrl.sv` 的 `idu_ifu_inst2_ready`, `|`→`&`) ——
+// 但那修的是"IDU 最多能吃几条", 治不了"队列里根本不够"。**队列计数器不许减到负
+// 是队列自己的常识**, 所以在这里兜。
+//
+// ⚠️ 这改变了本模块的接口语义 (端口表那条注释同步改了): 原来是"pop_num 必须是
+//    out_vld 的连续前缀", 现在是"pop_num 是上限, 本模块按有效前缀截断"。
+//    等价性的依据: IDU 消费的**恰好是** IFU 的有效前缀 (见 `ct_idu_id_ctrl.sv:25-34`
+//    的 pipedown 三式), 所以 `min(cap, 前缀数)` 正是它实际吃掉的条数。
+//    在这边算而不是在 IDU 里算, 是因为那样会造出 `IFU out_vld →(跨模块)→ accept_num
+//    →(跨回来)→ cnt_q` 的往返组合路径; 留在本模块则 `pop_num` 只单向跨一次。
+wire [1:0] pop_avail = ~out_vld[0] ? 2'd0 :
+                       ~out_vld[1] ? 2'd1 :
+                       ~out_vld[2] ? 2'd2 : 2'd3;
+wire [1:0] pop_eff   = (pop_num < pop_avail) ? pop_num : pop_avail;
+
 assign count = cnt_q;                  // 直接给全宽: 截位会让"满队列=8"读成 0
 assign full  = (space == 0);
 
@@ -116,8 +146,8 @@ always @(posedge clk) begin
         if (push_mask[1]) ent_q[w1] <= push_data1;
         if (push_mask[2]) ent_q[w2] <= push_data2;
         if (push_mask[3]) ent_q[w3] <= push_data3;
-        head_q <= head_q + pop_num;
-        cnt_q  <= cnt_q + acc_push - pop_num;
+        head_q <= head_q + pop_eff;                       // ← 截断后的实际条数
+        cnt_q  <= cnt_q + acc_push - pop_eff;
     end
 end
 
