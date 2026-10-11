@@ -907,6 +907,14 @@ WAVE_SSF := $(if $(wildcard waveform/waves.fsdb),-ssf waveform/waves.fsdb,)
 # A910 专用的源文件列表
 A910_VERDI_SRC := $(A910_SRC) $(A910_TB_SRC)
 A910_VERDI_TOP := tb_a910_smoke
+# ⚠️ 2026-10-11 修: Verdi 会**重新解析一遍 RTL**, 必须给它和编译时**同一套**
+#    define/incdir, 否则解析出来的位宽与 FSDB 里记的对不上 —— 后果是波形里
+#    信号的位宽显示错乱 (实测: `rtu_preg_alloc0` 在 FSDB 里是 6 位 `[5:0]`,
+#    但 Verdi 不带 define 时走 RTU_define.vh 的 else 分支拿 `RTU_PREG_W=7`,
+#    两边不一致)。
+#    缺 +incdir 还会让 `` `include "defines.vh" `` 找不到文件。
+A910_VERDI_DEFS := +define+RTU_PREG64 +define+DCACHE_2KB \
+                   +incdir+$(PWD)/mySoC +incdir+$(PWD)/vsrc +incdir+$(PWD)/mySoC/rtu/rtl
 
 verdi:
 	# 如果没有指定 WAVE，自动找最新的波形文件
@@ -914,22 +922,22 @@ verdi:
 	  LATEST=$$(ls -t waveform/*.fsdb 2>/dev/null | head -1); \
 	  if [ -n "$$LATEST" ]; then \
 	    echo "打开最新波形: $$LATEST"; \
-	    verdi -sverilog -ssf $$LATEST -top $(A910_VERDI_TOP) $(A910_VERDI_SRC) & \
+	    verdi -sverilog -ssf $$LATEST $(A910_VERDI_DEFS) -top $(A910_VERDI_TOP) $(A910_VERDI_SRC) & \
 	  else \
 	    echo "No FSDB found under waveform/. Run simulation first." ; \
 	  fi; \
 	elif [ "$(FMT)" = "fsdb" ] && [ -f waveform/$(WAVE).fsdb ]; then \
-	  verdi -sverilog -ssf waveform/$(WAVE).fsdb -top $(A910_VERDI_TOP) $(A910_VERDI_SRC) & \
+	  verdi -sverilog -ssf waveform/$(WAVE).fsdb $(A910_VERDI_DEFS) -top $(A910_VERDI_TOP) $(A910_VERDI_SRC) & \
 	elif [ "$(FMT)" = "vcd" ] && [ -f waveform/$(WAVE).vcd ]; then \
-	  verdi -sverilog -vcd waveform/$(WAVE).vcd -top $(A910_VERDI_TOP) $(A910_VERDI_SRC) & \
+	  verdi -sverilog -vcd waveform/$(WAVE).vcd $(A910_VERDI_DEFS) -top $(A910_VERDI_TOP) $(A910_VERDI_SRC) & \
 	elif [ -f waveform/$(WAVE).fsdb ]; then \
-	  verdi -sverilog -ssf waveform/$(WAVE).fsdb -top $(A910_VERDI_TOP) $(A910_VERDI_SRC) & \
+	  verdi -sverilog -ssf waveform/$(WAVE).fsdb $(A910_VERDI_DEFS) -top $(A910_VERDI_TOP) $(A910_VERDI_SRC) & \
 	elif [ -f waveform/$(WAVE).vcd ]; then \
-	  verdi -sverilog -vcd waveform/$(WAVE).vcd -top $(A910_VERDI_TOP) $(A910_VERDI_SRC) & \
+	  verdi -sverilog -vcd waveform/$(WAVE).vcd $(A910_VERDI_DEFS) -top $(A910_VERDI_TOP) $(A910_VERDI_SRC) & \
 	elif [ -f waveform/waves.fsdb ]; then \
-	  verdi -sverilog -ssf waveform/waves.fsdb -top $(A910_VERDI_TOP) $(A910_VERDI_SRC) & \
+	  verdi -sverilog -ssf waveform/waves.fsdb $(A910_VERDI_DEFS) -top $(A910_VERDI_TOP) $(A910_VERDI_SRC) & \
 	elif [ -f waveform/waves.vcd ]; then \
-	  verdi -sverilog -vcd waveform/waves.vcd -top $(A910_VERDI_TOP) $(A910_VERDI_SRC) & \
+	  verdi -sverilog -vcd waveform/waves.vcd $(A910_VERDI_DEFS) -top $(A910_VERDI_TOP) $(A910_VERDI_SRC) & \
 	else \
 	  echo "No FSDB/VCD found: waveform/$(WAVE). Run simulation first." ; \
 	fi

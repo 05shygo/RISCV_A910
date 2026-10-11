@@ -285,7 +285,7 @@ module tb_a910_smoke;
 
   // init 之后那一段也要逐拍看: 第一次真正派遣是第二个可能的污染点
   always @(posedge clk) begin
-    if (!rst && trace_early && cycles >= 84 && cycles <= 100) begin
+    if (!rst && trace_early && cycles >= 84 && cycles <= 140) begin
       $display("      T%0d | IFU inst=%b%b%b cnt=%0d av=%b | IDreg=%b%b%b | disp=%b%b%b",
                cycles, dut.idu_inst2_vld, dut.idu_inst1_vld, dut.idu_inst0_vld,
                dut.u_rv32ifu2_top.u_ibuf.cnt_q, dut.idu_accept_num,
@@ -318,9 +318,60 @@ module tb_a910_smoke;
                dut.u_rv32ifu2_top.rtu_chgflw_vld, dut.u_rv32ifu2_top.rtu_flush,
                dut.u_rv32ifu2_top.iu_red_vld);
       // 派发记录 (IDU → RTU): flags 是从 dp_is_dis_inst*_data 的指令字译出来的
-      $display("           派发记录: flags0=%b pc0=%08x rf_we0=%b | is_dis_data0[31:0]=%08x",
+      // ⚠️ pd2 已知 ⇒ case 正常匹配 ⇒ 数据 X 是**那一支的数据源** X, 不是 default 触发
+      //    判据: 同一个 case 里 pc 也是同一支赋的, default 会让 pc 一起变 X
+      $display("           派发记录: flags0=%b pc0=%08x rf_we0=%b | is_dis_data0=%08x",
                dut.idu_rtu_disp0_flags, dut.idu_rtu_disp0_pc, dut.idu_rtu_disp0_rf_we,
                dut.u_ct_idu_top.dp_is_dis_inst0_data[31:0]);
+      // 目的/旧物理号: 派发记录里 dst_preg=[66:61] old_preg=[72:67] (ct_idu_top.sv:1405-1406)
+      $display("                    dst_preg=%0d old_preg=%0d | 派发记录: dst=%0d old=%0d",
+               dut.u_ct_idu_top.dp_is_dis_inst0_data[66:61],
+               dut.u_ct_idu_top.dp_is_dis_inst0_data[72:67],
+               dut.idu_rtu_disp0_dst_preg, dut.idu_rtu_disp0_old_preg);
+      $display("                    pd2=%b sel=%b | IR级: ir0_data=%08x ir0_pc=%08x",
+               dut.u_ct_idu_top.ctrl_xx_is_inst0_sel[0],
+               dut.u_ct_idu_top.ctrl_xx_is_inst0_sel,
+               dut.u_ct_idu_top.dp_ir_inst0_data[31:0],
+               dut.u_ct_idu_top.dp_ir_inst0_pc[31:0]);
+      // 源头: IFU 交给 IDU 的 97 位包 (A910 顶层拼的) —— 看它是不是"PC 好、指令字 X"
+      $display("          IFU包: vld=%b inst=%08x pc=%08x | 97bit=%024x",
+               dut.idu_inst0_vld, dut.ifu_idu_ib_inst0_data[31:0],
+               dut.ifu_idu_ib_inst0_data[63:32], dut.ifu_idu_ib_inst0_data[95:0]);
+      $display("          IDpipedown: data=%08x pc64=%08x vld0=%b",
+               dut.u_ct_idu_top.dp_id_pipedown_inst0_data[31:0],
+               dut.u_ct_idu_top.dp_id_pipedown_inst0_data[63:32],
+               dut.u_ct_idu_top.id_inst0_vld);
+      // 有效位那条链 (与数据不同源 —— 嫌疑点)
+      $display("          VLD链: ir_inst0_vld=%b ir_pipe_stall=%b pipedown0_vld=%b pre_dis0_vld=%b disp0_vld=%b",
+               dut.u_ct_idu_top.x_ct_idu_ir_ctrl.ir_inst0_vld,
+               dut.u_ct_idu_top.x_ct_idu_ir_ctrl.ctrl_ir_pipedown_stall,
+               dut.u_ct_idu_top.x_ct_idu_ir_ctrl.ir_pipedown_inst0_vld,
+               dut.u_ct_idu_top.x_ct_idu_ir_ctrl.ctrl_ir_pre_dis_inst0_vld,
+               dut.u_ct_idu_top.ctrl_dp_dis_inst0_vld);
+      // RTU 的预分配握手 (门房模型): IDU 报请求几条, RTU 给号
+      $display("          RTU分配: req=%b lreg=%0d,%0d,%0d | 给号=%0d(vld%b) %0d(vld%b) %0d(vld%b)",
+               dut.ren_preg_req, dut.ren_preg_req_lreg0, dut.ren_preg_req_lreg1,
+               dut.ren_preg_req_lreg2,
+               dut.rtu_idu_alloc_preg0, dut.rtu_idu_alloc_preg0_vld,
+               dut.rtu_idu_alloc_preg1, dut.rtu_idu_alloc_preg1_vld,
+               dut.rtu_idu_alloc_preg2, dut.rtu_idu_alloc_preg2_vld);
+      // ⚠️ 对照: RTU 那个**端口** vs 适配层的**输出** vs 顶层网 —— 三者该是同一个值
+      $display("          [对照] u_rtu口=%0d/%0d/%0d | 适配层入=%0d/%0d/%0d | 顶层网=%0d/%0d/%0d",
+               dut.u_rtu.rtu_preg_alloc0, dut.u_rtu.rtu_preg_alloc1,
+               dut.u_rtu.rtu_preg_alloc2,
+               dut.u_rtu_adapter.rtu_preg_alloc0, dut.u_rtu_adapter.rtu_preg_alloc1,
+               dut.u_rtu_adapter.rtu_preg_alloc2,
+               dut.rtu_idu_alloc_preg0, dut.rtu_idu_alloc_preg1,
+               dut.rtu_idu_alloc_preg2);
+      // 发射 + 写回的物理号 (同事线索: 写回时标记全是 0 → div 拿不到依赖释放)
+      $display("          发射: aiq_sel=%b aiq_dst_preg=%0d | mult_sel=%b mult_preg=%0d div_sel=%b div_preg=%0d",
+               dut.idu_aiq_sel, dut.idu_aiq_dst_preg,
+               dut.idu_mult_sel, dut.idu_mult_dst_preg,
+               dut.idu_div_sel, dut.idu_div_dst_preg);
+      $display("          写回: p0_vld=%b p0_dupx=%0d | p1_vld=%b p1_dupx=%0d | p2_vld=%b p2_dupx=%0d",
+               dut.iu_idu_ex2_pipe0_wb_preg_vld_dupx, dut.iu_idu_ex2_pipe0_wb_preg_dupx,
+               dut.iu_idu_ex2_pipe1_wb_preg_vld_dupx, dut.iu_idu_ex2_pipe1_wb_preg_dupx,
+               dut.iu_idu_ex2_pipe2_wb_preg_vld_dupx, dut.iu_idu_ex2_pipe2_wb_preg_dupx);
       $display("           IFUdata0=%08x IDdata0=%08x type_stall_pd2=%b",
                dut.idu_inst0_data[31:0],
                dut.u_ct_idu_top.dp_id_pipedown_inst0_data[31:0],
@@ -407,6 +458,14 @@ module tb_a910_smoke;
     $display("==================================================");
     $display("  A910_cpu 最小冒烟台  (MAX_CYCLES=%0d)", max_cycles);
     $display("==================================================");
+    // 位宽自检: 有人报"波形里 rtu_preg_alloc0 是 2 位" —— 这里印出实际位宽
+    $display("  [位宽] rtu_idu_alloc_preg0=%0d tap_num0=%0d ren_preg_req=%0d RTU_PREG_W=%0d",
+             $bits(dut.rtu_idu_alloc_preg0), $bits(dut.u_rtu.u_preg.tap_num0),
+             $bits(dut.ren_preg_req), `RTU_PREG_W);
+    // 同事报"在 RTU 顶层拉的波形里 rtu_preg_alloc0 是 2 位" —— 逐层量一遍
+    $display("  [位宽] u_rtu.rtu_preg_alloc0=%0d  u_rtu.u_preg.rtu_preg_alloc0=%0d  u_rtu.u_preg.tap_num0=%0d",
+             $bits(dut.u_rtu.rtu_preg_alloc0), $bits(dut.u_rtu.u_preg.rtu_preg_alloc0),
+             $bits(dut.u_rtu.u_preg.tap_num0));
 
     rst = 1;
     repeat (20) @(posedge clk);
