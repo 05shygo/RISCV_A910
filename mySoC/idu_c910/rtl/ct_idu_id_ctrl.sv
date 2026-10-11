@@ -43,7 +43,6 @@ assign ctrl_ib_pipedown_inst1_vld =
 assign ctrl_ib_pipedown_inst2_vld =
             ctrl_xx_is_inst0_sel[0] && ifu_idu_ib_inst1_vld
          || ctrl_xx_is_inst0_sel[1] && ifu_idu_ib_inst2_vld;
-logic ctrl_id_pipedown_stall;
 assign idu_ifu_inst0_ready = !ctrl_id_pipedown_stall;
 assign idu_ifu_inst1_ready = !ctrl_id_pipedown_stall;
 // ⚠️ 2026-10-11 修: 原来是 `!stall | !pipedown2`, 那个 `|` 让 inst2_ready 恒为 1
