@@ -185,7 +185,7 @@ pipedown2 模式下 ID 级只吃 IFU 的 inst0/inst1（slot0 靠 `ctrl_ir_inst2_
 
 ---
 
-## 4. Bug 3（**已定位，未修**）：`ctrl_ir_inst2_vld` 整根没被驱动
+## 4. Bug 3（**已修**，同事 `7c54bec`）：`ctrl_ir_inst2_vld` 整根没被驱动
 
 前两个修完之后整核仍不跑，逐拍追到：
 
@@ -262,19 +262,128 @@ assign ctrl_ir_pre_dis_3_div_inst  = ctrl_ir_inst0_div  && ctrl_ir_inst1_div  &&
 
 ---
 
-## 6. Bug 5（**当前卡在这**）：`_3_aiq_inst` = X
+## 6. Bug 5（**已修**，同事 `0277ccf`）：`_3_aiq_inst` = X
 
 ```
 T89  五项: biq=0 aiq=x lsiq=0 mult=0 div=0 ⇒ type_stall=x
 ```
 
 `_3_aiq_inst` 本身**是**门了 vld 的（`ctrl_ir_instN_aiq_vld = ir_pipedown_instN_vld && ctrl_ir_instN_aiq`），
-所以 X 只可能来自：`ir_pipedown_instN_vld` 本身带 X，或 `ctrl_ir_instN_aiq` 在 vld=1 时是 X。
-**未查完。**
+所以 X 只可能来自 `ir_pipedown_instN_vld` 或 `ctrl_ir_instN_aiq` 在 vld=1 时是 X。
+
+同事 `0277ccf` 改的是 `ct_idu_id_decd.sv` 的 **`inst_type[1]` → `inst_type[0]`**
+（ALU 分类挂错了位）+ `ct_idu_ir_ctrl.sv` 的一处声明顺序。修完实测 **IDU 派发全干净**：
+
+```
+T90  disp=111     ← 三个 0/1, 一个 X 都没有
+T91  disp=001
+```
+
+并且核**第一次真正退休**了：
+
+```
+--- T93 retire_cnt=01 (vld=001) ---
+ret pc=0000000c  ena=1  x8<=xxxxxxxx
+```
+
+`pc` / `ena` 都是真值 —— 但**写回值是 X**，而且很快又退化成全 X。
 
 ---
 
-## 7. ⚠️ 系统性结论：这不是"某个信号接错了"
+## 7. Bug 6（**已定位到根**）：IS 级派发记录的 `default` 分支**显式写 X**
+
+### 现场：IFU 的取指请求有效位恒 X
+
+```
+T84~T94  refill_req 正常翻转, redirect=0, 三源全 0     ← 取指一切正常
+T95      redirect=x   ← rtu_chgflw=x  rtu_flush=x     ← X 从 RTU 灌进来
+T96      q_hit=x  ⇒  refill_req 再也起不来
+```
+
+**IFU 自己没坏**，是被 `redirect` 掐死的。
+
+### 往上追四级
+
+```
+refill_req = ~q_hit & ~refill_busy & init_all & ~redirect
+                                                      ↑
+redirect   = rtu_chgflw_vld | rtu_flush | iu_red_vld
+             └── 都出自 RTU_flush 的 flush_trig ──┘   (iu_red_vld=0, 干净)
+
+flush_trig = trap_hit | int_take | mret_hit | replay_hit | mispred_hit
+             (0)        (0)       └───── 三根全 X ─────┘
+                                  ↑ 都来自 ROB 槽 0 的控制位
+
+w0_mret  ←  idu_rtu_disp0_flags[4]  ←  从**指令字**比较译出
+```
+
+### 根：`ct_idu_is_dp.sv:249-281`
+
+```verilog
+case(ctrl_xx_is_inst0_sel[1:0])
+  2'b01 : ... 用 is_inst2_read_data / dp_ir_inst*_data
+  2'b10 : ... 用 dp_ir_inst*_data
+  default: 9 个字段全部 = {IS_WIDTH{1'bx}}      // ← **显式写 X**
+endcase
+```
+
+而 `sel` 的定义是 `{!is_dis_pipedown2, is_dis_pipedown2}`（`ct_idu_is_ctrl.sv:407-408`），
+**正常只可能是 `2'b01` 或 `2'b10`**。但只要上游把 `is_dis_pipedown2` 弄成 X，
+两位就是 `2'bxx` ⇒ 两个 case 都不匹配 ⇒ 掉 `default` ⇒
+**整条 83 位派发记录变成全 X**。
+
+### 指纹：怎么一眼认出是这个 `default` 触发的
+
+```
+idu_rtu_disp0_flags = x x x x 0 x x
+                            ↑
+                      bit2 = 1'b0  (硬编码常量, ct_idu_top.sv:1418)
+```
+
+`flags` 每一位都是从指令字比较出来的，**唯独 bit2 是写死的常量 0**。
+所以"**周围全 X、唯独 bit2 是干净的 0**"就是 `dp_is_dis_inst*_data` 全 X 的指纹。
+看到这个形状，直接去查 `is_dis_pipedown2` 是不是 X，不用一格格追。
+
+### 为什么它是"放大器"
+
+上游**一位**的 X → **9 个字段 × 83 位**全 X，然后：
+
+```
+上游某个 X
+  → is_dis_pipedown2 = X
+  → ctrl_xx_is_inst0_sel = 2'bxx
+  → case 落 default  →  派发记录全 X
+  → flags = X  →  w0_mret = X  →  flush_trig = X
+  → rtu_ifu_flush = X  →  **IFU 取指请求 X**
+```
+
+### 规模
+
+全 IDU 有 **58 处** `{1'bx}`，`ct_idu_is_dp.sv` 一个文件占 37 处：
+
+| 文件 | 处数 |
+|---|---|
+| `ct_idu_is_dp.sv` | **37** |
+| `ct_idu_ir_rt.sv` | 9 |
+| `ct_idu_id_dp.sv` | 6 |
+| 其余 5 个文件 | 各 1~2 |
+
+**这就是"IDU 到处是 X"的直接来源**，而且会**级联** —— 上游的 `default` 触发下游的 `default`。
+
+### 建议
+
+`default: X` 是 C910 的原始风格（"非法组合就喊出来"），在**单元仿真**里是好习惯，早暴露。
+但在**整核**里代价极大：X 一旦灌进 ROB 的**反馈计数器**（`occ_q`）和**状态机**（`st_q`）
+就**永久回不去**，症状离病因十万八千里。
+
+建议把 `default` 改成赋一个确定值（0 或复用某一支），把"非法组合"的检测交给**断言** ——
+**喊归喊，别把 X 灌进去。**
+
+⚠️ 但这 58 处是交付代码的原始风格，改它属于**动地基**，应由 IDU 负责人评估。
+
+---
+
+## 8. ⚠️ 系统性结论：这不是"某个信号接错了"
 
 上面 5 层里有 **3 层是同一个病**：
 
@@ -303,7 +412,7 @@ T89  五项: biq=0 aiq=x lsiq=0 mult=0 div=0 ⇒ type_stall=x
 
 ---
 
-## 8. 改动与回归清单
+## 9. 改动与回归清单
 
 | 文件 | 改动 | 状态 |
 |---|---|---|
@@ -334,7 +443,7 @@ T89  五项: biq=0 aiq=x lsiq=0 mult=0 div=0 ⇒ type_stall=x
 
 ---
 
-## 9. 复现命令（给接手的人）
+## 10. 复现命令（给接手的人）
 
 ```bash
 # 整核现在挂在哪 (超时即 FAIL, 正常现象)
@@ -356,7 +465,7 @@ for t in muldiv_edge div mul c3_only; do make run TEST=$t IFU=2; done
 make run TEST=coremark IFU=2 MAX_CYCLES=15000000    # 基线 11,438,398 拍, 须逐位不变
 ```
 
-## 10. 下一步
+## 11. 下一步
 
 Bug 5 之后再往下追。跑通之后：
 

@@ -210,6 +210,9 @@ module tb_a910_smoke;
       retired = retired + dut.rtu_retire_cnt;
 
       if (trace_on && dut.rtu_retire_cnt != 2'b00) begin
+        $display("      --- T%0d retire_cnt=%b (vld=%b%b%b) ---", cycles,
+                 dut.rtu_retire_cnt, dut.dbg_commit_vld2, dut.dbg_commit_vld1,
+                 dut.dbg_commit_vld0);
         if (dut.dbg_commit_vld0)
           $display("      ret pc=%08x ena=%b x%0d<=%08x",
                    dut.dbg_commit_pc0, dut.dbg_commit_ena0,
@@ -305,6 +308,19 @@ module tb_a910_smoke;
                dut.u_ct_idu_top.x_ct_idu_ir_ctrl.ctrl_ir_pre_dis_3_mult_inst,
                dut.u_ct_idu_top.x_ct_idu_ir_ctrl.ctrl_ir_pre_dis_3_div_inst,
                dut.u_ct_idu_top.x_ct_idu_ir_ctrl.ctrl_ir_pre_dis_type_stall_pipedown2);
+      // IFU 取指请求链: refill_req = ~q_hit & ~refill_busy & init_all & ~redirect
+      //                 redirect    = rtu_chgflw_vld | rtu_flush | iu_red_vld
+      $display("           IFU取指: refill_req=%b q_hit=%b refill_busy=%b init_all=%b redirect=%b",
+               dut.u_rv32ifu2_top.refill_req, dut.u_rv32ifu2_top.q_hit,
+               dut.u_rv32ifu2_top.refill_busy, dut.u_rv32ifu2_top.init_all,
+               dut.u_rv32ifu2_top.redirect);
+      $display("                    redirect三源: rtu_chgflw=%b rtu_flush=%b iu_red_vld=%b",
+               dut.u_rv32ifu2_top.rtu_chgflw_vld, dut.u_rv32ifu2_top.rtu_flush,
+               dut.u_rv32ifu2_top.iu_red_vld);
+      // 派发记录 (IDU → RTU): flags 是从 dp_is_dis_inst*_data 的指令字译出来的
+      $display("           派发记录: flags0=%b pc0=%08x rf_we0=%b | is_dis_data0[31:0]=%08x",
+               dut.idu_rtu_disp0_flags, dut.idu_rtu_disp0_pc, dut.idu_rtu_disp0_rf_we,
+               dut.u_ct_idu_top.dp_is_dis_inst0_data[31:0]);
       $display("           IFUdata0=%08x IDdata0=%08x type_stall_pd2=%b",
                dut.idu_inst0_data[31:0],
                dut.u_ct_idu_top.dp_id_pipedown_inst0_data[31:0],
