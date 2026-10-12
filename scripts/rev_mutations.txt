@@ -596,3 +596,29 @@ BEFORE
 <<<AFTER
                 nst[i] = `RTU_P_FREE;   // 变异: 释放当拍就回池 (去掉第 5 态)
 AFTER
+
+### R10 rtu_alloc_req_prefix_assumed
+file:  mySoC/rtu/rtl/RTU_idu_lsu_adapter.v
+build: adapter_unit
+tests: rtu_adapter_unit
+note:  **2026-10-12 分配握手接口的回退变异**: 把 `ren_preg_req` 从"逐路请求向量"
+       改回**原来的"三路 vld 求和 = 程序序前缀长度"**。
+       ⚠️ 这条变异**整核 difftest 抓不住** —— 它不改架构结果, 只让 RTU 判错
+       "哪一路把门口的号取走了", 代价是**漏号 (旧号永久卡 WF_ALLOC)** 和
+       **可能重发 (同一路连着两次请求拿到同一个号)**; 二者都要跑很久、池子快空
+       时才显形 (beq 里实测 `free_cnt` 长期 16~21 而不回 32)。
+       能当场抓它的只有**适配层单元台**: `alloc_vld` 的 (0,0,1) / (1,0,1) 这两个
+       **非前缀**点 —— 求和会把它们都报成"前缀长度 2"(判成车道 0,1 取走了)。
+       ⚠️ 旧台子只查前缀点 (001/011/111), 而**前缀点上求和值与向量恰好一致**
+       ⇒ 装不住这个 bug (这就是它潜伏下来的原因)。这条变异就是为它立的。
+       实测: `python3 scripts/rev_check.py R10` → CAUGHT(TestPoint), 4 条判据红。
+<<<BEFORE
+    assign ren_preg_req[2:0] = {idu_rtu_ir_preg2_alloc_vld,
+                                idu_rtu_ir_preg1_alloc_vld,
+                                idu_rtu_ir_preg0_alloc_vld};
+BEFORE
+<<<AFTER
+    assign ren_preg_req[2:0] = {1'b0, 1'b0, idu_rtu_ir_preg0_alloc_vld}
+                             + {1'b0, 1'b0, idu_rtu_ir_preg1_alloc_vld}
+                             + {1'b0, 1'b0, idu_rtu_ir_preg2_alloc_vld};
+AFTER

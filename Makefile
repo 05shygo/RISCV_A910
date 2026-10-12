@@ -608,8 +608,9 @@ $(IU_ALU_SIMV): $(IU_ALU_SRC) $(IU_ALU_TB)
 #     ⚠️ 这条判据是有来历的: 交付的 IDU 里有 3 根 create1_en 只在消费侧连了、
 #        生产侧漏连 ⇒ 悬空 Z ⇒ 那三条队列的第二 create 口整个是死的,
 #        而"未声明且多位"那个扫描器**抓不到 1 位信号**, 只有 elaborate 能看见。
-#   * `PCWM-W` 允许 7 条已知且**有意**的 (PREG=64 下 RTU 7 位 → IDU 6 位的直连 ×4,
-#     交付内部 chk 字段 65→25 ×3); 多于 7 条会在下面提示。
+#   * `PCWM-W` 预期 **0**（2026-10-12 起）。那条"允许 5 条有意截断"是 2026-10-10 之前
+#     的口径 —— 那时 RTU 的 preg 端口恒 7 位；自 2026-10-10 端口位宽随 PREG 档走
+#     （64→6），两侧天然同宽，截断没了。非 0 会在下面提示。
 #
 #   make rtu-subsys-elab
 # ---------------------------------------------------------------------------
@@ -633,8 +634,8 @@ rtu-subsys-elab:
 	 if [ "$$W" != "0" ]; then \
 	   echo "  ❌ 有悬空线 —— 某个信号连了但没驱动 (症状是静默的, 见本目标的注释)"; \
 	   grep -A3 'Warning-\[IWNF\]' $(SUBSYS_LOG) | grep 'Implicit wire' | sort -u; exit 1; fi; \
-	 if [ "$$P" != "5" ]; then \
-	   echo "  ⚠️ RTU_subsys.v 里 PCWM-W = $$P, 预期 5 (PREG=64 下 RTU 7 位 → IDU 6 位的\n     有意直连: rtu_preg_raddr0/1/2 + rtu_csr_src_raddr + rtu_csr_rd_addr)"; fi; \
+	 if [ "$$P" != "0" ]; then \
+	   echo "  ⚠️ RTU_subsys.v 里 PCWM-W = $$P, 预期 0。\n     2026-10-12 起预期是 0: 生成器补了 `RTU_PREG_W` 的数值代换, RTU 的 preg 网\n     与 IDU 的 6 位口天然同宽 (PREG=64), 那 5 条'有意截断'不复存在。\n     ⚠️ 若又冒出来, 先怀疑生成器又把某根网的位宽落成了 1 位 (见 scripts/gen_rtu_top.py\n     的 GEO/resolve_width —— 那里栽过两次), 别急着改预期值。"; fi; \
 	 echo "  ✅ RTU_subsys elaborate 通过 (RTU ↔ IDU/LSU 连线已接死)"
 
 # ---------------------------------------------------------------------------

@@ -339,6 +339,120 @@ module tb_a910_difftest;
     end
   end
 
+  // -------------------------------------------------------------------------
+  // 【临时诊断】x4 (lreg 4) 的映射链 vs 冲刷恢复 —— `A910_DT_ARGS=+PROBE_X4`
+  //
+  //   beq 台 T318: 第二圈 `0x134 addi x4,x4,1` 读出 0 (应为 1)。
+  //   冲刷时 IDU 的整张改名表被灌成 RTU 的 AMT (`ct_idu_ir_rt.sv:203`),
+  //   所以嫌疑是: **0x13c 回跳那次误预测冲刷来的那拍, AMT[4] 还没更新到
+  //   第一圈 0x134 写进去的新号** ⇒ 恢复回旧号 ⇒ 第二圈读回 0x11c 写的 0。
+  //   这里把两边的映射 + 判退级的三个槽逐拍并排打出来。
+  // -------------------------------------------------------------------------
+  integer x4_lines = 0;
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_X4") && cycles >= 288 && cycles <= 322
+        && x4_lines < 300) begin
+      // ---- 改名表的**写口**逐拍: 谁把号写进表里 (含冲刷恢复) ----
+      $display("  [RTW] T%0d 写en=%b%b%b lreg=%0d,%0d,%0d dst=%0d,%0d,%0d vld=%b,%b,%b | recov=%b reset=%b stall=%b",
+               cycles,
+               dut.u_ct_idu_top.x_ct_idu_ir_rt.inst0_write_en,
+               dut.u_ct_idu_top.x_ct_idu_ir_rt.inst1_write_en,
+               dut.u_ct_idu_top.x_ct_idu_ir_rt.inst2_write_en,
+               dut.u_ct_idu_top.x_ct_idu_ir_rt.dp_rt_inst0_dst_reg,
+               dut.u_ct_idu_top.x_ct_idu_ir_rt.dp_rt_inst1_dst_reg,
+               dut.u_ct_idu_top.x_ct_idu_ir_rt.dp_rt_inst2_dst_reg,
+               dut.u_ct_idu_top.x_ct_idu_ir_rt.dp_rt_inst0_dst_preg,
+               dut.u_ct_idu_top.x_ct_idu_ir_rt.dp_rt_inst1_dst_preg,
+               dut.u_ct_idu_top.x_ct_idu_ir_rt.dp_rt_inst2_dst_preg,
+               dut.u_ct_idu_top.x_ct_idu_ir_rt.ctrl_rt_inst0_vld,
+               dut.u_ct_idu_top.x_ct_idu_ir_rt.ctrl_rt_inst1_vld,
+               dut.u_ct_idu_top.x_ct_idu_ir_rt.ctrl_rt_inst2_vld,
+               dut.u_ct_idu_top.x_ct_idu_ir_rt.rt_recover_updt_vld,
+               dut.u_ct_idu_top.x_ct_idu_ir_rt.rt_reset_updt_vld,
+               dut.u_ct_idu_top.ctrl_ir_stall);
+      // ---- ID 级 (交给 IR 的窗口) vs IR 级三条道各是哪条指令 ----
+      $display("       ID: pc=%08x,%08x,%08x vld=%b%b%b  →  IR: pc=%08x,%08x,%08x",
+               dut.u_ct_idu_top.u_ct_idu_id_dp.id_inst0_pc,
+               dut.u_ct_idu_top.u_ct_idu_id_dp.id_inst1_pc,
+               dut.u_ct_idu_top.u_ct_idu_id_dp.id_inst2_pc,
+               dut.u_ct_idu_top.id_ir_inst0_vld, dut.u_ct_idu_top.id_ir_inst1_vld,
+               dut.u_ct_idu_top.id_ir_inst2_vld,
+               dut.u_ct_idu_top.dp_ir_inst0_pc[31:0], dut.u_ct_idu_top.dp_ir_inst1_pc[31:0],
+               dut.u_ct_idu_top.dp_ir_inst2_pc[31:0]);
+      // ---- IFU → IDU 这一拍交了什么 ----
+      $display("       IFU: ib_vld=%b pc=%08x,%08x,%08x cnt=%0d head=%0d | IDU acc=%b vld=%b%b%b",
+               dut.u_rv32ifu2_top.ib_vld,
+               dut.u_rv32ifu2_top.ib_out0[63:32], dut.u_rv32ifu2_top.ib_out1[63:32],
+               dut.u_rv32ifu2_top.ib_out2[63:32],
+               dut.u_rv32ifu2_top.u_ibuf.cnt_q, dut.u_rv32ifu2_top.u_ibuf.head_q,
+               dut.idu_accept_num, dut.idu_inst0_vld, dut.idu_inst1_vld, dut.idu_inst2_vld);
+      $display("       IRlreg: lreg=%0d,%0d,%0d dst_vld=%b,%b,%b",
+               dut.u_ct_idu_top.x_ct_idu_ir_rt.dp_rt_inst0_dst_reg,
+               dut.u_ct_idu_top.x_ct_idu_ir_rt.dp_rt_inst1_dst_reg,
+               dut.u_ct_idu_top.x_ct_idu_ir_rt.dp_rt_inst2_dst_reg,
+               dut.u_ct_idu_top.x_ct_idu_ir_rt.dp_rt_inst0_dst_vld,
+               dut.u_ct_idu_top.x_ct_idu_ir_rt.dp_rt_inst1_dst_vld,
+               dut.u_ct_idu_top.x_ct_idu_ir_rt.dp_rt_inst2_dst_vld);
+      // ---- 分配握手: IDU 三路请求 vs RTU 收到的 ren_preg_req ----
+      //   2026-10-12 起两边是**同一个逐路向量**（原来是"求和当前缀长度"，会判错，
+      //   见 `doc/a910_difftest_zh.md` §6.5）：这两个 `%b` 应当逐位相同。
+      $display("       ALLOC: IDU 请求=%b%b%b → ren_preg_req=%b | tap vld=%b%b%b num=%0d,%0d,%0d | free_cnt=%0d",
+               dut.idu_rtu_ir_preg2_alloc_vld, dut.idu_rtu_ir_preg1_alloc_vld,
+               dut.idu_rtu_ir_preg0_alloc_vld,
+               dut.ren_preg_req,
+               dut.u_rtu.u_preg.tap_vld0, dut.u_rtu.u_preg.tap_vld1,
+               dut.u_rtu.u_preg.tap_vld2,
+               dut.u_rtu.u_preg.tap_num0, dut.u_rtu.u_preg.tap_num1,
+               dut.u_rtu.u_preg.tap_num2,
+               dut.u_rtu.u_preg.free_cnt_q);
+      // ---- 派遣流三条道全打 ----
+      $display("       派: %b %08x l%0d d%0d o%0d | %b %08x l%0d d%0d o%0d | %b %08x l%0d d%0d o%0d",
+               dut.idu_rtu_disp0_vld, dut.idu_rtu_disp0_pc, dut.idu_rtu_disp0_dst_lreg,
+               dut.idu_rtu_disp0_dst_preg, dut.idu_rtu_disp0_old_preg,
+               dut.idu_rtu_disp1_vld, dut.idu_rtu_disp1_pc, dut.idu_rtu_disp1_dst_lreg,
+               dut.idu_rtu_disp1_dst_preg, dut.idu_rtu_disp1_old_preg,
+               dut.idu_rtu_disp2_vld, dut.idu_rtu_disp2_pc, dut.idu_rtu_disp2_dst_lreg,
+               dut.idu_rtu_disp2_dst_preg, dut.idu_rtu_disp2_old_preg);
+      // ---- 发射 (AIQ) 逐拍: 谁在发射、目标号是谁 ----
+      if (dut.idu_aiq_sel)
+        $display("       AIQ: %08x iid=%0d d%0d src0=%08x src1=%08x",
+                 dut.idu_aiq_pc, dut.idu_aiq_iid, dut.idu_aiq_dst_preg,
+                 dut.idu_aiq_src0, dut.idu_aiq_src1);
+      x4_lines = x4_lines + 1;
+      $display("  [X4] T%0d AMT[4]=%0d | RAT[4]=%0d wb=%b | arch=%b lreg=%0d,%0d,%0d dst=%0d,%0d,%0d old=%0d,%0d,%0d free=%b",
+               cycles, dut.u_rtu.u_preg.amt[4],
+               dut.u_ct_idu_top.x_ct_idu_ir_rt.reg_read_data_raw[4][6:1],
+               dut.u_ct_idu_top.x_ct_idu_ir_rt.reg_read_data_raw[4][0],
+               dut.u_rtu.u_commit.ret_arch_vld,
+               dut.u_rtu.u_commit.ret_dst_lreg0, dut.u_rtu.u_commit.ret_dst_lreg1,
+               dut.u_rtu.u_commit.ret_dst_lreg2,
+               dut.u_rtu.u_commit.ret_dst_preg0, dut.u_rtu.u_commit.ret_dst_preg1,
+               dut.u_rtu.u_commit.ret_dst_preg2,
+               dut.u_rtu.u_commit.ret_old_preg0, dut.u_rtu.u_commit.ret_old_preg1,
+               dut.u_rtu.u_commit.ret_old_preg2,
+               dut.u_rtu.u_commit.ret_free_vld);
+      $display("        flush_lvl=%b yy_flush=%b ret_cnt=%b | AMT_flat[4]=%0d",
+               dut.u_rtu.u_preg.flush_lvl, dut.rtu_yy_xx_flush,
+               dut.rtu_retire_cnt,
+               dut.u_rtu.u_preg.amt_flat[6*4 +: 6]);
+
+      // 派遣流里凡是 x4 的 (lreg==4) 全打出来 —— 看两圈分别拿的哪个号
+      if (dut.idu_rtu_disp0_vld && dut.idu_rtu_disp0_dst_lreg == 5'd4)
+        $display("        [派0] pc=%08x dst_preg=%0d old_preg=%0d",
+                 dut.idu_rtu_disp0_pc, dut.idu_rtu_disp0_dst_preg, dut.idu_rtu_disp0_old_preg);
+      if (dut.idu_rtu_disp1_vld && dut.idu_rtu_disp1_dst_lreg == 5'd4)
+        $display("        [派1] pc=%08x dst_preg=%0d old_preg=%0d",
+                 dut.idu_rtu_disp1_pc, dut.idu_rtu_disp1_dst_preg, dut.idu_rtu_disp1_old_preg);
+      if (dut.idu_rtu_disp2_vld && dut.idu_rtu_disp2_dst_lreg == 5'd4)
+        $display("        [派2] pc=%08x dst_preg=%0d old_preg=%0d",
+                 dut.idu_rtu_disp2_pc, dut.idu_rtu_disp2_dst_preg, dut.idu_rtu_disp2_old_preg);
+      // ALU 写回: 两条 0x134 分别写到哪个号
+      if (dut.u_iu_alu_pipe.wb_preg_vld)
+        $display("        [WB ] ALU 写 preg=%0d data=%08x",
+                 dut.u_iu_alu_pipe.wb_preg_dupx, dut.u_iu_alu_pipe.wb_preg_data);
+    end
+  end
+
   integer preg_lines = 0;
   always @(posedge clk) begin
     if (!rst && $test$plusargs("PROBE_PREG") && preg_lines < 120 && cycles >= 96) begin
@@ -370,9 +484,8 @@ module tb_a910_difftest;
                dut.idu_rtu_disp0_dst_lreg, dut.idu_rtu_disp1_dst_lreg, dut.idu_rtu_disp2_dst_lreg,
                dut.idu_rtu_disp0_old_preg, dut.idu_rtu_disp1_old_preg, dut.idu_rtu_disp2_old_preg,
                dut.rtu_disp_iid0, dut.rtu_disp_iid1, dut.rtu_disp_iid2);
-      $display("        分配: req=%b lreg_req=%0d,%0d,%0d | 给号 vld=%b%b%b 号=%0d,%0d,%0d | IDU 侧 alloc_vld=%b%b%b",
-               dut.ren_preg_req, dut.ren_preg_req_lreg0, dut.ren_preg_req_lreg1,
-               dut.ren_preg_req_lreg2,
+      $display("        分配: req=%b | 给号 vld=%b%b%b 号=%0d,%0d,%0d | IDU 侧 alloc_vld=%b%b%b",
+               dut.ren_preg_req,
                dut.rtu_idu_alloc_preg2_vld, dut.rtu_idu_alloc_preg1_vld, dut.rtu_idu_alloc_preg0_vld,
                dut.rtu_idu_alloc_preg0, dut.rtu_idu_alloc_preg1, dut.rtu_idu_alloc_preg2,
                dut.idu_rtu_ir_preg2_alloc_vld, dut.idu_rtu_ir_preg1_alloc_vld,
@@ -412,24 +525,16 @@ module tb_a910_difftest;
     end
   end
 
-  // 【临时诊断】写回/唤醒 vs 发射 vs 读口 —— `+PROBE_WAKE`
+  // 【临时诊断】x4 的改名链: 每次派发看 lreg/dst_preg/old_preg —— `+PROBE_RAT`
   always @(posedge clk) begin
-    if (!rst && $test$plusargs("PROBE_WAKE") && cycles >= 318 && cycles <= 336) begin
-      $display("  [WK] T%0d 写回 p0=%b#%0d=%08x p1=%b#%0d=%08x p2=%b#%0d=%08x",
-               cycles, dut.iu_idu_ex2_pipe0_wb_preg_vld_dupx, dut.iu_idu_ex2_pipe0_wb_preg_dupx,
-               dut.iu_idu_ex2_pipe0_wb_preg_data,
-               dut.iu_idu_ex2_pipe1_wb_preg_vld_dupx, dut.iu_idu_ex2_pipe1_wb_preg_dupx,
-               dut.iu_idu_ex2_pipe1_wb_preg_data,
-               dut.iu_idu_ex2_pipe2_wb_preg_vld_dupx, dut.iu_idu_ex2_pipe2_wb_preg_dupx,
-               dut.iu_idu_ex2_pipe2_wb_preg_data);
-      $display("       发射 aiq=%b #%0d src0=%08x | 读口 p0:%0d=%08x p1:%0d=%08x p2:%0d=%08x",
-               dut.idu_aiq_sel, dut.idu_aiq_dst_preg, dut.idu_aiq_src0,
-               dut.u_ct_idu_top.dp_prf_rf_pipe0_src0_preg,
-               dut.u_ct_idu_top.prf_dp_rf_pipe0_src0_data,
-               dut.u_ct_idu_top.dp_prf_rf_pipe1_src0_preg,
-               dut.u_ct_idu_top.prf_dp_rf_pipe1_src0_data,
-               dut.u_ct_idu_top.dp_prf_rf_pipe2_src0_preg,
-               dut.u_ct_idu_top.prf_dp_rf_pipe2_src0_data);
+    if (!rst && $test$plusargs("PROBE_RAT") && cycles >= 300 && cycles <= 320
+        && (dut.idu_rtu_disp0_vld || dut.idu_rtu_disp1_vld || dut.idu_rtu_disp2_vld)) begin
+      $display("  [RAT] T%0d 派: lreg=%0d,%0d,%0d dst_preg=%0d,%0d,%0d old_preg=%0d,%0d,%0d | pc=%08x,%08x,%08x",
+               cycles,
+               dut.idu_rtu_disp0_dst_lreg, dut.idu_rtu_disp1_dst_lreg, dut.idu_rtu_disp2_dst_lreg,
+               dut.idu_rtu_disp0_dst_preg, dut.idu_rtu_disp1_dst_preg, dut.idu_rtu_disp2_dst_preg,
+               dut.idu_rtu_disp0_old_preg, dut.idu_rtu_disp1_old_preg, dut.idu_rtu_disp2_old_preg,
+               dut.idu_rtu_disp0_pc, dut.idu_rtu_disp1_pc, dut.idu_rtu_disp2_pc);
     end
   end
 

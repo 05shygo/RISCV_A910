@@ -218,6 +218,91 @@ iid=0 指令标成完成 ⇒ **它在写回前一拍就退休**（`dbg_commit_va
   —— 见 `A910_cpu.sv` 末尾待接清单第 3 条。
 * `idu_accept_num` 不看 `ifu_idu_ib_inst*_vld`（同清单第 1 条）。
 
+### 4.6 IDU：`is_dis_pipedown2` 的"顺延"把**同一条指令改名两次** 🔴 阻断性
+
+**这是 beq/bne/blt/bge 卡住的那个真凶**（2026-10-12 定位，见 §6 的完整证据链）。
+
+`mySoC/idu_c910/rtl/ct_idu_id_dp.sv:316-335`（lucy, `115214f7` 2026-10-11 "preg debug"）
+
+```verilog
+case(ctrl_xx_is_inst0_sel[1:0])          // [0]=is_dis_pipedown2, [1]=!is_dis_pipedown2
+  2'b01 : begin   // ← "顺延"那拍
+      dp_id_pipedown_inst0_data = crtl_ir_inst2_data;      // **IR 级自己的 inst2 寄存器**
+      dp_id_pipedown_inst1_data = dp_id_pipedown_inst0_data_raw;
+      dp_id_pipedown_inst2_data = dp_id_pipedown_inst1_data_raw;
+  end
+  2'b10 : /* 三条道 1:1 直通 */
+  default: /* 全 X */
+endcase
+```
+
+`crtl_ir_inst2_data` 就是 IR 级自己的寄存器（`ct_idu_ir_dp.sv:399`）。于是"顺延"那拍，
+**一条已经改过名的指令被原样塞回 ID 窗口的车道 0**，下一拍在 IR 车道 0 上**又改一次名**。
+
+改名表的写使能（`ct_idu_ir_rt.sv:175-195`）只认
+`ctrl_rt_inst*_vld && !ctrl_ir_stall && !rt_recover_updt_vld && dp_rt_inst*_dst_vld`
+—— **"这一车道有没有一条要写寄存器的指令"，不认"这条已经改过名"** ⇒ 两次改名各从门房拿一个号。
+
+* `dst != src` 的指令：**无害**（第一圈那个号白烧一次，第二圈写进 RAT 的号与派遣记录一致）；
+* **`dst == src`**（`addi x4,x4,1` 这种自引用）：**致命** —— 第二圈读 RAT 时读到的是
+  **它自己第一圈刚写进去的号** ⇒ 派遣记录 `old_preg` = 一个**永远没人写**的号
+  ⇒ 源操作数从它读出前一个值。
+
+**触发条件很宽**：`ctrl_ir_pre_dis_pipedown2 = ir_pipedown_inst2_vld && (IR 三条道同类型都发不出去)`
+（`ct_idu_ir_ctrl.sv:392`）—— 只要 IR 里**连续三条同类**（例如三条 `addi`），第 3 条就顺延。
+beq 里正是如此：T304 的 IR = `0x120/0x124/0x128`（三条 addi）⇒ T305 顺延。
+**所以凡是"循环体里有自增计数器"的用例都会栽在这**（beq/bne/blt/bge 全是这个形状）。
+
+**实测指纹**（`make a910-difftest TEST=beq A910_DT_ARGS=+PROBE_X4`，T300 冲刷之后）
+
+```
+T304  写en=111 lreg=1,2,0   dst=63,1,0
+      ID: pc=0x12c,0x130,0x134 vld=111 → IR: pc=0x120,0x124,0x128    ← 三条 addi ⇒ 下拍顺延
+T305  写en=101 lreg=0,20,4  dst=0,2,59                              ← RAT[4] := 59
+      ID: pc=0x138,0x13c,0x140 vld=111 → IR: pc=0x12c,0x130,0x134
+T306  写en=110 lreg=4,5,5   dst=57,2,59                             ← 0x134 又被改一次名 RAT[4] := 57
+      ID: pc=0x140,0x144,0x148 vld=111 → IR: pc=0x134,0x138,0x13c    ← 0x134 从车道 2 回灌到车道 0
+T307  派: 0x134 l4 d57 o59                    ← old_preg=59 是它自己第一圈的产物, 没人写过
+T318  退休 0x134 x4<=1   （参考要 x4<=2）
+```
+
+对照 C910 原版 `ct_idu_id_dp.v:1582-1650`：ID→IR 数据路**只**从 ID 级各条道 +
+split/fence 重排取数（`id_normal_inst*` / `id_split_short*_inst*` / `id_split_long_inst*` /
+`fence_dp_inst*`），**从不把 IR 级寄存器的值回灌进 ID 窗口**。这一版是重写时自己造的型。
+
+**建议改法（二选一）**
+
+1. **顺延那拍别给 IR inst2 分号 / 别写表**：把 `inst2_write_en`（`ct_idu_ir_rt.sv:189`）与
+   `idu_rtu_ir_preg2_alloc_vld`（`ct_idu_ir_ctrl.sv:291`）一起门掉 `!ctrl_xx_is_inst0_sel[0]`。
+   反正它下一拍会在车道 0 上把 IR→IS 再走一遍，那一遍才是真的。
+   （注意：门掉分号请求后，我们 RTU 的门房是"不请求就保持"，不会被多抽一个号。）
+2. 或者照 C910 把"顺延"挪到 **IR→IS** 那一级（`ir_pipedown_inst*_vld` 那套，
+   `ct_idu_ir_ctrl.v:955-968`），让 preg 随 IS 的表项一起走，别在 ID→IR 边界上做。
+
+### 4.6.1 ✅ 改法 1 已在 worktree 里**验证通过**（2026-10-12）
+
+在 `0b9968a` 上开独立 worktree，按改法 1 打补丁（`ct_idu_ir_rt.inst2_write_en` 与
+`ct_idu_ir_ctrl.idu_rtu_ir_preg2_alloc_vld` 一起门掉 `!ctrl_xx_is_inst0_sel[0]`），
+跑 `make a910-difftest-all`，**跑完已还原、未进主干**。四组对照：
+
+| 跑的是哪棵树 | PASS | 新过 | 退化 |
+|---|---|---|---|
+| `HEAD` 基线 | 5 | — | — |
+| 仅 §6.5（我们自己那处） | 6 | `jalr` | 无 |
+| **仅 §4.6**（改法 1） | 5 | 无 | 无 |
+| **§4.6 + §6.5** | **10** | `beq, bge, blt, bne, jalr` | 无 |
+
+⇒ **两个 bug 互相遮蔽，单独修哪一个都解锁不了分支类。**
+实测指纹也印证了这一点：只修 §4.6 时，`beq` 的**第一个失配从第 89 条（`0x134` 读 x4）推进到第 96 条
+（`0x150 addi x2,x0,-1` 把 src0 读成 2 —— 典型的"两个指令共用一个 preg"）**，
+而那正是 §6.5 漏号/重发造成的形状；两处一起修，`beq/bne/blt/bge` 四条全过。
+
+⚠️ `bgeu` / `bltu` 仍然 FAIL（无符号比较那一类），**还没查**，别当成已经被这两条覆盖了。
+
+> 说明：§4.6 这条**只在 IDU 里**，按约定我们没动（只有验证补丁，已还原）。
+> §6.5 是我们自己的，已修并留在树上（见 `doc/rtu_preg_alloc_plan_zh.md` §7）。
+> §6 有 §4.6 的完整证据链。
+
 ## 5. 复现命令
 
 ```bash
@@ -232,9 +317,96 @@ make a910-difftest TEST=beq A910_DT_ARGS=+PROBE_BEU   # BIQ→BEU 那条路
 make a910-difftest TEST=beq A910_DT_ARGS=+PROBE_IFU   # 重定向前后 IFU/IDU 手上有什么
 make a910-difftest TEST=mul A910_DT_ARGS=+PROBE_PREG  # preg 分配握手
 make a910-difftest TEST=mul A910_DT_ARGS=+PROBE_WB    # 递交代 vs 写口 vs PRF 读口
+make a910-difftest TEST=beq A910_DT_ARGS=+PROBE_X4    # §4.6: 改名表写口 + ID/IR 窗口 + 派遣流
 
 # 整套
 make a910-difftest-all
 ```
 
 ⚠️ **本机时钟偏移**：VCS 会静默跳过重编译（删 `obj_a910_dt/simv` 即可）。
+
+---
+
+## 6. §4.6 的定位过程（2026-10-12）
+
+留一份"怎么走到那一步的"，免得下次重新踩。
+
+### 6.1 现象先被纠正了一次
+
+交接时说"退休流里少/多了一条"。用 `+TRACE` 一跑就否掉了：
+
+```
+T296 slot0 pc=0x134 x4<=0x1     ← 第一圈, 对的
+T318 slot0 pc=0x134 x4<=0x1     ← 第二圈, 该是 0x2
+```
+
+`0x134` **出现两次、位置也对**，只是第二圈的值少 1 ⇒ 不是"丢指令"，是
+**第二圈的 `addi` 把 x4 读成了 0**。反汇编确认 `0x134: addi x4,x4,1`（自引用）。
+
+### 6.2 逐层排除
+
+| 探针 | 结论 |
+|---|---|
+| `+PROBE_WB` | 写回口/PRF 读口无同拍竞争，**不是** §1 那条旁路的老问题 |
+| `+PROBE_X4`（新增）看 `AMT[4]` / `RAT[4]` | 冲刷 **T300** 把 RAT[4] 恢复成 32（正确，T301-T305 一直是 32）；**T306 变成 59、T307 变成 57** |
+
+⇒ 不是"恢复错了"，是**恢复之后又被两条改名写脏了**。
+
+### 6.3 关键一跳：把 IR 的写口和 ID 的窗口并排打
+
+`+PROBE_X4` 里加了改名表写口（`ct_idu_ir_rt.{inst*_write_en,dp_rt_inst*_dst_*}`）和
+`dp_ir_inst*_pc` / `dp_id_pipedown_inst*_pc` / `id_ir_inst*_vld`：
+
+* **ID 窗口每拍前进 3，`0x134` 只出现一次**（T304 的车道 2）；
+* **IR 窗口里 `0x134` 出现两次**：T305 车道 2、T306 车道 0；
+* 「IR 车道 0(T306) = ID 窗口里根本没有的值」⇒ 只能来自 `ct_idu_id_dp` 那个
+  `2'b01` 分支的 `crtl_ir_inst2_data` 回灌。
+
+### 6.4 反向验证（已做，结论见 §4.6.1）
+
+改法 1 是一行的量级，已在 worktree 里验过：**只修它没用，得和 §6.5 一起修**，
+`beq/bne/blt/bge` 才全过（5 → 10 PASS）。详细对照表在 §4.6.1。
+
+**给 lucy 的复现步骤**（补丁本身已还原，需要重打）：
+
+1. `ct_idu_ir_rt.sv`：加一根输入（ct_idu_top 里接 `ctrl_xx_is_inst0_sel[0]`），
+   `inst2_write_en` 加 `&& !<那根>`；
+2. `ct_idu_ir_ctrl.sv:291`：`idu_rtu_ir_preg2_alloc_vld` 加 `&& !ctrl_xx_is_inst0_sel[0]`；
+3. **同时**要我们这边先落 §6.5（`doc/rtu_preg_alloc_plan_zh.md` §7）—— 否则第 96 条还会栽。
+
+### 6.5 顺带挖出的、**我们自己**的一个 bug（未修）
+
+追 §4.6 时一起看到的，与 §4.6 相互独立。**在 `RTU_idu_lsu_adapter.v:258-267`。**
+
+```verilog
+assign ren_preg_req[1:0] = {1'b0, idu_rtu_ir_preg0_alloc_vld}
+                         + {1'b0, idu_rtu_ir_preg1_alloc_vld}
+                         + {1'b0, idu_rtu_ir_preg2_alloc_vld};   // ← 这是**求和**, 不是前缀长度
+assign ren_preg_req_lreg0/1/2 = 5'd1;   // ← 恒非零 ⇒ RTU 里那条 x0 门控被架空
+```
+
+注释里写的假设是"IDU 三路请求天然是程序序前缀 ⇒ 数个数就是前缀长度"。**这个假设不成立**：
+`idu_rtu_ir_preg{k}_alloc_vld = ir_inst{k}_vld && !stall && dst_vld && !dst_x0`，
+每条车道**各自**看自己要不要写寄存器 —— 车道 0 是"写 x0 的 nop/分支"时它就是 0，而车道 2 照样可以是 1。
+
+实测（`+PROBE_X4`，`ALLOC:` 那行，beq，T300 附近）：
+
+```
+IDU 请求=110 (vld2,vld1,vld0) → ren_preg_req=2   ← 非前缀: 真请求者是车道 1,2
+IDU 请求=101                  → ren_preg_req=2   ← 非前缀: 真请求者是车道 0,2
+IDU 请求=011                  → ren_preg_req=2   ← 这个才是前缀, 只有它是对的
+tap vld=111 num=62,34,53 → 57,33,53              ← 101 那拍 tap2 的 53 **没换**, 而车道 2 正是请求者
+free_cnt 长期在 16~21 徘徊 (复位后是 32)
+```
+
+后果两个，都是池子层面的：
+1. **漏号**：`take_lane[0]` 被判成 1 而车道 0 根本没请求 ⇒ 门房把 `tap_num0` 换掉，
+   旧号 M 既没被取走也不再挂在任何门房里 ⇒ **永久停在 WF_ALLOC**（年龄回收已删 ⇒ 没人救它）。
+2. **重发**：真请求者那一路的门房**没换** ⇒ 同一路连着请求两次（且中间那条还没派遣）会拿到**同一个号**。
+   现在靠 `tap_hit`（派遣认领时才补号）兜着，属于"晚一拍才补"，窗口是开的。
+
+**改法**：`ren_preg_req` 的语义得从"前缀长度 [1:0]"换成**三路各自的请求向量 [2:0]**，
+`RTU_preg.take_lane[k]` 直接吃第 k 位（C910 本来就是每路独立：
+`ct_rtu_pst_preg.v:6995` 的 `alloc_preg{k}_invalid` 各自看 `idu_rtu_ir_preg{k}_alloc_vld`）。
+这条会动 §6.0 的接口，`doc/rtu_if_*.xlsx` 是生成的 ⇒ 要改 `gen_rtu_if_xlsx.py` 再重跑。
+**因为 §4.6 才是 beq 的拦路虎，这条没有急迫性，等定了一起做。**

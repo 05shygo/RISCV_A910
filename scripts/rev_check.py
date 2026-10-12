@@ -194,11 +194,19 @@ def env_clean():
 
 
 UNIT_SIMV = os.path.join(ROOT, "obj_unit_rtu", "simv")
+# ⚠️ 2026-10-12 增: 适配层单元台是**另一个 build dir / 另一份 TB**
+#    (`make rtu-adapter-unit`, `obj_unit_rtu_adptr/`, tb_rtu_adapter.sv)。
+#    它的失败签名与 tb_rtu_rob 不同 (那边是 "*** FAIL", 这边是 "ADAPTER UNIT: FAIL"
+#    —— 用 `classify_unit` 的老判据会**落进 PASS 分支**, 变异会假幸存)。
+ADAPTER_SIMV = os.path.join(ROOT, "obj_unit_rtu_adptr", "simv")
+UNIT_SIMVS = {"unit": UNIT_SIMV, "adapter_unit": ADAPTER_SIMV}
+# 清单里 `tests:` 能写的单元台测试名 → (build kind, run_unit 的 kind)
+UNIT_TESTS = {"rtu_unit": "unit", "rtu_adapter_unit": "adapter_unit"}
 
 
 def build(tag, kind="core"):
     log = os.path.join(LOG_DIR, "build_%s.log" % tag)
-    if kind == "unit":
+    if kind in UNIT_SIMVS:
         # 只编不跑: rtu-unit 那条规则会顺带跑仿真, 这里只要 simv。
         # ⚠️ 必须**先删掉 simv**: 本机的文件时间戳会漂到未来 (make 会警告
         #    "has modification time NNN s in the future"), 于是 `make` 认为
@@ -206,12 +214,13 @@ def build(tag, kind="core"):
         #    没进仿真, 四条全部"幸存"(实测踩过)。
         #   还要清掉 VCS 自己的增量时间戳: 删了 simv 但 VCS 认为"设计没变"
         #   时会直接跳过链接 —— 于是既没有 simv 也不报错, 基线当场 FileNotFound。
-        for f in (UNIT_SIMV, UNIT_SIMV + ".daidir/.vcs.timestamp"):
+        sv = UNIT_SIMVS[kind]
+        for f in (sv, sv + ".daidir/.vcs.timestamp"):
             if os.path.exists(f):
                 os.unlink(f)
         # ⚠️ 目标名必须是**绝对路径**: Makefile 里是 `$(PWD)/obj_unit_rtu/simv`,
         #    写成相对名 make 会报 "No rule to make target"。
-        cmd = ["make", UNIT_SIMV]
+        cmd = ["make", sv]
     else:
         cmd = ["make", "IFU=" + IFU, "BUILD_DIR=" + BUILD_DIR, "build"]
     with open(log, "w") as fh:
@@ -220,23 +229,36 @@ def build(tag, kind="core"):
     return rc
 
 
-def run_unit(tag, seed=12345678, ninstr=200):
+def run_unit(tag, seed=12345678, ninstr=200, kind="unit"):
     """单元单测台。判据与整核同构: 不过 -> 非 0 退出 (TB 末尾 $fatal)。
-    抓到的签名 = 任意一条 *** FAIL (逐拍比对/不变量/覆盖)。"""
-    log = os.path.join(LOG_DIR, "%s_rtu_unit.log" % tag)
-    args = [UNIT_SIMV, "+vcs+lic+wait", "+SEED=%d" % seed,
-            "+NINSTR=%d" % ninstr, "-exitstatus", "-l", log]
+    抓到的签名 = 任意一条 *** FAIL (逐拍比对/不变量/覆盖)。
+
+    `kind="adapter_unit"` 走适配层那个台子 —— **不吃 +SEED/+NINSTR**
+    (它是纯定向激励, 没有随机)，只需要 simv 路径换掉。
+    """
+    sv = UNIT_SIMVS[kind]
+    log = os.path.join(LOG_DIR, "%s_%s.log" % (tag, kind))
+    if kind == "adapter_unit":
+        args = [sv, "+vcs+lic+wait", "-exitstatus", "-l", log]
+    else:
+        args = [sv, "+vcs+lic+wait", "+SEED=%d" % seed,
+                "+NINSTR=%d" % ninstr, "-exitstatus", "-l", log]
     subprocess.call(args, cwd=ROOT,
                     stdout=open(os.devnull, "w"), stderr=subprocess.STDOUT,
                     env=env_clean())
     txt = open(log, encoding="utf-8", errors="replace").read() if os.path.exists(log) else ""
-    return classify_unit(txt), txt, log
+    return classify_unit(txt, kind), txt, log
 
 
-def classify_unit(txt):
+def classify_unit(txt, kind="unit"):
     if "ALL PASS" in txt:
         return "PASS"
     if "*** FAIL" in txt or "ERRORS" in txt:
+        return "TestPoint"
+    # ⚠️ 2026-10-12: 适配层那个台的失败签名是 `RTU-ADAPTER UNIT: FAIL — N 条判据不过`
+    #    (TB 里逐条打 `FAIL: ...` 然后 $fatal), 上面两条判据**一条都不命中**
+    #    ⇒ 会落进 UNKNOWN。显式认下来, 否则变异假幸存。
+    if "UNIT: FAIL" in txt:
         return "TestPoint"
     return "UNKNOWN"
 
@@ -377,8 +399,8 @@ def main():
         if build("base_" + k, k) != 0:
             print("基线编译失败 (%s), 退出" % k); return 2
     for t in all_tests:
-        if t == "rtu_unit":
-            res, txt, _ = run_unit("base")
+        if t in UNIT_TESTS:
+            res, txt, _ = run_unit("base", kind=UNIT_TESTS[t])
         else:
             res, txt, _ = run_test(t, "base")
         base[t] = (res, metrics(txt or ""))
@@ -445,8 +467,8 @@ def run_mutations(muts, base):
                 continue
             results = {}
             for t in m.tests:
-                if t == "rtu_unit":
-                    res, txt, _ = run_unit(m.mid)
+                if t in UNIT_TESTS:
+                    res, txt, _ = run_unit(m.mid, kind=UNIT_TESTS[t])
                 else:
                     res, txt, _ = run_test(t, m.mid)
                 if t in BENCH_TESTS:

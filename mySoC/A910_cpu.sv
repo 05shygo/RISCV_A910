@@ -363,10 +363,7 @@ module A910_cpu
   // ---------------------------------------------------------------------------
   // RTU ↔ IDU/LSU: 适配层 RTU 侧的其余端口
   // ---------------------------------------------------------------------------
-  logic [  1:0] ren_preg_req;
-  logic [  4:0] ren_preg_req_lreg0;
-  logic [  4:0] ren_preg_req_lreg1;
-  logic [  4:0] ren_preg_req_lreg2;
+  logic [  2:0] ren_preg_req;
   logic [`RTU_PREG_W-1:0] rtu_preg_alloc0;
   logic [`RTU_PREG_W-1:0] rtu_preg_alloc1;
   logic [`RTU_PREG_W-1:0] rtu_preg_alloc2;
@@ -1422,9 +1419,6 @@ module A910_cpu
 
     // ---- RTU 侧 ----
     .ren_preg_req                       (ren_preg_req),
-    .ren_preg_req_lreg0                 (ren_preg_req_lreg0),
-    .ren_preg_req_lreg1                 (ren_preg_req_lreg1),
-    .ren_preg_req_lreg2                 (ren_preg_req_lreg2),
     .rtu_preg_alloc0                    (rtu_preg_alloc0),
     .rtu_preg_alloc1                    (rtu_preg_alloc1),
     .rtu_preg_alloc2                    (rtu_preg_alloc2),
@@ -1580,9 +1574,6 @@ module A910_cpu
     // 门房语义: 号提前备在门口(寄存器), 请求那拍当拍取走。接法在适配层里,
     // 这里 1:1。
     .ren_preg_req               (ren_preg_req),
-    .ren_preg_req_lreg0         (ren_preg_req_lreg0),
-    .ren_preg_req_lreg1         (ren_preg_req_lreg1),
-    .ren_preg_req_lreg2         (ren_preg_req_lreg2),
     .rtu_preg_alloc0            (rtu_preg_alloc0),
     .rtu_preg_alloc1            (rtu_preg_alloc1),
     .rtu_preg_alloc2            (rtu_preg_alloc2),

@@ -55,8 +55,7 @@ module tb_rtu_rob;
     always #5 clk = ~clk;
 
     // ===================== DUT 端口 =====================
-    logic [1:0]  ren_preg_req;
-    logic [4:0]  ren_lreg0, ren_lreg1, ren_lreg2;
+    logic [2:0]  ren_preg_req;   // 2026-10-12 起: 逐路请求向量 (bit k = 车道 k)
     wire  [6:0]  alloc0, alloc1, alloc2;
     wire         alloc_vld0, alloc_vld1, alloc_vld2;
     wire  [1:0]  free_cnt_o;
@@ -153,8 +152,6 @@ module tb_rtu_rob;
         .lsu_replay_vld     (rp_pend),      // ⚠️ 直接接挂起位: 整拍稳定, 见 gen_replay
         .lsu_replay_iid     (rp_pend_iid),
         .ren_preg_req(ren_preg_req),
-        .ren_preg_req_lreg0(ren_lreg0), .ren_preg_req_lreg1(ren_lreg1),
-        .ren_preg_req_lreg2(ren_lreg2),
         .rtu_preg_alloc0(alloc0), .rtu_preg_alloc1(alloc1), .rtu_preg_alloc2(alloc2),
         .rtu_preg_alloc_vld0(alloc_vld0), .rtu_preg_alloc_vld1(alloc_vld1),
         .rtu_preg_alloc_vld2(alloc_vld2),
@@ -386,10 +383,11 @@ module tb_rtu_rob;
     wire all_need_vld = (!need_num[0] || alloc_vld0)
                      && (!need_num[1] || alloc_vld1)
                      && (!need_num[2] || alloc_vld2);
-    assign ren_preg_req = ((dstate == D_REQ) && !disp_stall && all_need_vld) ? pl_n[1:0] : 2'd0;
-    assign ren_lreg0    = pl_lreg[0];
-    assign ren_lreg1    = pl_lreg[1];
-    assign ren_lreg2    = pl_lreg[2];
+    // ⚠️ 2026-10-12: 摆上口的是 **`need_num` 那根逐路向量本身**, 不再是"前缀计数 `pl_n`"。
+    //    旧写法把 `pl_n`(要号的车道**条数**)当前缀长度传下去 —— 而本 TB 自己生成的计划
+    //    就可能不是前缀 (pl_lreg[k]==0 的车道不要号), 于是 DUT 判错"哪一路取走了号"。
+    //    现在两边同源: `need_num` 既是"要不要号"也是"取不取走"。
+    assign ren_preg_req = ((dstate == D_REQ) && !disp_stall && all_need_vld) ? need_num : 3'd0;
 
     // ---- 连续驱动: 派遣 ----
     // 需要 preg 的车道必须拿到编号; dst_lreg==0 的车道不需要 (编号按 §6.0 是 don't-care)
@@ -1022,7 +1020,7 @@ module tb_rtu_rob;
                     (alloc_vld1 && (alloc1 == x_dpr[ii])) ||
                     (alloc_vld2 && (alloc2 == x_dpr[ii])))
                     begin
-                        err($sformatf("分配器把在途指令 %0d 的 dst_preg (p%0d) 又发了一遍 | st=%0d rfwe=%b lreg=%0d | 本拍 alloc=%b/%0d,%b/%0d,%b/%0d req=%0d",
+                        err($sformatf("分配器把在途指令 %0d 的 dst_preg (p%0d) 又发了一遍 | st=%0d rfwe=%b lreg=%0d | 本拍 alloc=%b/%0d,%b/%0d,%b/%0d req=%b",
                                       ii, x_dpr[ii], dut.u_preg.st[x_dpr[ii]], x_rfwe[ii], x_lreg[ii],
                                       alloc_vld0, alloc0, alloc_vld1, alloc1, alloc_vld2, alloc2,
                                       ren_preg_req));
@@ -1100,7 +1098,7 @@ module tb_rtu_rob;
                 need3 = (fpre3 >= 3) ? 3 : fpre3;
                 got3  = alloc_vld0 + alloc_vld1 + alloc_vld2;
                 if (got3 < need3)
-                    err($sformatf("门口没备上号: 上一拍 FREE=%0d ⇒ 至少该备 %0d 路, 实际 %0d 路 (vld=%b%b%b) | 本拍 req=%0d",
+                    err($sformatf("门口没备上号: 上一拍 FREE=%0d ⇒ 至少该备 %0d 路, 实际 %0d 路 (vld=%b%b%b) | 本拍 req=%b",
                                   fpre3, need3, got3, alloc_vld2, alloc_vld1, alloc_vld0, ren_preg_req));
             end
 

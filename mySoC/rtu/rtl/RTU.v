@@ -36,7 +36,9 @@ module RTU (
 
     // ===================== §6.0 物理寄存器分配握手 (门房语义, 2026-10-07) =========
     // 自由池与 96 位优先编码器都在 RTU 侧, 所以是"你要、我给"。车道语义**写死**:
-    // `ren_preg_req = n` 表示**车道 0..n-1 是本次的请求者**, 车道 n..2 是 don't-care。
+    // `ren_preg_req[k] = 1` 表示**车道 k 本拍把门口的号取走了** —— 逐路一位。
+    // ⚠️ 2026-10-12: 原来是"程序序前缀长度"的 2 位编码, 装不下非前缀的请求模式
+    //    (车道 0 写 x0 而车道 2 要号), 会漏号 + 可能重发。见 `RTU_preg.take_lane` 那段。
     //
     // 时序 = **C910 的"门房备号"** (`ct_rtu_pst_preg.v:7376-7393`):
     //   * `rtu_preg_alloc*` / `_vld*` 都是**寄存器** —— 池子提前把一个号备在门口;
@@ -51,10 +53,7 @@ module RTU (
     //   ⚠️ 消费者必须守一条契约: **请求 ⟺ 取走**。请求了却不派遣也不冲刷,
     //      那个号会永久停在 WF_ALLOC (年龄回收已删)。C910 IDU 天然满足
     //      (请求、RAT 写、进 IS 由同一个 `!ctrl_ir_stall` 门控)。
-    input  wire [1:0]  ren_preg_req,        // 本拍要几个新 preg (0..3)
-    input  wire [4:0]  ren_preg_req_lreg0,  // 请求 0 的 dst 逻辑寄存器 (判 x0 用)
-    input  wire [4:0]  ren_preg_req_lreg1,  // 请求 1 的 —— lreg==0 的那一路不给编号
-    input  wire [4:0]  ren_preg_req_lreg2,  // 请求 2 的
+    input  wire [2:0]  ren_preg_req,        // 逐路取走: bit k = 车道 k 本拍取走了号
     output wire [`RTU_PREG_W-1:0] rtu_preg_alloc0,     // 车道 0 门口备着的号 (寄存器)
     output wire [`RTU_PREG_W-1:0] rtu_preg_alloc1,     // 车道 1 门口备着的
     output wire [`RTU_PREG_W-1:0] rtu_preg_alloc2,     // 车道 2 门口备着的
@@ -743,9 +742,6 @@ module RTU (
         .cpu_clk            (cpu_clk),
         .cpu_rst            (cpu_rst),
         .ren_preg_req       (ren_preg_req),
-        .ren_preg_req_lreg0 (ren_preg_req_lreg0),
-        .ren_preg_req_lreg1 (ren_preg_req_lreg1),
-        .ren_preg_req_lreg2 (ren_preg_req_lreg2),
         .disp_vld           (disp_acc),
         .disp_dst_preg0     (disp0_dst_preg),
         .disp_dst_preg1     (disp1_dst_preg),

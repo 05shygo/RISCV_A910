@@ -189,3 +189,93 @@
   但 RTU 这侧**没有任何东西能发现**消费者违约。
 * **`free_cnt` 比真实可用数少 ≤3**：如果将来有人按它判断"还能跑多深"，
   要把 tap 那三个算回去。
+
+---
+
+## 7. ⚠️ 2026-10-12 修正：`ren_preg_req` 的编码换了
+
+**上面 §2/§3 描述的"程序序前缀长度"编码是错的，已废弃。** 这一节是现在的口径。
+
+### 7.1 错在哪
+
+原编码把 `ren_preg_req` 写成 2 位"前缀长度"（"车道 0..n-1 是请求者"），
+由适配层（`RTU_idu_lsu_adapter.v`）拿 IDU 三路 `idu_rtu_ir_preg{k}_alloc_vld` **求和**编出来。
+理由写的是"IDU 的停顿链保证请求是前缀"。**这个理由不成立**：
+
+```verilog
+idu_rtu_ir_preg{k}_alloc_vld = ir_inst{k}_vld && !ctrl_ir_stall
+                               && dp_ctrl_ir_inst{k}_dst_vld && !dp_ctrl_ir_inst{k}_dst_x0
+```
+
+—— 是**每条车道各自**判的。同一根 `ctrl_ir_stall` 只保证"大家一起停"，
+不保证"要号的都在前面"。车道 0 是"写 x0 的 nop / 分支"时它是 0，而车道 2 照样可以是 1。
+
+实测（beq，`+PROBE_X4` 的 `ALLOC:` 行）：
+
+```
+IDU 请求=110 (vld2,vld1,vld0) → ren_preg_req=2   ← 非前缀: 真请求者是车道 1,2
+IDU 请求=101                  → ren_preg_req=2   ← 非前缀: 真请求者是车道 0,2
+tap vld=111 num=62,34,53 → 57,33,53              ← 101 那拍 tap2 的 53 没换, 而车道 2 正是请求者
+free_cnt 长期 16~21 (复位后 32)
+```
+
+两个后果：
+1. **漏号**：被误判成"取走"的那一路门房白换一次号，旧号既没被取走、也不再挂在任何门房里
+   ⇒ **永久停在 WF_ALLOC**（年龄回收已删，没人救）。
+2. **重发**：真请求者那一路门房**没换** ⇒ 同一路连着请求两次（中间那条还没派遣）
+   会拿到**同一个号**。现在靠 `tap_hit`（派遣认领时才补号）晚一拍兜着，窗口是开的。
+
+### 7.2 现在的编码
+
+`ren_preg_req` 从 `[1:0] 前缀长度` 换成 **`[2:0] 逐路请求向量**（bit k = 车道 k 本拍取走号）。
+`RTU_preg.take_lane[k] = ren_preg_req[k]`，适配层直接透传三路 vld。
+C910 本来就是逐路独立的（`ct_rtu_pst_preg.v:6995` 的 `alloc_preg{k}_invalid`
+各自只看 `idu_rtu_ir_preg{k}_alloc_vld`）。
+
+**顺带删掉了 `ren_preg_req_lreg0/1/2`** —— 那三根恒填 `5'd1`，本意是给 RTU 判 x0 用的，
+但 x0 的排除 IDU 侧在产生请求时就做掉了（`&& !dst_x0`），恒常量把 RTU 里那条门控整个架空。
+现在没有它们了，x0 语义由"IDU 不发请求"这一条单独承担。
+
+### 7.3 改动面
+
+`RTU_preg.v` / `RTU.v` / `RTU_subsys.v`（生成）/ `RTU_idu_lsu_adapter.v` /
+`A910_cpu.sv` / `mycpu.v`（恒接 `3'd0`）/ 两个单元台 / `tb_a910_{smoke,difftest}.sv` 的探针 /
+`scripts/gen_rtu_if_xlsx.py` + `doc/rtu_接口对照表.csv`。
+
+### 7.4 验收
+
+* `make rtu-adapter-unit`：新增**两个非前缀点**（`(0,0,1)` 与 `(1,0,1)`）。
+  旧台子只查前缀点（`001/011/111`），而**前缀点上"求和"与"向量"恰好同值** ⇒ 装不住这个 bug，
+  这就是它潜伏下来的原因。
+* **变异自检 `R10 rtu_alloc_req_prefix_assumed`**（把适配层退回求和）：
+  `python3 scripts/rev_check.py R10` → **CAUGHT(TestPoint)**，4 条判据红，幸存 0。
+  ⚠️ 这条变异**整核 difftest 抓不住**（不改架构结果，只漏号/重发，要池子快空才显形），
+  所以它的归宿只能是适配层单元台。`scripts/rev_check.py` 为此新开了
+  `build: adapter_unit` / `tests: rtu_adapter_unit` 一档（顺带补了
+  `classify_unit` 对适配层失败签名的识别 —— 它的 `RTU-ADAPTER UNIT: FAIL` 原来
+  一条判据都不命中，会落进 `UNKNOWN` 而**假幸存**）。
+* `make rtu-unit`（PREG=64 与 96 双档）全绿。
+* `make rtu-subsys-elab` / `make a910-elab` 全绿（见下）。
+* **整核实测对照**（`make a910-difftest TEST=beq A910_DT_ARGS=+PROBE_X4`，看 `ALLOC:` 行）：
+
+  | | 改前 | 改后 |
+  |---|---|---|
+  | `请求=100`（只有车道 2 要号） | `ren_preg_req=2` ← 判成车道 0,1 | `ren_preg_req=100` 逐位一致 |
+  | `请求=101` | `ren_preg_req=2` | 逐位一致 |
+  | tap2（真请求者） | **不换**（53 一直卡着） | 跟着换 |
+  | tap0（没请求那路） | 白换（旧号漏掉） | 不动 |
+  | `free_cnt` | 长期 16~21，不回升 | 24→26，冲刷后回 32 |
+
+### 7.5 附带修好的：生成器把 preg 网落成 1 位
+
+`scripts/gen_rtu_top.py` 里 `GEO` 表**没有 `RTU_PREG_W`**，而且 `resolve_width`
+代换完残留一个反引号（`` `6-1:0 ``）过不了白名单 ⇒ 所有 `` `RTU_PREG_W-1:0 `` 的**内部网**
+都落进 `width_num → None` 的兜底 ⇒ 生成 `wire rtu_preg_alloc0;` 这种 **1 位隐式网**、
+接到 6 位端口上被**静默截断**。这正是该文件头自己警告的那类坑，而生成器自己犯了。
+
+同一处还修了：`parse_ports` 原来只剥 `//` 注释、不剥 `/* */` ——
+同事把不再用的 `bus_arb_*_grnt` / `rb_biu_*` 整段块注释掉了，生成器照样接出去
+⇒ `Error-[UPIMI-E] Undefined port` ×10 ⇒ **`make rtu-subsys-elab` 自 2026-10-10 起一直是红的**。
+
+修完：`rtu-subsys-elab` Error=0 / IWNF=0 / **PCWM-W=0**（原 26，Makefile 里"预期 5"那句也一并
+改成 0 —— 那 5 条"有意截断"是 2026-10-10 端口位宽随档之前的旧口径）。

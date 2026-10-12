@@ -350,9 +350,8 @@ module tb_a910_smoke;
                dut.u_ct_idu_top.x_ct_idu_ir_ctrl.ctrl_ir_pre_dis_inst0_vld,
                dut.u_ct_idu_top.ctrl_dp_dis_inst0_vld);
       // RTU 的预分配握手 (门房模型): IDU 报请求几条, RTU 给号
-      $display("          RTU分配: req=%b lreg=%0d,%0d,%0d | 给号=%0d(vld%b) %0d(vld%b) %0d(vld%b)",
-               dut.ren_preg_req, dut.ren_preg_req_lreg0, dut.ren_preg_req_lreg1,
-               dut.ren_preg_req_lreg2,
+      $display("          RTU分配: req=%b | 给号=%0d(vld%b) %0d(vld%b) %0d(vld%b)",
+               dut.ren_preg_req,
                dut.rtu_idu_alloc_preg0, dut.rtu_idu_alloc_preg0_vld,
                dut.rtu_idu_alloc_preg1, dut.rtu_idu_alloc_preg1_vld,
                dut.rtu_idu_alloc_preg2, dut.rtu_idu_alloc_preg2_vld);
@@ -549,7 +548,7 @@ module tb_a910_smoke;
   always @(posedge clk) begin
     if (!rst && $test$plusargs("PROBE_DISP") && disp_probe_lines < 200) begin
       if (dut.idu_rtu_disp0_vld === 1'b1 || dut.idu_rtu_disp1_vld === 1'b1
-          || dut.idu_rtu_disp2_vld === 1'b1 || dut.ren_preg_req !== 2'b00) begin
+          || dut.idu_rtu_disp2_vld === 1'b1 || dut.ren_preg_req !== 3'b000) begin
         disp_probe_lines = disp_probe_lines + 1;
         $display("  [DISP] T%0d vld=%b%b%b | pc0=%08x pc1=%08x pc2=%08x",
                  cycles, dut.idu_rtu_disp2_vld, dut.idu_rtu_disp1_vld, dut.idu_rtu_disp0_vld,
@@ -560,9 +559,8 @@ module tb_a910_smoke;
                  dut.idu_rtu_disp0_dst_lreg, dut.idu_rtu_disp1_dst_lreg,
                  dut.idu_rtu_disp2_dst_lreg,
                  dut.idu_rtu_disp0_flags, dut.idu_rtu_disp1_flags, dut.idu_rtu_disp2_flags);
-        $display("         req=%b lreg_req=%0d,%0d,%0d alloc_vld(IDU)=%b%b%b | 给号=%0d(%b),%0d(%b),%0d(%b)",
-                 dut.ren_preg_req, dut.ren_preg_req_lreg0, dut.ren_preg_req_lreg1,
-                 dut.ren_preg_req_lreg2,
+        $display("         req=%b alloc_vld(IDU)=%b%b%b | 给号=%0d(%b),%0d(%b),%0d(%b)",
+                 dut.ren_preg_req,
                  dut.idu_rtu_ir_preg2_alloc_vld, dut.idu_rtu_ir_preg1_alloc_vld,
                  dut.idu_rtu_ir_preg0_alloc_vld,
                  dut.rtu_idu_alloc_preg0, dut.rtu_idu_alloc_preg0_vld,

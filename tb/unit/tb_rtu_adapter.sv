@@ -5,7 +5,7 @@
 //==========================================================
 // 【这个台子守什么】
 // 适配层不是纯接线 —— 它有**四类有真逻辑的变换**, 每一类都能静默出错:
-//   1. `ren_preg_req` 的"三路独立 vld → 程序序前缀计数";
+//   1. `ren_preg_req` 的"三路独立 vld → **逐路请求向量**" (2026-10-12 前是前缀计数);
 //   2. **映射恢复表的逐槽重排** (32×7 → 32×6)。这是最容易写错的一处:
 //      写成"切低位"会把 32 个槽整体错位, 而**功能测试几乎看不出来**
 //      (恢复表只在冲刷时用, 而且要正好冲在改过映射的指令上才暴露);
@@ -48,7 +48,7 @@ module tb_rtu_adapter;
   // 其它异常源
   reg oev=0; reg [6:0] oei=0; reg [4:0] oec=0; reg [31:0] oet=0;
   // RTU 侧
-  wire [1:0] req; wire [4:0] rl0,rl1,rl2;
+  wire [2:0] req;
   reg  [6:0] pa0=0,pa1=0,pa2=0; reg pav0=0,pav1=0,pav2=0;
   wire dv0,dv1,dv2; wire [31:0] pc0,pc1,pc2; wire [24:0] ck0,ck1,ck2;
   wire [4:0] lr0,lr1,lr2; wire w0,w1,w2;
@@ -96,7 +96,7 @@ module tb_rtu_adapter;
     .lsu_rtu_wb_pipe4_expt_vld(p4e), .lsu_rtu_wb_pipe4_expt_addr(p4a),
     .lsu_rtu_wb_pipe4_flush(p4f), .lsu_rtu_wb_pipe4_spec_fail(p4s),
     .other_expt_vld(oev), .other_expt_iid(oei), .other_expt_cause(oec), .other_expt_tval(oet),
-    .ren_preg_req(req), .ren_preg_req_lreg0(rl0), .ren_preg_req_lreg1(rl1), .ren_preg_req_lreg2(rl2),
+    .ren_preg_req(req),
     .rtu_preg_alloc0(pa0), .rtu_preg_alloc1(pa1), .rtu_preg_alloc2(pa2),
     .rtu_preg_alloc_vld0(pav0), .rtu_preg_alloc_vld1(pav1), .rtu_preg_alloc_vld2(pav2),
     .disp0_vld(dv0), .disp0_pc(pc0), .disp0_chk(ck0), .disp0_dst_lreg(lr0),
@@ -124,12 +124,25 @@ module tb_rtu_adapter;
   initial begin
     rst = 1; repeat(4) @(posedge clk); rst = 0; @(posedge clk);
     if (cpurst_b !== 1'b1) begin errs=errs+1; $display("FAIL: cpurst_b 应为 1, 实为 %b", cpurst_b); end
-    // 请求计数
-    a0v=1; a1v=0; a2v=0; #1;
-    if (req !== 2'd1) begin errs=errs+1; $display("FAIL: req=%0d 期望 1", req); end
-    a1v=1; #1; if (req !== 2'd2) begin errs=errs+1; $display("FAIL: req=%0d 期望 2", req); end
-    a2v=1; #1; if (req !== 2'd3) begin errs=errs+1; $display("FAIL: req=%0d 期望 3", req); end
+    // 请求向量: **逐路直传** (2026-10-12 起)。
+    // ⚠️ 这里以前查的是"三路独立 vld → 程序序前缀计数"(求和)。那条编码装不下
+    //    **非前缀**的请求模式 —— 而 IDU 的 `alloc_vld{k}` 是每条车道各自判的
+    //    (`ir_inst{k}_vld && !stall && dst_vld && !dst_x0`), 车道 0 写 x0 不影响
+    //    车道 2 要号 ⇒ 非前缀是常态。所以下面**专门补了 (0,0,1) 与 (1,0,1) 两个
+    //    非前缀点**: 旧写法会把 (0,0,1) 报成 1(判成车道 0 取走了), 这条判据抓得住。
+    a0v=0; a1v=0; a2v=0; #1;
+    if (req !== 3'b000) begin errs=errs+1; $display("FAIL: req=%b 期望 000", req); end
+    a0v=1; #1; if (req !== 3'b001) begin errs=errs+1; $display("FAIL: req=%b 期望 001", req); end
+    a1v=1; #1; if (req !== 3'b011) begin errs=errs+1; $display("FAIL: req=%b 期望 011", req); end
+    a2v=1; #1; if (req !== 3'b111) begin errs=errs+1; $display("FAIL: req=%b 期望 111", req); end
+    // 非前缀 1: 只有车道 2 要号 (车道 0 是写 x0 的 nop / 分支)
+    a0v=0; a1v=0; #1;
+    if (req !== 3'b100) begin errs=errs+1; $display("FAIL: 非前缀 (0,0,1): req=%b 期望 100", req); end
+    // 非前缀 2: 车道 0 与车道 2 要号, 中间那条不要
+    a0v=1; a1v=0; a2v=1; #1;
+    if (req !== 3'b101) begin errs=errs+1; $display("FAIL: 非前缀 (1,0,1): req=%b 期望 101", req); end
     a0v=0;a1v=0;a2v=0; #1;
+    if (req !== 3'b000) begin errs=errs+1; $display("FAIL: req=%b 期望 000", req); end
     // 恢复表重排: 槽 3 放 0x2A, 槽 0 放 0x15
     // ⚠️ 覆盖率的真话: 本台**固定在 PREG=64** 编译 (IDU 的 PRF 是 64 项, 有守卫拦着),
     //    而 64 档下 RTU 侧也是 32×6 ⇒ 这段"逐槽重排"**退化成恒等**。也就是说

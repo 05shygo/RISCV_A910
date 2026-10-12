@@ -28,6 +28,9 @@
 
 module RTU_subsys (
   input  wire beu_redirect_vld                      ,
+  input  wire biu_lsu_ar_ready                      ,
+  input  wire biu_lsu_aw_vb_grnt                    ,
+  input  wire biu_lsu_aw_wmb_grnt                   ,
   input  wire [3:0] biu_lsu_b_id                          ,
   input  wire [1:0] biu_lsu_b_resp                        ,
   input  wire biu_lsu_b_vld                         ,
@@ -36,12 +39,8 @@ module RTU_subsys (
   input  wire biu_lsu_r_last                        ,
   input  wire [1:0] biu_lsu_r_resp                        ,
   input  wire biu_lsu_r_vld                         ,
-  input  wire bus_arb_rb_ar_grnt                    ,
-  input  wire bus_arb_rb_ar_sel                     ,
-  input  wire bus_arb_vb_aw_grnt                    ,
-  input  wire bus_arb_vb_w_grnt                     ,
-  input  wire bus_arb_wmb_aw_grnt                   ,
-  input  wire bus_arb_wmb_w_grnt                    ,
+  input  wire biu_lsu_w_vb_grnt                     ,
+  input  wire biu_lsu_w_wmb_grnt                    ,
   input  wire [6:0] cmplt_iid0                            ,
   input  wire [6:0] cmplt_iid1                            ,
   input  wire [6:0] cmplt_iid2                            ,
@@ -102,7 +101,6 @@ module RTU_subsys (
   output wire [31:0] idu_div_src0                          ,
   output wire [31:0] idu_div_src1                          ,
   input  wire [31:0] idu_lsu_ld_src                        ,
-  output wire [5:0] idu_lsu_st_preg                       ,
   output wire [5:0] idu_mult_dst_preg                     ,
   output wire [6:0] idu_mult_iid                          ,
   output wire [3:0] idu_mult_rslt_sel                     ,
@@ -129,15 +127,50 @@ module RTU_subsys (
   input  wire [63:0] iu_idu_ex2_pipe1_wb_preg_expand       ,
   input  wire iu_idu_ex2_pipe1_wb_preg_vld          ,
   input  wire iu_idu_ex2_pipe1_wb_preg_vld_dupx     ,
-  output wire [7:0] lfb_depd_wakeup                       ,
+  input  wire [31:0] iu_idu_ex2_pipe2_wb_preg_data         ,
+  input  wire [5:0] iu_idu_ex2_pipe2_wb_preg_dupx         ,
+  input  wire [63:0] iu_idu_ex2_pipe2_wb_preg_expand       ,
+  input  wire iu_idu_ex2_pipe2_wb_preg_vld          ,
+  input  wire iu_idu_ex2_pipe2_wb_preg_vld_dupx     ,
+  output wire [31:0] lsu_biu_ar_addr                       ,
+  output wire [1:0] lsu_biu_ar_burst                      ,
+  output wire [3:0] lsu_biu_ar_cache                      ,
+  output wire [3:0] lsu_biu_ar_id                         ,
+  output wire [1:0] lsu_biu_ar_len                        ,
+  output wire [2:0] lsu_biu_ar_prot                       ,
+  output wire lsu_biu_ar_req                        ,
+  output wire [2:0] lsu_biu_ar_size                       ,
+  output wire [31:0] lsu_biu_aw_st_addr                    ,
+  output wire [1:0] lsu_biu_aw_st_burst                   ,
+  output wire [3:0] lsu_biu_aw_st_cache                   ,
+  output wire [3:0] lsu_biu_aw_st_id                      ,
+  output wire [1:0] lsu_biu_aw_st_len                     ,
+  output wire [2:0] lsu_biu_aw_st_prot                    ,
+  output wire lsu_biu_aw_st_req                     ,
+  output wire [2:0] lsu_biu_aw_st_size                    ,
+  output wire [31:0] lsu_biu_aw_vict_addr                  ,
+  output wire [1:0] lsu_biu_aw_vict_burst                 ,
+  output wire [3:0] lsu_biu_aw_vict_cache                 ,
+  output wire [3:0] lsu_biu_aw_vict_id                    ,
+  output wire [1:0] lsu_biu_aw_vict_len                   ,
+  output wire [2:0] lsu_biu_aw_vict_prot                  ,
+  output wire lsu_biu_aw_vict_req                   ,
+  output wire [2:0] lsu_biu_aw_vict_size                  ,
+  output wire lsu_biu_r_ready                       ,
+  output wire [127:0] lsu_biu_w_st_data                     ,
+  output wire lsu_biu_w_st_last                     ,
+  output wire [15:0] lsu_biu_w_st_strb                     ,
+  output wire lsu_biu_w_st_vld                      ,
+  output wire [127:0] lsu_biu_w_vict_data                   ,
+  output wire lsu_biu_w_vict_last                   ,
+  output wire [15:0] lsu_biu_w_vict_strb                   ,
+  output wire lsu_biu_w_vict_vld                    ,
   input  wire [7:0] lsu_idu_lsiq_pop_entry                ,
   output wire [5:0] lsu_idu_wb_pipe3_wb_preg              ,
   input  wire [5:0] lsu_idu_wb_pipe3_wb_preg_dupx         ,
-  input  wire lsu_idu_wb_pipe3_wb_preg_vld_dupx     ,
   output wire [63:0] lsu_rtu_wb_pipe3_wb_preg_expand       ,
   output wire lsu_rtu_wb_pipe3_wb_preg_vld          ,
   input  wire [3:0] lsu_sdiq_has_in_sq_sdiq               ,
-  input  wire lsu_sdiq_has_in_sq_vld                ,
   input  wire md_unit_stall                         ,
   input  wire [4:0] other_expt_cause                      ,
   input  wire [6:0] other_expt_iid                        ,
@@ -146,19 +179,6 @@ module RTU_subsys (
   input  wire [31:0] preg_rdata0                           ,
   input  wire [31:0] preg_rdata1                           ,
   input  wire [31:0] preg_rdata2                           ,
-  output wire [31:0] rb_biu_ar_addr                        ,
-  output wire [1:0] rb_biu_ar_bar                         ,
-  output wire [1:0] rb_biu_ar_burst                       ,
-  output wire [3:0] rb_biu_ar_cache                       ,
-  output wire [1:0] rb_biu_ar_domain                      ,
-  output wire [3:0] rb_biu_ar_id                          ,
-  output wire [1:0] rb_biu_ar_len                         ,
-  output wire rb_biu_ar_lock                        ,
-  output wire [2:0] rb_biu_ar_prot                        ,
-  output wire rb_biu_ar_req                         ,
-  output wire [2:0] rb_biu_ar_size                        ,
-  output wire [3:0] rb_biu_ar_snoop                       ,
-  output wire rb_biu_ar_user                        ,
   input  wire [6:0] resolve_iid                           ,
   input  wire resolve_mispred                       ,
   input  wire resolve_taken                         ,
@@ -173,6 +193,7 @@ module RTU_subsys (
   output wire rtu_disp_vld0                         ,
   output wire rtu_disp_vld1                         ,
   output wire rtu_disp_vld2                         ,
+  output wire rtu_flush_busy                        ,
   output wire [31:0] rtu_ifu_chgflw_pc                     ,
   output wire rtu_ifu_chgflw_vld                    ,
   output wire rtu_ifu_flush                         ,
@@ -188,9 +209,9 @@ module RTU_subsys (
   output wire [31:0] rtu_preg_rdata0                       ,
   output wire [31:0] rtu_preg_rdata1                       ,
   output wire [31:0] rtu_preg_rdata2                       ,
-  output wire [6:0] rtu_ren_free_preg0                    ,
-  output wire [6:0] rtu_ren_free_preg1                    ,
-  output wire [6:0] rtu_ren_free_preg2                    ,
+  output wire [5:0] rtu_ren_free_preg0                    ,
+  output wire [5:0] rtu_ren_free_preg1                    ,
+  output wire [5:0] rtu_ren_free_preg2                    ,
   output wire rtu_ren_free_vld0                     ,
   output wire rtu_ren_free_vld1                     ,
   output wire rtu_ren_free_vld2                     ,
@@ -205,42 +226,7 @@ module RTU_subsys (
   output wire [4:0] rtu_trap_cause                        ,
   output wire [31:0] rtu_trap_epc                          ,
   output wire [31:0] rtu_trap_tval                         ,
-  output wire rtu_trap_vld                          ,
-  output wire [7:0] sq_data_depd_wakeup                   ,
-  output wire [7:0] sq_global_depd_wakeup                 ,
-  output wire [31:0] vb_biu_aw_addr                        ,
-  output wire [1:0] vb_biu_aw_burst                       ,
-  output wire [3:0] vb_biu_aw_cache                       ,
-  output wire [3:0] vb_biu_aw_id                          ,
-  output wire [1:0] vb_biu_aw_len                         ,
-  output wire vb_biu_aw_lock                        ,
-  output wire [2:0] vb_biu_aw_prot                        ,
-  output wire vb_biu_aw_req                         ,
-  output wire [2:0] vb_biu_aw_size                        ,
-  output wire [127:0] vb_biu_w_data                         ,
-  output wire [3:0] vb_biu_w_id                           ,
-  output wire vb_biu_w_last                         ,
-  output wire vb_biu_w_req                          ,
-  output wire [15:0] vb_biu_w_strb                         ,
-  output wire vb_biu_w_vld                          ,
-  output wire [31:0] wmb_biu_aw_addr                       ,
-  output wire [1:0] wmb_biu_aw_bar                        ,
-  output wire [1:0] wmb_biu_aw_burst                      ,
-  output wire [3:0] wmb_biu_aw_cache                      ,
-  output wire [1:0] wmb_biu_aw_domain                     ,
-  output wire [3:0] wmb_biu_aw_id                         ,
-  output wire [1:0] wmb_biu_aw_len                        ,
-  output wire wmb_biu_aw_lock                       ,
-  output wire [2:0] wmb_biu_aw_prot                       ,
-  output wire wmb_biu_aw_req                        ,
-  output wire [2:0] wmb_biu_aw_size                       ,
-  output wire [2:0] wmb_biu_aw_snoop                      ,
-  output wire wmb_biu_aw_user                       ,
-  output wire [127:0] wmb_biu_w_data                        ,
-  output wire [3:0] wmb_biu_w_id                          ,
-  output wire wmb_biu_w_req                         ,
-  output wire [15:0] wmb_biu_w_strb                        ,
-  output wire wmb_biu_w_vld                         
+  output wire rtu_trap_vld                          
 );
 
     // ============================================================
@@ -256,44 +242,52 @@ module RTU_subsys (
     wire [4:0] disp0_csr_imm                         ;   // 内部
     wire [2:0] disp0_csr_op                          ;   // 内部
     wire [4:0] disp0_dst_lreg                        ;   // 内部
-    wire [6:0] disp0_dst_preg                        ;   // 内部
+    wire [5:0] disp0_dst_preg                        ;   // 内部
     wire [6:0] disp0_flags                           ;   // 内部
-    wire [6:0] disp0_old_preg                        ;   // 内部
+    wire [5:0] disp0_old_preg                        ;   // 内部
     wire [31:0] disp0_pc                              ;   // 内部
     wire disp0_rf_we                           ;   // 内部
     wire [2:0] disp0_sq_id                           ;   // 内部
-    wire [6:0] disp0_src1_preg                       ;   // 内部
+    wire [5:0] disp0_src1_preg                       ;   // 内部
     wire disp0_vld                             ;   // 内部
     wire [24:0] disp1_chk                             ;   // 内部
     wire [11:0] disp1_csr_addr                        ;   // 内部
     wire [4:0] disp1_csr_imm                         ;   // 内部
     wire [2:0] disp1_csr_op                          ;   // 内部
     wire [4:0] disp1_dst_lreg                        ;   // 内部
-    wire [6:0] disp1_dst_preg                        ;   // 内部
+    wire [5:0] disp1_dst_preg                        ;   // 内部
     wire [6:0] disp1_flags                           ;   // 内部
-    wire [6:0] disp1_old_preg                        ;   // 内部
+    wire [5:0] disp1_old_preg                        ;   // 内部
     wire [31:0] disp1_pc                              ;   // 内部
     wire disp1_rf_we                           ;   // 内部
     wire [2:0] disp1_sq_id                           ;   // 内部
-    wire [6:0] disp1_src1_preg                       ;   // 内部
+    wire [5:0] disp1_src1_preg                       ;   // 内部
     wire disp1_vld                             ;   // 内部
     wire [24:0] disp2_chk                             ;   // 内部
     wire [11:0] disp2_csr_addr                        ;   // 内部
     wire [4:0] disp2_csr_imm                         ;   // 内部
     wire [2:0] disp2_csr_op                          ;   // 内部
     wire [4:0] disp2_dst_lreg                        ;   // 内部
-    wire [6:0] disp2_dst_preg                        ;   // 内部
+    wire [5:0] disp2_dst_preg                        ;   // 内部
     wire [6:0] disp2_flags                           ;   // 内部
-    wire [6:0] disp2_old_preg                        ;   // 内部
+    wire [5:0] disp2_old_preg                        ;   // 内部
     wire [31:0] disp2_pc                              ;   // 内部
     wire disp2_rf_we                           ;   // 内部
     wire [2:0] disp2_sq_id                           ;   // 内部
-    wire [6:0] disp2_src1_preg                       ;   // 内部
+    wire [5:0] disp2_src1_preg                       ;   // 内部
     wire disp2_vld                             ;   // 内部
-    wire [4:0] expt_cause                            ;   // 内部
-    wire [6:0] expt_iid                              ;   // 内部
-    wire [31:0] expt_tval                             ;   // 内部
-    wire expt_vld                              ;   // 内部
+    wire [4:0] expt_iu_cause                         ;   // 内部
+    wire [6:0] expt_iu_iid                           ;   // 内部
+    wire [31:0] expt_iu_tval                          ;   // 内部
+    wire expt_iu_vld                           ;   // 内部
+    wire [4:0] expt_ld_cause                         ;   // 内部
+    wire [6:0] expt_ld_iid                           ;   // 内部
+    wire [31:0] expt_ld_tval                          ;   // 内部
+    wire expt_ld_vld                           ;   // 内部
+    wire [4:0] expt_st_cause                         ;   // 内部
+    wire [6:0] expt_st_iid                           ;   // 内部
+    wire [31:0] expt_st_tval                          ;   // 内部
+    wire expt_st_vld                           ;   // 内部
     wire [6:0] idu_lsu_ld_iid                        ;   // 内部
     wire [1:0] idu_lsu_ld_inst_size                  ;   // 内部
     wire [7:0] idu_lsu_ld_lch_entry                  ;   // 内部
@@ -374,6 +368,7 @@ module RTU_subsys (
     wire [31:0] lsu_idu_wb_pipe3_wb_preg_data         ;   // 内部
     wire [63:0] lsu_idu_wb_pipe3_wb_preg_expand       ;   // 内部
     wire lsu_idu_wb_pipe3_wb_preg_vld          ;   // 内部
+    wire lsu_idu_wb_pipe3_wb_preg_vld_dupx     ;   // 内部
     wire [6:0] lsu_replay_iid                        ;   // 内部
     wire lsu_replay_vld                        ;   // 内部
     wire lsu_rtu_wb_pipe3_cmplt                ;   // 内部
@@ -387,15 +382,12 @@ module RTU_subsys (
     wire [6:0] lsu_rtu_wb_pipe4_iid                  ;   // 内部
     wire lsu_rtu_wb_pipe4_spec_fail            ;   // 内部
     wire [63:0] preg_dealloc_mask                     ;   // 内部
-    wire [1:0] ren_preg_req                          ;   // 内部
-    wire [4:0] ren_preg_req_lreg0                    ;   // 内部
-    wire [4:0] ren_preg_req_lreg1                    ;   // 内部
-    wire [4:0] ren_preg_req_lreg2                    ;   // 内部
+    wire [2:0] ren_preg_req                          ;   // 内部
     wire rtu_backend_flush                     ;   // 内部
-    wire [6:0] rtu_csr_rd_addr                       ;   // 内部
+    wire [5:0] rtu_csr_rd_addr                       ;   // 内部
     wire [31:0] rtu_csr_rd_wdata                      ;   // 内部
     wire rtu_csr_rd_we                         ;   // 内部
-    wire [6:0] rtu_csr_src_raddr                     ;   // 内部
+    wire [5:0] rtu_csr_src_raddr                     ;   // 内部
     wire [31:0] rtu_csr_src_rdata                     ;   // 内部
     wire [6:0] rtu_disp_iid0                         ;   // 内部
     wire [6:0] rtu_disp_iid1                         ;   // 内部
@@ -413,18 +405,18 @@ module RTU_subsys (
     wire [6:0] rtu_idu_rob_inst2_iid                 ;   // 内部
     wire [191:0] rtu_idu_rt_recover_preg               ;   // 内部
     wire rtu_lsu_async_flush                   ;   // 内部
-    wire [6:0] rtu_preg_alloc0                       ;   // 内部
-    wire [6:0] rtu_preg_alloc1                       ;   // 内部
-    wire [6:0] rtu_preg_alloc2                       ;   // 内部
+    wire [5:0] rtu_preg_alloc0                       ;   // 内部
+    wire [5:0] rtu_preg_alloc1                       ;   // 内部
+    wire [5:0] rtu_preg_alloc2                       ;   // 内部
     wire rtu_preg_alloc_vld0                   ;   // 内部
     wire rtu_preg_alloc_vld1                   ;   // 内部
     wire rtu_preg_alloc_vld2                   ;   // 内部
     wire [1:0] rtu_preg_free_cnt                     ;   // 内部
-    wire [6:0] rtu_preg_raddr0                       ;   // 内部
-    wire [6:0] rtu_preg_raddr1                       ;   // 内部
-    wire [6:0] rtu_preg_raddr2                       ;   // 内部
+    wire [5:0] rtu_preg_raddr0                       ;   // 内部
+    wire [5:0] rtu_preg_raddr1                       ;   // 内部
+    wire [5:0] rtu_preg_raddr2                       ;   // 内部
     wire rtu_ren_flush                         ;   // 内部
-    wire [223:0] rtu_ren_recover_map                   ;   // 内部
+    wire [191:0] rtu_ren_recover_map                   ;   // 内部
     wire rtu_yy_xx_commit0                     ;   // 内部
     wire [6:0] rtu_yy_xx_commit0_iid                 ;   // 内部
     wire rtu_yy_xx_commit1                     ;   // 内部
@@ -445,9 +437,6 @@ module RTU_subsys (
     .cpu_clk                            (cpu_clk                           ),
     .cpu_rst                            (cpu_rst                           ),
     .ren_preg_req                       (ren_preg_req                      ),
-    .ren_preg_req_lreg0                 (ren_preg_req_lreg0                ),
-    .ren_preg_req_lreg1                 (ren_preg_req_lreg1                ),
-    .ren_preg_req_lreg2                 (ren_preg_req_lreg2                ),
     .rtu_preg_alloc0                    (rtu_preg_alloc0                   ),
     .rtu_preg_alloc1                    (rtu_preg_alloc1                   ),
     .rtu_preg_alloc2                    (rtu_preg_alloc2                   ),
@@ -515,10 +504,18 @@ module RTU_subsys (
     .resolve_target                     (resolve_target                    ),
     .lsu_replay_vld                     (lsu_replay_vld                    ),
     .lsu_replay_iid                     (lsu_replay_iid                    ),
-    .expt_vld                           (expt_vld                          ),
-    .expt_iid                           (expt_iid                          ),
-    .expt_cause                         (expt_cause                        ),
-    .expt_tval                          (expt_tval                         ),
+    .expt_iu_vld                        (expt_iu_vld                       ),
+    .expt_iu_iid                        (expt_iu_iid                       ),
+    .expt_iu_cause                      (expt_iu_cause                     ),
+    .expt_iu_tval                       (expt_iu_tval                      ),
+    .expt_ld_vld                        (expt_ld_vld                       ),
+    .expt_ld_iid                        (expt_ld_iid                       ),
+    .expt_ld_cause                      (expt_ld_cause                     ),
+    .expt_ld_tval                       (expt_ld_tval                      ),
+    .expt_st_vld                        (expt_st_vld                       ),
+    .expt_st_iid                        (expt_st_iid                       ),
+    .expt_st_cause                      (expt_st_cause                     ),
+    .expt_st_tval                       (expt_st_tval                      ),
     .sq_rdy0                            (sq_rdy0                           ),
     .sq_rdy1                            (sq_rdy1                           ),
     .sq_rdy2                            (sq_rdy2                           ),
@@ -607,7 +604,8 @@ module RTU_subsys (
     .dbg_commit_reg2                    (dbg_commit_reg2                   ),
     .dbg_commit_value0                  (dbg_commit_value0                 ),
     .dbg_commit_value1                  (dbg_commit_value1                 ),
-    .dbg_commit_value2                  (dbg_commit_value2                 )
+    .dbg_commit_value2                  (dbg_commit_value2                 ),
+    .rtu_flush_busy                     (rtu_flush_busy                    )
     );
 
     // ============================================================
@@ -652,6 +650,11 @@ module RTU_subsys (
     .iu_idu_ex2_pipe1_wb_preg_data      (iu_idu_ex2_pipe1_wb_preg_data     ),
     .iu_idu_ex2_pipe1_wb_preg_expand    (iu_idu_ex2_pipe1_wb_preg_expand   ),
     .iu_idu_ex2_pipe1_wb_preg_vld       (iu_idu_ex2_pipe1_wb_preg_vld      ),
+    .iu_idu_ex2_pipe2_wb_preg_dupx      (iu_idu_ex2_pipe2_wb_preg_dupx     ),
+    .iu_idu_ex2_pipe2_wb_preg_vld_dupx  (iu_idu_ex2_pipe2_wb_preg_vld_dupx ),
+    .iu_idu_ex2_pipe2_wb_preg_data      (iu_idu_ex2_pipe2_wb_preg_data     ),
+    .iu_idu_ex2_pipe2_wb_preg_expand    (iu_idu_ex2_pipe2_wb_preg_expand   ),
+    .iu_idu_ex2_pipe2_wb_preg_vld       (iu_idu_ex2_pipe2_wb_preg_vld      ),
     .lsu_idu_wb_pipe3_wb_preg_dupx      (lsu_idu_wb_pipe3_wb_preg_dupx     ),
     .lsu_idu_wb_pipe3_wb_preg_vld_dupx  (lsu_idu_wb_pipe3_wb_preg_vld_dupx ),
     .lsu_idu_wb_pipe3_wb_preg_data      (lsu_idu_wb_pipe3_wb_preg_data     ),
@@ -669,7 +672,6 @@ module RTU_subsys (
     .lsu_idu_lsiq_pop0_vld              (lsu_idu_lsiq_pop0_vld             ),
     .lsu_idu_lsiq_pop1_vld              (lsu_idu_lsiq_pop1_vld             ),
     .lsu_idu_lsiq_pop_entry             (lsu_idu_pop_entry                 ),   // 交付侧名字少个 lsiq_, 位宽/语义一致
-    .lsu_sdiq_has_in_sq_vld             (lsu_sdiq_has_in_sq_any            ),   // IDU 要 {vld, 独热}, LSU 只给一个带门控的独热
     .lsu_sdiq_has_in_sq_sdiq            (lsu_idu_has_in_sq                 ),
     .idu_aiq_sel                        (idu_aiq_sel                       ),
     .idu_aiq_iid                        (idu_aiq_iid                       ),
@@ -705,7 +707,6 @@ module RTU_subsys (
     .idu_lsu_ld_oldest                  (idu_lsu_ld_oldest                 ),
     .idu_lsu_st_sel                     (idu_lsu_st_sel                    ),
     .idu_lsu_st_iid                     (idu_lsu_st_iid                    ),
-    //  .idu_lsu_st_preg                    (  ),   // store 不写回, LSU 侧没有对应口
     .idu_lsu_st_src0                    (idu_lsu_st_src0                   ),
     .idu_lsu_st_offset                  (idu_lsu_st_offset                 ),
     .idu_lsu_st_offset_plus             (idu_lsu_st_offset_plus            ),
@@ -824,8 +825,6 @@ module RTU_subsys (
     .rtu_lsu_async_flush                (rtu_lsu_async_flush               ),
     .forever_cpuclk                     (cpu_clk                           ),
     .cpurst_b                           (cpurst_b                          ),
-    .bus_arb_rb_ar_grnt                 (bus_arb_rb_ar_grnt                ),
-    .bus_arb_rb_ar_sel                  (bus_arb_rb_ar_sel                 ),
     .biu_lsu_r_data                     (biu_lsu_r_data                    ),
     .biu_lsu_r_id                       (biu_lsu_r_id                      ),
     .biu_lsu_r_last                     (biu_lsu_r_last                    ),
@@ -834,56 +833,44 @@ module RTU_subsys (
     .biu_lsu_b_id                       (biu_lsu_b_id                      ),
     .biu_lsu_b_resp                     (biu_lsu_b_resp                    ),
     .biu_lsu_b_vld                      (biu_lsu_b_vld                     ),
-    .bus_arb_wmb_aw_grnt                (bus_arb_wmb_aw_grnt               ),
-    .bus_arb_wmb_w_grnt                 (bus_arb_wmb_w_grnt                ),
-    .bus_arb_vb_aw_grnt                 (bus_arb_vb_aw_grnt                ),
-    .bus_arb_vb_w_grnt                  (bus_arb_vb_w_grnt                 ),
-    .rb_biu_ar_addr                     (rb_biu_ar_addr                    ),
-    .rb_biu_ar_bar                      (rb_biu_ar_bar                     ),
-    .rb_biu_ar_burst                    (rb_biu_ar_burst                   ),
-    .rb_biu_ar_cache                    (rb_biu_ar_cache                   ),
-    .rb_biu_ar_domain                   (rb_biu_ar_domain                  ),
-    .rb_biu_ar_id                       (rb_biu_ar_id                      ),
-    .rb_biu_ar_len                      (rb_biu_ar_len                     ),
-    .rb_biu_ar_lock                     (rb_biu_ar_lock                    ),
-    .rb_biu_ar_prot                     (rb_biu_ar_prot                    ),
-    .rb_biu_ar_req                      (rb_biu_ar_req                     ),
-    .rb_biu_ar_size                     (rb_biu_ar_size                    ),
-    .rb_biu_ar_snoop                    (rb_biu_ar_snoop                   ),
-    .rb_biu_ar_user                     (rb_biu_ar_user                    ),
-    .wmb_biu_aw_addr                    (wmb_biu_aw_addr                   ),
-    .wmb_biu_aw_bar                     (wmb_biu_aw_bar                    ),
-    .wmb_biu_aw_burst                   (wmb_biu_aw_burst                  ),
-    .wmb_biu_aw_cache                   (wmb_biu_aw_cache                  ),
-    .wmb_biu_aw_domain                  (wmb_biu_aw_domain                 ),
-    .wmb_biu_aw_id                      (wmb_biu_aw_id                     ),
-    .wmb_biu_aw_len                     (wmb_biu_aw_len                    ),
-    .wmb_biu_aw_lock                    (wmb_biu_aw_lock                   ),
-    .wmb_biu_aw_prot                    (wmb_biu_aw_prot                   ),
-    .wmb_biu_aw_req                     (wmb_biu_aw_req                    ),
-    .wmb_biu_aw_size                    (wmb_biu_aw_size                   ),
-    .wmb_biu_aw_snoop                   (wmb_biu_aw_snoop                  ),
-    .wmb_biu_aw_user                    (wmb_biu_aw_user                   ),
-    .wmb_biu_w_data                     (wmb_biu_w_data                    ),
-    .wmb_biu_w_id                       (wmb_biu_w_id                      ),
-    .wmb_biu_w_req                      (wmb_biu_w_req                     ),
-    .wmb_biu_w_strb                     (wmb_biu_w_strb                    ),
-    .wmb_biu_w_vld                      (wmb_biu_w_vld                     ),
-    .vb_biu_aw_addr                     (vb_biu_aw_addr                    ),
-    .vb_biu_aw_burst                    (vb_biu_aw_burst                   ),
-    .vb_biu_aw_cache                    (vb_biu_aw_cache                   ),
-    .vb_biu_aw_id                       (vb_biu_aw_id                      ),
-    .vb_biu_aw_len                      (vb_biu_aw_len                     ),
-    .vb_biu_aw_lock                     (vb_biu_aw_lock                    ),
-    .vb_biu_aw_prot                     (vb_biu_aw_prot                    ),
-    .vb_biu_aw_size                     (vb_biu_aw_size                    ),
-    .vb_biu_aw_req                      (vb_biu_aw_req                     ),
-    .vb_biu_w_data                      (vb_biu_w_data                     ),
-    .vb_biu_w_id                        (vb_biu_w_id                       ),
-    .vb_biu_w_last                      (vb_biu_w_last                     ),
-    .vb_biu_w_req                       (vb_biu_w_req                      ),
-    .vb_biu_w_strb                      (vb_biu_w_strb                     ),
-    .vb_biu_w_vld                       (vb_biu_w_vld                      ),
+    .biu_lsu_ar_ready                   (biu_lsu_ar_ready                  ),
+    .biu_lsu_aw_vb_grnt                 (biu_lsu_aw_vb_grnt                ),
+    .biu_lsu_aw_wmb_grnt                (biu_lsu_aw_wmb_grnt               ),
+    .biu_lsu_w_vb_grnt                  (biu_lsu_w_vb_grnt                 ),
+    .biu_lsu_w_wmb_grnt                 (biu_lsu_w_wmb_grnt                ),
+    .lsu_biu_ar_addr                    (lsu_biu_ar_addr                   ),
+    .lsu_biu_ar_burst                   (lsu_biu_ar_burst                  ),
+    .lsu_biu_ar_cache                   (lsu_biu_ar_cache                  ),
+    .lsu_biu_ar_id                      (lsu_biu_ar_id                     ),
+    .lsu_biu_ar_len                     (lsu_biu_ar_len                    ),
+    .lsu_biu_ar_prot                    (lsu_biu_ar_prot                   ),
+    .lsu_biu_ar_req                     (lsu_biu_ar_req                    ),
+    .lsu_biu_ar_size                    (lsu_biu_ar_size                   ),
+    .lsu_biu_r_ready                    (lsu_biu_r_ready                   ),
+    .lsu_biu_aw_st_addr                 (lsu_biu_aw_st_addr                ),
+    .lsu_biu_aw_st_burst                (lsu_biu_aw_st_burst               ),
+    .lsu_biu_aw_st_cache                (lsu_biu_aw_st_cache               ),
+    .lsu_biu_aw_st_id                   (lsu_biu_aw_st_id                  ),
+    .lsu_biu_aw_st_len                  (lsu_biu_aw_st_len                 ),
+    .lsu_biu_aw_st_prot                 (lsu_biu_aw_st_prot                ),
+    .lsu_biu_aw_st_req                  (lsu_biu_aw_st_req                 ),
+    .lsu_biu_aw_st_size                 (lsu_biu_aw_st_size                ),
+    .lsu_biu_aw_vict_addr               (lsu_biu_aw_vict_addr              ),
+    .lsu_biu_aw_vict_burst              (lsu_biu_aw_vict_burst             ),
+    .lsu_biu_aw_vict_cache              (lsu_biu_aw_vict_cache             ),
+    .lsu_biu_aw_vict_id                 (lsu_biu_aw_vict_id                ),
+    .lsu_biu_aw_vict_len                (lsu_biu_aw_vict_len               ),
+    .lsu_biu_aw_vict_prot               (lsu_biu_aw_vict_prot              ),
+    .lsu_biu_aw_vict_req                (lsu_biu_aw_vict_req               ),
+    .lsu_biu_aw_vict_size               (lsu_biu_aw_vict_size              ),
+    .lsu_biu_w_st_data                  (lsu_biu_w_st_data                 ),
+    .lsu_biu_w_st_last                  (lsu_biu_w_st_last                 ),
+    .lsu_biu_w_st_strb                  (lsu_biu_w_st_strb                 ),
+    .lsu_biu_w_st_vld                   (lsu_biu_w_st_vld                  ),
+    .lsu_biu_w_vict_data                (lsu_biu_w_vict_data               ),
+    .lsu_biu_w_vict_last                (lsu_biu_w_vict_last               ),
+    .lsu_biu_w_vict_strb                (lsu_biu_w_vict_strb               ),
+    .lsu_biu_w_vict_vld                 (lsu_biu_w_vict_vld                ),
     .lsu_idu_imme_wakeup                (lsu_idu_imme_wakeup               ),
     .lsu_idu_lsiq_pop_vld               (lsu_idu_lsiq_pop_vld              ),
     .lsu_idu_lsiq_pop0_vld              (lsu_idu_lsiq_pop0_vld             ),
@@ -904,6 +891,7 @@ module RTU_subsys (
     .lsu_rtu_wb_pipe3_wb_preg_expand    (lsu_rtu_wb_pipe3_wb_preg_expand   ),
     .lsu_rtu_wb_pipe3_wb_preg_vld       (lsu_rtu_wb_pipe3_wb_preg_vld      ),
     .lsu_idu_wb_pipe3_wb_preg           (lsu_idu_wb_pipe3_wb_preg          ),
+    .lsu_idu_wb_pipe3_wb_preg_vld_dupx  (lsu_idu_wb_pipe3_wb_preg_vld_dupx ),
     .lsu_idu_wb_pipe3_wb_preg_data      (lsu_idu_wb_pipe3_wb_preg_data     ),
     .lsu_idu_wb_pipe3_wb_preg_expand    (lsu_idu_wb_pipe3_wb_preg_expand   ),
     .lsu_idu_wb_pipe3_wb_preg_vld       (lsu_idu_wb_pipe3_wb_preg_vld      ),
@@ -912,10 +900,7 @@ module RTU_subsys (
     .lsu_rtu_wb_pipe4_expt_addr         (lsu_rtu_wb_pipe4_expt_addr        ),
     .lsu_rtu_wb_pipe4_flush             (lsu_rtu_wb_pipe4_flush            ),
     .lsu_rtu_wb_pipe4_iid               (lsu_rtu_wb_pipe4_iid              ),
-    .lsu_rtu_wb_pipe4_spec_fail         (lsu_rtu_wb_pipe4_spec_fail        ),
-    .sq_data_depd_wakeup                (sq_data_depd_wakeup               ),
-    .sq_global_depd_wakeup              (sq_global_depd_wakeup             ),
-    .lfb_depd_wakeup                    (lfb_depd_wakeup                   )
+    .lsu_rtu_wb_pipe4_spec_fail         (lsu_rtu_wb_pipe4_spec_fail        )
     );
 
     // ============================================================
@@ -992,9 +977,6 @@ module RTU_subsys (
     .other_expt_cause                   (other_expt_cause                  ),
     .other_expt_tval                    (other_expt_tval                   ),
     .ren_preg_req                       (ren_preg_req                      ),
-    .ren_preg_req_lreg0                 (ren_preg_req_lreg0                ),
-    .ren_preg_req_lreg1                 (ren_preg_req_lreg1                ),
-    .ren_preg_req_lreg2                 (ren_preg_req_lreg2                ),
     .rtu_preg_alloc0                    (rtu_preg_alloc0                   ),
     .rtu_preg_alloc1                    (rtu_preg_alloc1                   ),
     .rtu_preg_alloc2                    (rtu_preg_alloc2                   ),
@@ -1046,10 +1028,18 @@ module RTU_subsys (
     .cmplt_iid6                         (cmplt_iid6                        ),
     .lsu_replay_vld                     (lsu_replay_vld                    ),
     .lsu_replay_iid                     (lsu_replay_iid                    ),
-    .expt_vld                           (expt_vld                          ),
-    .expt_iid                           (expt_iid                          ),
-    .expt_cause                         (expt_cause                        ),
-    .expt_tval                          (expt_tval                         ),
+    .expt_iu_vld                        (expt_iu_vld                       ),
+    .expt_iu_iid                        (expt_iu_iid                       ),
+    .expt_iu_cause                      (expt_iu_cause                     ),
+    .expt_iu_tval                       (expt_iu_tval                      ),
+    .expt_ld_vld                        (expt_ld_vld                       ),
+    .expt_ld_iid                        (expt_ld_iid                       ),
+    .expt_ld_cause                      (expt_ld_cause                     ),
+    .expt_ld_tval                       (expt_ld_tval                      ),
+    .expt_st_vld                        (expt_st_vld                       ),
+    .expt_st_iid                        (expt_st_iid                       ),
+    .expt_st_cause                      (expt_st_cause                     ),
+    .expt_st_tval                       (expt_st_tval                      ),
     .sq_rdy0                            (sq_rdy0                           ),
     .sq_rdy1                            (sq_rdy1                           ),
     .sq_rdy2                            (sq_rdy2                           ),

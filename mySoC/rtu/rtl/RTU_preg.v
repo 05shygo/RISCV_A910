@@ -53,10 +53,9 @@ module RTU_preg (
     input  wire        cpu_rst,
 
     // ---- §6.0 分配请求 (当拍取走) ----
-    input  wire [1:0]  ren_preg_req,
-    input  wire [4:0]  ren_preg_req_lreg0,
-    input  wire [4:0]  ren_preg_req_lreg1,
-    input  wire [4:0]  ren_preg_req_lreg2,
+    // ⚠️ 2026-10-12: `[1:0] 前缀长度` → **`[2:0] 逐路请求向量`** (bit k = 车道 k 本拍取走)。
+    //    旧编码装不下"非前缀"的请求模式 (见 `take_lane` 那段)。
+    input  wire [2:0]  ren_preg_req,
 
     // ---- 派遣认领 (号走到 ROB 那一拍, 与取走相隔任意拍) ----
     input  wire [2:0]  disp_vld,
@@ -259,13 +258,30 @@ module RTU_preg (
     endgenerate
     assign rel_go_vec = rel_vec & ~mask_ext;
 
-    // 本路本拍被**取走**: 消费者请求了这一路, 且 dst 不是 x0 (x0 不分配、不映射)。
+    // 本路本拍被**取走**: 消费者逐路告诉我们哪几路把门口的号拿走了。
     // "请求即取走" 是 C910 的语义 —— 它那边 alloc_vld、RAT 写、进 IS 由同一个
     // `!ctrl_ir_stall` 门控, 三者同拍 (`ct_idu_ir_ctrl.sv:259` / `ct_idu_ir_dp.sv:283`)。
+    //
+    // ⚠️ 2026-10-12 修 (原 D1.x 的一个洞): 这里原来是**前缀计数**的编码 ——
+    //    `ren_preg_req > k`, 由适配层拿 IDU 三路 `alloc_vld` **求和**得来。
+    //    那个"求和 = 前缀长度"的假设**不成立**: `alloc_vld{k} = ir_inst{k}_vld
+    //    && !stall && dst_vld && !dst_x0` 是**每条车道各自**判的, 车道 0 是
+    //    "写 x0 的 nop/分支"时它是 0, 而车道 2 照样可以是 1 ⇒ 请求向量 (0,0,1)
+    //    被数成 `req=1` ⇒ **判成"车道 0 取走了"**。后果两条:
+    //      (1) 被误判的那一路门房白换一次号 ⇒ 旧号既没被取走也不再挂在门房里,
+    //          **永久停在 WF_ALLOC** (年龄回收已删, 没人来救);
+    //      (2) 真请求者那一路门房**没换** ⇒ 同一路连着请求两次 (且中间那条还没派遣)
+    //          会拿到**同一个号**; 现在靠 `tap_hit` 晚一拍兜着, 窗口是开的。
+    //    实测 beq 里 `请求=101`/`110` 都被报成 `ren_preg_req=2` (见
+    //    `doc/a910_difftest_zh.md` §6.5)。
+    //    C910 本来就是**逐路独立**的: `ct_rtu_pst_preg.v:6995` 的
+    //    `alloc_preg{k}_invalid` 各自只看 `idu_rtu_ir_preg{k}_alloc_vld`。
+    // ⇒ 接口改成逐路向量; x0 的排除由 IDU 侧 `alloc_vld` 自己负责 (它已经排了),
+    //    所以原来那三根恒 `5'd1` 的 `ren_preg_req_lreg*` 一并删掉。
     wire [2:0] take_lane;
-    assign take_lane[0] = (ren_preg_req > 2'd0) && (ren_preg_req_lreg0 != 5'd0);
-    assign take_lane[1] = (ren_preg_req > 2'd1) && (ren_preg_req_lreg1 != 5'd0);
-    assign take_lane[2] = (ren_preg_req > 2'd2) && (ren_preg_req_lreg2 != 5'd0);
+    assign take_lane[0] = ren_preg_req[0];
+    assign take_lane[1] = ren_preg_req[1];
+    assign take_lane[2] = ren_preg_req[2];
 
     // 本路备着的那个号**本拍被派遣认领** —— 兜"没请求却把它派出去了"那种误用。
     // 有它, 误用只会让本路提前补号, 不会把同一个号发两次 (静默撞号是大忌)。

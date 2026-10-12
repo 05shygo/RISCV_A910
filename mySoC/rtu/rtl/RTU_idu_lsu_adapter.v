@@ -137,10 +137,7 @@ module RTU_idu_lsu_adapter (
     //  RTU 侧 —— 下面这些就是 RTU 的原端口名
     // ============================================================
     // ---- §6.0 ----
-    output wire [1:0]  ren_preg_req,
-    output wire [4:0]  ren_preg_req_lreg0,
-    output wire [4:0]  ren_preg_req_lreg1,
-    output wire [4:0]  ren_preg_req_lreg2,
+    output wire [2:0]  ren_preg_req,        // 逐路取走 (bit k = 车道 k), 2026-10-12 起
     input  wire [`RTU_PREG_W-1:0]  rtu_preg_alloc0,
     input  wire [`RTU_PREG_W-1:0]  rtu_preg_alloc1,
     input  wire [`RTU_PREG_W-1:0]  rtu_preg_alloc2,
@@ -247,24 +244,26 @@ module RTU_idu_lsu_adapter (
     // ============================================================
     //  2) §6.0 分配握手
     // ============================================================
-    // ⚠️ **三路独立请求 vld → "程序序前缀"计数**。
-    //    §6.0 的车道语义写死为: `ren_preg_req = n` 表示**车道 0..n-1 是请求者**。
-    //    IDU 给的是三根独立 vld（`idu_rtu_ir_preg{k}_alloc_vld`），而它那边的
-    //    停顿链天然保证"请求是前缀"（同一根 `ctrl_ir_stall` 门控三路）⇒ 数个数
-    //    就是前缀长度，不用再判合法性。
-    //    ⚠️ 这条"请求 ⟺ 取走"是硬契约：请求了却不派遣也不冲刷，那个号会永久停在
-    //       WF_ALLOC（年龄回收已删）。IDU 天然满足（请求、RAT 写、进 IS 由同一个
-    //       `!ctrl_ir_stall` 门控）。
-    assign ren_preg_req[1:0] = {1'b0, idu_rtu_ir_preg0_alloc_vld}
-                             + {1'b0, idu_rtu_ir_preg1_alloc_vld}
-                             + {1'b0, idu_rtu_ir_preg2_alloc_vld};
-
-    // ⚠️ **填非零常量**。RTU 只拿这三根判"是不是 x0 那一路"（`lreg == 0` 的那路不给号），
-    //    而 IDU 的请求本身在产生时就已经排除了 x0（条件里有 `!..._dst_x0`）⇒
-    //    给非零常量即可，不需要真的把 dst lreg 引出来。
-    assign ren_preg_req_lreg0 = 5'd1;
-    assign ren_preg_req_lreg1 = 5'd1;
-    assign ren_preg_req_lreg2 = 5'd1;
+    // ⚠️ **逐路直传**（2026-10-12 修，原写法是错的）。
+    //
+    //    原写法把三路 vld **求和**当"程序序前缀长度"，理由是"IDU 的停顿链保证请求是
+    //    前缀（同一根 `ctrl_ir_stall` 门控三路）"。**这个理由不成立**：
+    //        `idu_rtu_ir_preg{k}_alloc_vld = ir_inst{k}_vld && !stall
+    //                                        && dst_vld && !dst_x0`
+    //    是**每条车道各自**看自己要不要写寄存器 —— 同一根 stall 只保证"大家一起停"，
+    //    不保证"要号的都在前面"。车道 0 是"写 x0 的 nop / 分支"时它是 0，而车道 2
+    //    照样可以是 1 ⇒ 请求向量 (0,0,1) 被数成"前缀长度 1" ⇒ 判成"车道 0 取走了"。
+    //    后果：被误判那一路的门房白换号（旧号永久卡 WF_ALLOC = 漏号），
+    //    而真请求者那一路没换（连着两次请求会拿到同一个号）。
+    //    实测指纹与推导见 `doc/a910_difftest_zh.md` §6.5。
+    //
+    //    C910 本来就是逐路独立的：`ct_rtu_pst_preg.v:6995` 的
+    //    `alloc_preg{k}_invalid` 各自只看 `idu_rtu_ir_preg{k}_alloc_vld`。
+    // ⇒ 直接透传三路 vld。x0 的排除由 IDU 在产生请求时就做掉了（条件里有 `!dst_x0`），
+    //    所以原来那三根恒 `5'd1` 的 `ren_preg_req_lreg*` 一并删掉，不再需要。
+    assign ren_preg_req[2:0] = {idu_rtu_ir_preg2_alloc_vld,
+                                idu_rtu_ir_preg1_alloc_vld,
+                                idu_rtu_ir_preg0_alloc_vld};
 
     // ⚠️ **preg 7 → 6 切位**：PREG=64 档下 RTU 侧最高位恒 0。
     //    （IDU 的端口是 6 位，给 7 位会隐式截断；这里显式切，免得将来读的人以为是漏接。）

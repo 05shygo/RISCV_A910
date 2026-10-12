@@ -65,7 +65,15 @@ INTERNAL_FORCE = {"rtu_yy_xx_flush", "cpurst_b", "idu_lsu_ld_src0",
 
 
 GEO = {"DCACHE_SIZE": 2048, "LSIQ_ENTRY": 8, "SQ_ENTRY": 6, "SDIQ_ENTRY": 4,
-       "WMB_ENTRY": 4, "LFB_ADDR_ENTRY": 3, "LFB_DATA_ENTRY": 1}
+       "WMB_ENTRY": 4, "LFB_ADDR_ENTRY": 3, "LFB_DATA_ENTRY": 1,
+       # ⚠️ 2026-10-12 补: **RTU 自己的宏也要在这里**。它原来不在表里 ⇒ 所有
+       #    `` `RTU_PREG_W-1:0 `` 的网都落进 `width_num → None` 的兜底 ⇒
+       #    生成 `wire rtu_preg_alloc0;` 这样的**1 位隐式网**、接到 6 位端口上被静默截断
+       #    (正是本文件头那句"漏了就是 1 位隐式线网"警告的那类坑, 而生成器自己犯了)。
+       #    实测: 不补这一项时 `make rtu-subsys-elab` 报 PCWM-W=26 (预期 5)。
+       #    取值照本文件的配置 —— 见文件头"【配置】按 PREG=64 使用" (PREG_W = 6)。
+       #    ⚠️ 以后真要支持 96 档, 这一项得跟着档走, 别写死。
+       "RTU_PREG_W": 6}
 
 
 def resolve_width(w):
@@ -81,6 +89,12 @@ def resolve_width(w):
     expr = w
     for k, v in GEO.items():
         expr = re.sub(r"\b%s\b" % k, str(v), expr)
+    # ⚠️ 2026-10-12 补: **反引号要去掉**。表里的名字是**宏**，原文写成
+    #    `` `RTU_PREG_W-1:0 `` —— 代换完是 `` `6-1:0 ``，那个残留的反引号
+    #    过不了下面那条 `[0-9+\-*/() ]` 白名单 ⇒ 整个宽度判成"不认识" ⇒
+    #    `width_num` 返回 None ⇒ 内部网落成 1 位。去掉反引号即可 (宏与参数
+    #    在数值上等价，这里只做数值代换)。
+    expr = expr.replace("`", "")
     parts = []
     for seg in expr.split(":"):
         seg = seg.strip()
@@ -112,7 +126,15 @@ def width_num(w):
 
 
 def parse_ports(path, mod):
-    text = re.sub(r"//[^\n]*", "", open(path, encoding="utf-8").read())
+    text = open(path, encoding="utf-8").read()
+    # ⚠️ **块注释也要剥**（2026-10-12 修）。原来只剥 `//` —— 而同事把不再用的端口
+    #    **整段用 `/* */` 注释掉**（`lsu_top.sv:125-140` 的 `bus_arb_*_grnt` / `rb_biu_*`），
+    #    生成器照样把它们接出去 ⇒ VCS 报一串 `Error-[UPIMI-E] Undefined port`
+    #    ⇒ `make rtu-subsys-elab` 自 2026-10-10 起**一直是红的**（红得没信息量，
+    #    真问题会被这 10 条淹掉）。剥掉块注释后端口表与 elaborate 看到的就一致了。
+    #    先剥块注释再剥行注释 —— 顺序反了的话 `/* // */` 会残留。
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
+    text = re.sub(r"//[^\n]*", "", text)
     m = re.search(r"^module\s+%s\b.*?^\);" % mod, text, re.S | re.M)
     if not m:
         raise SystemExit("找不到 %s 的端口表" % mod)

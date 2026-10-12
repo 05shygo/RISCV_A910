@@ -1317,10 +1317,7 @@ RTU u_rtu (
     //    驱动 (带该指令的 iid)。恒 0 时下面那条重放路径永不触发, 行为与改动前逐位一致。
     .lsu_replay_vld     (1'b0),
     .lsu_replay_iid     (7'd0),
-    .ren_preg_req       (2'd0),
-    .ren_preg_req_lreg0 (5'd0),
-    .ren_preg_req_lreg1 (5'd0),
-    .ren_preg_req_lreg2 (5'd0),
+    .ren_preg_req       (3'd0),
 
     // ---- §6.1 派遣: 车道 0 = ID 级那条; 车道 1/2 恒空 (单发射) ----
     .disp0_vld      (rtu_disp0_vld),
