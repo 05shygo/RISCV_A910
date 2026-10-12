@@ -217,9 +217,23 @@ module ifu_biu_axi
       end
 
       // busy 在 AR 成交时置起, 最后一拍被取走时落下。
+      //
+      // ⚠️ 2026-10-12 修: 判据里本来写的是 `beat_left_q == 3'd1`, **恒不成立**,
+      //    ⇒ `busy_q` 永不落 ⇒ 第一笔事务之后取指通路整个卡死。整核冒烟实测:
+      //      T85 ar_fire=1 | T86 r_fire=1 busy_q=1 beat_left=1
+      //      T87 beat_taken=1 busy_q=1 beat_left=**0**   ← 两个条件差了一拍
+      //      T88 refill FSM 已回 IDLE 并重新 req, 但 T89 arvalid 被 ~busy_q 掐成 0
+      //      T90+ 冻结 (beat_left=0 还让 rready 恒 0, R 通道一起锁死)
+      //
+      //    为什么差一拍: `beat_left_q` 的语义是"还剩几拍**没收到**", 它在 `r_fire`
+      //    (BIU→rdata_q) 那一拍就减一; 而 `beat_taken` 是"IFU 把手上那拍取走",
+      //    要**再晚一拍**。所以最后一拍被取走时, `beat_left_q` 早已是 0 —— 判据
+      //    该比 0, 不是比 1。单拍 (biu_rd_len=00) 和 4 拍走的都是这一条。
+      //    (上面 beat_left_q 声明处那条注释担心的是"位宽被截断成 0 导致 busy 落不下来",
+      //     那是**另一条**路径; 本条是判据写错, 单拍事务一样中招。)
       if (ar_fire)
         busy_q <= 1'b1;
-      else if (beat_taken & (beat_left_q == 3'd1))
+      else if (beat_taken & (beat_left_q == 3'd0))
         busy_q <= 1'b0;
     end
   end // p_ar
