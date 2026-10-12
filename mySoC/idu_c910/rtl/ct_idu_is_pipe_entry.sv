@@ -55,9 +55,9 @@ parameter IS_OPCODE            = 31;
 //==========================================================
 //                   Internal Signals
 //==========================================================
-//logic [4:0]   entry_dst_reg;
+logic [4:0]   entry_dst_reg;
 logic [6:0]   entry_dst_preg;
-//logic [6:0]   entry_dst_rel_preg;
+logic [6:0]   entry_dst_rel_preg;
 logic [31:0]  entry_opcode;
 logic [64:0]  entry_pc;
 logic         entry_src0_vld;

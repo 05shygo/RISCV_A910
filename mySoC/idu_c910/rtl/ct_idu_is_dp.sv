@@ -6,23 +6,17 @@ module ct_idu_is_dp (
   input  logic         cpurst_b,
 
   // IR data
-<<<<<<< HEAD
-  input  logic [75:0] dp_ir_inst0_data,
-=======
 
-  input  logic [70:0] dp_ir_inst0_data,
->>>>>>> 26279c9817d0f91794cacf73048c1ba76d776fab
+  input  logic [75:0] dp_ir_inst0_data,
+
   input  logic [64:0] dp_ir_inst0_pc,
   input  logic [24:0] dp_ir_inst0_chk,
   input  logic [75:0] dp_ir_inst1_data,
   input  logic [64:0] dp_ir_inst1_pc,
   input  logic [24:0] dp_ir_inst1_chk,
-<<<<<<< HEAD
-  input  logic [75:0] dp_ir_inst2_data,
-=======
-  input  logic [70:0] dp_ir_inst2_data,
 
->>>>>>> 26279c9817d0f91794cacf73048c1ba76d776fab
+  input  logic [75:0] dp_ir_inst2_data,
+
   input  logic [64:0] dp_ir_inst2_pc,
   input  logic [24:0] dp_ir_inst2_chk,
 
