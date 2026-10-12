@@ -6,13 +6,15 @@ module ct_idu_is_dp (
   input  logic         cpurst_b,
 
   // IR data
-  input  logic [64:0] dp_ir_inst0_data,
+
+  input  logic [70:0] dp_ir_inst0_data,
   input  logic [64:0] dp_ir_inst0_pc,
   input  logic [24:0] dp_ir_inst0_chk,
-  input  logic [64:0] dp_ir_inst1_data,
+  input  logic [70:0] dp_ir_inst1_data,
   input  logic [64:0] dp_ir_inst1_pc,
   input  logic [24:0] dp_ir_inst1_chk,
-  input  logic [64:0] dp_ir_inst2_data,
+  input  logic [70:0] dp_ir_inst2_data,
+
   input  logic [64:0] dp_ir_inst2_pc,
   input  logic [24:0] dp_ir_inst2_chk,
 
@@ -121,18 +123,20 @@ module ct_idu_is_dp (
 //----------------------------------------------------------
 //                 IS ctrl path parameters
 //----------------------------------------------------------
-parameter IS_WIDTH             = 65;
-parameter IS_ILLEGAL           = 64;
-parameter IS_ALU_SHORT         = 63;
-parameter IS_LSU               = 62;
-parameter IS_DIV               = 61;
-parameter IS_MULT              = 60;
-parameter IS_BJU               = 59;
-parameter IS_STADDR            = 58;
-parameter IS_STORE             = 57;
-parameter IS_LOAD              = 56;
-parameter IS_ALU               = 55;
-//parameter IS_DST_REL_PREG      = 72;
+
+parameter IS_WIDTH             = 71;
+parameter IS_ILLEGAL           = 70;
+parameter IS_ALU_SHORT         = 69;
+parameter IS_LSU               = 68;
+parameter IS_DIV               = 67;
+parameter IS_MULT              = 66;
+parameter IS_BJU               = 65;
+parameter IS_STADDR            = 64;
+parameter IS_STORE             = 63;
+parameter IS_LOAD              = 62;
+parameter IS_ALU               = 61;
+parameter IS_DST_REL_PREG      = 60;
+
 parameter IS_DST_PREG          = 54;
 //parameter IS_DST_REG           = 53;
 //parameter IS_SRC2_DATA         = 55;

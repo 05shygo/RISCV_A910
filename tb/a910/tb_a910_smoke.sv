@@ -534,4 +534,94 @@ module tb_a910_smoke;
     $fatal(1, "a910 smoke timeout");
   end
 
+  // =====================================================================
+  //  【临时诊断】派遣记录 vs 分配握手 —— `A910_SIM_ARGS=+PROBE_DISP`
+  //
+  //  追 IDU 尾巴用: create→read 改完之后 X 没了, 但
+  //    * 首条退休 dbg_commit_value0 = X   (x5 本该 <= 100)
+  //    * 第三条 dbg_commit_pc  = 0x04      (mul 本该在 0x08)
+  //  两个都是"表项内部不自洽"的样子 —— pc 与 dst/lreg 描述的不是同一条指令。
+  //  RTU 侧 pc 和 dst_preg 走的是同一条路进 ROB (RTU_subsys.v:458-469), 所以
+  //  嫌疑落在**派遣当拍记录本身**、或**记录与分配号不同拍**上。这里把两者
+  //  同拍拍下来对齐着看。
+  // =====================================================================
+  integer disp_probe_lines = 0;
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_DISP") && disp_probe_lines < 200) begin
+      if (dut.idu_rtu_disp0_vld === 1'b1 || dut.idu_rtu_disp1_vld === 1'b1
+          || dut.idu_rtu_disp2_vld === 1'b1 || dut.ren_preg_req !== 2'b00) begin
+        disp_probe_lines = disp_probe_lines + 1;
+        $display("  [DISP] T%0d vld=%b%b%b | pc0=%08x pc1=%08x pc2=%08x",
+                 cycles, dut.idu_rtu_disp2_vld, dut.idu_rtu_disp1_vld, dut.idu_rtu_disp0_vld,
+                 dut.idu_rtu_disp0_pc, dut.idu_rtu_disp1_pc, dut.idu_rtu_disp2_pc);
+        $display("         dst_preg=%0d,%0d,%0d lreg=%0d,%0d,%0d flags=%b,%b,%b",
+                 dut.idu_rtu_disp0_dst_preg, dut.idu_rtu_disp1_dst_preg,
+                 dut.idu_rtu_disp2_dst_preg,
+                 dut.idu_rtu_disp0_dst_lreg, dut.idu_rtu_disp1_dst_lreg,
+                 dut.idu_rtu_disp2_dst_lreg,
+                 dut.idu_rtu_disp0_flags, dut.idu_rtu_disp1_flags, dut.idu_rtu_disp2_flags);
+        $display("         req=%b lreg_req=%0d,%0d,%0d alloc_vld(IDU)=%b%b%b | 给号=%0d(%b),%0d(%b),%0d(%b)",
+                 dut.ren_preg_req, dut.ren_preg_req_lreg0, dut.ren_preg_req_lreg1,
+                 dut.ren_preg_req_lreg2,
+                 dut.idu_rtu_ir_preg2_alloc_vld, dut.idu_rtu_ir_preg1_alloc_vld,
+                 dut.idu_rtu_ir_preg0_alloc_vld,
+                 dut.rtu_idu_alloc_preg0, dut.rtu_idu_alloc_preg0_vld,
+                 dut.rtu_idu_alloc_preg1, dut.rtu_idu_alloc_preg1_vld,
+                 dut.rtu_idu_alloc_preg2, dut.rtu_idu_alloc_preg2_vld);
+        // ★ 二分点: 写入口(create) vs 读出口(read) 的 pc 各是多少 + IR 级车位有效位
+        $display("         [二分] create_pc=%08x,%08x,%08x  read_pc=%08x,%08x,%08x",
+                 dut.u_ct_idu_top.x_ct_idu_is_dp.is_inst0_create_pc[31:0],
+                 dut.u_ct_idu_top.x_ct_idu_is_dp.is_inst1_create_pc[31:0],
+                 dut.u_ct_idu_top.x_ct_idu_is_dp.is_inst2_create_pc[31:0],
+                 dut.u_ct_idu_top.x_ct_idu_is_dp.is_inst0_read_pc[31:0],
+                 dut.u_ct_idu_top.x_ct_idu_is_dp.is_inst1_read_pc[31:0],
+                 dut.u_ct_idu_top.x_ct_idu_is_dp.is_inst2_read_pc[31:0]);
+        $display("                dp_ir_pc=%08x,%08x,%08x  ir_vld=%b%b%b  ir_pipped_vld=%b%b%b",
+                 dut.u_ct_idu_top.x_ct_idu_is_dp.dp_ir_inst0_pc[31:0],
+                 dut.u_ct_idu_top.x_ct_idu_is_dp.dp_ir_inst1_pc[31:0],
+                 dut.u_ct_idu_top.x_ct_idu_is_dp.dp_ir_inst2_pc[31:0],
+                 dut.u_ct_idu_top.x_ct_idu_ir_ctrl.ir_inst2_vld,
+                 dut.u_ct_idu_top.x_ct_idu_ir_ctrl.ir_inst1_vld,
+                 dut.u_ct_idu_top.x_ct_idu_ir_ctrl.ir_inst0_vld,
+                 dut.u_ct_idu_top.ctrl_ir_pipedown_inst2_vld,
+                 dut.u_ct_idu_top.ctrl_ir_pipedown_inst1_vld,
+                 dut.u_ct_idu_top.ctrl_ir_pipedown_inst0_vld);
+      end
+    end
+  end
+
+  // =====================================================================
+  //  【临时诊断】ifu_biu_axi 的 busy_q 死锁现场 —— `A910_SIM_ARGS=+PROBE_AXI`
+  //
+  //  假设 (读码推出, 待实测): 单拍事务下
+  //     `busy_q` 的清除条件是 `beat_taken & (beat_left_q == 3'd1)`,
+  //     但 `beat_left_q` 在 `r_fire` 那拍就从 1 减到 0, 而 `beat_taken`
+  //     (= data_vld_q) 要**再晚一拍**才成立 ⇒ 两个条件永远不同拍 ⇒ busy_q 永不落
+  //     ⇒ `arvalid = biu_rd_req & ~busy_q` 恒 0 ⇒ refill FSM 卡在 S_REQ ⇒ 取指死。
+  //
+  //  触发即打印 (不用写死窗口, 免得又得为一轮调试改一次 TB), 上限 300 行。
+  // =====================================================================
+  integer axi_probe_lines = 0;
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_AXI") && axi_probe_lines < 300) begin
+      if (dut.u_ifu_biu_axi.busy_q === 1'b1 || dut.u_rv32ifu2_top.refill_req === 1'b1
+          || dut.u_ifu_biu_axi.ar_fire === 1'b1 || dut.u_ifu_biu_axi.r_fire === 1'b1) begin
+        axi_probe_lines = axi_probe_lines + 1;
+        $display("  [AXI] T%0d ar_fire=%b r_fire=%b beat_taken=%b | busy_q=%b beat_left=%0d data_vld=%b grnt=%b",
+                 cycles,
+                 dut.u_ifu_biu_axi.ar_fire, dut.u_ifu_biu_axi.r_fire,
+                 dut.u_ifu_biu_axi.beat_taken,
+                 dut.u_ifu_biu_axi.busy_q, dut.u_ifu_biu_axi.beat_left_q,
+                 dut.u_ifu_biu_axi.data_vld_q, dut.u_ifu_biu_axi.grnt_q);
+        $display("         refill: state=%0d req=%b busy=%b | req_len=%b arvalid=%b arready=%b rvalid=%b rready=%b | 已退休=%0d",
+                 dut.u_rv32ifu2_top.u_refill.state_q,
+                 dut.u_rv32ifu2_top.refill_req, dut.u_rv32ifu2_top.refill_busy,
+                 dut.u_ifu_biu_axi.biu_rd_len,
+                 dut.u_ifu_biu_axi.ifu_biu_arvalid, dut.u_ifu_biu_axi.ifu_biu_arready,
+                 dut.u_ifu_biu_axi.biu_ifu_rvalid, dut.u_ifu_biu_axi.ifu_biu_rready,
+                 retired);
+      end
+    end
+  end
+
 endmodule

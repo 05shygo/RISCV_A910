@@ -97,16 +97,23 @@ module A910_cpu
   logic rst_b;
 
   // ---- IFU ↔ IDU: 取指交付 ----
-  logic         idu_inst0_vld;
+  // ⚠️ 2026-10-12: `ifu_inst*_vld` 是 IFU 的原始输出, `idu_inst*_vld` 是**过了
+  //    "误预测冻结窗"之后**交给 IDU 的 (见下面 `mispred_hold_q` 那段)。别把两者
+  //    又接成同一根 —— 那等于把冻结窗删掉。
+  logic         ifu_inst0_vld;
   logic [127:0] idu_inst0_data;
   logic [ 24:0] idu_inst0_chk;
-  logic         idu_inst1_vld;
+  logic         ifu_inst1_vld;
   logic [127:0] idu_inst1_data;
   logic [ 24:0] idu_inst1_chk;
-  logic         idu_inst2_vld;
+  logic         ifu_inst2_vld;
   logic [127:0] idu_inst2_data;
   logic [ 24:0] idu_inst2_chk;
+  logic         idu_inst0_vld;
+  logic         idu_inst1_vld;
+  logic         idu_inst2_vld;
   logic [  1:0] idu_accept_num;   // IDU 输出 → IFU 消费: 同拍收走的前缀条数
+  logic [  1:0] ifu_accept_num;   // 过冻结窗之后才交给 IFU 的那一份 (冻结期夹成 0)
   logic         ifu_idu_flush;    // IFU 的内部冲刷, 只做观察口 (IDU 侧没有对应的口)
   // IFU 交出来的 128 位 → IDU 要的 97 位。布局见下面那三根 assign 的注释。
   logic [ 96:0] ifu_idu_ib_inst0_data;
@@ -322,10 +329,18 @@ module A910_cpu
   logic [ 31:0] rtu_csr_rd_wdata;
   // ⚠️ RTU 侧的口叫 `preg_rdata*`, IDU 侧叫 `rtu_preg_rdata*` —— **两侧名字不一样**
   //    (CSR 源那根倒是同名)。这里用 IDU 的名字当网名, RTU 那边接时跨过去。
+  //    2026-10-12 起这两组**不再是同一根网**: IDU 出来的是 `*_raw*`(PRF 组合读),
+  //    经下面的写口旁路后才成为 RTU 看到的 `rtu_preg_rdata*`。
+  logic [ 31:0] idu_rtu_preg_rdata_raw0;
+  logic [ 31:0] idu_rtu_preg_rdata_raw1;
+  logic [ 31:0] idu_rtu_preg_rdata_raw2;
+  logic [ 31:0] idu_rtu_csr_src_rdata_raw;
   logic [ 31:0] rtu_preg_rdata0;
   logic [ 31:0] rtu_preg_rdata1;
   logic [ 31:0] rtu_preg_rdata2;
   logic [ 31:0] rtu_csr_src_rdata;
+
+
 
   // ---------------------------------------------------------------------------
   // RTU ↔ LSU: 经适配层 (完成口 5/6 / store 重放 / 访存异常)
@@ -583,6 +598,9 @@ module A910_cpu
   logic [ 31:0] dbg_commit_pc0;
   logic [ 31:0] dbg_commit_pc1;
   logic [ 31:0] dbg_commit_pc2;
+  logic         rtu_dbg_commit_ena0;      // RTU 原始输出 (可能含"写 x0")
+  logic         rtu_dbg_commit_ena1;
+  logic         rtu_dbg_commit_ena2;
   logic         dbg_commit_ena0;
   logic         dbg_commit_ena1;
   logic         dbg_commit_ena2;
@@ -592,6 +610,22 @@ module A910_cpu
   logic [ 31:0] dbg_commit_value0;
   logic [ 31:0] dbg_commit_value1;
   logic [ 31:0] dbg_commit_value2;
+
+  // ---------------------------------------------------------------------------
+  //  `ena` 要把"写 x0"摘掉 (2026-10-12)
+  //
+  //  RTU 的 `commit_ena = commit_vld & rf_we & ~trap_hit` —— 它只看"这条指令带不带
+  //  写口", 不看写的是不是 x0。而 difftest 的黄金模型是按**架构是否改变**报 ena 的:
+  //   `jal x0, 4` 在模型里 ena=0, 在 RTU 这里 ena=1 (reg=0) ⇒ 第一条指令就报失配。
+  //
+  //  顺序核早就这么处理了: `mycpu.v:1572`
+  //      assign debug_wb_ena = rtu_commit_ena0 & (rtu_commit_reg0 != 5'd0);
+  //  **摘在核顶层、不摘在 RTU 里** —— 这里照抄同一口径, 让两个核的 difftest 观察口
+  //  逐位同义 (同一个 `dpi_shim.c` 才能同时喂两个核)。
+  // ---------------------------------------------------------------------------
+  assign dbg_commit_ena0 = rtu_dbg_commit_ena0 & (dbg_commit_reg0 != 5'd0);
+  assign dbg_commit_ena1 = rtu_dbg_commit_ena1 & (dbg_commit_reg1 != 5'd0);
+  assign dbg_commit_ena2 = rtu_dbg_commit_ena2 & (dbg_commit_reg2 != 5'd0);
 
   // ---- 待接 IDU 的执行单元侧 (这些线在 IDU 上是输入, 归执行单元驱动) ----
   // 执行单元写回 IDU 的端口分配 (2026-10-11):
@@ -657,17 +691,17 @@ module A910_cpu
     .rst                (rst),
 
     // ---- IDU 交付 ----
-    .idu_inst0_vld      (idu_inst0_vld),
+    .idu_inst0_vld      (ifu_inst0_vld),
     .idu_inst0_data     (idu_inst0_data),
     .idu_inst0_chk      (idu_inst0_chk),
-    .idu_inst1_vld      (idu_inst1_vld),
+    .idu_inst1_vld      (ifu_inst1_vld),
     .idu_inst1_data     (idu_inst1_data),
     .idu_inst1_chk      (idu_inst1_chk),
-    .idu_inst2_vld      (idu_inst2_vld),
+    .idu_inst2_vld      (ifu_inst2_vld),
     .idu_inst2_data     (idu_inst2_data),
     .idu_inst2_chk      (idu_inst2_chk),
     .idu_flush          (ifu_idu_flush),      // 观察口, 见末尾待接清单
-    .idu_accept_num     (idu_accept_num),
+    .idu_accept_num     (ifu_accept_num),
 
     // ---- 后端重定向 ----
     // `iu_*` 那两根来自 BEU (EX 级误预测) —— 本文件还没例化执行单元, 见待接清单;
@@ -730,6 +764,58 @@ module A910_cpu
   // (fault/cause 那几位 IDU 侧没有对应字段, 取指故障走的是另一条通路。)
   // ---------------------------------------------------------------------------
   assign ifu_idu_ib_inst0_data[96:0] = {idu_inst0_data[122], idu_inst0_data[95:0]};
+
+  // ===========================================================================
+  //  【误预测冻结窗】EX 级重定向 → RTU 冲刷脉冲之间, 一条都不交给 IDU
+  //  (2026-10-12 立; 对应 C910 的 `iu_idu_mispred_stall` + `rtu_idu_flush_stall`)
+  // ===========================================================================
+  //  【症状 (lui 用例, +PROBE_IFU 实测)】PC=0x60 的 `bne` 跳到 0x7c:
+  //      T116  iu_chgflw_vld=1 (EX 级重定向) → IFU 立刻重取
+  //      T117  IFU 把目标那条 0x7c **当拍**交给 IDU (I-Cache 命中 + IBUF 空时旁路),
+  //            IDU 的 inst0_vld=1, 收下
+  //      T119  RTU 的冲刷脉冲 (`rtu_yy_xx_flush`) 才到 IDU ⇒ 把它连 ID 级一起清掉
+  //      ⇒ **0x7c 凭空消失**, 退休流从 0x60 直接跳到 0x80。
+  //
+  //  【根因是相位, 不是谁接错了】"执行级早重定向"让 IFU 比冲刷**早 3 拍**就取回了
+  //  正确的目标, 而 IDU 的冲刷是**一把大扫帚**(整条 ID/IR/IS 全清, 分不清
+  //  "错路"和"重定向后重新取回的正确指令")。C910 里靠两件事错开:
+  //    * `iu_idu_mispred_stall`(ct_iu_bju.v:799-819) —— "stall ID stage until all
+  //      frontend and backend pipeline empty", 由 EX1 重定向置起、`rtu_yy_xx_flush` 清掉;
+  //    * `rtu_idu_flush_stall`(ct_rtu_retire.v:1985) —— 冲刷状态机离开 IDLE 期间冻 IDU。
+  //  **交付的 IDU 把这两个输入整个删掉了** (ct_idu_ir_ctrl.sv:276 只剩
+  //  `ctrl_ir_stage_stall = ctrl_ir_preg_stall`), 于是这层保护在 A910 上不存在。
+  //  再者 C910 的 IFU 是 3 级、重定向后要好几拍才交得出指令, 冲刷窗口天然错开;
+  //  我们的 IFU2 命中 I-Cache 时**下一拍**就交 —— 这个竞态就必然踩中, 不是偶发。
+  //
+  //  【为什么在本层做】IDU 没有可用的 stall 输入口 (要加口就得动同事的模块);
+  //  而"重定向窗内不交付"这件事, 在 IFU 与 IDU 之间的**接线层**就能表达干净:
+  //  IFU 照常抢跑取指 (抢跑的好处一点没丢, 指令就停在 IBUF 里), 只是**闸门**
+  //  关到冲刷到来为止。代价: 每次误预测多几拍 (冲刷会把 IBUF 一起清掉 ⇒ 目标那条
+  //  要再取一次), 换来的是**指令不再丢**。
+  //
+  //  ⚠️ 清条件必须用 `rtu_yy_xx_flush` —— 与 IDU 自己看到的**同一根**信号。
+  //     用 RTU 别的重定向口 (相位不同) 会出现"闸门一直在关"的死锁。
+  //  ⚠️ 只关 `vld`, 不关 IBUF 的推入: 推入是 IFU 内部的事, 且闸门期间 IFU 已经被
+  //     `rtu_flush` 清过一次, 重新取回的目标那条正等在这里。
+  // ===========================================================================
+  reg mispred_hold_q;
+  always @(posedge clk or posedge rst) begin
+    if (rst)                  mispred_hold_q <= 1'b0;
+    else if (rtu_yy_xx_flush) mispred_hold_q <= 1'b0;   // 冲刷到了 ⇒ 开闸
+    else if (iu_chgflw_vld)   mispred_hold_q <= 1'b1;   // EX 重定向 ⇒ 关闸
+  end
+
+  assign idu_inst0_vld = ifu_inst0_vld & ~mispred_hold_q;
+  assign idu_inst1_vld = ifu_inst1_vld & ~mispred_hold_q;
+  assign idu_inst2_vld = ifu_inst2_vld & ~mispred_hold_q;
+
+  // ⚠️ **只关 vld 是不够的, 必须连 `accept_num` 一起夹 0。**
+  //    实测 (第一版就只关了 vld): 闸门期间 IBUF 里的 0x7c 还是**没了** ——
+  //    因为 `idu_accept_num` 是 IDU 按**自己的停顿状态**算的, 它**不看**
+  //    `ifu_idu_ib_inst*_vld` (这是已知的契约违例, 见文件末尾待接清单第 1 条)。
+  //    ⇒ IBUF 照 IDU 报的条数把它弹走, 而 IDU 那边因为 vld 被我夹掉没收 ⇒
+  //      **指令被弹进了黑洞**。夹住 accept_num, 指令就老实待在 IBUF 里等开闸。
+  assign ifu_accept_num = mispred_hold_q ? 2'd0 : idu_accept_num;
   // ⚠️ 车道 1 原来写的是 `idu_inst2_data[122]` —— 复制粘贴时漏改车道号。后果是
   //    **车道 1 的方向预测被车道 2 的顶掉**: 一拍交两条时, 车道 1 的 taken 取自
   //    车道 2 ⇒ 分支预测器的方向快照随指令走错一条, BIQ 拿它算 NPC 也会错。
@@ -1026,10 +1112,10 @@ module A910_cpu
   .rtu_csr_rd_we                  (rtu_csr_rd_we),
   .rtu_csr_rd_addr                (rtu_csr_rd_addr),
   .rtu_csr_rd_wdata               (rtu_csr_rd_wdata),
-  .rtu_preg_rdata0                (rtu_preg_rdata0),
-  .rtu_preg_rdata1                (rtu_preg_rdata1),
-  .rtu_preg_rdata2                (rtu_preg_rdata2),
-  .rtu_csr_src_rdata              (rtu_csr_src_rdata),
+  .rtu_preg_rdata0                (idu_rtu_preg_rdata_raw0),
+  .rtu_preg_rdata1                (idu_rtu_preg_rdata_raw1),
+  .rtu_preg_rdata2                (idu_rtu_preg_rdata_raw2),
+  .rtu_csr_src_rdata              (idu_rtu_csr_src_rdata_raw),
 
   //==========================================================
   // 执行单元的发射准入
@@ -1397,6 +1483,72 @@ module A910_cpu
   // ============================================================
   // RTU
   // ============================================================
+  // ---------------------------------------------------------------------------
+  //  PRF 读口旁路 (2026-10-12, A910 集成层)
+  //
+  //  【为什么必需】`ct_idu_rf_prf_pregfile.sv` 的 12~15 号读口是**纯组合**读
+  //  (`rtu_preg_rdata0 = preg_reg_dout[rtu_preg_raddr0]`), 而写口
+  //  (`*_wb_preg_vld` + `*_wb_preg_expand`) 的写入落在**本拍时钟沿** —— 于是
+  //  "写回与退休撞在同一拍"时, 读回来的是**写之前的旧值**; 那条指令的物理寄存器
+  //  若从未被写过, 读到的就是未初始化值/X。
+  //
+  //  实测指纹 (mul 用例, +TRACE_EARLY):
+  //      T93 写回 p0_vld=1 p0_dupx=63        ← addi x5 的写回
+  //      T93 退休 ret pc=00000000 x5<=xxxxxxxx
+  //  以及 `addi x17,x0,93` 执行了却报 `x17<=00000000` —— 冒烟台据此判超时。
+  //
+  //  对架构状态**无害**(写在边沿落地, 退休只是个状态位), 但**打死 difftest**:
+  //  `dbg_commit_*` 那 15 根正是 difftest 的接入点, "边写边退休"这一拍必然读到旧值,
+  //  于是每条这样的指令都会报一次假失配。
+  //
+  //  【为什么放在顶层】PRF 是 IDU 的文件, 改它属于动别人的模块; 而读口是给我们的
+  //  RTU 用的 ⇒ 在**本集成层**加旁路, 只改接线, 两边模块一行不动。
+  //  同一份旁路顺带覆盖 `rtu_csr_src_rdata`(RTU 读在途 CSR 指令的 rs1), 那里
+  //  同样可能撞上同拍写 —— 是同一个洞。
+  //
+  //  ⚠️ 判命中用 `_wb_preg_expand`(独热) 而不是 `_dupx` 比索引: expand 才是 PRF
+  //     内部真正用的写使能, 两者若哪天不同步, 这里跟着 PRF 走才对。
+  //  ⚠️ **不旁路第 5 个写口**(RTU 自己的 `rtu_csr_rd_*`): 那根在退休拍写, 而同拍
+  //     该 CSRC 条的值本来就取 `csr_rdata`; 把它卷进来会让
+  //     `csr_rd_wdata →(旁路)→ rtu_csr_src_rdata → csr_rd_wdata` 出现组合环。
+  // ---------------------------------------------------------------------------
+  wire [63:0] prf_wb0_hot = iu_idu_ex2_pipe0_wb_preg_expand & {64{iu_idu_ex2_pipe0_wb_preg_vld}};
+  wire [63:0] prf_wb1_hot = iu_idu_ex2_pipe1_wb_preg_expand & {64{iu_idu_ex2_pipe1_wb_preg_vld}};
+  wire [63:0] prf_wb2_hot = iu_idu_ex2_pipe2_wb_preg_expand & {64{iu_idu_ex2_pipe2_wb_preg_vld}};
+  wire [63:0] prf_wb3_hot = lsu_idu_wb_pipe3_wb_preg_expand & {64{lsu_idu_wb_pipe3_wb_preg_vld}};
+
+  // 一个读口的旁路 = 4 个写口按优先级串起来 (同一拍不可能有两个写口写同一个号)。
+  // 读口地址先切成 6 位 (PRF 是 64 项); RTU 侧的 `RTU_PREG_W` 是 6 或 7, 高位在
+  // 64 档下恒 0, 与 PRF 的截位口径一致。
+  wire [5:0] prf_raddr0 = rtu_preg_raddr0[5:0];
+  wire [5:0] prf_raddr1 = rtu_preg_raddr1[5:0];
+  wire [5:0] prf_raddr2 = rtu_preg_raddr2[5:0];
+  wire [5:0] prf_raddrc = rtu_csr_src_raddr[5:0];
+
+  assign rtu_preg_rdata0 = prf_wb0_hot[prf_raddr0] ? iu_idu_ex2_pipe0_wb_preg_data :
+                           prf_wb1_hot[prf_raddr0] ? iu_idu_ex2_pipe1_wb_preg_data :
+                           prf_wb2_hot[prf_raddr0] ? iu_idu_ex2_pipe2_wb_preg_data :
+                           prf_wb3_hot[prf_raddr0] ? lsu_idu_wb_pipe3_wb_preg_data :
+                                                     idu_rtu_preg_rdata_raw0;
+
+  assign rtu_preg_rdata1 = prf_wb0_hot[prf_raddr1] ? iu_idu_ex2_pipe0_wb_preg_data :
+                           prf_wb1_hot[prf_raddr1] ? iu_idu_ex2_pipe1_wb_preg_data :
+                           prf_wb2_hot[prf_raddr1] ? iu_idu_ex2_pipe2_wb_preg_data :
+                           prf_wb3_hot[prf_raddr1] ? lsu_idu_wb_pipe3_wb_preg_data :
+                                                     idu_rtu_preg_rdata_raw1;
+
+  assign rtu_preg_rdata2 = prf_wb0_hot[prf_raddr2] ? iu_idu_ex2_pipe0_wb_preg_data :
+                           prf_wb1_hot[prf_raddr2] ? iu_idu_ex2_pipe1_wb_preg_data :
+                           prf_wb2_hot[prf_raddr2] ? iu_idu_ex2_pipe2_wb_preg_data :
+                           prf_wb3_hot[prf_raddr2] ? lsu_idu_wb_pipe3_wb_preg_data :
+                                                     idu_rtu_preg_rdata_raw2;
+
+  assign rtu_csr_src_rdata = prf_wb0_hot[prf_raddrc] ? iu_idu_ex2_pipe0_wb_preg_data :
+                             prf_wb1_hot[prf_raddrc] ? iu_idu_ex2_pipe1_wb_preg_data :
+                             prf_wb2_hot[prf_raddrc] ? iu_idu_ex2_pipe2_wb_preg_data :
+                             prf_wb3_hot[prf_raddrc] ? lsu_idu_wb_pipe3_wb_preg_data :
+                                                       idu_rtu_csr_src_rdata_raw;
+
   RTU u_rtu (
     .cpu_clk                    (clk),
     .cpu_rst                    (rst),
@@ -1526,6 +1678,8 @@ module A910_cpu
     // ===================== BEU -> RTU (D13) =====================
     .beu_redirect_vld           (beu_redirect_vld),
 
+
+
     // ===================== §6.1 物理寄存器堆读口 (A1) =====================
     // 直连 IDU 内部的 PRF(不过适配层)。RTU 按"退休槽的 dst_preg"寻址。
     // ⚠️ RTU 侧叫 `preg_rdata*`, IDU 侧叫 `rtu_preg_rdata*` —— 两侧不同名。
@@ -1633,9 +1787,9 @@ module A910_cpu
     .dbg_commit_pc0             (dbg_commit_pc0),
     .dbg_commit_pc1             (dbg_commit_pc1),
     .dbg_commit_pc2             (dbg_commit_pc2),
-    .dbg_commit_ena0            (dbg_commit_ena0),
-    .dbg_commit_ena1            (dbg_commit_ena1),
-    .dbg_commit_ena2            (dbg_commit_ena2),
+    .dbg_commit_ena0            (rtu_dbg_commit_ena0),
+    .dbg_commit_ena1            (rtu_dbg_commit_ena1),
+    .dbg_commit_ena2            (rtu_dbg_commit_ena2),
     .dbg_commit_reg0            (dbg_commit_reg0),
     .dbg_commit_reg1            (dbg_commit_reg1),
     .dbg_commit_reg2            (dbg_commit_reg2),

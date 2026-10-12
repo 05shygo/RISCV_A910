@@ -177,7 +177,7 @@ CROSS     ?= riscv32-unknown-elf-
 ASM_SRCS  := $(wildcard $(PWD)/asm/*.S)
 ASM_BINS  := $(patsubst $(PWD)/asm/%.S,$(PWD)/bin/%.bin,$(ASM_SRCS))
 
-.PHONY: all build run run-all verdi clean help coremark asm muldiv-unit rtu-unit rtu-lsu-unit rtu-adapter-unit rtu-expt-unit iu-alu-unit iu-beu-unit iu-md-unit rtu-subsys-elab biu-unit a910-elab a910-run
+.PHONY: all build run run-all verdi clean help coremark asm muldiv-unit rtu-unit rtu-lsu-unit rtu-adapter-unit rtu-expt-unit iu-alu-unit iu-beu-unit iu-md-unit rtu-subsys-elab biu-unit a910-elab a910-run a910-difftest a910-difftest-all
 
 asm: $(ASM_BINS)
 
@@ -769,6 +769,72 @@ $(A910_SIMV): $(A910_SRC) $(A910_TB_SRC)
 	  -top tb_a910_smoke -o $(A910_SIMV) -Mdir=$(A910_SIM_BUILD)/csrc \
 	  -l $(A910_SIM_BUILD)/compile.log \
 	  $(A910_SRC) $(A910_TB_SRC)
+
+# ---------------------------------------------------------------------------
+# A910 的 **difftest 台** (2026-10-12 立): 用现成的黄金模型逐条比对退休流。
+#
+# 【为什么必须有它】冒烟台的判据 (看到 x17=93 且 a0==0) 会被 riscv-tests 的
+#   布局骗过 —— `fail` 块紧挨在 `pass` 块前面, 而 `ecall` 在 A910 顶层不停机
+#   ⇒ "走错路撞进 fail, 再落穿进 pass" 会报 PASS。实测 `beq` 用例就是这样:
+#   分支根本没生效, 冒烟台照样绿。**顺序核那批用例不能用冒烟台判对错。**
+#
+# 【判据】`golden_model/` + `dpi/dpi_shim.c` (与 tb_miniRV_dpi 同一份)。
+#   模型是**提交步进**: 每调一次 `gm_check_step()` 才走一条架构指令并逐位比对;
+#   收尾由 `cpu_poll_halt()` 判 (停在第一个 ecall, 用当时的 a0 定 pass/fail)。
+#
+#   make a910-difftest TEST=addi
+#   make a910-difftest TEST=addi A910_DT_ARGS=+TRACE     # 打全部退休流
+#   make a910-difftest-all                               # 整套 bin/*.bin
+#
+# ⚠️ 独立 BUILD_DIR (别和 obj_a910/、obj_a910_sim/ 共用 —— 三者的 define 与
+#    top 都不同, 共用会互相覆盖 simv)。
+# ⚠️ 不开 FSDB: 这套台要跑几十个用例, 波形会让每个用例慢一个量级。
+# ---------------------------------------------------------------------------
+A910_DT_BUILD := $(PWD)/obj_a910_dt
+A910_DT_SIMV  := $(A910_DT_BUILD)/simv
+A910_DT_TB    := $(PWD)/tb/a910/tb_a910_difftest.sv $(PWD)/tb/a910/axi_slave_128.v
+A910_DT_ARGS  ?=
+# 顺序核的用例里跑得最久的也就几十万拍; 卡死的用例要快速暴露, 所以给个小上限。
+A910_DT_MAX_CYCLES ?= 200000
+
+a910-difftest: $(A910_DT_SIMV) $(PWD)/bin/$(TEST).bin $(PWD)/bin/$(TEST).hex $(PWD)/bin/$(TEST).hex128
+	@ln -sf $(PWD)/bin/$(TEST).bin    $(TESTFILE)
+	@ln -sf $(PWD)/bin/$(TEST).hex    $(TESTHEX)
+	@ln -sf $(PWD)/bin/$(TEST).hex128 $(TESTHEX128)
+	@$(A910_DT_SIMV) +vcs+lic+wait -exitstatus +TEST=$(TEST) $(A910_DT_ARGS) \
+	  +MAX_CYCLES=$(A910_DT_MAX_CYCLES) -l $(A910_DT_BUILD)/sim.log
+
+$(A910_DT_SIMV): $(A910_SRC) $(A910_DT_TB) $(DPIC) $(CSRC_GM)
+	@mkdir -p $(A910_DT_BUILD)
+	$(VCS) $(VCS_FLAGS) $(VCS_FLAGS_EXTRA) $(INC) \
+	  -CFLAGS -DVCS -CFLAGS -I$(PWD)/golden_model/include \
+	  +define+RTU_PREG64 +define+DCACHE_2KB \
+	  +define+PATH=$(TESTFILE) +define+PATHHEX=$(TESTHEX) +define+PATH128=$(TESTHEX128) \
+	  -top tb_a910_difftest -o $(A910_DT_SIMV) -Mdir=$(A910_DT_BUILD)/csrc \
+	  -l $(A910_DT_BUILD)/compile.log \
+	  $(A910_SRC) $(A910_DT_TB) $(DPIC) $(CSRC_GM)
+
+# 整套顺序核用例 × A910 difftest, 末尾给一张 PASS/FAIL 总表。
+# 每个用例一行; 失败的在 /tmp/a910_dt/<用例>.log 里有完整对照。
+# ⚠️ coremark 不在默认列表里 (千万拍级, 且它靠外设 MONITOR 收尾, 本台没接外设)
+A910_DT_SKIP ?= coremark start peri trap
+
+a910-difftest-all: $(A910_DT_SIMV)
+	@mkdir -p /tmp/a910_dt
+	@pass=""; fail=""; \
+	for f in $(PWD)/bin/*.bin; do \
+	  t=$$(basename $$f .bin); \
+	  case " $(A910_DT_SKIP) " in *" $$t "*) continue;; esac; \
+	  $(MAKE) --no-print-directory a910-difftest TEST=$$t > /tmp/a910_dt/$$t.log 2>&1; \
+	  if [ $$? -eq 0 ]; then pass="$$pass $$t"; st="PASS"; else fail="$$fail $$t"; st="FAIL"; fi; \
+	  printf "  %-16s %s\n" "$$t" "$$st"; \
+	done; \
+	echo; echo "==================== A910 difftest 汇总 ===================="; \
+	echo "PASS ($$(echo $$pass | wc -w)):"; \
+	if [ -n "$$pass" ]; then echo "$$pass" | sed -e 's/^ //; s/ /, /g'; else echo "  (无)"; fi; \
+	echo "FAIL ($$(echo $$fail | wc -w)):"; \
+	if [ -n "$$fail" ]; then echo "$$fail" | sed -e 's/^ //; s/ /, /g'; else echo "  (无)"; fi; \
+	echo "日志: /tmp/a910_dt/<用例>.log"
 
 # RTU 适配层单元台 (2026-10-08 立): 直接驱动 RTU_idu_lsu_adapter 两侧端口, 不经整核。
 # 它守的是适配层里**有真逻辑**的四类变换 (不是纯接线):

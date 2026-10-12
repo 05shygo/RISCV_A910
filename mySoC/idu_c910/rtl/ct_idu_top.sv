@@ -380,13 +380,13 @@ logic        dp_ctrl_ir_inst1_illegal;
 logic        dp_ctrl_ir_inst2_illegal;
 logic [122:0] crtl_ir_inst2_data;
 logic [24:0] crtl_ir_inst2_chk;
-logic [64:0] dp_ir_inst0_data;
+logic [70:0] dp_ir_inst0_data;
 logic [64:0] dp_ir_inst0_pc;
 logic [24:0] dp_ir_inst0_chk;
-logic [64:0] dp_ir_inst1_data;
+logic [70:0] dp_ir_inst1_data;
 logic [64:0] dp_ir_inst1_pc;
 logic [24:0] dp_ir_inst1_chk;
-logic [64:0] dp_ir_inst2_data;
+logic [70:0] dp_ir_inst2_data;
 logic [64:0] dp_ir_inst2_pc;
 logic [24:0] dp_ir_inst2_chk;
 
@@ -428,19 +428,19 @@ logic [5:0]  rt_dp_inst0_src1_preg;
 logic [6:0]  rt_dp_inst0_src0_data;
 logic [6:0]  rt_dp_inst0_src1_data;
 //logic [6:0]  rt_dp_inst0_src2_data;
-//logic [5:0]  rt_dp_inst0_rel_preg;
+logic [5:0]  rt_dp_inst0_rel_preg;
 logic [5:0]  rt_dp_inst1_src0_preg;
 logic [5:0]  rt_dp_inst1_src1_preg;
 logic [6:0]  rt_dp_inst1_src0_data;
 logic [6:0]  rt_dp_inst1_src1_data;
 //logic [6:0]  rt_dp_inst1_src2_data;
-//logic [5:0]  rt_dp_inst1_rel_preg;
+logic [5:0]  rt_dp_inst1_rel_preg;
 logic [5:0]  rt_dp_inst2_src0_preg;
 logic [5:0]  rt_dp_inst2_src1_preg;
 logic [6:0]  rt_dp_inst2_src0_data;
 logic [6:0]  rt_dp_inst2_src1_data;
 //logic [6:0]  rt_dp_inst2_src2_data;
-//logic [5:0]  rt_dp_inst2_rel_preg;
+logic [5:0]  rt_dp_inst2_rel_preg;
 
 // IS Stage control signals
 logic        ctrl_is_stall;
@@ -725,15 +725,15 @@ ct_idu_ir_dp x_ct_idu_ir_dp (
   .dp_id_pipedown_inst1_chk               (dp_id_pipedown_inst1_chk),
   .dp_id_pipedown_inst2_data             (dp_id_pipedown_inst2_data),
   .dp_id_pipedown_inst2_chk               (dp_id_pipedown_inst2_chk),
- // .rt_dp_inst0_rel_preg                  (rt_dp_inst0_rel_preg),
+  .rt_dp_inst0_rel_preg                  (rt_dp_inst0_rel_preg),
   .rt_dp_inst0_src0_data                 (rt_dp_inst0_src0_data),
   .rt_dp_inst0_src1_data                 (rt_dp_inst0_src1_data),
  // .rt_dp_inst0_src2_data                 (rt_dp_inst0_src2_data),
- // .rt_dp_inst1_rel_preg                  (rt_dp_inst1_rel_preg),
+  .rt_dp_inst1_rel_preg                  (rt_dp_inst1_rel_preg),
   .rt_dp_inst1_src0_data                 (rt_dp_inst1_src0_data),
   .rt_dp_inst1_src1_data                 (rt_dp_inst1_src1_data),
  // .rt_dp_inst1_src2_data                 (rt_dp_inst1_src2_data),
- // .rt_dp_inst2_rel_preg                  (rt_dp_inst2_rel_preg),
+  .rt_dp_inst2_rel_preg                  (rt_dp_inst2_rel_preg),
   .rt_dp_inst2_src0_data                 (rt_dp_inst2_src0_data),
   .rt_dp_inst2_src1_data                 (rt_dp_inst2_src1_data),
  // .rt_dp_inst2_src2_data                 (rt_dp_inst2_src2_data),
@@ -835,7 +835,10 @@ ct_idu_ir_rt x_ct_idu_ir_rt (
  /// .rt_dp_inst1_src2_data                 (rt_dp_inst1_src2_data),
  // .rt_dp_inst2_rel_preg                  (rt_dp_inst2_rel_preg),
   .rt_dp_inst2_src0_data                 (rt_dp_inst2_src0_data),
-  .rt_dp_inst2_src1_data                 (rt_dp_inst2_src1_data)
+  .rt_dp_inst2_src1_data                 (rt_dp_inst2_src1_data),
+  .rt_dp_inst0_rel_preg(rt_dp_inst0_rel_preg),
+  .rt_dp_inst1_rel_preg(rt_dp_inst1_rel_preg), 
+  .rt_dp_inst2_rel_preg(rt_dp_inst2_rel_preg)
  // .rt_dp_inst2_src2_data                 (rt_dp_inst2_src2_data)
 );
 
@@ -1392,6 +1395,26 @@ ct_idu_rf_prf_pregfile x_ct_idu_rf_prf_pregfile (
 //    * is_store/is_branch 直接用 IS 级已经分类好的 IS_STORE / IS_BJU。
 //==========================================================
 
+parameter IS_ILLEGAL           = 69;
+parameter IS_ALU_SHORT         = 78;
+parameter IS_LSU               = 67;
+parameter IS_DIV               = 66;
+parameter IS_MULT              = 65;
+parameter IS_BJU               = 64;
+parameter IS_STADDR            = 63;
+parameter IS_STORE             = 62;
+parameter IS_LOAD              = 61;
+parameter IS_ALU               = 60;
+//parameter IS_DST_REL_PREG      = 72;
+parameter IS_DST_PREG          = 59;
+//parameter IS_DST_REG           = 53;
+//parameter IS_SRC2_DATA         = 55;
+parameter IS_SRC1_DATA         = 48;
+parameter IS_SRC0_DATA         = 41;
+parameter IS_DST_VLD           = 34;
+parameter IS_SRC1_VLD          = 33;
+parameter IS_SRC0_VLD          = 32;
+parameter IS_OPCODE            = 31;
 // ---- 车道 0 (最老) ----
 assign idu_rtu_disp0_vld            = ctrl_dp_dis_inst0_vld;
 assign idu_rtu_disp0_pc[31:0]       = dp_is_dis_inst0_pc[31:0];

@@ -12,17 +12,17 @@ module ct_idu_ir_dp (
   input  logic [122:0]     dp_id_pipedown_inst2_data,
   input  logic [24:0]      dp_id_pipedown_inst2_chk,
 
-  //input  logic [5  :0]    rt_dp_inst0_rel_preg,
+  input  logic [5  :0]    rt_dp_inst0_rel_preg,
   input  logic [6  :0]    rt_dp_inst0_src0_data,
   input  logic [6  :0]    rt_dp_inst0_src1_data,
  // input  logic [6  :0]    rt_dp_inst0_src2_data,
 
- // input  logic [5  :0]    rt_dp_inst1_rel_preg,
+  input  logic [5  :0]    rt_dp_inst1_rel_preg,
   input  logic [6  :0]    rt_dp_inst1_src0_data,
   input  logic [6  :0]    rt_dp_inst1_src1_data,
  // input  logic [6  :0]    rt_dp_inst1_src2_data,
 
- // input  logic [5  :0]    rt_dp_inst2_rel_preg,
+  input  logic [5  :0]    rt_dp_inst2_rel_preg,
   input  logic [6  :0]    rt_dp_inst2_src0_data,
   input  logic [6  :0]    rt_dp_inst2_src1_data,
  //input  logic [6  :0]    rt_dp_inst2_src2_data,
@@ -46,13 +46,13 @@ module ct_idu_ir_dp (
   output logic            dp_ctrl_ir_inst2_dst_x0,
   output logic            dp_ctrl_ir_inst2_illegal,
 
-  output logic [64 :0]    dp_ir_inst0_data,
+  output logic [70:0]     dp_ir_inst0_data,
   output logic [64:0]     dp_ir_inst0_pc,
   output logic [24:0]     dp_ir_inst0_chk,
-  output logic [64 :0]    dp_ir_inst1_data,
+  output logic [70 :0]    dp_ir_inst1_data,
   output logic [64:0]     dp_ir_inst1_pc,
   output logic [24:0]     dp_ir_inst1_chk,
-  output logic [64 :0]    dp_ir_inst2_data,
+  output logic [70 :0]    dp_ir_inst2_data,
   output logic [64:0]     dp_ir_inst2_pc,
   output logic [24:0]     dp_ir_inst2_chk,
 
@@ -108,18 +108,19 @@ parameter IS_CTRL_BJU         = 2;
 parameter IS_CTRL_DIV         = 1;
 parameter IS_CTRL_MULT        = 0;
 
-parameter IS_WIDTH             = 65;
-parameter IS_ILLEGAL           = 64;
-parameter IS_ALU_SHORT         = 63;
-parameter IS_LSU               = 62;
-parameter IS_DIV               = 61;
-parameter IS_MULT              = 60;
-parameter IS_BJU               = 59;
-parameter IS_STADDR            = 58;
-parameter IS_STORE             = 57;
-parameter IS_LOAD              = 56;
-parameter IS_ALU               = 55;
-//parameter IS_DST_REL_PREG      = 72;
+
+parameter IS_ILLEGAL           = 70;
+parameter IS_ALU_SHORT         = 69;
+parameter IS_LSU               = 68;
+parameter IS_DIV               = 67;
+parameter IS_MULT              = 66;
+parameter IS_BJU               = 65;
+parameter IS_STADDR            = 64;
+parameter IS_STORE             = 63;
+parameter IS_LOAD              = 62;
+parameter IS_ALU               = 61;
+parameter IS_DST_REL_PREG      = 60;
+
 parameter IS_DST_PREG          = 54;
 //parameter IS_DST_REG           = 53;
 //parameter IS_SRC2_DATA         = 55;
@@ -505,8 +506,8 @@ assign dp_ir_inst0_data[IS_LOAD] =
 assign dp_ir_inst0_data[IS_ALU] =
        ir_inst0_data[IR_INST_TYPE-5];
 
-//assign dp_ir_inst0_data[IS_DST_REL_PREG:IS_DST_REL_PREG-5] =
-//       rt_dp_inst0_rel_preg[5:0];
+assign dp_ir_inst0_data[IS_DST_REL_PREG:IS_DST_REL_PREG-5] =
+       rt_dp_inst0_rel_preg[5:0];
 
 //新分配的物理寄存器
 assign dp_ir_inst0_data[IS_DST_PREG:IS_DST_PREG-5] =
@@ -590,8 +591,8 @@ assign dp_ir_inst1_data[IS_LOAD] =
 assign dp_ir_inst1_data[IS_ALU] =
        ir_inst1_data[IR_INST_TYPE-5];
 
-//assign dp_ir_inst1_data[IS_DST_REL_PREG:IS_DST_REL_PREG-5] =
-//       rt_dp_inst1_rel_preg[5:0];
+assign dp_ir_inst1_data[IS_DST_REL_PREG:IS_DST_REL_PREG-5] =
+       rt_dp_inst1_rel_preg[5:0];
 
 assign dp_ir_inst1_data[IS_DST_PREG:IS_DST_PREG-5] =
        ir_pipedown_inst1_dst_preg[5:0];
@@ -661,8 +662,8 @@ assign dp_ir_inst2_data[IS_LOAD] =
 assign dp_ir_inst2_data[IS_ALU] =
        ir_inst2_data[IR_INST_TYPE-5];
 
-//assign dp_ir_inst2_data[IS_DST_REL_PREG:IS_DST_REL_PREG-5] =
-//       rt_dp_inst2_rel_preg[5:0];
+assign dp_ir_inst2_data[IS_DST_REL_PREG:IS_DST_REL_PREG-5] =
+       rt_dp_inst2_rel_preg[5:0];
 
 assign dp_ir_inst2_data[IS_DST_PREG:IS_DST_PREG-5] =
        ir_pipedown_inst2_dst_preg[5:0];
