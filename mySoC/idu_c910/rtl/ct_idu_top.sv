@@ -950,7 +950,7 @@ ct_idu_is_dp x_ct_idu_is_dp (
   .dp_ir_inst1_pc                           (dp_ir_inst1_pc),
   .dp_ir_inst1_chk                        (dp_ir_inst1_chk),
   .dp_ir_inst2_data                              (dp_ir_inst2_data),
-  .dp_ir_inst2_pc                           (dp_ir_inst1_pc),
+  .dp_ir_inst2_pc                           (dp_ir_inst2_pc),
   .dp_ir_inst2_chk                        (dp_ir_inst2_chk),
   .rtu_idu_rob_inst0_iid                              (rtu_idu_rob_inst0_iid),//in
   .rtu_idu_rob_inst1_iid                              (rtu_idu_rob_inst1_iid),//in

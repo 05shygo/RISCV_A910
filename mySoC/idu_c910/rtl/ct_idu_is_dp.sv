@@ -297,15 +297,15 @@ end
 //   * data 是 83 位原样, 由 ct_idu_top 拆字段 (IDU 这边不解释 RTU 的 flags 编码);
 //   * pc 只录 [31:0] —— 内部 65 位 = {taken, npc[31:0], pc[31:0]};
 //   * chk 内部声明成了 [64:0] 但只用 [24:0] (见上面声明处的注释), 这里按 25 位录。
-assign dp_is_dis_inst0_data[82:0] = is_inst0_create_data[82:0];
-assign dp_is_dis_inst1_data[82:0] = is_inst1_create_data[82:0];
-assign dp_is_dis_inst2_data[82:0] = is_inst2_create_data[82:0];
-assign dp_is_dis_inst0_pc[31:0]   = is_inst0_create_pc[31:0];
-assign dp_is_dis_inst1_pc[31:0]   = is_inst1_create_pc[31:0];
-assign dp_is_dis_inst2_pc[31:0]   = is_inst2_create_pc[31:0];
-assign dp_is_dis_inst0_chk[24:0]  = is_inst0_create_chk[24:0];
-assign dp_is_dis_inst1_chk[24:0]  = is_inst1_create_chk[24:0];
-assign dp_is_dis_inst2_chk[24:0]  = is_inst2_create_chk[24:0];
+assign dp_is_dis_inst0_data[82:0] = is_inst0_read_data[82:0];
+assign dp_is_dis_inst1_data[82:0] = is_inst1_read_data[82:0];
+assign dp_is_dis_inst2_data[82:0] = is_inst2_read_data[82:0];
+assign dp_is_dis_inst0_pc[31:0]   = is_inst0_read_pc[31:0];
+assign dp_is_dis_inst1_pc[31:0]   = is_inst1_read_pc[31:0];
+assign dp_is_dis_inst2_pc[31:0]   = is_inst2_read_pc[31:0];
+assign dp_is_dis_inst0_chk[24:0]  = is_inst0_read_chk[24:0];
+assign dp_is_dis_inst1_chk[24:0]  = is_inst1_read_chk[24:0];
+assign dp_is_dis_inst2_chk[24:0]  = is_inst2_read_chk[24:0];
 
 parameter IS_CTRL_WIDTH       = 7;
 parameter IS_CTRL_ILLEGAL     = 6;
