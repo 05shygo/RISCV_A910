@@ -16,11 +16,19 @@ module ct_idu_is_pipe_entry (
   //    子模块 ct_idu_dep_reg_entry 也只有 rtu_yy_xx_flush 一个口。
   //    前端/发射级分开冲刷 (C910 有) 是 Phase 3/4 的事, 届时再拆。
   input  logic         rtu_yy_xx_flush,
+<<<<<<< HEAD
   input  logic [75:0]  x_create_data,
   input  logic [64:0]  x_create_pc,
   input  logic [24:0]  x_create_chk,
   input  logic         x_create_dp_en,
   output logic [75:0]  x_read_data,
+=======
+  input  logic [64:0]  x_create_data,
+  input  logic [64:0]  x_create_pc,
+  input  logic [24:0]  x_create_chk,
+  input  logic         x_create_dp_en,
+  output logic [64:0]  x_read_data,
+>>>>>>> 26279c9817d0f91794cacf73048c1ba76d776fab
   output logic [64:0]  x_read_pc,
   output logic [24:0]  x_read_chk
 );
@@ -28,6 +36,7 @@ module ct_idu_is_pipe_entry (
 //==========================================================
 //                 IR/IS pipeline select
 //==========================================================
+<<<<<<< HEAD
 parameter IS_WIDTH             = 76;
 parameter IS_ILLEGAL           = 75;
 parameter IS_ALU_SHORT         = 74;
@@ -42,6 +51,22 @@ parameter IS_ALU               = 66;
 parameter IS_DST_REL_PREG      = 65;
 parameter IS_DST_PREG          = 59;
 parameter IS_DST_REG           = 53;
+=======
+parameter IS_WIDTH             = 65;
+parameter IS_ILLEGAL           = 64;
+parameter IS_ALU_SHORT         = 63;
+parameter IS_LSU               = 62;
+parameter IS_DIV               = 61;
+parameter IS_MULT              = 60;
+parameter IS_BJU               = 59;
+parameter IS_STADDR            = 58;
+parameter IS_STORE             = 57;
+parameter IS_LOAD              = 56;
+parameter IS_ALU               = 55;
+//parameter IS_DST_REL_PREG      = 72;
+parameter IS_DST_PREG          = 54;
+//parameter IS_DST_REG           = 53;
+>>>>>>> 26279c9817d0f91794cacf73048c1ba76d776fab
 //parameter IS_SRC2_DATA         = 55;
 parameter IS_SRC1_DATA         = 48;
 parameter IS_SRC0_DATA         = 41;
@@ -53,9 +78,9 @@ parameter IS_OPCODE            = 31;
 //==========================================================
 //                   Internal Signals
 //==========================================================
-logic [4:0]   entry_dst_reg;
+//logic [4:0]   entry_dst_reg;
 logic [6:0]   entry_dst_preg;
-logic [6:0]   entry_dst_rel_preg;
+//logic [6:0]   entry_dst_rel_preg;
 logic [31:0]  entry_opcode;
 logic [64:0]  entry_pc;
 logic         entry_src0_vld;
@@ -76,7 +101,7 @@ logic [6:0]   x_create_src1_data;
 logic [6:0]   x_create_src2_data;
 logic [6:0]   x_read_src0_data;
 logic [6:0]   x_read_src1_data;
-logic [6:0]   x_read_src2_data;
+//logic [6:0]   x_read_src2_data;
 logic entry_illegal;
 
 //==========================================================
@@ -85,24 +110,24 @@ logic entry_illegal;
 always @(posedge forever_cpuclk or negedge cpurst_b)
 begin
   if(!cpurst_b) begin
-    entry_dst_reg[4:0]       <= 5'b0;
+   // entry_dst_reg[4:0]       <= 5'b0;
     entry_dst_preg[6:0]      <= 7'b0;
-    entry_dst_rel_preg[6:0]  <= 7'b0;
+  //  entry_dst_rel_preg[6:0]  <= 7'b0;
   end
   else if(x_create_dp_en) begin
-    entry_dst_reg[4:0]       <= x_create_data[IS_DST_REG:IS_DST_REG-4];
+   // entry_dst_reg[4:0]       <= x_create_data[IS_DST_REG:IS_DST_REG-4];
     // ⚠️ 2026-10-09 修: 原来写的是 -6 (7 位), 而**打包侧** (ct_idu_ir_dp.sv:507-516)
     //    与**消费侧** (ct_idu_is_dp.sv:601/686) 用的都是 **-5 (6 位)** ⇒
     //    这里多读的那一位 `x_create_data[60]` 其实是**邻居 dst_reg 的 MSB**,
     //    落进 `entry_dst_preg[6]`。当前没有消费者读那一位, 所以不发病 ——
     //    但它是个「看着是 7 位、其实第 7 位是别人的」的陷阱, 一并改对。
     entry_dst_preg[5:0]      <= x_create_data[IS_DST_PREG:IS_DST_PREG-5];
-    entry_dst_rel_preg[5:0]  <= x_create_data[IS_DST_REL_PREG:IS_DST_REL_PREG-5];  // 同上: -6 → -5
+  //  entry_dst_rel_preg[5:0]  <= x_create_data[IS_DST_REL_PREG:IS_DST_REL_PREG-5];  // 同上: -6 → -5
   end
   else begin
-    entry_dst_reg[4:0]       <= entry_dst_reg[4:0];
+   // entry_dst_reg[4:0]       <= entry_dst_reg[4:0];
     entry_dst_preg[6:0]      <= entry_dst_preg[6:0];
-    entry_dst_rel_preg[6:0]  <= entry_dst_rel_preg[6:0];
+   // entry_dst_rel_preg[6:0]  <= entry_dst_rel_preg[6:0];
   end
 end
 logic [24:0] entry_chk;
@@ -195,9 +220,9 @@ assign x_read_data[IS_ILLEGAL]             = entry_illegal;
 //==========================================================
 assign x_create_src0_data[6:0] = x_create_data[IS_SRC0_DATA:IS_SRC0_DATA-6];
 assign x_create_src1_data[6:0] = x_create_data[IS_SRC1_DATA:IS_SRC1_DATA-6];
-assign x_create_src2_data[6:0] = x_create_data[IS_SRC2_DATA:IS_SRC2_DATA-6];
+//assign x_create_src2_data[6:0] = x_create_data[IS_SRC2_DATA:IS_SRC2_DATA-6];
 
-assign x_read_data[IS_SRC2_DATA:IS_SRC2_DATA-6] = x_read_src2_data[6:0];
+//assign x_read_data[IS_SRC2_DATA:IS_SRC2_DATA-6] = x_read_src2_data[6:0];
 assign x_read_data[IS_SRC1_DATA:IS_SRC1_DATA-6] = x_read_src1_data[6:0];
 assign x_read_data[IS_SRC0_DATA:IS_SRC0_DATA-6] = x_read_src0_data[6:0];
 // ⚠️ 2026-10-09 补: 上面那批读出口 assign **漏了三个字段** ——
@@ -210,9 +235,9 @@ assign x_read_data[IS_SRC0_DATA:IS_SRC0_DATA-6] = x_read_src0_data[6:0];
 //        (它一路传到 `idu_lsu_ld_preg`, LSU 按它写回 PRF);
 //      * `IS_DST_REL_PREG` = 旧映射, RTU 退休释放编号要用。
 //    本仓第五次栽「漏接 = 静默 X」这一类。
-assign x_read_data[IS_DST_REG:IS_DST_REG-4]           = entry_dst_reg[4:0];   // [60:56] 5 位
+//assign x_read_data[IS_DST_REG:IS_DST_REG-4]           = entry_dst_reg[4:0];   // [60:56] 5 位
 assign x_read_data[IS_DST_PREG:IS_DST_PREG-5]         = entry_dst_preg[5:0];   // [66:61] **6 位**
-assign x_read_data[IS_DST_REL_PREG:IS_DST_REL_PREG-5] = entry_dst_rel_preg[5:0]; // [72:67] **6 位**
+//assign x_read_data[IS_DST_REL_PREG:IS_DST_REL_PREG-5] = entry_dst_rel_preg[5:0]; // [72:67] **6 位**
 
 //------------------------source 0--------------------------
 ct_idu_dep_reg_entry u_ct_idu_dep_reg_entry_src0 (
@@ -251,6 +276,7 @@ ct_idu_dep_reg_entry u_ct_idu_dep_reg_entry_src1 (
 );
 
 //------------------------source 2--------------------------
+/*
 ct_idu_dep_reg_entry u_ct_idu_dep_reg_entry_src2 (
   .cpurst_b                          (cpurst_b),
   .forever_cpuclk                    (forever_cpuclk),
@@ -267,5 +293,5 @@ ct_idu_dep_reg_entry u_ct_idu_dep_reg_entry_src2 (
   .x_write_en                        (x_create_dp_en),
   .x_read_data                       (x_read_src2_data[6:0])
 );
-
+*/
 endmodule

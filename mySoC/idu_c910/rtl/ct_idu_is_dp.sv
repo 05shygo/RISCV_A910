@@ -6,13 +6,23 @@ module ct_idu_is_dp (
   input  logic         cpurst_b,
 
   // IR data
+<<<<<<< HEAD
   input  logic [75:0] dp_ir_inst0_data,
+=======
+
+  input  logic [70:0] dp_ir_inst0_data,
+>>>>>>> 26279c9817d0f91794cacf73048c1ba76d776fab
   input  logic [64:0] dp_ir_inst0_pc,
   input  logic [24:0] dp_ir_inst0_chk,
   input  logic [75:0] dp_ir_inst1_data,
   input  logic [64:0] dp_ir_inst1_pc,
   input  logic [24:0] dp_ir_inst1_chk,
+<<<<<<< HEAD
   input  logic [75:0] dp_ir_inst2_data,
+=======
+  input  logic [70:0] dp_ir_inst2_data,
+
+>>>>>>> 26279c9817d0f91794cacf73048c1ba76d776fab
   input  logic [64:0] dp_ir_inst2_pc,
   input  logic [24:0] dp_ir_inst2_chk,
 
@@ -104,9 +114,9 @@ module ct_idu_is_dp (
   // ⚠️ 按车道录出, 但**是否真的派发**由 ct_idu_is_ctrl 的 ctrl_dp_dis_inst{k}_vld 决定 —
   //    这两者必须成对使用 (data 是组合值, 车道没派发时它没有意义)。
   //----------------------------------------------------------------------------
-  output logic [82:0]  dp_is_dis_inst0_data,
-  output logic [82:0]  dp_is_dis_inst1_data,
-  output logic [82:0]  dp_is_dis_inst2_data,
+  output logic [64:0]  dp_is_dis_inst0_data,
+  output logic [64:0]  dp_is_dis_inst1_data,
+  output logic [64:0]  dp_is_dis_inst2_data,
   output logic [31:0]  dp_is_dis_inst0_pc,
   output logic [31:0]  dp_is_dis_inst1_pc,
   output logic [31:0]  dp_is_dis_inst2_pc,
@@ -121,6 +131,7 @@ module ct_idu_is_dp (
 //----------------------------------------------------------
 //                 IS ctrl path parameters
 //----------------------------------------------------------
+
 parameter IS_WIDTH             = 76;
 parameter IS_ILLEGAL           = 75;
 parameter IS_ALU_SHORT         = 74;
@@ -135,6 +146,7 @@ parameter IS_ALU               = 66;
 parameter IS_DST_REL_PREG      = 65;
 parameter IS_DST_PREG          = 59;
 parameter IS_DST_REG           = 53;
+
 //parameter IS_SRC2_DATA         = 55;
 parameter IS_SRC1_DATA         = 48;
 parameter IS_SRC0_DATA         = 41;
@@ -297,9 +309,15 @@ end
 //   * data 是 83 位原样, 由 ct_idu_top 拆字段 (IDU 这边不解释 RTU 的 flags 编码);
 //   * pc 只录 [31:0] —— 内部 65 位 = {taken, npc[31:0], pc[31:0]};
 //   * chk 内部声明成了 [64:0] 但只用 [24:0] (见上面声明处的注释), 这里按 25 位录。
+<<<<<<< HEAD
 assign dp_is_dis_inst0_data[75:0] = is_inst0_read_data[75:0];
 assign dp_is_dis_inst1_data[75:0] = is_inst1_read_data[75:0];
 assign dp_is_dis_inst2_data[75:0] = is_inst2_read_data[75:0];
+=======
+assign dp_is_dis_inst0_data[64:0] = is_inst0_read_data[64:0];
+assign dp_is_dis_inst1_data[64:0] = is_inst1_read_data[64:0];
+assign dp_is_dis_inst2_data[64:0] = is_inst2_read_data[64:0];
+>>>>>>> 26279c9817d0f91794cacf73048c1ba76d776fab
 assign dp_is_dis_inst0_pc[31:0]   = is_inst0_read_pc[31:0];
 assign dp_is_dis_inst1_pc[31:0]   = is_inst1_read_pc[31:0];
 assign dp_is_dis_inst2_pc[31:0]   = is_inst2_read_pc[31:0];
