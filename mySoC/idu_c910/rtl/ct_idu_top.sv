@@ -380,13 +380,13 @@ logic        dp_ctrl_ir_inst1_illegal;
 logic        dp_ctrl_ir_inst2_illegal;
 logic [122:0] crtl_ir_inst2_data;
 logic [24:0] crtl_ir_inst2_chk;
-logic [82:0] dp_ir_inst0_data;
+logic [64:0] dp_ir_inst0_data;
 logic [64:0] dp_ir_inst0_pc;
 logic [24:0] dp_ir_inst0_chk;
-logic [82:0] dp_ir_inst1_data;
+logic [64:0] dp_ir_inst1_data;
 logic [64:0] dp_ir_inst1_pc;
 logic [24:0] dp_ir_inst1_chk;
-logic [82:0] dp_ir_inst2_data;
+logic [64:0] dp_ir_inst2_data;
 logic [64:0] dp_ir_inst2_pc;
 logic [24:0] dp_ir_inst2_chk;
 
@@ -427,20 +427,20 @@ logic [5:0]  rt_dp_inst0_src0_preg;
 logic [5:0]  rt_dp_inst0_src1_preg;
 logic [6:0]  rt_dp_inst0_src0_data;
 logic [6:0]  rt_dp_inst0_src1_data;
-logic [6:0]  rt_dp_inst0_src2_data;
-logic [5:0]  rt_dp_inst0_rel_preg;
+//logic [6:0]  rt_dp_inst0_src2_data;
+//logic [5:0]  rt_dp_inst0_rel_preg;
 logic [5:0]  rt_dp_inst1_src0_preg;
 logic [5:0]  rt_dp_inst1_src1_preg;
 logic [6:0]  rt_dp_inst1_src0_data;
 logic [6:0]  rt_dp_inst1_src1_data;
-logic [6:0]  rt_dp_inst1_src2_data;
-logic [5:0]  rt_dp_inst1_rel_preg;
+//logic [6:0]  rt_dp_inst1_src2_data;
+//logic [5:0]  rt_dp_inst1_rel_preg;
 logic [5:0]  rt_dp_inst2_src0_preg;
 logic [5:0]  rt_dp_inst2_src1_preg;
 logic [6:0]  rt_dp_inst2_src0_data;
 logic [6:0]  rt_dp_inst2_src1_data;
-logic [6:0]  rt_dp_inst2_src2_data;
-logic [5:0]  rt_dp_inst2_rel_preg;
+//logic [6:0]  rt_dp_inst2_src2_data;
+//logic [5:0]  rt_dp_inst2_rel_preg;
 
 // IS Stage control signals
 logic        ctrl_is_stall;
@@ -725,18 +725,18 @@ ct_idu_ir_dp x_ct_idu_ir_dp (
   .dp_id_pipedown_inst1_chk               (dp_id_pipedown_inst1_chk),
   .dp_id_pipedown_inst2_data             (dp_id_pipedown_inst2_data),
   .dp_id_pipedown_inst2_chk               (dp_id_pipedown_inst2_chk),
-  .rt_dp_inst0_rel_preg                  (rt_dp_inst0_rel_preg),
+ // .rt_dp_inst0_rel_preg                  (rt_dp_inst0_rel_preg),
   .rt_dp_inst0_src0_data                 (rt_dp_inst0_src0_data),
   .rt_dp_inst0_src1_data                 (rt_dp_inst0_src1_data),
-  .rt_dp_inst0_src2_data                 (rt_dp_inst0_src2_data),
-  .rt_dp_inst1_rel_preg                  (rt_dp_inst1_rel_preg),
+ // .rt_dp_inst0_src2_data                 (rt_dp_inst0_src2_data),
+ // .rt_dp_inst1_rel_preg                  (rt_dp_inst1_rel_preg),
   .rt_dp_inst1_src0_data                 (rt_dp_inst1_src0_data),
   .rt_dp_inst1_src1_data                 (rt_dp_inst1_src1_data),
-  .rt_dp_inst1_src2_data                 (rt_dp_inst1_src2_data),
-  .rt_dp_inst2_rel_preg                  (rt_dp_inst2_rel_preg),
+ // .rt_dp_inst1_src2_data                 (rt_dp_inst1_src2_data),
+ // .rt_dp_inst2_rel_preg                  (rt_dp_inst2_rel_preg),
   .rt_dp_inst2_src0_data                 (rt_dp_inst2_src0_data),
   .rt_dp_inst2_src1_data                 (rt_dp_inst2_src1_data),
-  .rt_dp_inst2_src2_data                 (rt_dp_inst2_src2_data),
+ // .rt_dp_inst2_src2_data                 (rt_dp_inst2_src2_data),
   .rtu_idu_alloc_preg0                              (rtu_idu_alloc_preg0),//in
   .rtu_idu_alloc_preg1                              (rtu_idu_alloc_preg1),//in
   .rtu_idu_alloc_preg2                              (rtu_idu_alloc_preg2),//in
@@ -825,18 +825,18 @@ ct_idu_ir_rt x_ct_idu_ir_rt (
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx                              (lsu_idu_wb_pipe3_wb_preg_vld_dupx),//in
   .rtu_idu_rt_recover_preg                              (rtu_idu_rt_recover_preg),//in
   .rtu_yy_xx_flush                              (rtu_yy_xx_flush),//in
-  .rt_dp_inst0_rel_preg                  (rt_dp_inst0_rel_preg),
+ // .rt_dp_inst0_rel_preg                  (rt_dp_inst0_rel_preg),
   .rt_dp_inst0_src0_data                 (rt_dp_inst0_src0_data),
   .rt_dp_inst0_src1_data                 (rt_dp_inst0_src1_data),
-  .rt_dp_inst0_src2_data                 (rt_dp_inst0_src2_data),
-  .rt_dp_inst1_rel_preg                  (rt_dp_inst1_rel_preg),
+ // .rt_dp_inst0_src2_data                 (rt_dp_inst0_src2_data),
+ // .rt_dp_inst1_rel_preg                  (rt_dp_inst1_rel_preg),
   .rt_dp_inst1_src0_data                 (rt_dp_inst1_src0_data),
   .rt_dp_inst1_src1_data                 (rt_dp_inst1_src1_data),
-  .rt_dp_inst1_src2_data                 (rt_dp_inst1_src2_data),
-  .rt_dp_inst2_rel_preg                  (rt_dp_inst2_rel_preg),
+ /// .rt_dp_inst1_src2_data                 (rt_dp_inst1_src2_data),
+ // .rt_dp_inst2_rel_preg                  (rt_dp_inst2_rel_preg),
   .rt_dp_inst2_src0_data                 (rt_dp_inst2_src0_data),
   .rt_dp_inst2_src1_data                 (rt_dp_inst2_src1_data),
-  .rt_dp_inst2_src2_data                 (rt_dp_inst2_src2_data)
+ // .rt_dp_inst2_src2_data                 (rt_dp_inst2_src2_data)
 );
 
 

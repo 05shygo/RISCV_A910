@@ -40,28 +40,19 @@ module ct_idu_ir_rt (
   input  logic         lsu_idu_wb_pipe3_wb_preg_vld_dupx,
   input  logic [191:0] rtu_idu_rt_recover_preg,
   input  logic         rtu_yy_xx_flush,
-  output logic [5:0]   rt_dp_inst0_rel_preg,
   output logic [6:0]   rt_dp_inst0_src0_data,
   output logic [6:0]   rt_dp_inst0_src1_data,
-  output logic [6:0]   rt_dp_inst0_src2_data,
-  output logic [5:0]   rt_dp_inst1_rel_preg,
   output logic [6:0]   rt_dp_inst1_src0_data,
   output logic [6:0]   rt_dp_inst1_src1_data,
-  output logic [6:0]   rt_dp_inst1_src2_data,
-  output logic [5:0]   rt_dp_inst2_rel_preg,
   output logic [6:0]   rt_dp_inst2_src0_data,
-  output logic [6:0]   rt_dp_inst2_src1_data,
-  output logic [6:0]   rt_dp_inst2_src2_data
+  output logic [6:0]   rt_dp_inst2_src1_data
 );
 
 // &Regs; @27
-logic [6:0]   inst0_dst_read_data;
 logic [6:0]   inst0_src0_read_data;
 logic [6:0]   inst0_src1_read_data;
-logic [6:0]   inst1_dst_read_data;
 logic [6:0]   inst1_src0_read_data;
 logic [6:0]   inst1_src1_read_data;
-logic [6:0]   inst2_dst_read_data;
 logic [6:0]   inst2_src0_read_data;
 logic [6:0]   inst2_src1_read_data;
 
@@ -76,44 +67,31 @@ logic         inst0_src0_read_wb;
 logic [5:0]   inst0_src0_read_preg;
 logic         inst0_src1_read_wb;
 logic [5:0]   inst0_src1_read_preg;
-logic         inst0_src2_read_wb;
-logic [5:0]   inst0_src2_read_preg;
 logic         inst0_write_en;
 logic         inst1_src0_read_wb;
 logic [5:0]   inst1_src0_read_preg;
 logic         inst1_src1_read_wb;
 logic [5:0]   inst1_src1_read_preg;
-logic         inst1_src2_read_wb;
-logic [5:0]   inst1_src2_read_preg;
 logic         inst1_write_en;
 logic         inst2_src0_read_wb;
 logic [5:0]   inst2_src0_read_preg;
 logic         inst2_src1_read_wb;
 logic [5:0]   inst2_src1_read_preg;
-logic         inst2_src2_read_wb;
-logic [5:0]   inst2_src2_read_preg;
 logic         inst2_write_en;
-logic         r_vld;
 logic [31:0]  reg_write0_en;
 logic [31:0]  reg_write1_en;
 logic [31:0]  reg_write2_en;
 logic [31:0]  reg_write_en;
-logic         rt_inst1_dst_match_inst0;
 logic         rt_inst1_src0_match_inst0;
 logic         rt_inst1_src1_match_inst0;
-logic         rt_inst1_src2_match_inst0;
-logic         rt_inst2_dst_match_inst0;
-logic         rt_inst2_dst_match_inst1;
 logic         rt_inst2_src0_match_inst0;
 logic         rt_inst2_src0_match_inst1;
 logic         rt_inst2_src1_match_inst0;
 logic         rt_inst2_src1_match_inst1;
-logic         rt_inst2_src2_match_inst0;
-logic         rt_inst2_src2_match_inst1;
 logic [191:0] rt_recover_updt_preg;
 logic         rt_recover_updt_vld;
 logic [191:0] rt_reset_updt_preg;
-logic         rt_reset_updt_vld;   // 2026-10-08 补: 复位映射的写窗口 (见下方注释)
+logic         rt_reset_updt_vld;
 
 // 数组声明
 // ⚠️ 2026-10-08 修: 这两个数组原来声明成 **7 位**, 而表项的端口是
@@ -129,13 +107,6 @@ logic [6:0]  reg_read_data_raw [0:31];   // 表项 x_read_data 原样
 logic [6:0]  reg_create_data    [0:31];  // 表项 x_create_data 原样
 logic [6:0]   reg_read_data      [0:31];  // wrapper 视图: {preg[5:0], wb}
 logic         reg_write_en_arr [0:31];
-
-//==========================================================
-//                       Parameters
-//==========================================================
-parameter DEP_WIDTH = 17;
-
-// &Force("bus","dp_rt_dep_info",DEP_WIDTH-1,0); @56
 
 //==========================================================
 //                   Instance Entries
@@ -320,8 +291,6 @@ generate
   end
 endgenerate
 
-assign r_vld = rt_recover_updt_vld;
-
 //==========================================================
 //                       Read Port
 //==========================================================
@@ -418,93 +387,6 @@ assign inst0_src1_read_preg[5:0] = inst0_src1_read_data[6:1];
 assign rt_dp_inst0_src1_data[0]   = inst0_src1_read_wb
                                     || !dp_rt_inst0_src1_vld;
 assign rt_dp_inst0_src1_data[6:1] = inst0_src1_read_preg[5:0];
-
-//---------instruction 0 src2/dest reg (for release)--------
-always @(*)
-begin
-  case (dp_rt_inst0_dst_reg[4:0])
-    5'd0  : inst0_dst_read_data[6:0] = reg_read_data[0][6:0];
-    5'd1  : inst0_dst_read_data[6:0] = reg_read_data[1][6:0];
-    5'd2  : inst0_dst_read_data[6:0] = reg_read_data[2][6:0];
-    5'd3  : inst0_dst_read_data[6:0] = reg_read_data[3][6:0];
-    5'd4  : inst0_dst_read_data[6:0] = reg_read_data[4][6:0];
-    5'd5  : inst0_dst_read_data[6:0] = reg_read_data[5][6:0];
-    5'd6  : inst0_dst_read_data[6:0] = reg_read_data[6][6:0];
-    5'd7  : inst0_dst_read_data[6:0] = reg_read_data[7][6:0];
-    5'd8  : inst0_dst_read_data[6:0] = reg_read_data[8][6:0];
-    5'd9  : inst0_dst_read_data[6:0] = reg_read_data[9][6:0];
-    5'd10 : inst0_dst_read_data[6:0] = reg_read_data[10][6:0];
-    5'd11 : inst0_dst_read_data[6:0] = reg_read_data[11][6:0];
-    5'd12 : inst0_dst_read_data[6:0] = reg_read_data[12][6:0];
-    5'd13 : inst0_dst_read_data[6:0] = reg_read_data[13][6:0];
-    5'd14 : inst0_dst_read_data[6:0] = reg_read_data[14][6:0];
-    5'd15 : inst0_dst_read_data[6:0] = reg_read_data[15][6:0];
-    5'd16 : inst0_dst_read_data[6:0] = reg_read_data[16][6:0];
-    5'd17 : inst0_dst_read_data[6:0] = reg_read_data[17][6:0];
-    5'd18 : inst0_dst_read_data[6:0] = reg_read_data[18][6:0];
-    5'd19 : inst0_dst_read_data[6:0] = reg_read_data[19][6:0];
-    5'd20 : inst0_dst_read_data[6:0] = reg_read_data[20][6:0];
-    5'd21 : inst0_dst_read_data[6:0] = reg_read_data[21][6:0];
-    5'd22 : inst0_dst_read_data[6:0] = reg_read_data[22][6:0];
-    5'd23 : inst0_dst_read_data[6:0] = reg_read_data[23][6:0];
-    5'd24 : inst0_dst_read_data[6:0] = reg_read_data[24][6:0];
-    5'd25 : inst0_dst_read_data[6:0] = reg_read_data[25][6:0];
-    5'd26 : inst0_dst_read_data[6:0] = reg_read_data[26][6:0];
-    5'd27 : inst0_dst_read_data[6:0] = reg_read_data[27][6:0];
-    5'd28 : inst0_dst_read_data[6:0] = reg_read_data[28][6:0];
-    5'd29 : inst0_dst_read_data[6:0] = reg_read_data[29][6:0];
-    5'd30 : inst0_dst_read_data[6:0] = reg_read_data[30][6:0];
-    5'd31 : inst0_dst_read_data[6:0] = reg_read_data[31][6:0];
-    default: inst0_dst_read_data[6:0] = {7{1'bx}};
-  endcase
-end
-
-assign inst0_src2_read_wb        = inst0_dst_read_data[0];
-assign inst0_src2_read_preg[5:0] = inst0_dst_read_data[6:1];
-
-assign rt_dp_inst0_src2_data[0]   = inst0_src2_read_wb
-                                    || !dp_rt_inst0_dst_vld;
-assign rt_dp_inst0_src2_data[6:1] = inst0_src2_read_preg[5:0];
-
-// ⚠️⚠️ 2026-10-09 修: **`rel_preg`（被替换掉的旧映射）原来没打拍** ——
-//    它是对 RAT 的**实时组合读**, 而消费它的 IS 流水表项
-//    (`ct_idu_is_pipe_entry`) 的锁存使能 `is_inst*_create_dp_en`
-//    = `ctrl_dp_is_inst*_vld && ...` 来自 **IS 级**(`is_dp.sv:216`),
-//    比改名拍**晚一拍**。⇒ 表项锁进去的是**改名之后**的值, 不是被替换掉的那个。
-//
-//    实测定格 (单元台探针, t 单位 ns):
-//      t=185000: rt_inst0_vld=1 (改名)  RAT[x1] 读出 = 1   ← 真值
-//      t=195000: is_inst*_create_dp_en=1 (表项锁存) create = 33  ← 记错的那个
-//      t=205000: 表项读出口 = 33
-//
-//    对 C910 无所谓 —— 它不把 `old_preg` 交给 ROB(它的释放靠 PST 自己那套);
-//    但**我们的 RTU 要**: `disp*_old_preg` 是退休时放回自由池的编号,
-//    记成新号会让 `old_preg == dst_preg` ⇒ 旧号**永不释放**(静默漏号),
-//    而 AMT 的架构回滚也会恢复成错的映射。
-//
-//    修法: 在**改名那一拍**把它锁进寄存器, 于是它与 IS 表项的锁存使能同相。
-//    门控用改名的同一条件 (`ctrl_rt_inst*_vld && !ctrl_ir_stall`),
-//    停顿期间保持 —— 与 `reg_write_en` 的口径一致。
-reg [5:0] inst0_rel_preg_q, inst1_rel_preg_q, inst2_rel_preg_q;
-always @(posedge forever_cpuclk or negedge cpurst_b) begin
-  if (!cpurst_b) begin
-    inst0_rel_preg_q <= 6'd0;
-    inst1_rel_preg_q <= 6'd0;
-    inst2_rel_preg_q <= 6'd0;
-  end
-  else if (rtu_yy_xx_flush) begin
-    inst0_rel_preg_q <= 6'd0;
-    inst1_rel_preg_q <= 6'd0;
-    inst2_rel_preg_q <= 6'd0;
-  end
-  else begin
-    if (inst0_write_en) inst0_rel_preg_q <= inst0_dst_read_data[6:1];
-    if (inst1_write_en) inst1_rel_preg_q <= inst1_dst_read_data[6:1];
-    if (inst2_write_en) inst2_rel_preg_q <= inst2_dst_read_data[6:1];
-  end
-end
-
-assign rt_dp_inst0_rel_preg[5:0] = inst0_rel_preg_q[5:0];
 
 //-----------------instruction 1 source 0-------------------
 always @(*)
@@ -626,82 +508,6 @@ begin
                                    || !dp_rt_inst1_src1_vld;
     rt_dp_inst1_src1_data[6:1]   = inst1_src1_read_preg[5:0];
   end
-end
-
-//---------instruction 1 src2/dest reg (for release)--------
-always @(*)
-begin
-  case (dp_rt_inst1_dst_reg[4:0])
-    5'd0  : inst1_dst_read_data[6:0] = reg_read_data[0][6:0];
-    5'd1  : inst1_dst_read_data[6:0] = reg_read_data[1][6:0];
-    5'd2  : inst1_dst_read_data[6:0] = reg_read_data[2][6:0];
-    5'd3  : inst1_dst_read_data[6:0] = reg_read_data[3][6:0];
-    5'd4  : inst1_dst_read_data[6:0] = reg_read_data[4][6:0];
-    5'd5  : inst1_dst_read_data[6:0] = reg_read_data[5][6:0];
-    5'd6  : inst1_dst_read_data[6:0] = reg_read_data[6][6:0];
-    5'd7  : inst1_dst_read_data[6:0] = reg_read_data[7][6:0];
-    5'd8  : inst1_dst_read_data[6:0] = reg_read_data[8][6:0];
-    5'd9  : inst1_dst_read_data[6:0] = reg_read_data[9][6:0];
-    5'd10 : inst1_dst_read_data[6:0] = reg_read_data[10][6:0];
-    5'd11 : inst1_dst_read_data[6:0] = reg_read_data[11][6:0];
-    5'd12 : inst1_dst_read_data[6:0] = reg_read_data[12][6:0];
-    5'd13 : inst1_dst_read_data[6:0] = reg_read_data[13][6:0];
-    5'd14 : inst1_dst_read_data[6:0] = reg_read_data[14][6:0];
-    5'd15 : inst1_dst_read_data[6:0] = reg_read_data[15][6:0];
-    5'd16 : inst1_dst_read_data[6:0] = reg_read_data[16][6:0];
-    5'd17 : inst1_dst_read_data[6:0] = reg_read_data[17][6:0];
-    5'd18 : inst1_dst_read_data[6:0] = reg_read_data[18][6:0];
-    5'd19 : inst1_dst_read_data[6:0] = reg_read_data[19][6:0];
-    5'd20 : inst1_dst_read_data[6:0] = reg_read_data[20][6:0];
-    5'd21 : inst1_dst_read_data[6:0] = reg_read_data[21][6:0];
-    5'd22 : inst1_dst_read_data[6:0] = reg_read_data[22][6:0];
-    5'd23 : inst1_dst_read_data[6:0] = reg_read_data[23][6:0];
-    5'd24 : inst1_dst_read_data[6:0] = reg_read_data[24][6:0];
-    5'd25 : inst1_dst_read_data[6:0] = reg_read_data[25][6:0];
-    5'd26 : inst1_dst_read_data[6:0] = reg_read_data[26][6:0];
-    5'd27 : inst1_dst_read_data[6:0] = reg_read_data[27][6:0];
-    5'd28 : inst1_dst_read_data[6:0] = reg_read_data[28][6:0];
-    5'd29 : inst1_dst_read_data[6:0] = reg_read_data[29][6:0];
-    5'd30 : inst1_dst_read_data[6:0] = reg_read_data[30][6:0];
-    5'd31 : inst1_dst_read_data[6:0] = reg_read_data[31][6:0];
-    default: inst1_dst_read_data[6:0] = {7{1'bx}};
-  endcase
-end
-
-assign inst1_src2_read_wb        = inst1_dst_read_data[0];
-assign inst1_src2_read_preg[5:0] = inst1_dst_read_data[6:1];
-
-assign rt_inst1_src2_match_inst0 =
-            ctrl_rt_inst1_vld && dp_rt_inst1_dst_vld
-         && ctrl_rt_inst0_vld && dp_rt_inst0_dst_vld
-         && (dp_rt_inst0_dst_reg[4:0] == dp_rt_inst1_dst_reg[4:0])
-         && (dp_rt_inst0_dst_reg[4:0] != 5'd0);
-
-always @(*)
-begin
-  if(rt_inst1_src2_match_inst0) begin
-    rt_dp_inst1_src2_data[0]     = 1'b0;
-    rt_dp_inst1_src2_data[6:1]   = dp_rt_inst0_dst_preg[5:0];
-  end
-  else begin
-    rt_dp_inst1_src2_data[0]     = inst1_src2_read_wb
-                                   || !dp_rt_inst1_dst_vld;
-    rt_dp_inst1_src2_data[6:1]   = inst1_src2_read_preg[5:0];
-  end
-end
-
-assign rt_inst1_dst_match_inst0 =
-            ctrl_rt_inst1_vld && dp_rt_inst1_dst_vld
-         && ctrl_rt_inst0_vld && dp_rt_inst0_dst_vld
-         && (dp_rt_inst0_dst_reg[4:0] == dp_rt_inst1_dst_reg[4:0])
-         && (dp_rt_inst0_dst_reg[4:0] != 5'd0);
-
-always @(*)
-begin
-  if(rt_inst1_dst_match_inst0)
-    rt_dp_inst1_rel_preg[5:0] = dp_rt_inst0_dst_preg[5:0];
-  else
-    rt_dp_inst1_rel_preg[5:0] = inst1_dst_read_data[6:1];
 end
 
 //-----------------instruction 2 source 0-------------------
@@ -848,100 +654,5 @@ begin
   end
 end
 
-//---------instruction 2 src2/dest reg (for release)--------
-always @(*)
-begin
-  case (dp_rt_inst2_dst_reg[4:0])
-    5'd0   : inst2_dst_read_data[6:0] = reg_read_data[0][6:0];
-    5'd1   : inst2_dst_read_data[6:0] = reg_read_data[1][6:0];
-    5'd2   : inst2_dst_read_data[6:0] = reg_read_data[2][6:0];
-    5'd3   : inst2_dst_read_data[6:0] = reg_read_data[3][6:0];
-    5'd4   : inst2_dst_read_data[6:0] = reg_read_data[4][6:0];
-    5'd5   : inst2_dst_read_data[6:0] = reg_read_data[5][6:0];
-    5'd6   : inst2_dst_read_data[6:0] = reg_read_data[6][6:0];
-    5'd7   : inst2_dst_read_data[6:0] = reg_read_data[7][6:0];
-    5'd8   : inst2_dst_read_data[6:0] = reg_read_data[8][6:0];
-    5'd9   : inst2_dst_read_data[6:0] = reg_read_data[9][6:0];
-    5'd10  : inst2_dst_read_data[6:0] = reg_read_data[10][6:0];
-    5'd11  : inst2_dst_read_data[6:0] = reg_read_data[11][6:0];
-    5'd12  : inst2_dst_read_data[6:0] = reg_read_data[12][6:0];
-    5'd13  : inst2_dst_read_data[6:0] = reg_read_data[13][6:0];
-    5'd14  : inst2_dst_read_data[6:0] = reg_read_data[14][6:0];
-    5'd15  : inst2_dst_read_data[6:0] = reg_read_data[15][6:0];
-    5'd16  : inst2_dst_read_data[6:0] = reg_read_data[16][6:0];
-    5'd17  : inst2_dst_read_data[6:0] = reg_read_data[17][6:0];
-    5'd18  : inst2_dst_read_data[6:0] = reg_read_data[18][6:0];
-    5'd19  : inst2_dst_read_data[6:0] = reg_read_data[19][6:0];
-    5'd20  : inst2_dst_read_data[6:0] = reg_read_data[20][6:0];
-    5'd21  : inst2_dst_read_data[6:0] = reg_read_data[21][6:0];
-    5'd22  : inst2_dst_read_data[6:0] = reg_read_data[22][6:0];
-    5'd23  : inst2_dst_read_data[6:0] = reg_read_data[23][6:0];
-    5'd24  : inst2_dst_read_data[6:0] = reg_read_data[24][6:0];
-    5'd25  : inst2_dst_read_data[6:0] = reg_read_data[25][6:0];
-    5'd26  : inst2_dst_read_data[6:0] = reg_read_data[26][6:0];
-    5'd27  : inst2_dst_read_data[6:0] = reg_read_data[27][6:0];
-    5'd28  : inst2_dst_read_data[6:0] = reg_read_data[28][6:0];
-    5'd29  : inst2_dst_read_data[6:0] = reg_read_data[29][6:0];
-    5'd30  : inst2_dst_read_data[6:0] = reg_read_data[30][6:0];
-    5'd31  : inst2_dst_read_data[6:0] = reg_read_data[31][6:0];
-    default: inst2_dst_read_data[6:0] = {7{1'bx}};
-  endcase
-end
-
-assign inst2_src2_read_wb        = inst2_dst_read_data[0];
-assign inst2_src2_read_preg[5:0] = inst2_dst_read_data[6:1];
-
-assign rt_inst2_src2_match_inst0 =
-            ctrl_rt_inst2_vld && dp_rt_inst2_dst_vld
-         && ctrl_rt_inst0_vld && dp_rt_inst0_dst_vld
-         && (dp_rt_inst0_dst_reg[4:0] == dp_rt_inst2_dst_reg[4:0])
-         && (dp_rt_inst0_dst_reg[4:0] != 5'd0);
-
-assign rt_inst2_src2_match_inst1 =
-            ctrl_rt_inst2_vld && dp_rt_inst2_dst_vld
-         && ctrl_rt_inst1_vld && dp_rt_inst1_dst_vld
-         && (dp_rt_inst1_dst_reg[4:0] == dp_rt_inst2_dst_reg[4:0])
-         && (dp_rt_inst1_dst_reg[4:0] != 5'd0);
-
-always @(*)
-begin
-  if(rt_inst2_src2_match_inst1) begin
-    rt_dp_inst2_src2_data[0]     = 1'b0;
-    rt_dp_inst2_src2_data[6:1]   = dp_rt_inst1_dst_preg[5:0];
-  end
-  else if(rt_inst2_src2_match_inst0) begin
-    rt_dp_inst2_src2_data[0]     = 1'b0;
-    rt_dp_inst2_src2_data[6:1]   = dp_rt_inst0_dst_preg[5:0];
-  end
-  else begin
-    rt_dp_inst2_src2_data[0]     = inst2_src2_read_wb
-                                   || !dp_rt_inst2_dst_vld;
-    rt_dp_inst2_src2_data[6:1]   = inst2_src2_read_preg[5:0];
-  end
-end
-
-assign rt_inst2_dst_match_inst0 =
-            ctrl_rt_inst2_vld && dp_rt_inst2_dst_vld
-         && ctrl_rt_inst0_vld && dp_rt_inst0_dst_vld
-         && (dp_rt_inst0_dst_reg[4:0] == dp_rt_inst2_dst_reg[4:0])
-         && (dp_rt_inst0_dst_reg[4:0] != 5'd0);
-
-assign rt_inst2_dst_match_inst1 =
-            ctrl_rt_inst2_vld && dp_rt_inst2_dst_vld
-         && ctrl_rt_inst1_vld && dp_rt_inst1_dst_vld
-         && (dp_rt_inst1_dst_reg[4:0] == dp_rt_inst2_dst_reg[4:0])
-         && (dp_rt_inst1_dst_reg[4:0] != 5'd0);
-
-always @(*)
-begin
-  if(rt_inst2_dst_match_inst1)
-    rt_dp_inst2_rel_preg[5:0] = dp_rt_inst1_dst_preg[5:0];
-  else if(rt_inst2_dst_match_inst0)
-    rt_dp_inst2_rel_preg[5:0] = dp_rt_inst0_dst_preg[5:0];
-  else
-    rt_dp_inst2_rel_preg[5:0] = inst2_dst_read_data[6:1];
-end
-
 // &ModuleEnd; @2160
 endmodule
-

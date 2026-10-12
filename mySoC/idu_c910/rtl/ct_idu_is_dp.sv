@@ -121,21 +121,20 @@ module ct_idu_is_dp (
 //----------------------------------------------------------
 //                 IS ctrl path parameters
 //----------------------------------------------------------
-parameter IS_WIDTH             = 83;
-parameter IS_ILLEGAL           = 82;
-parameter IS_ALU_SHORT         = 81;
-parameter IS_LSU               = 80;
-parameter IS_DIV               = 79;
-parameter IS_MULT              = 78;
-parameter IS_BJU               = 77;
-parameter IS_STADDR            = 76;
-parameter IS_STORE             = 75;
-parameter IS_LOAD              = 74;
-parameter IS_ALU               = 73;
-parameter IS_DST_REL_PREG      = 72;
-parameter IS_DST_PREG          = 66;
-parameter IS_DST_REG           = 60;
-parameter IS_SRC2_DATA         = 55;
+parameter IS_ILLEGAL           = 69;
+parameter IS_ALU_SHORT         = 78;
+parameter IS_LSU               = 67;
+parameter IS_DIV               = 66;
+parameter IS_MULT              = 65;
+parameter IS_BJU               = 64;
+parameter IS_STADDR            = 63;
+parameter IS_STORE             = 62;
+parameter IS_LOAD              = 61;
+parameter IS_ALU               = 60;
+//parameter IS_DST_REL_PREG      = 72;
+parameter IS_DST_PREG          = 59;
+parameter IS_DST_REG           = 53;
+//parameter IS_SRC2_DATA         = 55;
 parameter IS_SRC1_DATA         = 48;
 parameter IS_SRC0_DATA         = 41;
 parameter IS_DST_VLD           = 34;
