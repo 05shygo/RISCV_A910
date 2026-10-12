@@ -108,6 +108,7 @@ parameter IS_CTRL_BJU         = 2;
 parameter IS_CTRL_DIV         = 1;
 parameter IS_CTRL_MULT        = 0;
 
+parameter IS_WIDTH             = 65;
 parameter IS_ILLEGAL           = 64;
 parameter IS_ALU_SHORT         = 63;
 parameter IS_LSU               = 62;
