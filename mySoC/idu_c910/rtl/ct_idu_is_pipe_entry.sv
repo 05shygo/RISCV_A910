@@ -16,11 +16,11 @@ module ct_idu_is_pipe_entry (
   //    子模块 ct_idu_dep_reg_entry 也只有 rtu_yy_xx_flush 一个口。
   //    前端/发射级分开冲刷 (C910 有) 是 Phase 3/4 的事, 届时再拆。
   input  logic         rtu_yy_xx_flush,
-  input  logic [82:0]  x_create_data,
+  input  logic [75:0]  x_create_data,
   input  logic [64:0]  x_create_pc,
   input  logic [24:0]  x_create_chk,
   input  logic         x_create_dp_en,
-  output logic [82:0]  x_read_data,
+  output logic [75:0]  x_read_data,
   output logic [64:0]  x_read_pc,
   output logic [24:0]  x_read_chk
 );
@@ -28,21 +28,21 @@ module ct_idu_is_pipe_entry (
 //==========================================================
 //                 IR/IS pipeline select
 //==========================================================
-parameter IS_WIDTH             = 83;
-parameter IS_ILLEGAL           = 82;
-parameter IS_ALU_SHORT         = 81;
-parameter IS_LSU               = 80;
-parameter IS_DIV               = 79;
-parameter IS_MULT              = 78;
-parameter IS_BJU               = 77;
-parameter IS_STADDR            = 76;
-parameter IS_STORE             = 75;
-parameter IS_LOAD              = 74;
-parameter IS_ALU               = 73;
-parameter IS_DST_REL_PREG      = 72;
-parameter IS_DST_PREG          = 66;
-parameter IS_DST_REG           = 60;
-parameter IS_SRC2_DATA         = 55;
+parameter IS_WIDTH             = 76;
+parameter IS_ILLEGAL           = 75;
+parameter IS_ALU_SHORT         = 74;
+parameter IS_LSU               = 73;
+parameter IS_DIV               = 72;
+parameter IS_MULT              = 71;
+parameter IS_BJU               = 70;
+parameter IS_STADDR            = 69;
+parameter IS_STORE             = 68;
+parameter IS_LOAD              = 67;
+parameter IS_ALU               = 66;
+parameter IS_DST_REL_PREG      = 65;
+parameter IS_DST_PREG          = 59;
+parameter IS_DST_REG           = 53;
+//parameter IS_SRC2_DATA         = 55;
 parameter IS_SRC1_DATA         = 48;
 parameter IS_SRC0_DATA         = 41;
 parameter IS_DST_VLD           = 34;

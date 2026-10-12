@@ -46,13 +46,13 @@ module ct_idu_ir_dp (
   output logic            dp_ctrl_ir_inst2_dst_x0,
   output logic            dp_ctrl_ir_inst2_illegal,
 
-  output logic [70:0]     dp_ir_inst0_data,
+  output logic [75:0]     dp_ir_inst0_data,
   output logic [64:0]     dp_ir_inst0_pc,
   output logic [24:0]     dp_ir_inst0_chk,
-  output logic [70 :0]    dp_ir_inst1_data,
+  output logic [75 :0]    dp_ir_inst1_data,
   output logic [64:0]     dp_ir_inst1_pc,
   output logic [24:0]     dp_ir_inst1_chk,
-  output logic [70 :0]    dp_ir_inst2_data,
+  output logic [75 :0]    dp_ir_inst2_data,
   output logic [64:0]     dp_ir_inst2_pc,
   output logic [24:0]     dp_ir_inst2_chk,
 
@@ -108,19 +108,19 @@ parameter IS_CTRL_BJU         = 2;
 parameter IS_CTRL_DIV         = 1;
 parameter IS_CTRL_MULT        = 0;
 
-parameter IS_ILLEGAL           = 70;
-parameter IS_ALU_SHORT         = 69;
-parameter IS_LSU               = 68;
-parameter IS_DIV               = 67;
-parameter IS_MULT              = 66;
-parameter IS_BJU               = 65;
-parameter IS_STADDR            = 64;
-parameter IS_STORE             = 63;
-parameter IS_LOAD              = 62;
-parameter IS_ALU               = 61;
-parameter IS_DST_REL_PREG      = 60;
-parameter IS_DST_PREG          = 54;
-//parameter IS_DST_REG           = 53;
+parameter IS_ILLEGAL           = 75;
+parameter IS_ALU_SHORT         = 74;
+parameter IS_LSU               = 73;
+parameter IS_DIV               = 72;
+parameter IS_MULT              = 71;
+parameter IS_BJU               = 70;
+parameter IS_STADDR            = 69;
+parameter IS_STORE             = 68;
+parameter IS_LOAD              = 67;
+parameter IS_ALU               = 66;
+parameter IS_DST_REL_PREG      = 65;
+parameter IS_DST_PREG          = 59;
+parameter IS_DST_REG           = 53;
 //parameter IS_SRC2_DATA         = 55;
 parameter IS_SRC1_DATA         = 48;
 parameter IS_SRC0_DATA         = 41;
@@ -512,8 +512,8 @@ assign dp_ir_inst0_data[IS_DST_PREG:IS_DST_PREG-5] =
        ir_pipedown_inst0_dst_preg[5:0];
 
 //逻辑寄存器
-//assign dp_ir_inst0_data[IS_DST_REG:IS_DST_REG-4] =
-//       ir_inst0_data[IR_DST_REG:IR_DST_REG-4];
+assign dp_ir_inst0_data[IS_DST_REG:IS_DST_REG-4] =
+       ir_inst0_data[IR_DST_REG:IR_DST_REG-4];
 
 /*
   rt_dp_inst0_src2_data[9:0] = {?, preg[6:0], valid, wb_valid}
@@ -595,8 +595,8 @@ assign dp_ir_inst1_data[IS_DST_REL_PREG:IS_DST_REL_PREG-5] =
 assign dp_ir_inst1_data[IS_DST_PREG:IS_DST_PREG-5] =
        ir_pipedown_inst1_dst_preg[5:0];
 
-//assign dp_ir_inst1_data[IS_DST_REG:IS_DST_REG-4] =
-//       ir_inst1_data[IR_DST_REG:IR_DST_REG-4];
+assign dp_ir_inst1_data[IS_DST_REG:IS_DST_REG-4] =
+       ir_inst1_data[IR_DST_REG:IR_DST_REG-4];
 
 // Source operand data
 //assign dp_ir_inst1_data[IS_SRC2_DATA:IS_SRC2_DATA-6] =
@@ -666,8 +666,8 @@ assign dp_ir_inst2_data[IS_DST_REL_PREG:IS_DST_REL_PREG-5] =
 assign dp_ir_inst2_data[IS_DST_PREG:IS_DST_PREG-5] =
        ir_pipedown_inst2_dst_preg[5:0];
 
-//assign dp_ir_inst2_data[IS_DST_REG:IS_DST_REG-4] =
-//       ir_inst2_data[IR_DST_REG:IR_DST_REG-4];
+assign dp_ir_inst2_data[IS_DST_REG:IS_DST_REG-4] =
+       ir_inst2_data[IR_DST_REG:IR_DST_REG-4];
 
 // Source operand data
 //assign dp_ir_inst2_data[IS_SRC2_DATA:IS_SRC2_DATA-6] =
