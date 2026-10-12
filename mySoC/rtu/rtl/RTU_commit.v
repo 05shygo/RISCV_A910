@@ -215,9 +215,38 @@ module RTU_commit (
     //    陷阱要照常发交付脉冲 (ena=0), 所以 `rv0` 在那一拍必须是 1。
     wire rp_head = (rpv0 | rp_now) & ~trap_hit;
 
+    wire mis0 = okp0 & w0_br & w0_misp;
+    wire mis1 = okp1 & w1_br & w1_misp;
+    wire mis2 = okp2 & w2_br & w2_misp;
+
+    // -----------------------------------------------------------------------
+    // ⚠️ **误预测那条要停在它自己这里** (2026-10-12 补)
+    //
+    // 误预测 = 前端按**错的方向**取回了它后面的指令 ⇒ 排在它**后面的槽**
+    // (ROB 里更年轻的那几条, 同拍正好也在退休窗口里时) **必须原地不动**,
+    // 等冲刷把它们清掉。原来只有 `int_take` / `trap_hit` 做了这件事, 误预测漏了:
+    //
+    //   * `rv*` 的定义里一个误预测项都没有;
+    //   * `commit_vld` 只挂 `~int_take & ~trap_hit`。
+    //
+    // ⇒ 那条分支退休**当拍**把错误路径上的表项一起交付掉了。实测 (`mul` 用例,
+    //   分支 `beq x7,x8` 在 0x14 该跳到 0x20): T100 一个包退了 0x14/0x18/0x1c ——
+    //   0x18、0x1c 是错误路径 (fail 分支), 它们不但退了, 还改写了 x10;
+    //   difftest 第 7 条就报失配。而 BEU 那边 (`+PROBE_BEU`) 算得完全正确:
+    //   `actual_npc=0x20 mismatch=1 mispred=1 chgflw_vld=1` —— 重定向发出去了,
+    //   只是**退得比冲刷快**。
+    //
+    // ⚠️ 仲裁口径与下面 `mispred_hit` / `mispred_target` **逐位一致** (谁最老谁
+    //    说了算), 否则会出现"停的是 A 槽, 重定向去的是 B 槽的目标"这种错位。
+    //    这里没有把 `mispred_hit` 改写成 `mis_stop*` 的或 —— 那两行的语义已经过
+    //    单测台验证, 不动它, 只在旁边补一份同样口径的"停在哪一槽"。
+    // -----------------------------------------------------------------------
+    wire mis_stop0 = mis0 & ~(rpv0 | rp_now);
+    wire mis_stop1 = ~mis_stop0 & mis1 & ~rpv0 & ~rpv1 & ~rp_now;
+
     wire rv0 = ok0  & ~rp_head;
-    wire rv1 = ok1  & rv0 & ~int_pending & ~rpv1;
-    wire rv2 = ok2  & rv1 & ~int_pending & ~rpv2;
+    wire rv1 = ok1  & rv0 & ~int_pending & ~rpv1 & ~mis_stop0;
+    wire rv2 = ok2  & rv1 & ~int_pending & ~rpv2 & ~(mis_stop0 | mis_stop1);
 
     // -----------------------------------------------------------------------
     // 3) 异常 / 4) 中断 / 5) mret / 6) 误预测
@@ -227,10 +256,6 @@ module RTU_commit (
     assign int_take = int_pending & okp0 & ~w0_store & ~w0_csr & ~w0_mret & ~trap_hit;
 
     assign mret_hit = okp0 & w0_mret & ~trap_hit & ~int_take;
-
-    wire mis0 = okp0 & w0_br & w0_misp;
-    wire mis1 = okp1 & w1_br & w1_misp;
-    wire mis2 = okp2 & w2_br & w2_misp;
 
     // ---- store 重放 (第 5 类冲刷, 2026-10-08) ----
     // 谁赢 = **位置最靠前(最老)的那个重定向** —— 与误预测同一套年龄口径 (okp*),
