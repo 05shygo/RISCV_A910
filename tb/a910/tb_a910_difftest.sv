@@ -396,6 +396,22 @@ module tb_a910_difftest;
     end
   end
 
+  // 【临时诊断】判退级逐拍: 退休窗口的 iid/mispred 位 vs 冲刷触发 —— `+PROBE_RET`
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_RET") && cycles >= 94 && cycles <= 114) begin
+      $display("  [RET] T%0d ret=%b win_iid=%0d,%0d w0_misp=%b | mispred_hit=%b trig=%b busy=%b st=%0d gate=%b rtu_yy_xx=%b",
+               cycles, dut.rtu_retire_cnt, dut.u_rtu.u_rob.win_iid0, dut.u_rtu.u_rob.win_iid1,
+               dut.u_rtu.u_commit.w0_misp, dut.u_rtu.u_commit.mispred_hit,
+               dut.u_rtu.u_commit.flush_trig, dut.u_rtu.fsm_busy, dut.u_rtu.u_flush.st_q,
+               dut.mispred_hold_q, dut.rtu_yy_xx_flush);
+      $display("        resolve: vld=%b iid=%0d mispred=%b tgt=%08x | win_res=%b,%b win_iid=%0d,%0d | beu cmplt=%b#%0d",
+               dut.resolve_vld, dut.resolve_iid, dut.resolve_mispred, dut.resolve_target,
+               dut.u_rtu.u_rob.win_res0, dut.u_rtu.u_rob.win_res1,
+               dut.u_rtu.u_rob.win_iid0, dut.u_rtu.u_rob.win_iid1,
+               dut.cmplt_vld3, dut.cmplt_iid3);
+    end
+  end
+
   integer ifu_win = 0;
   always @(posedge clk) begin
     if (!rst && $test$plusargs("PROBE_IFU")) begin

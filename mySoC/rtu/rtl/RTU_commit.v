@@ -30,6 +30,15 @@ module RTU_commit (
     input  wire [`RTU_E_W-1:0] win1,
     input  wire [`RTU_E_W-1:0] win2,
     // store 重放请求 (LSU 跟完成**同拍**报) —— 见下面 rp_now 的注释
+    // ---- BEU 的本拍解析 (与完成同拍到) ----
+    // ⚠️ 必须有这一路: 解析命中的那条**可能当拍就在队头退休**, 而 MISPRED 是寄存器,
+    //    要下一个边沿才写进表项 —— 那个边沿上表项正好被弹出去 ⇒ 标志跟着条目一起
+    //    没了, 冲刷永远不触发。实测 (beq): T107 那条 0x1c 退休时 w0_misp=0,
+    //    win_res0=1 / resolve_mispred=1 就在同一拍 ⇒ 0x20 抢在冲刷前退了休。
+    input  wire                resolve_vld,
+    input  wire [6:0]          resolve_iid,
+    input  wire                resolve_mispred,
+
     input  wire                lsu_replay_vld,
     input  wire [6:0] lsu_replay_iid,
     input  wire [6:0] win_iid0,
@@ -215,9 +224,15 @@ module RTU_commit (
     //    陷阱要照常发交付脉冲 (ena=0), 所以 `rv0` 在那一拍必须是 1。
     wire rp_head = (rpv0 | rp_now) & ~trap_hit;
 
-    wire mis0 = okp0 & w0_br & w0_misp;
-    wire mis1 = okp1 & w1_br & w1_misp;
-    wire mis2 = okp2 & w2_br & w2_misp;
+    // 「同拍解析」项 —— 照 `rp_now` (store 重放) 的同一套写法。
+    // ⚠️ 比较 iid 要连 wrap 位一起比 (7 位整值相等), 与 `rp_now` 一致。
+    wire mis_now0 = resolve_vld & resolve_mispred & (resolve_iid == win_iid0);
+    wire mis_now1 = resolve_vld & resolve_mispred & (resolve_iid == win_iid1);
+    wire mis_now2 = resolve_vld & resolve_mispred & (resolve_iid == win_iid2);
+
+    wire mis0 = okp0 & w0_br & (w0_misp | mis_now0);
+    wire mis1 = okp1 & w1_br & (w1_misp | mis_now1);
+    wire mis2 = okp2 & w2_br & (w2_misp | mis_now2);
 
     // -----------------------------------------------------------------------
     // ⚠️ **误预测那条要停在它自己这里** (2026-10-12 补)
