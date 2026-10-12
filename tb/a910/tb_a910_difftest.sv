@@ -412,6 +412,27 @@ module tb_a910_difftest;
     end
   end
 
+  // 【临时诊断】写回/唤醒 vs 发射 vs 读口 —— `+PROBE_WAKE`
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_WAKE") && cycles >= 318 && cycles <= 336) begin
+      $display("  [WK] T%0d 写回 p0=%b#%0d=%08x p1=%b#%0d=%08x p2=%b#%0d=%08x",
+               cycles, dut.iu_idu_ex2_pipe0_wb_preg_vld_dupx, dut.iu_idu_ex2_pipe0_wb_preg_dupx,
+               dut.iu_idu_ex2_pipe0_wb_preg_data,
+               dut.iu_idu_ex2_pipe1_wb_preg_vld_dupx, dut.iu_idu_ex2_pipe1_wb_preg_dupx,
+               dut.iu_idu_ex2_pipe1_wb_preg_data,
+               dut.iu_idu_ex2_pipe2_wb_preg_vld_dupx, dut.iu_idu_ex2_pipe2_wb_preg_dupx,
+               dut.iu_idu_ex2_pipe2_wb_preg_data);
+      $display("       发射 aiq=%b #%0d src0=%08x | 读口 p0:%0d=%08x p1:%0d=%08x p2:%0d=%08x",
+               dut.idu_aiq_sel, dut.idu_aiq_dst_preg, dut.idu_aiq_src0,
+               dut.u_ct_idu_top.dp_prf_rf_pipe0_src0_preg,
+               dut.u_ct_idu_top.prf_dp_rf_pipe0_src0_data,
+               dut.u_ct_idu_top.dp_prf_rf_pipe1_src0_preg,
+               dut.u_ct_idu_top.prf_dp_rf_pipe1_src0_data,
+               dut.u_ct_idu_top.dp_prf_rf_pipe2_src0_preg,
+               dut.u_ct_idu_top.prf_dp_rf_pipe2_src0_data);
+    end
+  end
+
   integer ifu_win = 0;
   always @(posedge clk) begin
     if (!rst && $test$plusargs("PROBE_IFU")) begin
