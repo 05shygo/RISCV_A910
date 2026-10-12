@@ -380,13 +380,13 @@ logic        dp_ctrl_ir_inst1_illegal;
 logic        dp_ctrl_ir_inst2_illegal;
 logic [122:0] crtl_ir_inst2_data;
 logic [24:0] crtl_ir_inst2_chk;
-logic [64:0] dp_ir_inst0_data;
+logic [75:0] dp_ir_inst0_data;
 logic [64:0] dp_ir_inst0_pc;
 logic [24:0] dp_ir_inst0_chk;
-logic [64:0] dp_ir_inst1_data;
+logic [75:0] dp_ir_inst1_data;
 logic [64:0] dp_ir_inst1_pc;
 logic [24:0] dp_ir_inst1_chk;
-logic [64:0] dp_ir_inst2_data;
+logic [75:0] dp_ir_inst2_data;
 logic [64:0] dp_ir_inst2_pc;
 logic [24:0] dp_ir_inst2_chk;
 
@@ -428,19 +428,19 @@ logic [5:0]  rt_dp_inst0_src1_preg;
 logic [6:0]  rt_dp_inst0_src0_data;
 logic [6:0]  rt_dp_inst0_src1_data;
 //logic [6:0]  rt_dp_inst0_src2_data;
-//logic [5:0]  rt_dp_inst0_rel_preg;
+logic [5:0]  rt_dp_inst0_rel_preg;
 logic [5:0]  rt_dp_inst1_src0_preg;
 logic [5:0]  rt_dp_inst1_src1_preg;
 logic [6:0]  rt_dp_inst1_src0_data;
 logic [6:0]  rt_dp_inst1_src1_data;
 //logic [6:0]  rt_dp_inst1_src2_data;
-//logic [5:0]  rt_dp_inst1_rel_preg;
+logic [5:0]  rt_dp_inst1_rel_preg;
 logic [5:0]  rt_dp_inst2_src0_preg;
 logic [5:0]  rt_dp_inst2_src1_preg;
 logic [6:0]  rt_dp_inst2_src0_data;
 logic [6:0]  rt_dp_inst2_src1_data;
 //logic [6:0]  rt_dp_inst2_src2_data;
-//logic [5:0]  rt_dp_inst2_rel_preg;
+logic [5:0]  rt_dp_inst2_rel_preg;
 
 // IS Stage control signals
 logic        ctrl_is_stall;
@@ -498,9 +498,9 @@ logic         dp_ctrl_is_inst2_dst_vld;
 
 // ---- 派遣记录 (2026-10-08 新增) ----
 // is_dp 按车道录出的三路原始数据 + is_ctrl 的"本路真的派发"
-logic [82:0]  dp_is_dis_inst0_data;
-logic [82:0]  dp_is_dis_inst1_data;
-logic [82:0]  dp_is_dis_inst2_data;
+logic [75:0]  dp_is_dis_inst0_data;
+logic [75:0]  dp_is_dis_inst1_data;
+logic [75:0]  dp_is_dis_inst2_data;
 logic [31:0]  dp_is_dis_inst0_pc;
 logic [31:0]  dp_is_dis_inst1_pc;
 logic [31:0]  dp_is_dis_inst2_pc;
@@ -725,15 +725,15 @@ ct_idu_ir_dp x_ct_idu_ir_dp (
   .dp_id_pipedown_inst1_chk               (dp_id_pipedown_inst1_chk),
   .dp_id_pipedown_inst2_data             (dp_id_pipedown_inst2_data),
   .dp_id_pipedown_inst2_chk               (dp_id_pipedown_inst2_chk),
- // .rt_dp_inst0_rel_preg                  (rt_dp_inst0_rel_preg),
+  .rt_dp_inst0_rel_preg                  (rt_dp_inst0_rel_preg),
   .rt_dp_inst0_src0_data                 (rt_dp_inst0_src0_data),
   .rt_dp_inst0_src1_data                 (rt_dp_inst0_src1_data),
  // .rt_dp_inst0_src2_data                 (rt_dp_inst0_src2_data),
- // .rt_dp_inst1_rel_preg                  (rt_dp_inst1_rel_preg),
+  .rt_dp_inst1_rel_preg                  (rt_dp_inst1_rel_preg),
   .rt_dp_inst1_src0_data                 (rt_dp_inst1_src0_data),
   .rt_dp_inst1_src1_data                 (rt_dp_inst1_src1_data),
  // .rt_dp_inst1_src2_data                 (rt_dp_inst1_src2_data),
- // .rt_dp_inst2_rel_preg                  (rt_dp_inst2_rel_preg),
+  .rt_dp_inst2_rel_preg                  (rt_dp_inst2_rel_preg),
   .rt_dp_inst2_src0_data                 (rt_dp_inst2_src0_data),
   .rt_dp_inst2_src1_data                 (rt_dp_inst2_src1_data),
  // .rt_dp_inst2_src2_data                 (rt_dp_inst2_src2_data),
@@ -835,7 +835,10 @@ ct_idu_ir_rt x_ct_idu_ir_rt (
  /// .rt_dp_inst1_src2_data                 (rt_dp_inst1_src2_data),
  // .rt_dp_inst2_rel_preg                  (rt_dp_inst2_rel_preg),
   .rt_dp_inst2_src0_data                 (rt_dp_inst2_src0_data),
-  .rt_dp_inst2_src1_data                 (rt_dp_inst2_src1_data)
+  .rt_dp_inst2_src1_data                 (rt_dp_inst2_src1_data),
+  .rt_dp_inst0_rel_preg(rt_dp_inst0_rel_preg),
+  .rt_dp_inst1_rel_preg(rt_dp_inst1_rel_preg), 
+  .rt_dp_inst2_rel_preg(rt_dp_inst2_rel_preg)
  // .rt_dp_inst2_src2_data                 (rt_dp_inst2_src2_data)
 );
 
@@ -1392,16 +1395,38 @@ ct_idu_rf_prf_pregfile x_ct_idu_rf_prf_pregfile (
 //    * is_store/is_branch 直接用 IS 级已经分类好的 IS_STORE / IS_BJU。
 //==========================================================
 
+parameter IS_WIDTH             = 76;
+parameter IS_ILLEGAL           = 75;
+parameter IS_ALU_SHORT         = 74;
+parameter IS_LSU               = 73;
+parameter IS_DIV               = 72;
+parameter IS_MULT              = 71;
+parameter IS_BJU               = 70;
+parameter IS_STADDR            = 69;
+parameter IS_STORE             = 68;
+parameter IS_LOAD              = 67;
+parameter IS_ALU               = 66;
+parameter IS_DST_REL_PREG      = 65;
+parameter IS_DST_PREG          = 59;
+parameter IS_DST_REG           = 53;
+
+//parameter IS_SRC2_DATA         = 55;
+parameter IS_SRC1_DATA         = 48;
+parameter IS_SRC0_DATA         = 41;
+parameter IS_DST_VLD           = 34;
+parameter IS_SRC1_VLD          = 33;
+parameter IS_SRC0_VLD          = 32;
+parameter IS_OPCODE            = 31;
 // ---- 车道 0 (最老) ----
 assign idu_rtu_disp0_vld            = ctrl_dp_dis_inst0_vld;
 assign idu_rtu_disp0_pc[31:0]       = dp_is_dis_inst0_pc[31:0];
 assign idu_rtu_disp0_chk[24:0]      = dp_is_dis_inst0_chk[24:0];
-assign idu_rtu_disp0_rf_we          = dp_is_dis_inst0_data[34];
-assign idu_rtu_disp0_dst_lreg[4:0]  = {5{dp_is_dis_inst0_data[34]}}
-                                      & dp_is_dis_inst0_data[60:56];       // A6d
-assign idu_rtu_disp0_dst_preg[6:0]  = {1'b0, dp_is_dis_inst0_data[66:61]};
-assign idu_rtu_disp0_old_preg[6:0]  = {1'b0, dp_is_dis_inst0_data[72:67]};
-assign idu_rtu_disp0_src1_preg[6:0] = {1'b0, dp_is_dis_inst0_data[48:43]};
+assign idu_rtu_disp0_rf_we          = dp_is_dis_inst0_data[IS_DST_VLD];
+assign idu_rtu_disp0_dst_lreg[4:0]  = {5{dp_is_dis_inst0_data[IS_DST_VLD]}}
+                                      & dp_is_dis_inst0_data[IS_DST_REG:IS_DST_REG-4];       // A6d
+assign idu_rtu_disp0_dst_preg[6:0]  = {1'b0, dp_is_dis_inst0_data[IS_DST_PREG:IS_DST_PREG-5]};
+assign idu_rtu_disp0_old_preg[6:0]  = {1'b0, dp_is_dis_inst0_data[IS_DST_REL_PREG:IS_DST_REL_PREG-5]};
+assign idu_rtu_disp0_src1_preg[6:0] = {1'b0, dp_is_dis_inst0_data[IS_SRC1_DATA:IS_SRC1_DATA-4]};
 assign idu_rtu_disp0_csr_addr[11:0] = dp_is_dis_inst0_data[31:20];
 assign idu_rtu_disp0_csr_imm[4:0]   = dp_is_dis_inst0_data[19:15];
 assign idu_rtu_disp0_csr_op[2:0]    = dp_is_dis_inst0_data[14:12];         // A6c: funct3 原样
@@ -1413,55 +1438,55 @@ assign idu_rtu_disp0_flags[4]       = (dp_is_dis_inst0_data[6:0] == 7'b1110011) 
 assign idu_rtu_disp0_flags[3]       = (dp_is_dis_inst0_data[6:0] == 7'b1110011)  // is_csr
                                     & (dp_is_dis_inst0_data[14:12] != 3'b000);
 assign idu_rtu_disp0_flags[2]       = 1'b0;                                      // intmask
-assign idu_rtu_disp0_flags[1]       = dp_is_dis_inst0_data[75];                  // is_store
-assign idu_rtu_disp0_flags[0]       = dp_is_dis_inst0_data[77];                  // is_branch
+assign idu_rtu_disp0_flags[1]       = dp_is_dis_inst0_data[IS_STORE];                  // is_store
+assign idu_rtu_disp0_flags[0]       = dp_is_dis_inst0_data[IS_BJU];                  // is_branch
 
 // ---- 车道 1 (居中) ----
 assign idu_rtu_disp1_vld            = ctrl_dp_dis_inst1_vld;
 assign idu_rtu_disp1_pc[31:0]       = dp_is_dis_inst1_pc[31:0];
 assign idu_rtu_disp1_chk[24:0]      = dp_is_dis_inst1_chk[24:0];
-assign idu_rtu_disp1_rf_we          = dp_is_dis_inst1_data[34];
-assign idu_rtu_disp1_dst_lreg[4:0]  = {5{dp_is_dis_inst1_data[34]}}
-                                      & dp_is_dis_inst1_data[60:56];       // A6d
-assign idu_rtu_disp1_dst_preg[6:0]  = {1'b0, dp_is_dis_inst1_data[66:61]};
-assign idu_rtu_disp1_old_preg[6:0]  = {1'b0, dp_is_dis_inst1_data[72:67]};
-assign idu_rtu_disp1_src1_preg[6:0] = {1'b0, dp_is_dis_inst1_data[48:43]};
+assign idu_rtu_disp1_rf_we          = dp_is_dis_inst1_data[IS_DST_VLD];
+assign idu_rtu_disp1_dst_lreg[4:0]  = {5{dp_is_dis_inst1_data[IS_DST_VLD]}}
+                                      & dp_is_dis_inst1_data[IS_DST_REG:IS_DST_REG-4];       // A6d
+assign idu_rtu_disp1_dst_preg[6:0]  = {1'b0, dp_is_dis_inst1_data[IS_DST_PREG:IS_DST_PREG-5]};
+assign idu_rtu_disp1_old_preg[6:0]  = {1'b0, dp_is_dis_inst1_data[IS_DST_REL_PREG:IS_DST_REL_PREG-5]};
+assign idu_rtu_disp1_src1_preg[6:0] = {1'b0, dp_is_dis_inst1_data[IS_SRC1_DATA:IS_SRC1_DATA-4]};
 assign idu_rtu_disp1_csr_addr[11:0] = dp_is_dis_inst1_data[31:20];
 assign idu_rtu_disp1_csr_imm[4:0]   = dp_is_dis_inst1_data[19:15];
-assign idu_rtu_disp1_csr_op[2:0]    = dp_is_dis_inst1_data[14:12];
-assign idu_rtu_disp1_flags[6]       = (dp_is_dis_inst1_data[6:0] == 7'b1100111);
-assign idu_rtu_disp1_flags[5]       = (dp_is_dis_inst1_data[6:0] == 7'b1101111);
-assign idu_rtu_disp1_flags[4]       = (dp_is_dis_inst1_data[6:0] == 7'b1110011)
+assign idu_rtu_disp1_csr_op[2:0]    = dp_is_dis_inst1_data[14:12];         // A6c: funct3 原样
+assign idu_rtu_disp1_flags[6]       = (dp_is_dis_inst1_data[6:0] == 7'b1100111); // is_jalr
+assign idu_rtu_disp1_flags[5]       = (dp_is_dis_inst1_data[6:0] == 7'b1101111); // is_jal
+assign idu_rtu_disp1_flags[4]       = (dp_is_dis_inst1_data[6:0] == 7'b1110011)  // is_mret
                                     & (dp_is_dis_inst1_data[14:12] == 3'b000)
                                     & (dp_is_dis_inst1_data[31:20] == 12'h302);
-assign idu_rtu_disp1_flags[3]       = (dp_is_dis_inst1_data[6:0] == 7'b1110011)
+assign idu_rtu_disp1_flags[3]       = (dp_is_dis_inst1_data[6:0] == 7'b1110011)  // is_csr
                                     & (dp_is_dis_inst1_data[14:12] != 3'b000);
-assign idu_rtu_disp1_flags[2]       = 1'b0;
-assign idu_rtu_disp1_flags[1]       = dp_is_dis_inst1_data[75];
-assign idu_rtu_disp1_flags[0]       = dp_is_dis_inst1_data[77];
+assign idu_rtu_disp1_flags[2]       = 1'b0;                                      // intmask
+assign idu_rtu_disp1_flags[1]       = dp_is_dis_inst1_data[IS_STORE];                  // is_store
+assign idu_rtu_disp1_flags[0]       = dp_is_dis_inst1_data[IS_BJU];                  // is_branch
 
 // ---- 车道 2 (最年轻) ----
 assign idu_rtu_disp2_vld            = ctrl_dp_dis_inst2_vld;
 assign idu_rtu_disp2_pc[31:0]       = dp_is_dis_inst2_pc[31:0];
 assign idu_rtu_disp2_chk[24:0]      = dp_is_dis_inst2_chk[24:0];
-assign idu_rtu_disp2_rf_we          = dp_is_dis_inst2_data[34];
-assign idu_rtu_disp2_dst_lreg[4:0]  = {5{dp_is_dis_inst2_data[34]}}
-                                      & dp_is_dis_inst2_data[60:56];       // A6d
-assign idu_rtu_disp2_dst_preg[6:0]  = {1'b0, dp_is_dis_inst2_data[66:61]};
-assign idu_rtu_disp2_old_preg[6:0]  = {1'b0, dp_is_dis_inst2_data[72:67]};
-assign idu_rtu_disp2_src1_preg[6:0] = {1'b0, dp_is_dis_inst2_data[48:43]};
+assign idu_rtu_disp2_rf_we          = dp_is_dis_inst2_data[IS_DST_VLD];
+assign idu_rtu_disp2_dst_lreg[4:0]  = {5{dp_is_dis_inst2_data[IS_DST_VLD]}}
+                                      & dp_is_dis_inst2_data[IS_DST_REG:IS_DST_REG-4];       // A6d
+assign idu_rtu_disp2_dst_preg[6:0]  = {1'b0, dp_is_dis_inst2_data[IS_DST_PREG:IS_DST_PREG-5]};
+assign idu_rtu_disp2_old_preg[6:0]  = {1'b0, dp_is_dis_inst2_data[IS_DST_REL_PREG:IS_DST_REL_PREG-5]};
+assign idu_rtu_disp2_src1_preg[6:0] = {1'b0, dp_is_dis_inst2_data[IS_SRC1_DATA:IS_SRC1_DATA-4]};
 assign idu_rtu_disp2_csr_addr[11:0] = dp_is_dis_inst2_data[31:20];
 assign idu_rtu_disp2_csr_imm[4:0]   = dp_is_dis_inst2_data[19:15];
-assign idu_rtu_disp2_csr_op[2:0]    = dp_is_dis_inst2_data[14:12];
-assign idu_rtu_disp2_flags[6]       = (dp_is_dis_inst2_data[6:0] == 7'b1100111);
-assign idu_rtu_disp2_flags[5]       = (dp_is_dis_inst2_data[6:0] == 7'b1101111);
-assign idu_rtu_disp2_flags[4]       = (dp_is_dis_inst2_data[6:0] == 7'b1110011)
+assign idu_rtu_disp2_csr_op[2:0]    = dp_is_dis_inst2_data[14:12];         // A6c: funct3 原样
+assign idu_rtu_disp2_flags[6]       = (dp_is_dis_inst2_data[6:0] == 7'b1100111); // is_jalr
+assign idu_rtu_disp2_flags[5]       = (dp_is_dis_inst2_data[6:0] == 7'b1101111); // is_jal
+assign idu_rtu_disp2_flags[4]       = (dp_is_dis_inst2_data[6:0] == 7'b1110011)  // is_mret
                                     & (dp_is_dis_inst2_data[14:12] == 3'b000)
                                     & (dp_is_dis_inst2_data[31:20] == 12'h302);
-assign idu_rtu_disp2_flags[3]       = (dp_is_dis_inst2_data[6:0] == 7'b1110011)
+assign idu_rtu_disp2_flags[3]       = (dp_is_dis_inst2_data[6:0] == 7'b1110011)  // is_csr
                                     & (dp_is_dis_inst2_data[14:12] != 3'b000);
-assign idu_rtu_disp2_flags[2]       = 1'b0;
-assign idu_rtu_disp2_flags[1]       = dp_is_dis_inst2_data[75];
-assign idu_rtu_disp2_flags[0]       = dp_is_dis_inst2_data[77];
+assign idu_rtu_disp2_flags[2]       = 1'b0;                                      // intmask
+assign idu_rtu_disp2_flags[1]       = dp_is_dis_inst2_data[IS_STORE];                  // is_store
+assign idu_rtu_disp2_flags[0]       = dp_is_dis_inst2_data[IS_BJU];                  // is_branch
 
 endmodule
