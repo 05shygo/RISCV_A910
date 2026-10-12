@@ -835,7 +835,7 @@ ct_idu_ir_rt x_ct_idu_ir_rt (
  /// .rt_dp_inst1_src2_data                 (rt_dp_inst1_src2_data),
  // .rt_dp_inst2_rel_preg                  (rt_dp_inst2_rel_preg),
   .rt_dp_inst2_src0_data                 (rt_dp_inst2_src0_data),
-  .rt_dp_inst2_src1_data                 (rt_dp_inst2_src1_data),
+  .rt_dp_inst2_src1_data                 (rt_dp_inst2_src1_data)
  // .rt_dp_inst2_src2_data                 (rt_dp_inst2_src2_data)
 );
 
