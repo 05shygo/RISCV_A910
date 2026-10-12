@@ -45,7 +45,10 @@ module ct_idu_ir_rt (
   output logic [6:0]   rt_dp_inst1_src0_data,
   output logic [6:0]   rt_dp_inst1_src1_data,
   output logic [6:0]   rt_dp_inst2_src0_data,
-  output logic [6:0]   rt_dp_inst2_src1_data
+  output logic [6:0]   rt_dp_inst2_src1_data,
+  output logic [5:0]   rt_dp_inst0_rel_preg,
+  output logic [5:0]   rt_dp_inst1_rel_preg,
+  output logic [5:0]   rt_dp_inst2_rel_preg
 );
 
 // &Regs; @27
@@ -92,7 +95,12 @@ logic [191:0] rt_recover_updt_preg;
 logic         rt_recover_updt_vld;
 logic [191:0] rt_reset_updt_preg;
 logic         rt_reset_updt_vld;
-
+logic [6:0]   inst0_dst_read_data;
+logic [6:0]   inst1_dst_read_data;
+logic [6:0]   inst2_dst_read_data;
+logic         rt_inst1_dst_match_inst0;
+logic         rt_inst2_dst_match_inst0;
+logic         rt_inst2_dst_match_inst1;
 // 数组声明
 // ⚠️ 2026-10-08 修: 这两个数组原来声明成 **7 位**, 而表项的端口是
 //     `x_read_data[12:0]` / `x_create_data[10:0]` (C910 的打包格式):
@@ -388,6 +396,68 @@ assign rt_dp_inst0_src1_data[0]   = inst0_src1_read_wb
                                     || !dp_rt_inst0_src1_vld;
 assign rt_dp_inst0_src1_data[6:1] = inst0_src1_read_preg[5:0];
 
+//---------instruction 0 src2/dest reg (for release)--------
+always @(*)
+begin
+  case (dp_rt_inst0_dst_reg[4:0])
+    5'd0  : inst0_dst_read_data[6:0] = reg_read_data[0][6:0];
+    5'd1  : inst0_dst_read_data[6:0] = reg_read_data[1][6:0];
+    5'd2  : inst0_dst_read_data[6:0] = reg_read_data[2][6:0];
+    5'd3  : inst0_dst_read_data[6:0] = reg_read_data[3][6:0];
+    5'd4  : inst0_dst_read_data[6:0] = reg_read_data[4][6:0];
+    5'd5  : inst0_dst_read_data[6:0] = reg_read_data[5][6:0];
+    5'd6  : inst0_dst_read_data[6:0] = reg_read_data[6][6:0];
+    5'd7  : inst0_dst_read_data[6:0] = reg_read_data[7][6:0];
+    5'd8  : inst0_dst_read_data[6:0] = reg_read_data[8][6:0];
+    5'd9  : inst0_dst_read_data[6:0] = reg_read_data[9][6:0];
+    5'd10 : inst0_dst_read_data[6:0] = reg_read_data[10][6:0];
+    5'd11 : inst0_dst_read_data[6:0] = reg_read_data[11][6:0];
+    5'd12 : inst0_dst_read_data[6:0] = reg_read_data[12][6:0];
+    5'd13 : inst0_dst_read_data[6:0] = reg_read_data[13][6:0];
+    5'd14 : inst0_dst_read_data[6:0] = reg_read_data[14][6:0];
+    5'd15 : inst0_dst_read_data[6:0] = reg_read_data[15][6:0];
+    5'd16 : inst0_dst_read_data[6:0] = reg_read_data[16][6:0];
+    5'd17 : inst0_dst_read_data[6:0] = reg_read_data[17][6:0];
+    5'd18 : inst0_dst_read_data[6:0] = reg_read_data[18][6:0];
+    5'd19 : inst0_dst_read_data[6:0] = reg_read_data[19][6:0];
+    5'd20 : inst0_dst_read_data[6:0] = reg_read_data[20][6:0];
+    5'd21 : inst0_dst_read_data[6:0] = reg_read_data[21][6:0];
+    5'd22 : inst0_dst_read_data[6:0] = reg_read_data[22][6:0];
+    5'd23 : inst0_dst_read_data[6:0] = reg_read_data[23][6:0];
+    5'd24 : inst0_dst_read_data[6:0] = reg_read_data[24][6:0];
+    5'd25 : inst0_dst_read_data[6:0] = reg_read_data[25][6:0];
+    5'd26 : inst0_dst_read_data[6:0] = reg_read_data[26][6:0];
+    5'd27 : inst0_dst_read_data[6:0] = reg_read_data[27][6:0];
+    5'd28 : inst0_dst_read_data[6:0] = reg_read_data[28][6:0];
+    5'd29 : inst0_dst_read_data[6:0] = reg_read_data[29][6:0];
+    5'd30 : inst0_dst_read_data[6:0] = reg_read_data[30][6:0];
+    5'd31 : inst0_dst_read_data[6:0] = reg_read_data[31][6:0];
+    default: inst0_dst_read_data[6:0] = {7{1'bx}};
+  endcase
+end
+/*
+reg [5:0] inst0_rel_preg_q, inst1_rel_preg_q, inst2_rel_preg_q;
+always @(posedge forever_cpuclk or negedge cpurst_b) begin
+  if (!cpurst_b) begin
+    inst0_rel_preg_q <= 6'd0;
+    inst1_rel_preg_q <= 6'd0;
+    inst2_rel_preg_q <= 6'd0;
+  end
+  else if (rtu_yy_xx_flush) begin
+    inst0_rel_preg_q <= 6'd0;
+    inst1_rel_preg_q <= 6'd0;
+    inst2_rel_preg_q <= 6'd0;
+  end
+  else begin
+    if (inst0_write_en) inst0_rel_preg_q <= inst0_dst_read_data[6:1];
+    if (inst1_write_en) inst1_rel_preg_q <= inst1_dst_read_data[6:1];
+    if (inst2_write_en) inst2_rel_preg_q <= inst2_dst_read_data[6:1];
+  end
+end
+*/
+assign rt_dp_inst0_rel_preg[5:0] = inst0_dst_read_data[6:1];
+//assign rt_dp_inst1_rel_preg[5:0] = inst1_rel_preg_q[5:0];
+//assign rt_dp_inst2_rel_preg[5:0] = inst2_rel_preg_q[5:0];
 //-----------------instruction 1 source 0-------------------
 always @(*)
 begin
@@ -510,6 +580,59 @@ begin
   end
 end
 
+//---------instruction 1 src2/dest reg (for release)--------
+always @(*)
+begin
+  case (dp_rt_inst1_dst_reg[4:0])
+    5'd0  : inst1_dst_read_data[6:0] = reg_read_data[0][6:0];
+    5'd1  : inst1_dst_read_data[6:0] = reg_read_data[1][6:0];
+    5'd2  : inst1_dst_read_data[6:0] = reg_read_data[2][6:0];
+    5'd3  : inst1_dst_read_data[6:0] = reg_read_data[3][6:0];
+    5'd4  : inst1_dst_read_data[6:0] = reg_read_data[4][6:0];
+    5'd5  : inst1_dst_read_data[6:0] = reg_read_data[5][6:0];
+    5'd6  : inst1_dst_read_data[6:0] = reg_read_data[6][6:0];
+    5'd7  : inst1_dst_read_data[6:0] = reg_read_data[7][6:0];
+    5'd8  : inst1_dst_read_data[6:0] = reg_read_data[8][6:0];
+    5'd9  : inst1_dst_read_data[6:0] = reg_read_data[9][6:0];
+    5'd10 : inst1_dst_read_data[6:0] = reg_read_data[10][6:0];
+    5'd11 : inst1_dst_read_data[6:0] = reg_read_data[11][6:0];
+    5'd12 : inst1_dst_read_data[6:0] = reg_read_data[12][6:0];
+    5'd13 : inst1_dst_read_data[6:0] = reg_read_data[13][6:0];
+    5'd14 : inst1_dst_read_data[6:0] = reg_read_data[14][6:0];
+    5'd15 : inst1_dst_read_data[6:0] = reg_read_data[15][6:0];
+    5'd16 : inst1_dst_read_data[6:0] = reg_read_data[16][6:0];
+    5'd17 : inst1_dst_read_data[6:0] = reg_read_data[17][6:0];
+    5'd18 : inst1_dst_read_data[6:0] = reg_read_data[18][6:0];
+    5'd19 : inst1_dst_read_data[6:0] = reg_read_data[19][6:0];
+    5'd20 : inst1_dst_read_data[6:0] = reg_read_data[20][6:0];
+    5'd21 : inst1_dst_read_data[6:0] = reg_read_data[21][6:0];
+    5'd22 : inst1_dst_read_data[6:0] = reg_read_data[22][6:0];
+    5'd23 : inst1_dst_read_data[6:0] = reg_read_data[23][6:0];
+    5'd24 : inst1_dst_read_data[6:0] = reg_read_data[24][6:0];
+    5'd25 : inst1_dst_read_data[6:0] = reg_read_data[25][6:0];
+    5'd26 : inst1_dst_read_data[6:0] = reg_read_data[26][6:0];
+    5'd27 : inst1_dst_read_data[6:0] = reg_read_data[27][6:0];
+    5'd28 : inst1_dst_read_data[6:0] = reg_read_data[28][6:0];
+    5'd29 : inst1_dst_read_data[6:0] = reg_read_data[29][6:0];
+    5'd30 : inst1_dst_read_data[6:0] = reg_read_data[30][6:0];
+    5'd31 : inst1_dst_read_data[6:0] = reg_read_data[31][6:0];
+    default: inst1_dst_read_data[6:0] = {7{1'bx}};
+  endcase
+end
+
+assign rt_inst1_dst_match_inst0 =
+            ctrl_rt_inst1_vld && dp_rt_inst1_dst_vld
+         && ctrl_rt_inst0_vld && dp_rt_inst0_dst_vld
+         && (dp_rt_inst0_dst_reg[4:0] == dp_rt_inst1_dst_reg[4:0])
+         && (dp_rt_inst0_dst_reg[4:0] != 5'd0);
+
+always @(*)
+begin
+  if(rt_inst1_dst_match_inst0)
+    rt_dp_inst1_rel_preg[5:0] = dp_rt_inst0_dst_preg[5:0];
+  else
+    rt_dp_inst1_rel_preg[5:0] = inst1_dst_read_data[6:1];
+end
 //-----------------instruction 2 source 0-------------------
 always @(*)
 begin
@@ -652,6 +775,68 @@ begin
                                    || !dp_rt_inst2_src1_vld;
     rt_dp_inst2_src1_data[6:1]   = inst2_src1_read_preg[5:0];
   end
+end
+
+//---------instruction 2 src2/dest reg (for release)--------
+always @(*)
+begin
+  case (dp_rt_inst2_dst_reg[4:0])
+    5'd0   : inst2_dst_read_data[6:0] = reg_read_data[0][6:0];
+    5'd1   : inst2_dst_read_data[6:0] = reg_read_data[1][6:0];
+    5'd2   : inst2_dst_read_data[6:0] = reg_read_data[2][6:0];
+    5'd3   : inst2_dst_read_data[6:0] = reg_read_data[3][6:0];
+    5'd4   : inst2_dst_read_data[6:0] = reg_read_data[4][6:0];
+    5'd5   : inst2_dst_read_data[6:0] = reg_read_data[5][6:0];
+    5'd6   : inst2_dst_read_data[6:0] = reg_read_data[6][6:0];
+    5'd7   : inst2_dst_read_data[6:0] = reg_read_data[7][6:0];
+    5'd8   : inst2_dst_read_data[6:0] = reg_read_data[8][6:0];
+    5'd9   : inst2_dst_read_data[6:0] = reg_read_data[9][6:0];
+    5'd10  : inst2_dst_read_data[6:0] = reg_read_data[10][6:0];
+    5'd11  : inst2_dst_read_data[6:0] = reg_read_data[11][6:0];
+    5'd12  : inst2_dst_read_data[6:0] = reg_read_data[12][6:0];
+    5'd13  : inst2_dst_read_data[6:0] = reg_read_data[13][6:0];
+    5'd14  : inst2_dst_read_data[6:0] = reg_read_data[14][6:0];
+    5'd15  : inst2_dst_read_data[6:0] = reg_read_data[15][6:0];
+    5'd16  : inst2_dst_read_data[6:0] = reg_read_data[16][6:0];
+    5'd17  : inst2_dst_read_data[6:0] = reg_read_data[17][6:0];
+    5'd18  : inst2_dst_read_data[6:0] = reg_read_data[18][6:0];
+    5'd19  : inst2_dst_read_data[6:0] = reg_read_data[19][6:0];
+    5'd20  : inst2_dst_read_data[6:0] = reg_read_data[20][6:0];
+    5'd21  : inst2_dst_read_data[6:0] = reg_read_data[21][6:0];
+    5'd22  : inst2_dst_read_data[6:0] = reg_read_data[22][6:0];
+    5'd23  : inst2_dst_read_data[6:0] = reg_read_data[23][6:0];
+    5'd24  : inst2_dst_read_data[6:0] = reg_read_data[24][6:0];
+    5'd25  : inst2_dst_read_data[6:0] = reg_read_data[25][6:0];
+    5'd26  : inst2_dst_read_data[6:0] = reg_read_data[26][6:0];
+    5'd27  : inst2_dst_read_data[6:0] = reg_read_data[27][6:0];
+    5'd28  : inst2_dst_read_data[6:0] = reg_read_data[28][6:0];
+    5'd29  : inst2_dst_read_data[6:0] = reg_read_data[29][6:0];
+    5'd30  : inst2_dst_read_data[6:0] = reg_read_data[30][6:0];
+    5'd31  : inst2_dst_read_data[6:0] = reg_read_data[31][6:0];
+    default: inst2_dst_read_data[6:0] = {7{1'bx}};
+  endcase
+end
+
+assign rt_inst2_dst_match_inst0 =
+            ctrl_rt_inst2_vld && dp_rt_inst2_dst_vld
+         && ctrl_rt_inst0_vld && dp_rt_inst0_dst_vld
+         && (dp_rt_inst0_dst_reg[4:0] == dp_rt_inst2_dst_reg[4:0])
+         && (dp_rt_inst0_dst_reg[4:0] != 5'd0);
+
+assign rt_inst2_dst_match_inst1 =
+            ctrl_rt_inst2_vld && dp_rt_inst2_dst_vld
+         && ctrl_rt_inst1_vld && dp_rt_inst1_dst_vld
+         && (dp_rt_inst1_dst_reg[4:0] == dp_rt_inst2_dst_reg[4:0])
+         && (dp_rt_inst1_dst_reg[4:0] != 5'd0);
+
+always @(*)
+begin
+  if(rt_inst2_dst_match_inst1)
+    rt_dp_inst2_rel_preg[5:0] = dp_rt_inst1_dst_preg[5:0];
+  else if(rt_inst2_dst_match_inst0)
+    rt_dp_inst2_rel_preg[5:0] = dp_rt_inst0_dst_preg[5:0];
+  else
+    rt_dp_inst2_rel_preg[5:0] = inst2_dst_read_data[6:1];
 end
 
 // &ModuleEnd; @2160
