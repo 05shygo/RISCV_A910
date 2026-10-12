@@ -466,6 +466,7 @@ module A910_cpu
   logic         rtu_yy_xx_commit2;
   logic [  6:0] rtu_yy_xx_commit2_iid;
   logic         rtu_lsu_async_flush;
+  logic         rtu_flush_busy;   // RTU: 冲刷状态机非 IDLE
 
   // ---------------------------------------------------------------------------
   // RTU → IFU: 陷阱/mret 重定向 + 退休点重训练
@@ -798,11 +799,33 @@ module A910_cpu
   //  ⚠️ 只关 `vld`, 不关 IBUF 的推入: 推入是 IFU 内部的事, 且闸门期间 IFU 已经被
   //     `rtu_flush` 清过一次, 重新取回的目标那条正等在这里。
   // ===========================================================================
+  // ⚠️ 2026-10-12 改: 开闸条件从"冲刷**脉冲**那拍"延到"冲刷**状态机回 IDLE**"。
+  //    为什么: 脉冲发完, 冲刷机器还要跑几拍收尾 (恢复架构映射表 AMT / 回滚 preg /
+  //    重训练)。这几拍里若放新指令进来, 它会跟"表还没恢复完"打架 —— 这正是 C910
+  //    用 `rtu_idu_flush_stall = !flush_cur_state[0]` 单独再冻一道的原因。
+  //    而冲刷脉冲已经把 IDU 流水线清空了 ⇒ 只要闸门不放新指令进来, 那几拍 IDU
+  //    本来也没东西可推进 ⇒ **从外面就完整复刻了 `rtu_idu_flush_stall` 的效果**,
+  //    不需要 IDU 加口。
+  //    ⚠️ 不能简单地写成"清于 ~rtu_flush_busy": 重定向刚发出时冲刷机器还没起来
+  //       (busy=0), 那样会当拍就开闸。必须**先见到脉冲**再等机器跑完。
   reg mispred_hold_q;
+  reg hold_pulse_seen_q;                 // 这一轮里冲刷脉冲来过了
   always @(posedge clk or posedge rst) begin
-    if (rst)                  mispred_hold_q <= 1'b0;
-    else if (rtu_yy_xx_flush) mispred_hold_q <= 1'b0;   // 冲刷到了 ⇒ 开闸
-    else if (iu_chgflw_vld)   mispred_hold_q <= 1'b1;   // EX 重定向 ⇒ 关闸
+    if (rst) begin
+      mispred_hold_q    <= 1'b0;
+      hold_pulse_seen_q <= 1'b0;
+    end
+    else if (iu_chgflw_vld) begin        // EX 重定向 ⇒ 关闸 (重新等一轮脉冲)
+      mispred_hold_q    <= 1'b1;
+      hold_pulse_seen_q <= 1'b0;
+    end
+    else if (mispred_hold_q & hold_pulse_seen_q & ~rtu_flush_busy) begin
+      mispred_hold_q    <= 1'b0;         // 冲刷机器跑完 ⇒ 开闸
+      hold_pulse_seen_q <= 1'b0;
+    end
+    else if (rtu_yy_xx_flush) begin      // 见到脉冲 (与 IDU 同一根信号)
+      hold_pulse_seen_q <= 1'b1;
+    end
   end
 
   assign idu_inst0_vld = ifu_inst0_vld & ~mispred_hold_q;
@@ -1727,6 +1750,7 @@ module A910_cpu
 
     // ===================== §6.2 异步冲刷 (给 LSU) =====================
     .rtu_lsu_async_flush        (rtu_lsu_async_flush),
+    .rtu_flush_busy             (rtu_flush_busy),
 
     // ===================== §6.2 BEU: D1 的最旧门控 + 冲刷屏蔽 =====================
     .rtu_beu_retire_iid         (rtu_beu_retire_iid),

@@ -391,7 +391,9 @@ module RTU (
     output wire [4:0]  dbg_commit_reg2,      // 槽 2 的
     output wire [31:0] dbg_commit_value0,    // 槽 0 的结果 (摘自 preg_rdata0; CSR 那条换成旧值)
     output wire [31:0] dbg_commit_value1,    // 槽 1 的结果
-    output wire [31:0] dbg_commit_value2     // 槽 2 的结果
+    output wire [31:0] dbg_commit_value2,    // 槽 2 的结果
+    output wire        rtu_flush_busy     // 冲刷状态机非 IDLE (给 IFU 侧的冻结闸门:
+                                         // 脉冲发完但收尾没完那几拍也要冻住前端)
 );
 
     // =======================================================================
@@ -418,6 +420,9 @@ module RTU (
     wire        flushing;                    // 冲刷窗口 (含 T 拍)
     wire        mispred_pend;                // D13: 有未决快路重定向 (T_ex+1 .. F2)
     wire        fsm_busy;
+
+    // 引出口: 与喂给 RTU_commit 的 `fsm_busy` 是同一根 (2026-10-12)
+    assign rtu_flush_busy = fsm_busy;
     wire        flush_lvl;                   // FLUSH_2 脉冲
     wire        expt_clr;                    // FLUSH_1: 清 expt_entry
     wire        flush_trig;

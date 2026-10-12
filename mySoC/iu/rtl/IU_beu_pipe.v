@@ -158,8 +158,57 @@ module IU_beu_pipe (
     // (不跳→pc4 / 条件跳→pc+imm / JAL·JALR→目标) 都归一成"与 pred_npc 比",
     // 所以这里不用再单独看 `taken`。
     wire mispredict = idu_sel & npc_mismatch;
+    wire red_req    = mispredict & ~redirect_in_progress & ~chgflw_mask;
 
-    assign iu_chgflw_vld    = mispredict & ~redirect_in_progress & ~chgflw_mask;
+    // -----------------------------------------------------------------------
+    //  ⚠️ 在途误预测重定向期间, **只准更老的分支**再发 (2026-10-12, 对应 C910
+    //     `ct_iu_bju.v:506` 的 `!idu_mispred_stall || bju_rf_older_mispred`)
+    //
+    //  【症状】执行级重定向早发, 而错路上的那些分支这时还堵在 BIQ 里没发射完 ——
+    //    它们随后各自再报一次"我也误预测了", 把刚建好的正确重定向**顶掉**。
+    //    实测 (`beq`, `+PROBE_BEU`):
+    //        T96  0x10 beq → actual=0x1c chgflw_vld=1   ← 正确的那次
+    //        T97  0x14 bne → actual=0x2c4 chgflw_vld=1  ← 错路上的, 把 PC 拽到 fail
+    //    那几个地址 (0x14/0x18/0x1c) 都是"前端按错方向取回来的", 它们**比 0x10 年轻**。
+    //
+    //  【为什么不能只做"发过就不许再发"】试过: `beq` 6→7 条, 但 `mul` 从 PASS 退回
+    //    FAIL。原因是**发射是乱序的** —— `mul` 里错路那条 `jal x0,0x24` 比正确的
+    //    `beq x7,x8,0x20` **先发射**, 于是"先到先得"挡住的反而是正确那次, PC 跑到
+    //    0x24。⇒ 判据必须是**年龄**, 不是到达顺序。
+    //
+    //  【年龄从哪来】iid。BIQ 发射口上现成有 (`idu_iid`)。它按 {wrap, idx} 自增,
+    //    取值序列正好是 7 位计数器 0..127 循环 ⇒ "a 比 b 老" ⟺ 从 a 往前走到 b
+    //    不足半圈 ⟺ `(b - a)` 的第 6 位为 0。不需要额外端口, 也不需要 IDU 配合。
+    //
+    //  【为什么这样就够了】错路上那条一定是**更年轻**的 (它是顺着错方向在正确
+    //    那条后面取回来的) ⇒ 一律被挡; 而乱序先发射的那条更年轻的也一样被挡。
+    //    反过来, 万一有**更老**的分支这时才发射, 它说了算 (并刷新基准)。
+    //
+    //  ⚠️ 清条件用 `idu_flush` (= rtu_yy_xx_flush): 与 IDU 看到的是同一根。
+    //     闸门是 `mis_inflight_q`, `mis_iid_q` 残留无所谓 —— 标志为 0 时不比较。
+    // -----------------------------------------------------------------------
+    reg        mis_inflight_q;
+    reg [6:0]  mis_iid_q;
+
+    wire [6:0] iid_gap = mis_iid_q - idu_iid;      // 从本拍这条走到在途那条
+    wire       older   = ~iid_gap[6];              // 不足半圈 ⇒ 本拍这条更老
+
+    always @(posedge cpu_clk or posedge cpu_rst) begin
+        if (cpu_rst) begin
+            mis_inflight_q <= 1'b0;
+            mis_iid_q      <= 7'd0;
+        end
+        else if (idu_flush) begin
+            mis_inflight_q <= 1'b0;                // 冲刷到 ⇒ 窗口结束
+            mis_iid_q      <= 7'd0;
+        end
+        else if (red_req & (~mis_inflight_q | older)) begin
+            mis_inflight_q <= 1'b1;                // 本拍这条发了, 基准换成它
+            mis_iid_q      <= idu_iid;
+        end
+    end
+
+    assign iu_chgflw_vld    = red_req & (~mis_inflight_q | older);
     assign iu_chgflw_pc     = actual_npc;
     assign beu_redirect_vld = iu_chgflw_vld;
 
