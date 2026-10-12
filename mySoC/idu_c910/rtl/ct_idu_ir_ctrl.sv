@@ -291,7 +291,8 @@ assign idu_rtu_ir_preg1_alloc_vld = ir_inst1_vld
 assign idu_rtu_ir_preg2_alloc_vld = ir_inst2_vld
                                     && !ctrl_ir_stall
                                     && dp_ctrl_ir_inst2_dst_vld
-                                    && !dp_ctrl_ir_inst2_dst_x0;
+                                    && !dp_ctrl_ir_inst2_dst_x0
+                                    && !ctrl_xx_is_inst0_sel[0];
 
 
 //==========================================================
