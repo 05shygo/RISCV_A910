@@ -124,6 +124,7 @@ module lsu_wmb #(
   // BIU W channel
   output logic [127:0]         wmb_biu_w_data,
   output logic [3:0]           wmb_biu_w_id,
+  output logic                 wmb_biu_w_last,
   output logic                 wmb_biu_w_req,
   output logic [15:0]          wmb_biu_w_strb,
   output logic                 wmb_biu_w_vld,
@@ -145,6 +146,7 @@ module lsu_wmb #(
   // LD forward
   output logic [127:0]         wmb_ld_da_fwd_data,
   output logic                 wmb_ld_dc_fwd_req,
+  output logic [15:0]          wmb_fwd_bytes_vld,
   output logic                 wmb_ld_dc_discard_req,
 
   // Wakeup LSIQ
@@ -233,7 +235,6 @@ module lsu_wmb #(
 
   logic [127:0]          wmb_fwd_data;
   logic [127:0]          wmb_fwd_data_sel;
-  logic [15:0]           wmb_fwd_bytes_vld;
   logic                  wmb_fwd_data_pe_req;
   logic                  wmb_fwd_req;
 
@@ -430,7 +431,12 @@ assign wmb_rb_biu_req_hit_idx = |wmb_entry_rb_biu_req_hit_idx;
   assign wmb_write_req = |wmb_entry_write_req;
   assign wmb_data_req = |wmb_entry_data_req;
 
-  assign wmb_entry_write_ptr_shift_imme = wmb_entry_write_ptr_after_write_shift_imme[wmb_write_ptr];
+  // ⚠️ 这里原来取 `wmb_entry_write_ptr_after_write_shift_imme`, 但那是根**谁都没驱动**
+  //    的向量(表项只引出 `..._unconditional_shift_imme_x`) ⇒ shift_imme = X/Z ⇒
+  //    `wmb_write_ptr_shift_vld` 变成 X ⇒ 写指针不走 ⇒ `wmb_write_req_addr` 落到
+  //    未建表项上(其 addr 是 X) ⇒ 发出去的 AW 地址 `xxxxxxx0`, store 写到空处。
+  //    改回表项真正引出的那根。
+  assign wmb_entry_write_ptr_shift_imme = wmb_entry_write_ptr_unconditional_shift_imme[wmb_write_ptr];
   assign wmb_entry_data_ptr_shift_imme = wmb_entry_data_ptr_after_write_shift_imme[wmb_data_ptr];
 
 
@@ -462,6 +468,11 @@ assign wmb_rb_biu_req_hit_idx = |wmb_entry_rb_biu_req_hit_idx;
   assign wmb_merge_vld = wmb_ce_merge_wmb_req;
 
   assign wmb_entry_create_vld = wmb_create_not_vld & {WMB_ENTRY{wmb_ce_create_wmb_req}};
+  // ⚠️ 漏掉的输出 (原版 ct_lsu_wmb.v:3410): 建表项时**装数据**的使能。
+  //    没这根 ⇒ 表项里 `wmb_entry_data <= wmb_entry_data_next` 的条件是 X/Z ⇒ 永真
+  //    不成立 ⇒ WMB 表项的数据恒为 0 ⇒ 写出去的 W.data 全是 0 ⇒ store 写进去的
+  //    是 0 而不是要存的值(字节掩码 wstrb 却是对的)。
+  assign wmb_entry_create_data_vld = wmb_create_not_vld & {WMB_ENTRY{wmb_ce_create_wmb_data_req}};
   assign wmb_entry_merge_data_vld = {WMB_ENTRY{wmb_merge_vld}} & wmb_ce_merge_ptr;
 
   assign wmb_sq_pop_grnt = wmb_create_vld || wmb_merge_vld;
@@ -470,11 +481,18 @@ assign wmb_rb_biu_req_hit_idx = |wmb_entry_rb_biu_req_hit_idx;
   //==========================================================
   //          BIU AW channel (simplified - no icc/fence/sync)
   //==========================================================
+  // ⚠️ 原版这里是"建表项时装载 wmb_ce_addr" + "写指针移位时装载 next1 地址"两级;
+  //    移植只留了后者, 且取的是 `wmb_write_ptr_next1`(移位后那位) —— 那位常常**还没建
+  //    表项**(wmb_entry_addr = X) ⇒ 记下的 AW 地址是 X ⇒ store 写到空处, 后续 load
+  //    读到的是没被更新的老内存。
+  //    改为: 建表项时装载新表项地址; 移位时按**当前**写指针取地址。
   always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
     if (!cpurst_b)
       wmb_write_req_addr <= '0;
+    else if (wmb_create_vld)
+      wmb_write_req_addr <= wmb_ce_addr;
     else if (wmb_write_ptr_shift_vld)
-      wmb_write_req_addr <= wmb_entry_addr[encode_ptr(wmb_write_ptr_next1)];
+      wmb_write_req_addr <= wmb_entry_addr[encode_ptr(wmb_write_ptr)];
   end
 
   assign wmb_write_biu_req_unmask = |wmb_entry_write_biu_req;
@@ -535,6 +553,13 @@ assign wmb_rb_biu_req_hit_idx = |wmb_entry_rb_biu_req_hit_idx;
   assign wmb_biu_w_id = wmb_data_req_biu_id;
   assign wmb_biu_w_data = wmb_data_req_data;
   assign wmb_biu_w_strb = wmb_data_req_bytes_vld;
+  // ⚠️ 漏掉的输出: 原 C910 `wmb_biu_w_last = wmb_data_req_w_last`。本移植**根本没引出
+  //    这根** ⇒ lsu_top 里 wmb_biu_w_last 悬空 ⇒ bus_arb 的 lsu_biu_w_st_last = Z
+  //    ⇒ BIU 写通道 `biu_pad_wlast` = X ⇒ ct_biu_write_channel 的 WR_ACTIVE 永远
+  //    `aw_done=1, w_done=0` ⇒ store 永远写不出去 ⇒ WMB 堵死 ⇒ MSHR 读被
+  //    `wmb_rb_biu_req_hit_idx` 顶住 ⇒ 后续 load 的 line fill 永远做不了。
+  //    本仓 AW/W 都是单拍 (aw_len=0, 16B/拍), 所以"有数据就是最后一拍"。
+  assign wmb_biu_w_last = wmb_data_req;
 
   //==========================================================
   //          Dcache write request
@@ -635,9 +660,16 @@ assign wmb_rb_biu_req_hit_idx = |wmb_entry_rb_biu_req_hit_idx;
 
   always_comb begin
     wmb_fwd_data_sel = 128'b0;
+    wmb_fwd_bytes_vld = 16'b0;
     for (int j = 0; j < WMB_ENTRY; j++) begin
-      if (wmb_entry_fwd_data_pe_req[j])
-        wmb_fwd_data_sel = wmb_entry_data[j];
+      if (wmb_entry_fwd_data_pe_req[j]) begin
+        wmb_fwd_data_sel  = wmb_entry_data[j];
+        // 原 C910 用 wmb_fwd_id 选出命中表项的字节掩码 (ct_lsu_wmb.v 的
+        // wmb_fwd_bytes_vld 选择器)。本移植**漏了这个输出**, lsu_top 里
+        // wmb_fwd_bytes_vld 悬空 ⇒ 只靠 WMB 旁路时 (ld_dc 的 2'b01 分支)
+        // ld_dc_fwd_bytes_vld 变成 X/0 ⇒ 部分覆盖的 store→load 拿不到数据。
+        wmb_fwd_bytes_vld = wmb_entry_fwd_bytes_vld[j];
+      end
     end
   end
 

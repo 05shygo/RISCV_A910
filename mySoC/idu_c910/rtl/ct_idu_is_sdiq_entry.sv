@@ -227,9 +227,17 @@ ct_idu_dep_reg_entry u_ct_idu_dep_reg_entry_src1 (
 // ⚠️ 原为 x_read_data[AIQ_SRC1_DATA:AIQ_SRC1_DATA-6] (= 位 [7:1]), 与上面
 //    x_read_data[SDIQ_SRC0_VLD](位 6) 重叠 —— elaborate 报 ICSD (多驱动器)。
 //    偏移是从 AIQ entry 抄过来的: AIQ 的 read_data 有 64 位, 同样的写成对;
-//    SDIQ 只有 8 位, 按本文件自己的参数 (SDIQ_SRC0_PREG=5) 应该是位 [5:0],
-//    这也与下面读 read_data_src0_preg 的写法一致。
-assign x_read_data[SDIQ_SRC0_PREG:SDIQ_SRC0_PREG-5] = read_src1_data[5:0];
+//    SDIQ 只有 8 位 ⇒ 改放到位 [5:0] (SDIQ_SRC0_PREG=5, 不碰位 6 的 src0_vld)。
+//
+// ⚠️⚠️ 但切片不能跟着改成 [5:0]! `read_src1_data` 是 ct_idu_dep_reg_entry 的
+//    读出格式 —— 该模块里 preg 在 **位 [6:1]**、写回就绪位 wb 在 **位 [0]**
+//    (见 ct_idu_dep_reg_entry.sv: `x_read_data[6:1]=preg; x_read_data[0]=x_read_wb`)。
+//    所以这里必须取 `read_src1_data[6:1]`。
+//    原来写 [5:0] 会变成 `{preg[4:0], wb}`: **丢掉 preg 最高位、把就绪位当成了
+//    preg 的最低位** ⇒ 送进 pipe5 去读物理寄存器的是个错号(实测 53→43, 3→7, 7→15),
+//    读出来是别的寄存器的旧值(常为 0); 只有 preg=63 这种低位全 1 的才凑巧读对。
+//    sb 用例里 `sb x2,2(x1); lh x14,2(x1)` 的 store 数据因此变成 0, 回读失配。
+assign x_read_data[SDIQ_SRC0_PREG:SDIQ_SRC0_PREG-5] = read_src1_data[6:1];
 
 //==========================================================
 //             Dealloc mask signal for src0/srcv0

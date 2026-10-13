@@ -16,6 +16,7 @@ module ct_idu_is_lsiq_entry (
   input  logic         lsu_idu_wb_pipe3_wb_preg_vld_dupx,
   input  logic         rtu_yy_xx_flush,
   input  logic [6:0]   x_create_agevec,
+  input  logic [6:0]   x_create_agevec_all,
   input  logic [59:0]  x_create_data,
   input  logic         x_create_en,
   input  logic         x_issue_en,
@@ -59,6 +60,7 @@ parameter LSIQ_OPCODE            = 31;
 logic        vld;
 logic        frz;
 logic [6:0]  agevec;
+logic [6:0]  agevec_all;
 logic        lsu_frz_clr;
 logic [5:0]  dst_preg;
 logic [3:0]  sdiq_entry;
@@ -139,6 +141,24 @@ begin
     agevec[6:0] <= agevec[6:0];
 end
 
+// ⚠️ 原版还有一根"所有类型"的 agevec (ct_idu_is_lsiq_entry.v: agevec_all,
+//    注释 "agevec of all types, used for old and bar frz clear")。本仓移植时漏了,
+//    于是下面 old 只能拿"同类型"的 agevec 判 ⇒ **一条 load 只要前面没有更老的 load
+//    (只有更老的 store) 就会被误判成 LSIQ 里最老** ⇒ `ld_dc_old`=1 ⇒ 不建 LQ 表项
+//    ⇒ 更老的 store 走到 st_dc 时 LQ 是空的, `lq_st_dc_spec_fail` 不亮, 该 load
+//    读到旧值也永远不会被重放。sb 侥幸过是因为它每条 load 前面都有更老的 load。
+always @(posedge forever_cpuclk or negedge cpurst_b)
+begin
+  if(!cpurst_b)
+    agevec_all[6:0] <= 7'b0;
+  else if(x_create_en)
+    agevec_all[6:0] <= x_create_agevec_all[6:0];
+  else if(lsu_idu_lsiq_pop_vld)
+    agevec_all[6:0] <= agevec_all[6:0] & ~x_pop_other_entry[6:0];
+  else
+    agevec_all[6:0] <= agevec_all[6:0];
+end
+
 //==========================================================
 //                 Instruction Information
 //==========================================================
@@ -208,7 +228,9 @@ assign x_store                                         = store;
 //                LSU Freeze Clear Signals
 //==========================================================
 //if all bits of age vec is 0, this entry is the oldest entry
-assign old  = !(|agevec[6:0]);
+//⚠️ 必须用**所有类型**的 agevec_all (原版如此): 同类型的 agevec 里不含更老的 store,
+//   拿它判会把"前面只有更老 store"的 load 误判成 oldest。
+assign old  = !(|agevec_all[6:0]);
 
 always @(posedge forever_cpuclk or negedge cpurst_b)
 begin

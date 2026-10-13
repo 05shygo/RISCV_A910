@@ -2,6 +2,7 @@ module ct_lsu_lq_entry (
     input  logic         cpurst_b,
     input  logic         forever_cpuclk,
     input  logic [31:0]  ld_dc_addr0,
+    input  logic [27:0]  ld_dc_addr1_to4,
     input  logic [15:0]  ld_dc_bytes_vld,
     input  logic [15:0]  ld_dc_bytes_vld1,
     input  logic [6:0]   ld_dc_iid,
@@ -151,6 +152,14 @@ ct_rtu_compare_iid  x_lsu_lq_entry_compare_st_dc_iid (
 assign lq_entry_newer_than_st_dc  = lq_entry_vld
                                     &&  lq_entry_iid_newer_than_st_dc;
 //addr0 compare
+// ⚠️ 原版 ct_lsu_lq_entry.v:295-296 有这两根:
+//      lq_entry_from_ld_dc_addr0 = ld_dc_addr0;
+//      lq_entry_from_ld_dc_addr1 = ld_dc_addr1;
+//    本仓只接了 from_st_dc_addr0 ⇒ from_ld_dc_addr0/addr1 悬空 ⇒ lq_entry_addr0_tto4
+//    (从 from_ld_dc_addr0[31:4] 装) 全是 X ⇒ lq_entry_raw_spec_fail 比对出 X。
+//    addr1 用 ld_dc_addr1_to4 (== addr1[31:4]) 顶上。
+assign lq_entry_from_ld_dc_addr0[31:0] = ld_dc_addr0[31:0];
+assign lq_entry_from_ld_dc_addr1[31:4] = ld_dc_addr1_to4[27:0];
 assign lq_entry_from_st_dc_addr0[31:0] = st_dc_addr0[31:0];
 assign lq_entry_raw_addr_tto4_hit   = lq_entry_addr0_tto4[27:0]
                                       ==  lq_entry_from_st_dc_addr0[31:4];

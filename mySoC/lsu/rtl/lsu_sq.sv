@@ -83,6 +83,7 @@ module ct_lsu_sq #(
     output logic         sq_st_dc_inst_hit,
     output logic         sq_wmb_merge_stall_req,
     output logic         sq_wmb_pop_to_ce_req,
+    output logic         sq_wmb_merge_req,
     output logic [127:0] wmb_ce_data128,
     output logic         wmb_ce_update_dcache_dirty,
     output logic         wmb_ce_update_dcache_valid,
@@ -555,6 +556,10 @@ module ct_lsu_sq #(
 
     assign sq_wmb_pop_to_ce_req = sq_pop_to_ce_req;
     assign sq_wmb_merge_stall_req = rb_sq_pop_hit_idx;
+    // C910: sq_wmb_merge_req = sq_pop_merge_data_req_unmask = sq_pop_req_unmask && sq_pop_wo_st
+    // (wo_st = 普通 store, RV32I 恒为真) —— 移植时漏了这个输出, 导致 wmb_ce_create_merge 悬空,
+    // 弹出的 store 在 WMB 里建表项与否变成 X ⇒ store 可能被丢掉。
+    assign sq_wmb_merge_req = sq_pop_req_unmask;
 
     //==========================================================
     // WMB CE data path

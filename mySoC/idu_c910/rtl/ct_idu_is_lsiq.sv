@@ -91,6 +91,17 @@ parameter LSIQ_OPCODE            = 31;
   logic [6:0]  lsiq_entry5_create_agevec;
   logic [6:0]  lsiq_entry6_create_agevec;
   logic [6:0]  lsiq_entry7_create_agevec;
+  // agevec of ALL types (原版 lsiq_entry_createN_agevec_all) —— 给表项的 old 用
+  logic [7:0]  lsiq_entry_create0_agevec_all;
+  logic [7:0]  lsiq_entry_create1_agevec_all;
+  logic [6:0]  lsiq_entry0_create_agevec_all;
+  logic [6:0]  lsiq_entry1_create_agevec_all;
+  logic [6:0]  lsiq_entry2_create_agevec_all;
+  logic [6:0]  lsiq_entry3_create_agevec_all;
+  logic [6:0]  lsiq_entry4_create_agevec_all;
+  logic [6:0]  lsiq_entry5_create_agevec_all;
+  logic [6:0]  lsiq_entry6_create_agevec_all;
+  logic [6:0]  lsiq_entry7_create_agevec_all;
 
   // create data
   logic [LSIQ_WIDTH-1:0] lsiq_entry0_create_data;
@@ -364,16 +375,29 @@ assign lsiq_entry_create1_agevec[7:0] =
           & {8{dp_lsiq_create0_load && dp_lsiq_create1_load
             || dp_lsiq_create0_store && dp_lsiq_create1_store}};
 
+//-------------------agevec of ALL types--------------------
+//原版: create0_agevec_all = 所有还在的表项(不分 load/store)
+//      create1_agevec_all = 所有还在的表项 | 同拍 create0 的那条
+assign lsiq_entry_create0_agevec_all[7:0] =
+          lsiq_entry_vld[7:0]
+          & ~(lsu_idu_lsiq_pop_entry[7:0]);
+
+assign lsiq_entry_create1_agevec_all[7:0] =
+          (lsiq_entry_vld[7:0] & ~(lsu_idu_lsiq_pop_entry[7:0]))
+        | lsiq_entry_create0_in[7:0];
+
 //----------------entry0 flop create signals----------------
 always @(*)
 begin
   if(lsiq_entry_create0_in[0]) begin
     lsiq_entry0_create_agevec[6:0]     = lsiq_entry_create0_agevec[7:1];
+    lsiq_entry0_create_agevec_all[6:0]     = lsiq_entry_create0_agevec_all[7:1];
     lsiq_entry0_create_data[LSIQ_WIDTH-1:0] =
        dp_lsiq_create0_data[LSIQ_WIDTH-1:0];
   end
   else begin
     lsiq_entry0_create_agevec[6:0]     = lsiq_entry_create1_agevec[7:1];
+    lsiq_entry0_create_agevec_all[6:0]     = lsiq_entry_create1_agevec_all[7:1];
     lsiq_entry0_create_data[LSIQ_WIDTH-1:0] =
        dp_lsiq_create1_data[LSIQ_WIDTH-1:0];
   end
@@ -382,11 +406,13 @@ always @(*)
 begin
   if(lsiq_entry_create0_in[1]) begin
     lsiq_entry1_create_agevec[6:0]     = {lsiq_entry_create0_agevec[7:2],lsiq_entry_create0_agevec[0]};
+    lsiq_entry1_create_agevec_all[6:0]     = {lsiq_entry_create0_agevec_all[7:2],lsiq_entry_create0_agevec_all[0]};
     lsiq_entry1_create_data[LSIQ_WIDTH-1:0] =
        dp_lsiq_create0_data[LSIQ_WIDTH-1:0];
   end
   else begin
     lsiq_entry1_create_agevec[6:0]     = {lsiq_entry_create1_agevec[7:2],lsiq_entry_create1_agevec[0]};
+    lsiq_entry1_create_agevec_all[6:0]     = {lsiq_entry_create1_agevec_all[7:2],lsiq_entry_create1_agevec_all[0]};
     lsiq_entry1_create_data[LSIQ_WIDTH-1:0] =
        dp_lsiq_create1_data[LSIQ_WIDTH-1:0];
   end
@@ -395,11 +421,13 @@ always @(*)
 begin
   if(lsiq_entry_create0_in[2]) begin
     lsiq_entry2_create_agevec[6:0]     = {lsiq_entry_create0_agevec[7:3], lsiq_entry_create0_agevec[1:0]};
+    lsiq_entry2_create_agevec_all[6:0]     = {lsiq_entry_create0_agevec_all[7:3], lsiq_entry_create0_agevec_all[1:0]};
     lsiq_entry2_create_data[LSIQ_WIDTH-1:0] =
        dp_lsiq_create0_data[LSIQ_WIDTH-1:0];
   end
   else begin
     lsiq_entry2_create_agevec[6:0]     = {lsiq_entry_create1_agevec[7:3], lsiq_entry_create1_agevec[1:0]};
+    lsiq_entry2_create_agevec_all[6:0]     = {lsiq_entry_create1_agevec_all[7:3], lsiq_entry_create1_agevec_all[1:0]};
     lsiq_entry2_create_data[LSIQ_WIDTH-1:0] =
        dp_lsiq_create1_data[LSIQ_WIDTH-1:0];
   end
@@ -409,11 +437,13 @@ always @(*)
 begin
   if(lsiq_entry_create0_in[3]) begin
     lsiq_entry3_create_agevec[6:0]     = {lsiq_entry_create0_agevec[7:4], lsiq_entry_create0_agevec[2:0]};
+    lsiq_entry3_create_agevec_all[6:0]     = {lsiq_entry_create0_agevec_all[7:4], lsiq_entry_create0_agevec_all[2:0]};
     lsiq_entry3_create_data[LSIQ_WIDTH-1:0] =
        dp_lsiq_create0_data[LSIQ_WIDTH-1:0];
   end
   else begin
     lsiq_entry3_create_agevec[6:0]     = {lsiq_entry_create1_agevec[7:4], lsiq_entry_create1_agevec[2:0]};
+    lsiq_entry3_create_agevec_all[6:0]     = {lsiq_entry_create1_agevec_all[7:4], lsiq_entry_create1_agevec_all[2:0]};
     lsiq_entry3_create_data[LSIQ_WIDTH-1:0] =
        dp_lsiq_create1_data[LSIQ_WIDTH-1:0];
   end
@@ -423,11 +453,13 @@ always @(*)
 begin
   if(lsiq_entry_create0_in[4]) begin
     lsiq_entry4_create_agevec[6:0]     = {lsiq_entry_create0_agevec[7:5], lsiq_entry_create0_agevec[3:0]};
+    lsiq_entry4_create_agevec_all[6:0]     = {lsiq_entry_create0_agevec_all[7:5], lsiq_entry_create0_agevec_all[3:0]};
     lsiq_entry4_create_data[LSIQ_WIDTH-1:0] =
        dp_lsiq_create0_data[LSIQ_WIDTH-1:0];
   end
   else begin
     lsiq_entry4_create_agevec[6:0]     = {lsiq_entry_create1_agevec[7:5], lsiq_entry_create1_agevec[3:0]};
+    lsiq_entry4_create_agevec_all[6:0]     = {lsiq_entry_create1_agevec_all[7:5], lsiq_entry_create1_agevec_all[3:0]};
     lsiq_entry4_create_data[LSIQ_WIDTH-1:0] =
        dp_lsiq_create1_data[LSIQ_WIDTH-1:0];
   end
@@ -437,11 +469,13 @@ always @(*)
 begin
   if(lsiq_entry_create0_in[5]) begin
     lsiq_entry5_create_agevec[6:0]     = {lsiq_entry_create0_agevec[7:6], lsiq_entry_create0_agevec[4:0]};
+    lsiq_entry5_create_agevec_all[6:0]     = {lsiq_entry_create0_agevec_all[7:6], lsiq_entry_create0_agevec_all[4:0]};
     lsiq_entry5_create_data[LSIQ_WIDTH-1:0] =
        dp_lsiq_create0_data[LSIQ_WIDTH-1:0];
   end
   else begin
     lsiq_entry5_create_agevec[6:0]     = {lsiq_entry_create1_agevec[7:6], lsiq_entry_create1_agevec[4:0]};
+    lsiq_entry5_create_agevec_all[6:0]     = {lsiq_entry_create1_agevec_all[7:6], lsiq_entry_create1_agevec_all[4:0]};
     lsiq_entry5_create_data[LSIQ_WIDTH-1:0] =
        dp_lsiq_create1_data[LSIQ_WIDTH-1:0];
   end
@@ -451,11 +485,13 @@ always @(*)
 begin
   if(lsiq_entry_create0_in[6]) begin
     lsiq_entry6_create_agevec[6:0]     = {lsiq_entry_create0_agevec[7], lsiq_entry_create0_agevec[5:0]};
+    lsiq_entry6_create_agevec_all[6:0]     = {lsiq_entry_create0_agevec_all[7], lsiq_entry_create0_agevec_all[5:0]};
     lsiq_entry6_create_data[LSIQ_WIDTH-1:0] =
        dp_lsiq_create0_data[LSIQ_WIDTH-1:0];
   end
   else begin
     lsiq_entry6_create_agevec[6:0]     = {lsiq_entry_create1_agevec[7], lsiq_entry_create1_agevec[5:0]};
+    lsiq_entry6_create_agevec_all[6:0]     = {lsiq_entry_create1_agevec_all[7], lsiq_entry_create1_agevec_all[5:0]};
     lsiq_entry6_create_data[LSIQ_WIDTH-1:0] =
        dp_lsiq_create1_data[LSIQ_WIDTH-1:0];
   end
@@ -465,11 +501,13 @@ always @(*)
 begin
   if(lsiq_entry_create0_in[7]) begin
     lsiq_entry7_create_agevec[6:0]     = lsiq_entry_create0_agevec[6:0];
+    lsiq_entry7_create_agevec_all[6:0]     = lsiq_entry_create0_agevec_all[6:0];
     lsiq_entry7_create_data[LSIQ_WIDTH-1:0] =
        dp_lsiq_create0_data[LSIQ_WIDTH-1:0];
   end
   else begin
     lsiq_entry7_create_agevec[6:0]     = lsiq_entry_create1_agevec[6:0];
+    lsiq_entry7_create_agevec_all[6:0]     = lsiq_entry_create1_agevec_all[6:0];
     lsiq_entry7_create_data[LSIQ_WIDTH-1:0] =
        dp_lsiq_create1_data[LSIQ_WIDTH-1:0];
   end
@@ -723,6 +761,7 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry0 (
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx(lsu_idu_wb_pipe3_wb_preg_vld_dupx),
   .rtu_yy_xx_flush                 (rtu_yy_xx_flush                 ),
   .x_create_agevec                  (lsiq_entry0_create_agevec        ),
+  .x_create_agevec_all                  (lsiq_entry0_create_agevec_all        ),
   .x_create_data                    (lsiq_entry0_create_data          ),
   .x_create_en                      (lsiq_entry0_create_en            ),
   .x_issue_en                       (lsiq_entry_issue_en[0]           ),
@@ -761,6 +800,7 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry1 (
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx(lsu_idu_wb_pipe3_wb_preg_vld_dupx),
   .rtu_yy_xx_flush                 (rtu_yy_xx_flush                 ),
   .x_create_agevec                  (lsiq_entry1_create_agevec        ),
+  .x_create_agevec_all                  (lsiq_entry1_create_agevec_all        ),
   .x_create_data                    (lsiq_entry1_create_data          ),
   .x_create_en                      (lsiq_entry1_create_en            ),
   .x_issue_en                       (lsiq_entry_issue_en[1]           ),
@@ -799,6 +839,7 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry2 (
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx(lsu_idu_wb_pipe3_wb_preg_vld_dupx),
   .rtu_yy_xx_flush                 (rtu_yy_xx_flush                 ),
   .x_create_agevec                  (lsiq_entry2_create_agevec        ),
+  .x_create_agevec_all                  (lsiq_entry2_create_agevec_all        ),
   .x_create_data                    (lsiq_entry2_create_data          ),
   .x_create_en                      (lsiq_entry2_create_en            ),
   .x_issue_en                       (lsiq_entry_issue_en[2]           ),
@@ -837,6 +878,7 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry3 (
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx(lsu_idu_wb_pipe3_wb_preg_vld_dupx),
   .rtu_yy_xx_flush                 (rtu_yy_xx_flush                 ),
   .x_create_agevec                  (lsiq_entry3_create_agevec        ),
+  .x_create_agevec_all                  (lsiq_entry3_create_agevec_all        ),
   .x_create_data                    (lsiq_entry3_create_data          ),
   .x_create_en                      (lsiq_entry3_create_en            ),
   .x_issue_en                       (lsiq_entry_issue_en[3]           ),
@@ -875,6 +917,7 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry4 (
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx(lsu_idu_wb_pipe3_wb_preg_vld_dupx),
   .rtu_yy_xx_flush                 (rtu_yy_xx_flush                 ),
   .x_create_agevec                  (lsiq_entry4_create_agevec        ),
+  .x_create_agevec_all                  (lsiq_entry4_create_agevec_all        ),
   .x_create_data                    (lsiq_entry4_create_data          ),
   .x_create_en                      (lsiq_entry4_create_en            ),
   .x_issue_en                       (lsiq_entry_issue_en[4]           ),
@@ -913,6 +956,7 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry5 (
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx(lsu_idu_wb_pipe3_wb_preg_vld_dupx),
   .rtu_yy_xx_flush                 (rtu_yy_xx_flush                 ),
   .x_create_agevec                  (lsiq_entry5_create_agevec        ),
+  .x_create_agevec_all                  (lsiq_entry5_create_agevec_all        ),
   .x_create_data                    (lsiq_entry5_create_data          ),
   .x_create_en                      (lsiq_entry5_create_en            ),
   .x_issue_en                       (lsiq_entry_issue_en[5]           ),
@@ -951,6 +995,7 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry6 (
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx(lsu_idu_wb_pipe3_wb_preg_vld_dupx),
   .rtu_yy_xx_flush                 (rtu_yy_xx_flush                 ),
   .x_create_agevec                  (lsiq_entry6_create_agevec        ),
+  .x_create_agevec_all                  (lsiq_entry6_create_agevec_all        ),
   .x_create_data                    (lsiq_entry6_create_data          ),
   .x_create_en                      (lsiq_entry6_create_en            ),
   .x_issue_en                       (lsiq_entry_issue_en[6]           ),
@@ -989,6 +1034,7 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry7 (
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx(lsu_idu_wb_pipe3_wb_preg_vld_dupx),
   .rtu_yy_xx_flush                 (rtu_yy_xx_flush                 ),
   .x_create_agevec                  (lsiq_entry7_create_agevec        ),
+  .x_create_agevec_all                  (lsiq_entry7_create_agevec_all        ),
   .x_create_data                    (lsiq_entry7_create_data          ),
   .x_create_en                      (lsiq_entry7_create_en            ),
   .x_issue_en                       (lsiq_entry_issue_en[7]           ),

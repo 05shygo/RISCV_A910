@@ -173,16 +173,20 @@ assign st_dc_dcwp_hit_idx = 1'b0;
     //==========================================================
     //        data pre_select
     //==========================================================
+    // ⚠️ 原 C910 是 `casez(st_dc_rot_sel[2:0])` (见 ct_lsu_st_dc.v)。移植时写成
+    //    `[3:0]`, 于是地址低位 ≥ 8 时 (如 `sw` 用例 test_4 存到 0x2008) 落 default
+    //    ⇒ st_dc_data_rot_sel = X ⇒ st_dc_rot_sel_rev = X ⇒ SQ 表项 rot_sel / data
+    //    被污染成 X ⇒ 后续 load 旁路拿到的就是 X。位宽必须切回 [2:0]。
     always_comb begin
-        casez (st_dc_rot_sel[3:0])
-            4'h0: st_dc_data_rot_sel[7:0] = 8'b00000001;
-            4'h1: st_dc_data_rot_sel[7:0] = 8'b00000010;
-            4'h2: st_dc_data_rot_sel[7:0] = 8'b00000100;
-            4'h3: st_dc_data_rot_sel[7:0] = 8'b00001000;
-            4'h4: st_dc_data_rot_sel[7:0] = 8'b00010000;
-            4'h5: st_dc_data_rot_sel[7:0] = 8'b00100000;
-            4'h6: st_dc_data_rot_sel[7:0] = 8'b01000000;
-            4'h7: st_dc_data_rot_sel[7:0] = 8'b10000000;
+        casez (st_dc_rot_sel[2:0])
+            3'h0: st_dc_data_rot_sel[7:0] = 8'b00000001;
+            3'h1: st_dc_data_rot_sel[7:0] = 8'b00000010;
+            3'h2: st_dc_data_rot_sel[7:0] = 8'b00000100;
+            3'h3: st_dc_data_rot_sel[7:0] = 8'b00001000;
+            3'h4: st_dc_data_rot_sel[7:0] = 8'b00010000;
+            3'h5: st_dc_data_rot_sel[7:0] = 8'b00100000;
+            3'h6: st_dc_data_rot_sel[7:0] = 8'b01000000;
+            3'h7: st_dc_data_rot_sel[7:0] = 8'b10000000;
             default: st_dc_data_rot_sel[7:0] = {8{1'bx}};
         endcase
     end

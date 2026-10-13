@@ -245,7 +245,8 @@ module tb_a910_difftest;
     // 带诊断探针时多等一拍: 探针是另一个 always 块, 同一拍谁先跑没有保证,
     // 先 $fatal 会把失配那一拍的现场吞掉。
     if ($test$plusargs("PROBE_WB") || trace_en) @(posedge clk);
-    $fatal(1, "a910 difftest mismatch");
+    // 【临时诊断】+NOSTOP: 失配不停, 继续跑到 MAX_CYCLES —— 看后面到底能不能自愈
+    if (!$test$plusargs("NOSTOP")) $fatal(1, "a910 difftest mismatch");
   end
 
   // -------------------------------------------------------------------------
@@ -619,14 +620,17 @@ module tb_a910_difftest;
                dut.u_lsu_top.u_lsu_sq.sq_entry_settle_data_hit,
                dut.u_lsu_top.u_lsu_sq.sq_settle_rot_sel,
                dut.u_lsu_top.u_lsu_sq.sq_data_settle);
-      $display("  [SQE] T%0d data=%08x %08x %08x %08x %08x %08x | rot=%02x %02x %02x %02x %02x %02x",
+      $display("  [SQE] T%0d data=%08x %08x %08x | rot=%02x %02x %02x | addr=%08x %08x %08x | vld=%b iid=%0d %0d %0d",
                cycles,
                dut.u_lsu_top.u_lsu_sq.sq_entry_data[0], dut.u_lsu_top.u_lsu_sq.sq_entry_data[1],
-               dut.u_lsu_top.u_lsu_sq.sq_entry_data[2], dut.u_lsu_top.u_lsu_sq.sq_entry_data[3],
-               dut.u_lsu_top.u_lsu_sq.sq_entry_data[4], dut.u_lsu_top.u_lsu_sq.sq_entry_data[5],
+               dut.u_lsu_top.u_lsu_sq.sq_entry_data[2],
                dut.u_lsu_top.u_lsu_sq.sq_entry_rot_sel[0], dut.u_lsu_top.u_lsu_sq.sq_entry_rot_sel[1],
-               dut.u_lsu_top.u_lsu_sq.sq_entry_rot_sel[2], dut.u_lsu_top.u_lsu_sq.sq_entry_rot_sel[3],
-               dut.u_lsu_top.u_lsu_sq.sq_entry_rot_sel[4], dut.u_lsu_top.u_lsu_sq.sq_entry_rot_sel[5]);
+               dut.u_lsu_top.u_lsu_sq.sq_entry_rot_sel[2],
+               dut.u_lsu_top.u_lsu_sq.sq_entry_addr0[0], dut.u_lsu_top.u_lsu_sq.sq_entry_addr0[1],
+               dut.u_lsu_top.u_lsu_sq.sq_entry_addr0[2],
+               dut.u_lsu_top.u_lsu_sq.sq_entry_vld,
+               dut.u_lsu_top.u_lsu_sq.sq_entry_iid[0], dut.u_lsu_top.u_lsu_sq.sq_entry_iid[1],
+               dut.u_lsu_top.u_lsu_sq.sq_entry_iid[2]);
       if (dut.u_lsu_top.u_lsu_ld_da.ld_da_inst_vld)
         $display("  [SQL] T%0d iid=%0d addr=%08x fwd_vld=%b fwd_sq=%b fwd_bytes=%04x ld_rot=%0d | sq_fwd_id=%b sq_fwd_data=%08x | d128=%032x wb=%08x",
                  cycles, dut.u_lsu_top.u_lsu_ld_da.ld_da_iid,
@@ -638,6 +642,80 @@ module tb_a910_difftest;
                  dut.u_lsu_top.sq_ld_dc_fwd_id, dut.u_lsu_top.sq_ld_da_fwd_data,
                  dut.u_lsu_top.u_lsu_ld_da.ld_da_data128,
                  dut.u_lsu_top.u_lsu_ld_da.ld_da_wb_data);
+    end
+  end
+
+  // 【临时诊断】IDU 侧 SDIQ / pipe5 相位 —— `+PROBE_SDIQ` (窗由 STL_LO/STL_HI 给)
+  //   看 issue_en → (reg) → rf_pipe5_inst_vld / rf_pipe5_prf_src0_preg 是否同拍,
+  //   以及送到 LSU 的 sdiq_sel / sdiq_id / src0 三根是不是同拍有效。
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_SDIQ") && cycles >= stl_lo && cycles <= stl_hi) begin
+      $display("  [IDU] T%0d issue_en=%b p5_vld=%b | dp_issue_entry=%b dp_read_data=%02x | p5_iq_entry=%b p5_src0_preg=%0d | prf_rd_preg=%0d prf_rd_data=%08x | sdiq_sel=%b sdiq_id=%b src0=%08x | st_sdiq_entry=%b",
+               cycles,
+               dut.u_ct_idu_top.x_ct_idu_rf_dp.sdiq_xx_issue_en,
+               dut.u_ct_idu_top.x_ct_idu_rf_ctrl.rf_pipe5_inst_vld,
+               dut.u_ct_idu_top.x_ct_idu_rf_dp.sdiq_dp_issue_entry,
+               dut.u_ct_idu_top.x_ct_idu_rf_dp.sdiq_dp_issue_read_data,
+               dut.u_ct_idu_top.x_ct_idu_rf_dp.rf_pipe5_iq_entry,
+               dut.u_ct_idu_top.x_ct_idu_rf_dp.rf_pipe5_prf_src0_preg,
+               dut.u_ct_idu_top.x_ct_idu_rf_prf_pregfile.dp_prf_rf_pipe5_src0_preg,
+               dut.u_ct_idu_top.x_ct_idu_rf_prf_pregfile.prf_dp_rf_pipe5_src0_data,
+               dut.idu_lsu_sdiq_sel,
+               dut.idu_lsu_rf_pipe5_sdiq_entry,
+               dut.idu_lsu_rf_pipe5_src0,
+               dut.idu_lsu_st_sdiq_entry);
+    end
+  end
+
+  // 【临时诊断】SDIQ 表项内部: 存的 rs2(store data) preg / ready 位 / 读出的 8 位 —— `+PROBE_SD2`
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_SD2") && cycles >= stl_lo && cycles <= stl_hi) begin
+      if (dut.idu_lsu_sdiq_sel || dut.u_ct_idu_top.sdiq_xx_issue_en
+          || dut.u_ct_idu_top.x_ct_idu_is_sdiq.u_ct_idu_is_sdiq_entry_0.x_create_en)
+        $display("  [SD2] T%0d issue_en=%b sel=%b | e0:vld=%b rdy=%b cread=%02x rd=%02x preg=%0d s0vld=%b | dp:%02x",
+                 cycles,
+                 dut.u_ct_idu_top.sdiq_xx_issue_en, dut.idu_lsu_sdiq_sel,
+                 dut.u_ct_idu_top.x_ct_idu_is_sdiq.u_ct_idu_is_sdiq_entry_0.vld,
+                 dut.u_ct_idu_top.x_ct_idu_is_sdiq.u_ct_idu_is_sdiq_entry_0.x_rdy,
+                 dut.u_ct_idu_top.x_ct_idu_is_sdiq.u_ct_idu_is_sdiq_entry_0.x_create_data,
+                 dut.u_ct_idu_top.x_ct_idu_is_sdiq.u_ct_idu_is_sdiq_entry_0.x_read_data,
+                 dut.u_ct_idu_top.x_ct_idu_is_sdiq.u_ct_idu_is_sdiq_entry_0.u_ct_idu_dep_reg_entry_src1.preg,
+                 dut.u_ct_idu_top.x_ct_idu_is_sdiq.u_ct_idu_is_sdiq_entry_0.src0_vld,
+                 dut.u_ct_idu_top.sdiq_dp_issue_read_data);
+    end
+  end
+
+  // 【临时诊断】AXI 总线 + MSHR 表项/写回请求 —— `+PROBE_AXI`
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_AXI") && cycles >= stl_lo && cycles <= stl_hi) begin
+      if (biu_pad_arvalid & pad_biu_arready)
+        $display("  [AX] T%0d AR addr=%08x len=%0d", cycles, biu_pad_araddr, biu_pad_arlen);
+      if (pad_biu_rvalid)
+        $display("  [AX] T%0d R last=%b data=%032x", cycles, pad_biu_rlast, pad_biu_rdata);
+      if (biu_pad_awvalid)
+        $display("  [AX] T%0d AW v=%b r=%b addr=%08x", cycles, biu_pad_awvalid, pad_biu_awready, biu_pad_awaddr);
+      if (biu_pad_wvalid)
+        $display("  [AX] T%0d  W v=%b r=%b last=%b strb=%16x data=%032x", cycles, biu_pad_wvalid, pad_biu_wready, biu_pad_wlast, biu_pad_wstrb, biu_pad_wdata);
+      $display("  [LQ] T%0d evld=%b eiid=%0d | ld:dc_vld=%b iid=%0d addr=%08x | st:chk=%b iid=%0d addr=%08x | specfail=%b specfail1=%b",
+               cycles,
+               dut.u_lsu_top.u_lsu_lq.lq_entry_vld,
+               dut.u_lsu_top.u_lsu_lq.gen_lq_entry[0].u_lq_entry.lq_entry_iid,
+               dut.u_lsu_top.ld_dc_lq_create_vld,
+               dut.u_lsu_top.u_lsu_ld_dc.ld_dc_iid,
+               dut.u_lsu_top.u_lsu_ld_dc.ld_dc_addr0,
+               dut.u_lsu_top.st_dc_chk_st_inst_vld,
+               dut.u_lsu_top.u_lsu_st_dc.st_dc_iid,
+               dut.u_lsu_top.u_lsu_st_dc.st_dc_addr0,
+               dut.u_lsu_top.lq_st_dc_spec_fail,
+               dut.u_lsu_top.u_lsu_lq.gen_lq_entry[0].u_lq_entry.lq_entry_raw_spec_fail1);
+      $display("  [WM] T%0d sqe_data= %08x %08x %08x %08x %08x %08x | ce_sqptr=%b popd=%08x | wen_data: %08x %08x %08x",
+               cycles,
+               dut.u_lsu_top.u_lsu_sq.sq_entry_data[0], dut.u_lsu_top.u_lsu_sq.sq_entry_data[1],
+               dut.u_lsu_top.u_lsu_sq.sq_entry_data[2], dut.u_lsu_top.u_lsu_sq.sq_entry_data[3],
+               dut.u_lsu_top.u_lsu_sq.sq_entry_data[4], dut.u_lsu_top.u_lsu_sq.sq_entry_data[5],
+               dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_sq_ptr, dut.u_lsu_top.sq_pop_data,
+               dut.u_lsu_top.u_lsu_wmb.wmb_entry_data[0], dut.u_lsu_top.u_lsu_wmb.wmb_entry_data[1],
+               dut.u_lsu_top.u_lsu_wmb.wmb_entry_data[2]);
     end
   end
 
