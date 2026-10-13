@@ -1,0 +1,6 @@
+Command Line: /mnt/tools/synopsys/verdi/V-2023.12-SP2/platform/LINUXAMD64/bin/fsdb2vcd waveform/a910_difftest.fsdb -o /tmp/lh.vcd -bt 1100ns -et 1400ns
+uname(Linux localhost.localdomain 3.10.0-1160.119.1.el7.x86_64 #1 SMP Tue Jun 4 14:43:51 UTC 2024 x86_64)
+Load signals (1100000)-(1265000) time 0.320215 0.568377 0.408578 delta 169418752 169418752 total 481542144 481542144
+Write signals (1100000)-(1265000) time 0.041287 0.041274 0.000000 delta 1363968 1363968 total 482906112 482906112
+Unload (1100000)-(1265000) time 0.009546 0.009532 0.000000 delta 0 0 total 482906112 482906112
+au time 0.452256 0.690261 0.415320 delta 171634688 171634688 total 366088192 366088192

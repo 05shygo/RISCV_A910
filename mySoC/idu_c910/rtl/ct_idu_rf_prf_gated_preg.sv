@@ -1,5 +1,6 @@
 module ct_idu_rf_prf_gated_preg (
   input  logic         forever_cpuclk,
+  input  logic         cpurst_b,
   input  logic [31:0]  iu_idu_ex2_pipe0_wb_preg_data,
   input  logic [31:0]  iu_idu_ex2_pipe1_wb_preg_data,
   input  logic [31:0]  iu_idu_ex2_pipe2_wb_preg_data,
@@ -40,7 +41,9 @@ module ct_idu_rf_prf_gated_preg (
   logic [31:0] reg_dout;
 
   always_ff @(posedge forever_cpuclk) begin
-    if (write_en) begin
+    if(!cpurst_b)
+      reg_dout <= 32'b0;
+    else if (write_en) begin
       reg_dout <= write_data;
     end
   end

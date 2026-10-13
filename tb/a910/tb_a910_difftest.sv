@@ -183,8 +183,13 @@ module tb_a910_difftest;
   // 会拿着后一条的 pc 去比对前一条的值, 报出来的失配点全错位。
   always @(posedge clk) begin
     if (!rst && !halted) begin
-      if (trace_on && dut.rtu_retire_cnt != 2'b00) begin
-        $display("      T%0d 退休 %b 条", cycles, dut.rtu_retire_cnt);
+      // ⚠️ 2026-10-13: `rtu_retire_cnt` 是核内**当拍**的退休条数, 而下面三个槽
+      //    来自 `dbg_commit_*` —— 顶层现在给这三根加了"等 LSU 写回落地"的延迟线
+      //    (见 A910_cpu.sv), 两者**不再同拍**。探针的"几条/哪些槽"必须统一取自
+      //    延迟后的 `dbg_commit_vld*`, 否则打出来的 pc 与条数对不上。
+      if (trace_on && |{dut.dbg_commit_vld2, dut.dbg_commit_vld1, dut.dbg_commit_vld0}) begin
+        $display("      T%0d 退休 %b%b%b 条", cycles,
+                 dut.dbg_commit_vld2, dut.dbg_commit_vld1, dut.dbg_commit_vld0);
         if (dut.dbg_commit_vld0)
           $display("        slot0 pc=%08x ena=%b x%0d<=%08x", dut.dbg_commit_pc0,
                    dut.dbg_commit_ena0, dut.dbg_commit_reg0, dut.dbg_commit_value0);
@@ -493,6 +498,50 @@ module tb_a910_difftest;
     end
   end
 
+  // 【临时诊断】ID 窗口 vs IR 窗口逐拍并排 —— `+PROBE_IDIR`
+  //   追"某条指令在 ID 级被收下了, 却没有出现在 IR/派遣里"。
+  integer IDIR_LO = 0;
+  integer IDIR_HI = 0;
+  initial begin
+    void'($value$plusargs("IDIR_LO=%d", IDIR_LO));
+    void'($value$plusargs("IDIR_HI=%d", IDIR_HI));
+  end
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_IDIR") && cycles >= IDIR_LO && cycles <= IDIR_HI) begin
+      $display("  [IDIR] T%0d IDreg: vld=%b%b%b pc=%08x,%08x,%08x | IRreg: vld=%b%b%b pc=%08x,%08x,%08x",
+               cycles,
+               dut.u_ct_idu_top.u_ct_idu_id_ctrl.id_inst2_vld,
+               dut.u_ct_idu_top.u_ct_idu_id_ctrl.id_inst1_vld,
+               dut.u_ct_idu_top.u_ct_idu_id_ctrl.id_inst0_vld,
+               dut.u_ct_idu_top.u_ct_idu_id_dp.id_inst2_pc,
+               dut.u_ct_idu_top.u_ct_idu_id_dp.id_inst1_pc,
+               dut.u_ct_idu_top.u_ct_idu_id_dp.id_inst0_pc,
+               dut.u_ct_idu_top.x_ct_idu_ir_ctrl.ir_inst2_vld,
+               dut.u_ct_idu_top.x_ct_idu_ir_ctrl.ir_inst1_vld,
+               dut.u_ct_idu_top.x_ct_idu_ir_ctrl.ir_inst0_vld,
+               dut.u_ct_idu_top.x_ct_idu_ir_dp.ir_inst2_data[89:58],
+               dut.u_ct_idu_top.x_ct_idu_ir_dp.ir_inst1_data[89:58],
+               dut.u_ct_idu_top.x_ct_idu_ir_dp.ir_inst0_data[89:58]);
+      $display("         ID→IR: vld=%b%b%b pc=%08x,%08x,%08x | 派遣: vld=%b%b%b pc=%08x,%08x,%08x iid=%0d,%0d,%0d",
+               dut.u_ct_idu_top.id_ir_inst2_vld, dut.u_ct_idu_top.id_ir_inst1_vld,
+               dut.u_ct_idu_top.id_ir_inst0_vld,
+               dut.u_ct_idu_top.u_ct_idu_id_dp.dp_id_pipedown_inst2_data[89:58],
+               dut.u_ct_idu_top.u_ct_idu_id_dp.dp_id_pipedown_inst1_data[89:58],
+               dut.u_ct_idu_top.u_ct_idu_id_dp.dp_id_pipedown_inst0_data[89:58],
+               dut.idu_rtu_disp2_vld, dut.idu_rtu_disp1_vld, dut.idu_rtu_disp0_vld,
+               dut.idu_rtu_disp2_pc, dut.idu_rtu_disp1_pc, dut.idu_rtu_disp0_pc,
+               dut.rtu_disp_iid2, dut.rtu_disp_iid1, dut.rtu_disp_iid0);
+      $display("         acc=%b ifu_acc=%b ib_vld=%b pc=%08x,%08x,%08x cnt=%0d head=%0d | is_pipedown2=%b id_sel=%b id_stall=%b ir_stall=%b",
+               dut.idu_accept_num, dut.ifu_accept_num, dut.u_rv32ifu2_top.ib_vld,
+               dut.u_rv32ifu2_top.ib_out0[63:32], dut.u_rv32ifu2_top.ib_out1[63:32],
+               dut.u_rv32ifu2_top.ib_out2[63:32],
+               dut.u_rv32ifu2_top.u_ibuf.cnt_q, dut.u_rv32ifu2_top.u_ibuf.head_q,
+               dut.u_ct_idu_top.ctrl_xx_is_inst0_sel[0], dut.u_ct_idu_top.ctrl_xx_is_inst0_sel[1],
+               dut.u_ct_idu_top.u_ct_idu_id_ctrl.ctrl_id_pipedown_stall,
+               dut.u_ct_idu_top.ctrl_ir_stall);
+    end
+  end
+
   integer beu_lines = 0;
   always @(posedge clk) begin
     if (!rst && $test$plusargs("PROBE_BEU") && beu_lines < 200
@@ -592,6 +641,23 @@ module tb_a910_difftest;
       end
     end
   end
+
+  // -------------------------------------------------------------------------
+  // FSDB 波形生成 (仿照 tb_a910_smoke.sv)
+  // -------------------------------------------------------------------------
+`ifdef FSDB
+  reg [8*100:1] wave_file;
+  initial begin
+    if ($value$plusargs("WAVE=%s", wave_file)) begin
+      $sformat(wave_file, "waveform/%0s.fsdb", wave_file);
+    end else begin
+      wave_file = "waveform/a910_difftest.fsdb";
+    end
+    $fsdbDumpfile(wave_file);
+    $fsdbDumpvars(0, tb_a910_difftest);
+    $display("  📊 FSDB 波形已启用: %0s", wave_file);
+  end
+`endif
 
   initial begin
     if (!$value$plusargs("MAX_CYCLES=%d", max_cycles)) max_cycles = 200000;

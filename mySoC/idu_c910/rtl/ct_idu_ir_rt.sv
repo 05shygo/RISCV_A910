@@ -6,6 +6,10 @@ module ct_idu_ir_rt (
   input  logic         forever_cpuclk,
   input  logic         cpurst_b,
   input  logic         ctrl_ir_stall,
+  // [0]=pipedown2 (顺延): 本拍 IR 车道 2 的指令**发不出去**, 会回灌到车道 0 再改一次名。
+  // 与 ct_idu_ir_ctrl 的 `idu_rtu_ir_preg2_alloc_vld` 用**同一根信号** (同拍同域),
+  // 两边必须一起门 —— 见下面 `inst2_write_en` 的说明。
+  input  logic [1:0]   ctrl_xx_is_inst0_sel,
   input  logic         ctrl_rt_inst0_vld,
   input  logic         ctrl_rt_inst1_vld,
   input  logic         ctrl_rt_inst2_vld,
@@ -186,9 +190,27 @@ assign inst1_write_en              = ctrl_rt_inst1_vld
 assign reg_write1_en[31:0]         = dp_rt_inst1_dst_reg_lsb_expand[31:0]
                                      & {32{inst1_write_en}};
 
+// ---------------------------------------------------------------------------
+// ⚠️ 2026-10-12: 加 `!ctrl_xx_is_inst0_sel[0]` (顺延那拍不写表)。
+//
+// 顺延 (pipedown2) 那拍, 车道 2 的指令**没有被派发**, 下一拍会回灌到车道 0 重新走
+// 一遍改名。如果这拍还把 `dp_rt_inst2_dst_preg` 写进表里, 那一拍写进去的号**不是
+// 为本条分配的** (同一拍的 `idu_rtu_ir_preg2_alloc_vld` 已被门掉, RTU 门房"不请求
+// 就保持" ⇒ 读到的是门房当前号), 于是下一拍车道 0 改这条名时, 读口读到的
+// `old_preg` 就是它自己刚写进去的号。
+//
+// 后果只在**自引用**指令 (dst == src, 例如循环里的 `addi x4,x4,1`) 上暴露:
+// `old_preg == dst_preg` ⇒ 源操作数从一个永远没人写的号上读 ⇒ 第二圈起读回旧值。
+// 现象: 循环第二次迭代计数器少加 1 (difftest 第 153 条起失配)。
+//
+// 这一条与 `ct_idu_ir_ctrl.idu_rtu_ir_preg2_alloc_vld` (本文件外的另一半) 是
+// **同一处 bug 的两半**, 必须同时门掉: 只门分配请求 ⇒ 写进去的是没分配出去的号;
+// 只门写表 ⇒ 白抽一个号 (无害但漏号)。见 doc/a910_difftest_zh.md §4.6。
+// ---------------------------------------------------------------------------
 assign inst2_write_en              = ctrl_rt_inst2_vld
                                      && !ctrl_ir_stall
                                      && !rt_recover_updt_vld
+                                     && !ctrl_xx_is_inst0_sel[0]
                                      &&  dp_rt_inst2_dst_vld;
 assign reg_write2_en[31:0]         = dp_rt_inst2_dst_reg_lsb_expand[31:0]
                                      & {32{inst2_write_en}};

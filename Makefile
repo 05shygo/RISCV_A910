@@ -138,12 +138,65 @@ else
 DEFINES += +define+DCACHE_2KB
 endif
 
-# FSDB (Verdi) detection
-# Enabled for debugging
-FSDB_HOME := $(if $(VERDI_HOME),$(VERDI_HOME),$(NOVAS_HOME))
-ifneq ($(strip $(FSDB_HOME)),)
-  FSDB_VCS := -P $(FSDB_HOME)/share/PLI/VCS/LINUX64/novas.tab $(FSDB_HOME)/share/PLI/VCS/LINUX64/pli.a
-  DEFINES += +define+FSDB
+# ---------------------------------------------------------------------------
+# Verdi / FSDB 自动检测
+#
+# 【为什么不能只认环境变量】本机 Verdi 装在 /mnt/tools/synopsys/verdi/V-2023.12-SP2,
+#   但登录 shell 里 **VERDI_HOME / NOVAS_HOME 都没设**, verdi/vcs 也都不在 PATH。
+#   原来只认那两个环境变量 ⇒
+#     (1) FSDB_VCS 为空 ⇒ VCS 编译时**不链接 novas PLI** ⇒ `$fsdbDumpvars` 变成
+#         空操作 ⇒ FSDB 文件照生, 但**里面一条信号都没有** —— 症状正是"verdi 打开
+#         波形后拉不出信号 / 层次树是空的";
+#     (2) `verdi` 命令本身 "command not found"。
+#   ⇒ 这里把安装路径**一次性探测出来**, 之后一律用绝对路径, 与 shell 环境解耦。
+#
+# 探测顺序:
+#   1. 环境变量 VERDI_HOME / NOVAS_HOME        (若已设置, 以它为准)
+#   2. 常见安装根目录, 每个根下按版本号排序取**最新**的含 bin/verdi 的版本目录
+#   (verdi 的 bin/verdi 是个自设环境的 sh wrapper, 所以绝对路径调用无需再 source)
+# ---------------------------------------------------------------------------
+VERDI_HOME_ENV := $(if $(VERDI_HOME),$(VERDI_HOME),$(NOVAS_HOME))
+
+# 常见安装根 (按冒号分隔, 便于加新机器)
+VERDI_ROOTS := /mnt/tools/synopsys/verdi /mnt/tools/verdi \
+               /eda/synopsys/verdi /eda/verdi /tools/synopsys/verdi /tools/verdi \
+               /usr/synopsys/verdi /opt/synopsys/verdi
+
+# ⚠️ 环境变量必须**校验后才信**: 本机 shell 里 VERDI_HOME 常被某模板设成占位符
+#    `/path/to/verdi/installation`, 直接拿来用 ⇒ novas 照着假路径找库 ⇒ dumper 加载失败。
+#    判据: 该目录下真有一份 novas.tab。
+ifneq ($(strip $(VERDI_HOME_ENV)),)
+  ifneq ($(wildcard $(VERDI_HOME_ENV)/share/PLI/VCS/LINUX64/novas.tab),)
+    VERDI_HOME_AUTO := $(VERDI_HOME_ENV)
+  endif
+endif
+
+# 环境变量没给或给了个假路径 ⇒ 按版本号取最新的一个真实安装。
+ifeq ($(strip $(VERDI_HOME_AUTO)),)
+  VERDI_HOME_AUTO := $(shell for root in $(VERDI_ROOTS); do \
+      d=$$(ls -d $$root/*/ 2>/dev/null | sort -V | tail -1); \
+      if [ -f "$${d}share/PLI/VCS/LINUX64/novas.tab" ]; then echo "$${d%/}"; break; fi; \
+    done)
+endif
+
+ifneq ($(strip $(VERDI_HOME_AUTO)),)
+  FSDB_HOME := $(VERDI_HOME_AUTO)
+  FSDB_VCS  := -P $(FSDB_HOME)/share/PLI/VCS/LINUX64/novas.tab $(FSDB_HOME)/share/PLI/VCS/LINUX64/pli.a
+  DEFINES   += +define+FSDB
+  # verdi 可执行文件也换成绝对路径 (命令行 `make VERDI=xxx` 仍可覆盖)
+  VERDI := $(FSDB_HOME)/bin/verdi
+  # ⚠️ 【仿真运行时】也要这个变量: novas 在 simv **跑起来之后**才按 VERDI_HOME/NOVAS_HOME
+  #    去 share/PLI/lib/LINUXAMD64/ 找 dumper 动态库 —— 与编译期 `-P ...novas.tab` 是
+  #    两回事, 只链上 PLI 不够。实测 (2026-10-12): 本机 shell 里 VERDI_HOME 被某个模板
+  #    设成占位符 `/path/to/verdi/installation`, 于是日志里出现
+  #      "*Verdi* Cannot load libsscore_vcs202312.so ..." / "Failed to load FSDB dumper"
+  #    之后 **FSDB 根本不写**: 旧的 waveform/<用例>.fsdb 原地留着, 看起来像"没生成波形"。
+  #    所以这里**显式覆盖**成探测到的真路径, 不继承 shell 里那个可能错的变量。
+  FSDB_ENV := VERDI_HOME=$(FSDB_HOME) NOVAS_HOME=$(FSDB_HOME)
+  $(info ✅ Verdi/FSDB 已启用: $(FSDB_HOME))
+else
+  $(warning ⚠️  未找到 Verdi 安装 (已搜: $(VERDI_ROOTS))。)
+  $(warning     波形生成将不可用 —— 请设置 VERDI_HOME 或 NOVAS_HOME 环境变量。)
 endif
 
 VCS_FLAGS ?= -full64 -sverilog -timescale=1ns/1ps -debug_access+all +v2k
@@ -177,7 +230,7 @@ CROSS     ?= riscv32-unknown-elf-
 ASM_SRCS  := $(wildcard $(PWD)/asm/*.S)
 ASM_BINS  := $(patsubst $(PWD)/asm/%.S,$(PWD)/bin/%.bin,$(ASM_SRCS))
 
-.PHONY: all build run run-all verdi clean help coremark asm muldiv-unit rtu-unit rtu-lsu-unit rtu-adapter-unit rtu-expt-unit iu-alu-unit iu-beu-unit iu-md-unit rtu-subsys-elab biu-unit a910-elab a910-run a910-difftest a910-difftest-all
+.PHONY: all build run run-all verdi clean help coremark asm muldiv-unit rtu-unit rtu-lsu-unit rtu-adapter-unit rtu-expt-unit iu-alu-unit iu-beu-unit iu-md-unit rtu-subsys-elab biu-unit a910-elab a910-run a910-difftest a910-difftest-all a910-difftest-all_wave a910-difftest-wave verdi-difftest
 
 asm: $(ASM_BINS)
 
@@ -837,6 +890,113 @@ a910-difftest-all: $(A910_DT_SIMV)
 	if [ -n "$$fail" ]; then echo "$$fail" | sed -e 's/^ //; s/ /, /g'; else echo "  (无)"; fi; \
 	echo "日志: /tmp/a910_dt/<用例>.log"
 
+# ---------------------------------------------------------------------------
+# A910 difftest 带波形版本
+#
+# 【目的】运行 a910-difftest-all 的**同一套用例**并生成波形，跑完自动用 verdi 打开
+#         本次跑出来的波形（有失败用例就开第一个失败的，否则开最后一个跑过的）。
+#
+# 与 a910-difftest-all 的区别：
+#   - 用另一个 simv (obj_a910_dt_wave/): 编译时加 +define+FSDB 并链接 Verdi 的
+#     novas PLI —— **没有 PLI 则 $fsdbDumpvars 是空操作, FSDB 文件里一条信号都没有**
+#   - 运行时加 +WAVE=<用例名>, 波形落到 waveform/<用例名>.fsdb
+#   - 跑完自动开 verdi (见下面 verdi-difftest)
+#
+# 用法:
+#   make a910-difftest-all_wave              # 跑整套并出波形, 自动开 verdi
+#   make a910-difftest-wave TEST=<test>      # 只跑一个用例并出波形, 自动开 verdi
+#   make verdi-difftest WAVE=<test>          # 只开已有波形, 不重跑
+# ---------------------------------------------------------------------------
+A910_DT_WAVE_BUILD := $(PWD)/obj_a910_dt_wave
+# ⚠️ 日志目录**不能**用 /tmp/a910_dt (a910-difftest-all 用的那个): 那个目录在多用户
+#    机器上常是别人(如 IC1)先建的、别人的属主 + 755, 本用户只在 others 位上有 r-x ⇒
+#    写日志直接 "Permission denied", 连带整个用例判 FAIL。改成写在自己的构建目录下。
+A910_DT_WAVE_LOG   := $(A910_DT_WAVE_BUILD)/logs
+A910_DT_WAVE_SIMV  := $(A910_DT_WAVE_BUILD)/simv
+
+# 带 FSDB 波形支持的 difftest simv
+$(A910_DT_WAVE_SIMV): $(A910_SRC) $(A910_DT_TB) $(DPIC) $(CSRC_GM)
+	@mkdir -p $(A910_DT_WAVE_BUILD)
+	$(VCS) $(VCS_FLAGS) $(VCS_FLAGS_EXTRA) $(INC) $(FSDB_VCS) \
+	  -CFLAGS -DVCS -CFLAGS -I$(PWD)/golden_model/include \
+	  +define+RTU_PREG64 +define+DCACHE_2KB +define+FSDB \
+	  +define+PATH=$(TESTFILE) +define+PATHHEX=$(TESTHEX) +define+PATH128=$(TESTHEX128) \
+	  -top tb_a910_difftest -o $(A910_DT_WAVE_SIMV) -Mdir=$(A910_DT_WAVE_BUILD)/csrc \
+	  -l $(A910_DT_WAVE_BUILD)/compile.log \
+	  $(A910_SRC) $(A910_DT_TB) $(DPIC) $(CSRC_GM)
+
+# 单个测试带波形
+# ⚠️ 仿真那行必须 `|| true`: difftest 失配时 simv 返回非 0, 而**失配正是最想看波形
+#    的时候** —— 不加的话 make 会当场中止, 下面开 verdi 的那步根本轮不到执行。
+a910-difftest-wave: $(A910_DT_WAVE_SIMV) $(PWD)/bin/$(TEST).bin $(PWD)/bin/$(TEST).hex $(PWD)/bin/$(TEST).hex128
+	@ln -sf $(PWD)/bin/$(TEST).bin    $(TESTFILE)
+	@ln -sf $(PWD)/bin/$(TEST).hex    $(TESTHEX)
+	@ln -sf $(PWD)/bin/$(TEST).hex128 $(TESTHEX128)
+	@mkdir -p waveform
+	@echo "===================================================="
+	@echo "  运行 a910-difftest 测试: $(TEST) (生成波形)"
+	@echo "===================================================="
+	@$(FSDB_ENV) $(A910_DT_WAVE_SIMV) +vcs+lic+wait -exitstatus +TEST=$(TEST) $(A910_DT_ARGS) \
+	  +WAVE=$(TEST) +MAX_CYCLES=$(A910_DT_MAX_CYCLES) -l $(A910_DT_WAVE_BUILD)/sim_$(TEST).log || true
+	@echo ""
+	@echo "===================================================="
+	@echo "  打开 Verdi 查看波形: waveform/$(TEST).fsdb"
+	@echo "===================================================="
+	@$(MAKE) verdi-difftest WAVE=$(TEST)
+
+# 所有测试带波形
+a910-difftest-all_wave: $(A910_DT_WAVE_SIMV)
+	@mkdir -p $(A910_DT_WAVE_LOG)
+	@mkdir -p waveform
+	@echo "===================================================="
+	@echo "  运行所有 a910-difftest 测试并生成波形"
+	@echo "===================================================="
+	@pass=""; fail=""; fail_tests=""; last_run=""; \
+	for f in $(PWD)/bin/*.bin; do \
+	  t=$$(basename $$f .bin); \
+	  case " $(A910_DT_SKIP) " in *" $$t "*) continue;; esac; \
+	  echo "----------------------------------------"; \
+	  echo "测试: $$t"; \
+	  ln -sf $(PWD)/bin/$$t.bin $(TESTFILE); \
+	  ln -sf $(PWD)/bin/$$t.hex $(TESTHEX); \
+	  ln -sf $(PWD)/bin/$$t.hex128 $(TESTHEX128); \
+	  $(FSDB_ENV) $(A910_DT_WAVE_SIMV) +vcs+lic+wait -exitstatus +TEST=$$t $(A910_DT_ARGS) \
+	    +WAVE=$$t +MAX_CYCLES=$(A910_DT_MAX_CYCLES) \
+	    -l $(A910_DT_WAVE_LOG)/$$t.log > $(A910_DT_WAVE_LOG)/$$t.out 2>&1; \
+	  if [ $$? -eq 0 ]; then \
+	    pass="$$pass $$t"; st="PASS"; \
+	  else \
+	    fail="$$fail $$t"; fail_tests="$$fail_tests $$t"; st="FAIL"; \
+	  fi; \
+	  last_run=$$t; \
+	  printf "  %-16s %s\n" "$$t" "$$st"; \
+	done; \
+	echo; echo "==================== A910 difftest 汇总 ===================="; \
+	echo "PASS ($$(echo $$pass | wc -w)):"; \
+	if [ -n "$$pass" ]; then echo "$$pass" | sed -e 's/^ //; s/ /, /g'; else echo "  (无)"; fi; \
+	echo "FAIL ($$(echo $$fail | wc -w)):"; \
+	if [ -n "$$fail" ]; then echo "$$fail" | sed -e 's/^ //; s/ /, /g'; else echo "  (无)"; fi; \
+	echo "日志: $(A910_DT_WAVE_LOG)/<用例>.log"; \
+	echo "波形: waveform/<用例>.fsdb"; \
+	echo ""; \
+	open_wave=$$last_run; \
+	if [ -n "$$fail_tests" ]; then \
+	  open_wave=$$(echo $$fail_tests | awk '{print $$1}'); \
+	  echo "===================================================="; \
+	  echo "  有失败用例 —— 打开第一个失败用例 ($$open_wave) 的波形"; \
+	  echo "===================================================="; \
+	else \
+	  echo "===================================================="; \
+	  echo "  全部通过 —— 打开本次跑过的最后一个用例 ($$open_wave) 的波形"; \
+	  echo "===================================================="; \
+	fi; \
+	if [ -z "$$open_wave" ]; then \
+	  echo "⚠️  没有可打开的用例 (全部被 A910_DT_SKIP 跳过了?), 不开 verdi。"; \
+	  exit 0; \
+	fi; \
+	echo "波形文件: waveform/$$open_wave.fsdb"; \
+	$(MAKE) --no-print-directory verdi-difftest WAVE=$$open_wave
+
 # RTU 适配层单元台 (2026-10-08 立): 直接驱动 RTU_idu_lsu_adapter 两侧端口, 不经整核。
 # 它守的是适配层里**有真逻辑**的四类变换 (不是纯接线):
 #   请求计数 / 映射恢复表逐槽重排 / 异常三路平行 + 门控 + cause 编码 / store 重放两根来源。
@@ -983,30 +1143,54 @@ A910_VERDI_TOP := tb_a910_smoke
 A910_VERDI_DEFS := +define+RTU_PREG64 +define+DCACHE_2KB \
                    +incdir+$(PWD)/mySoC +incdir+$(PWD)/vsrc +incdir+$(PWD)/mySoC/rtu/rtl
 
+# a910-difftest 专用的 Verdi 配置（与 smoke 测试分开）
+A910_DT_VERDI_SRC := $(A910_SRC) $(A910_DT_TB)
+A910_DT_VERDI_TOP := tb_a910_difftest
+A910_DT_VERDI_DEFS := +define+RTU_PREG64 +define+DCACHE_2KB +define+FSDB \
+                      +incdir+$(PWD)/mySoC +incdir+$(PWD)/vsrc +incdir+$(PWD)/mySoC/rtu/rtl
+
 verdi:
 	# 如果没有指定 WAVE，自动找最新的波形文件
 	@if [ -z "$(WAVE)" ]; then \
 	  LATEST=$$(ls -t waveform/*.fsdb 2>/dev/null | head -1); \
 	  if [ -n "$$LATEST" ]; then \
 	    echo "打开最新波形: $$LATEST"; \
-	    verdi -sverilog -ssf $$LATEST $(A910_VERDI_DEFS) -top $(A910_VERDI_TOP) $(A910_VERDI_SRC) & \
+	    $(VERDI) -sverilog -ssf $$LATEST $(A910_VERDI_DEFS) -top $(A910_VERDI_TOP) $(A910_VERDI_SRC) & \
 	  else \
 	    echo "No FSDB found under waveform/. Run simulation first." ; \
 	  fi; \
 	elif [ "$(FMT)" = "fsdb" ] && [ -f waveform/$(WAVE).fsdb ]; then \
-	  verdi -sverilog -ssf waveform/$(WAVE).fsdb $(A910_VERDI_DEFS) -top $(A910_VERDI_TOP) $(A910_VERDI_SRC) & \
+	  $(VERDI) -sverilog -ssf waveform/$(WAVE).fsdb $(A910_VERDI_DEFS) -top $(A910_VERDI_TOP) $(A910_VERDI_SRC) & \
 	elif [ "$(FMT)" = "vcd" ] && [ -f waveform/$(WAVE).vcd ]; then \
-	  verdi -sverilog -vcd waveform/$(WAVE).vcd $(A910_VERDI_DEFS) -top $(A910_VERDI_TOP) $(A910_VERDI_SRC) & \
+	  $(VERDI) -sverilog -vcd waveform/$(WAVE).vcd $(A910_VERDI_DEFS) -top $(A910_VERDI_TOP) $(A910_VERDI_SRC) & \
 	elif [ -f waveform/$(WAVE).fsdb ]; then \
-	  verdi -sverilog -ssf waveform/$(WAVE).fsdb $(A910_VERDI_DEFS) -top $(A910_VERDI_TOP) $(A910_VERDI_SRC) & \
+	  $(VERDI) -sverilog -ssf waveform/$(WAVE).fsdb $(A910_VERDI_DEFS) -top $(A910_VERDI_TOP) $(A910_VERDI_SRC) & \
 	elif [ -f waveform/$(WAVE).vcd ]; then \
-	  verdi -sverilog -vcd waveform/$(WAVE).vcd $(A910_VERDI_DEFS) -top $(A910_VERDI_TOP) $(A910_VERDI_SRC) & \
+	  $(VERDI) -sverilog -vcd waveform/$(WAVE).vcd $(A910_VERDI_DEFS) -top $(A910_VERDI_TOP) $(A910_VERDI_SRC) & \
 	elif [ -f waveform/waves.fsdb ]; then \
-	  verdi -sverilog -ssf waveform/waves.fsdb $(A910_VERDI_DEFS) -top $(A910_VERDI_TOP) $(A910_VERDI_SRC) & \
+	  $(VERDI) -sverilog -ssf waveform/waves.fsdb $(A910_VERDI_DEFS) -top $(A910_VERDI_TOP) $(A910_VERDI_SRC) & \
 	elif [ -f waveform/waves.vcd ]; then \
-	  verdi -sverilog -vcd waveform/waves.vcd $(A910_VERDI_DEFS) -top $(A910_VERDI_TOP) $(A910_VERDI_SRC) & \
+	  $(VERDI) -sverilog -vcd waveform/waves.vcd $(A910_VERDI_DEFS) -top $(A910_VERDI_TOP) $(A910_VERDI_SRC) & \
 	else \
 	  echo "No FSDB/VCD found: waveform/$(WAVE). Run simulation first." ; \
+	fi
+
+# 专门用于打开 a910-difftest 波形的 verdi 目标
+verdi-difftest:
+	# 如果没有指定 WAVE，自动找最新的波形文件
+	@if [ -z "$(WAVE)" ]; then \
+	  LATEST=$$(ls -t waveform/*.fsdb 2>/dev/null | head -1); \
+	  if [ -n "$$LATEST" ]; then \
+	    echo "打开最新 difftest 波形: $$LATEST"; \
+	    $(VERDI) -sverilog -ssf $$LATEST $(A910_DT_VERDI_DEFS) -top $(A910_DT_VERDI_TOP) $(A910_DT_VERDI_SRC) & \
+	  else \
+	    echo "No FSDB found under waveform/. Run simulation first." ; \
+	  fi; \
+	elif [ -f waveform/$(WAVE).fsdb ]; then \
+	  echo "打开 difftest 波形: waveform/$(WAVE).fsdb"; \
+	  $(VERDI) -sverilog -ssf waveform/$(WAVE).fsdb $(A910_DT_VERDI_DEFS) -top $(A910_DT_VERDI_TOP) $(A910_DT_VERDI_SRC) & \
+	else \
+	  echo "波形文件不存在: waveform/$(WAVE).fsdb" ; \
 	fi
 
 clean:

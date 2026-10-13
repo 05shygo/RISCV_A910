@@ -94,8 +94,8 @@ module lsu_ld_ag #(
   output logic [15:0]                   ld_ag_bytes_vld,
   output logic [27:0]                   ld_ag_addr1_to4,
   output logic [31:0]                   ld_ag_dc_addr0,
-  output logic                          ld_ag_raw_new,
-  output logic [LSIQ_ENTRY-1:0]         ld_ag_stall_restart_entry
+  output logic                          ld_ag_raw_new
+ // output logic [LSIQ_ENTRY-1:0]         ld_ag_stall_restart_entry
 );
 
 //==========================================================
@@ -152,7 +152,7 @@ logic                         ld_ag_va_plus_sel;
 logic                         ld_ag_dcache_stall_unmask;
 logic                         ld_ag_stall_ori;
 logic                         ld_ag_stall_vld;
-logic                         ld_ag_stall_mask;
+//logic                         ld_ag_stall_mask;
 
 
 //==========================================================
@@ -502,9 +502,9 @@ assign ld_ag_dcache_stall_unmask    = !dcache_arb_ag_ld_sel;
 
 assign ld_ag_stall_ori            = ld_ag_dcache_stall_unmask;
 
-assign ld_ag_stall_vld            = ld_ag_stall_ori
-                                    && !ld_ag_stall_mask;
-
+assign ld_ag_stall_vld            = ld_ag_inst_vld & ld_ag_stall_ori;
+                             //       && !ld_ag_stall_mask;
+/*
 ct_rtu_compare_iid  x_lsu_rf_compare_ld_ag_iid (
   .x_iid0                    (idu_lsu_ld_iid[6:0]),
   .x_iid0_older              (rf_iid_older_than_ld_ag  ),
@@ -518,7 +518,7 @@ assign ld_ag_stall_mask = idu_lsu_ld_sel
 assign ld_ag_stall_restart_entry[LSIQ_ENTRY-1:0] =
         ld_ag_stall_mask ? ld_ag_lsid[LSIQ_ENTRY-1:0]
                          : idu_lsu_ld_lch_entry[LSIQ_ENTRY-1:0];
-
+*/
 //-----------for timing--------------------------
 //compare iid ahead for dc restart timing
 //compare the instruction in the entry is newer or older

@@ -596,9 +596,7 @@ module A910_cpu
   logic [ 31:0] dbg_commit_pc0;
   logic [ 31:0] dbg_commit_pc1;
   logic [ 31:0] dbg_commit_pc2;
-  logic         rtu_dbg_commit_ena0;      // RTU 原始输出 (可能含"写 x0")
-  logic         rtu_dbg_commit_ena1;
-  logic         rtu_dbg_commit_ena2;
+  // (RTU 原始 ena 现走 `rtu_cmt_ena[2:0]`, 见下面延迟线一节; "写 x0" 在这里摘)
   logic         dbg_commit_ena0;
   logic         dbg_commit_ena1;
   logic         dbg_commit_ena2;
@@ -608,6 +606,132 @@ module A910_cpu
   logic [ 31:0] dbg_commit_value0;
   logic [ 31:0] dbg_commit_value1;
   logic [ 31:0] dbg_commit_value2;
+
+  // ===========================================================================
+  //  【difftest 观察口】LSU load "退休早于写回" 的补偿 (2026-10-13)
+  //  ---------------------------------------------------------------------------
+  //  【现象】lb 用例: 第 4 条退休 (pc=0xc `lb x14,0(x1)`) 报 x14=0, 参考模型要
+  //    0xffffffff (地址 0x2000 处的字节是 0xff)。
+  //
+  //  【为什么】`lsu_rtu_wb_pipe3_cmplt` 只表示 **LSU 流水线走完了**这条, 不表示
+  //    数据已经进寄存器堆 —— dcache miss 的 load 在 ld_da 就报完成(cmplt), 真去
+  //    取数是把它交给 RB(MSHR) 走 BIU, linefill 回来才写 RF。波形实测 (lb):
+  //        T975  ld_da: wb_cmplt_req=1 但 wb_data_req=0 (miss, 没数据), rb_create=1
+  //        T985  lsu_rtu_wb_pipe3_cmplt=1 ⇒ ROB 把这条标成完成
+  //        T995  RTU 交付退休包 pc=0xc reg=14 value=00000000 ← 观察口就在这拍读 PRF
+  //        T1005 RB 才写回 (rb_ld_wb_data=0x000000ff, _wb_preg_vld=1)
+  //        T1015 RF 落 0xffffffff
+  //    偏差拍数 = 内存延迟, **不是常数** ⇒ 没法"提前算出来", 只能把观察口推迟到
+  //    数据落地之后再交付, 或在窗口内用 LSU 写回口的数据顶替。
+  //
+  //  【做法】只动观察口, IDU / RTU / LSU 一行不动:
+  //    1) RTU 那 15 根 `dbg_commit_*` 不再直接对外, 先进一条 **DBG_HOLD 拍延迟线**;
+  //    2) 同时把 LSU 写回口 (`lsu_idu_wb_pipe3_wb_preg_expand` 独热 + `_data`) 的
+  //       **每拍事件**也移进同深度的窗口;
+  //    3) 延迟线出口那一拍: 若窗口里有一拍 LSU 写回了这条退休包的**目的 preg**
+  //       (取 `rtu_preg_raddr*`; preg 唯一 ⇒ 至多命中一条), 就用 LSU 的数据 ——
+  //       那是终值; 否则用进线时抓到的 `preg_rdata*` (已含 `§PRF 读口旁路`的同拍写口旁路)。
+  //
+  //  ⚠️ 覆盖范围 = "内存延迟 ≤ DBG_HOLD 拍"。本台 (tb 的 AXI 从机) 只差 1~2 拍,
+  //     16 拍余量足够; 哪天真跑慢内存对不上, 先看这里再加大 DBG_HOLD。
+  //  ⚠️ 只改**观察**口径: 退休的时刻/顺序/条数一律不变, 整个流平移 DBG_HOLD 拍。
+  //     difftest 与冒烟台都只听程序序, 平移无害。
+  //  ⚠️ 复位用 `rst` (高有效) —— 与 RTU/LSU 同极性, 这里只是观察口, 不复核核内复位相位。
+  // ===========================================================================
+  localparam int DBG_HOLD = 16;
+
+  // RTU 侧原始退休包 (改名, 不再直接对外)
+  logic [2:0]       rtu_cmt_vld;
+  logic [2:0]       rtu_cmt_ena;
+  logic [2:0][31:0] rtu_cmt_pc;
+  logic [2:0][4:0]  rtu_cmt_reg;
+  logic [2:0][31:0] rtu_cmt_val;
+  logic [2:0][5:0]  rtu_cmt_preg;
+
+  // 延迟线 (每槽一条) + LSU 写回事件窗口
+  logic [DBG_HOLD-1:0]       h_vld  [0:2];
+  logic [DBG_HOLD-1:0]       h_ena  [0:2];
+  logic [DBG_HOLD-1:0][31:0] h_pc   [0:2];
+  logic [DBG_HOLD-1:0][4:0]  h_reg  [0:2];
+  logic [DBG_HOLD-1:0][5:0]  h_preg [0:2];
+  logic [DBG_HOLD-1:0][31:0] h_val  [0:2];
+  logic [DBG_HOLD-1:0]       w_vld;
+  logic [DBG_HOLD-1:0][63:0] w_hot;
+  logic [DBG_HOLD-1:0][31:0] w_dat;
+  logic [31:0]               dbg_val_out [0:2];
+
+  // ⚠️ LSU 写回口这三根**必须同拍**才能配对 (拿 vld 当闸门, 用同拍的 expand/data
+  //    去找"这条退休包的 preg 被写过没有")。`lsu_ld_wb.sv` 现在把 `_vld` 做成
+  //    **寄存**的 (`= ld_wb_data_vld`), 与 `ld_wb_data_preg_expand` /
+  //    `ld_wb_preg_data_sign_extend` 同一拍出 ⇒ 直接取用即可。
+  //    若哪天 `_vld` 被改回组合的 (`ld_wb_pre_preg_wb_vld`, 比另两根早一拍),
+  //    这里要跟着补一拍对齐, 否则配对的 hot/data 会整体错一拍 (取到上一次写回的号)。
+  wire        lsu_evt = lsu_idu_wb_pipe3_wb_preg_vld;
+  wire [63:0] lsu_hot = lsu_idu_wb_pipe3_wb_preg_expand;
+  wire [31:0] lsu_dat = lsu_idu_wb_pipe3_wb_preg_data;
+
+  assign rtu_cmt_preg[0] = rtu_preg_raddr0[5:0];
+  assign rtu_cmt_preg[1] = rtu_preg_raddr1[5:0];
+  assign rtu_cmt_preg[2] = rtu_preg_raddr2[5:0];
+
+  always @(posedge clk or posedge rst) begin
+    if (rst) begin
+      for (int i = 0; i < 3; i = i + 1) begin
+        h_vld [i] <= '0;
+        h_ena [i] <= '0;
+        h_pc  [i] <= '0;
+        h_reg [i] <= '0;
+        h_preg[i] <= '0;
+        h_val [i] <= '0;
+      end
+      w_vld <= '0;
+      w_hot <= '0;
+      w_dat <= '0;
+    end
+    else begin
+      for (int i = 0; i < 3; i = i + 1) begin
+        h_vld [i] <= {h_vld [i][DBG_HOLD-2:0], rtu_cmt_vld [i]};
+        h_ena [i] <= {h_ena [i][DBG_HOLD-2:0], rtu_cmt_ena [i]};
+        h_pc  [i] <= {h_pc  [i][DBG_HOLD-2:0], rtu_cmt_pc  [i]};
+        h_reg [i] <= {h_reg [i][DBG_HOLD-2:0], rtu_cmt_reg [i]};
+        h_preg[i] <= {h_preg[i][DBG_HOLD-2:0], rtu_cmt_preg[i]};
+        h_val [i] <= {h_val [i][DBG_HOLD-2:0], rtu_cmt_val [i]};
+      end
+      w_vld <= {w_vld[DBG_HOLD-2:0], lsu_evt};
+      w_hot <= {w_hot[DBG_HOLD-2:0], lsu_hot};
+      w_dat <= {w_dat[DBG_HOLD-2:0], lsu_dat};
+    end
+  end
+
+  // 出口 = 延迟线里**最老**那一格。⚠️ 触发器是往高位挪的 (`{h[N-2:0],new}`),
+  // 所以 index0 = 上一拍的输入 (只延 1 拍), index(DBG_HOLD-1) 才是延迟 DBG_HOLD 拍。
+  localparam int DBG_OUT = DBG_HOLD - 1;
+
+  // 出口: 目的 preg 在窗口里被 LSU 写回过 ⇒ 用 LSU 的终值顶替
+  // (`j==0` 那支看**当拍**; 独热 preg 保证至多命中一条, 不会打架)
+  always_comb begin
+    for (int i = 0; i < 3; i = i + 1) begin
+      dbg_val_out[i] = h_val[i][DBG_OUT];
+      for (int j = 0; j < DBG_HOLD; j = j + 1) begin
+        if ((j == 0) ? (lsu_evt && lsu_hot[h_preg[i][DBG_OUT]])
+                     : (w_vld[j] && w_hot[j][h_preg[i][DBG_OUT]]))
+          dbg_val_out[i] = (j == 0) ? lsu_dat : w_dat[j];
+      end
+    end
+  end
+
+  assign dbg_commit_vld0    = h_vld[0][DBG_OUT];
+  assign dbg_commit_vld1    = h_vld[1][DBG_OUT];
+  assign dbg_commit_vld2    = h_vld[2][DBG_OUT];
+  assign dbg_commit_pc0     = h_pc[0][DBG_OUT];
+  assign dbg_commit_pc1     = h_pc[1][DBG_OUT];
+  assign dbg_commit_pc2     = h_pc[2][DBG_OUT];
+  assign dbg_commit_reg0    = h_reg[0][DBG_OUT];
+  assign dbg_commit_reg1    = h_reg[1][DBG_OUT];
+  assign dbg_commit_reg2    = h_reg[2][DBG_OUT];
+  assign dbg_commit_value0  = dbg_val_out[0];
+  assign dbg_commit_value1  = dbg_val_out[1];
+  assign dbg_commit_value2  = dbg_val_out[2];
 
   // ---------------------------------------------------------------------------
   //  `ena` 要把"写 x0"摘掉 (2026-10-12)
@@ -621,9 +745,11 @@ module A910_cpu
   //  **摘在核顶层、不摘在 RTU 里** —— 这里照抄同一口径, 让两个核的 difftest 观察口
   //  逐位同义 (同一个 `dpi_shim.c` 才能同时喂两个核)。
   // ---------------------------------------------------------------------------
-  assign dbg_commit_ena0 = rtu_dbg_commit_ena0 & (dbg_commit_reg0 != 5'd0);
-  assign dbg_commit_ena1 = rtu_dbg_commit_ena1 & (dbg_commit_reg1 != 5'd0);
-  assign dbg_commit_ena2 = rtu_dbg_commit_ena2 & (dbg_commit_reg2 != 5'd0);
+  // ⚠️ 2026-10-13: `ena`/`reg` 现在都取自上面那条延迟线的出口 (跟 pc/value 同步),
+  //    否则"写 x0 摘掉"会拿错拍。
+  assign dbg_commit_ena0 = h_ena[0][DBG_OUT] & (h_reg[0][DBG_OUT] != 5'd0);
+  assign dbg_commit_ena1 = h_ena[1][DBG_OUT] & (h_reg[1][DBG_OUT] != 5'd0);
+  assign dbg_commit_ena2 = h_ena[2][DBG_OUT] & (h_reg[2][DBG_OUT] != 5'd0);
 
   // ---- 待接 IDU 的执行单元侧 (这些线在 IDU 上是输入, 归执行单元驱动) ----
   // 执行单元写回 IDU 的端口分配 (2026-10-11):
@@ -1796,21 +1922,23 @@ module A910_cpu
     .rtu_retire_cnt             (rtu_retire_cnt),
 
     // ===================== §6.2 difftest / debug =====================
-    .dbg_commit_vld0            (dbg_commit_vld0),
-    .dbg_commit_vld1            (dbg_commit_vld1),
-    .dbg_commit_vld2            (dbg_commit_vld2),
-    .dbg_commit_pc0             (dbg_commit_pc0),
-    .dbg_commit_pc1             (dbg_commit_pc1),
-    .dbg_commit_pc2             (dbg_commit_pc2),
-    .dbg_commit_ena0            (rtu_dbg_commit_ena0),
-    .dbg_commit_ena1            (rtu_dbg_commit_ena1),
-    .dbg_commit_ena2            (rtu_dbg_commit_ena2),
-    .dbg_commit_reg0            (dbg_commit_reg0),
-    .dbg_commit_reg1            (dbg_commit_reg1),
-    .dbg_commit_reg2            (dbg_commit_reg2),
-    .dbg_commit_value0          (dbg_commit_value0),
-    .dbg_commit_value1          (dbg_commit_value1),
-    .dbg_commit_value2          (dbg_commit_value2)
+    // ⚠️ 2026-10-13: 这 15 根先进 `DBG_HOLD` 拍延迟线, 再由延迟线出口驱动
+    //    对外的 `dbg_commit_*` —— 理由见本文件上面那段长注 (LSU load 退休早于写回)。
+    .dbg_commit_vld0            (rtu_cmt_vld[0]),
+    .dbg_commit_vld1            (rtu_cmt_vld[1]),
+    .dbg_commit_vld2            (rtu_cmt_vld[2]),
+    .dbg_commit_pc0             (rtu_cmt_pc[0]),
+    .dbg_commit_pc1             (rtu_cmt_pc[1]),
+    .dbg_commit_pc2             (rtu_cmt_pc[2]),
+    .dbg_commit_ena0            (rtu_cmt_ena[0]),
+    .dbg_commit_ena1            (rtu_cmt_ena[1]),
+    .dbg_commit_ena2            (rtu_cmt_ena[2]),
+    .dbg_commit_reg0            (rtu_cmt_reg[0]),
+    .dbg_commit_reg1            (rtu_cmt_reg[1]),
+    .dbg_commit_reg2            (rtu_cmt_reg[2]),
+    .dbg_commit_value0          (rtu_cmt_val[0]),
+    .dbg_commit_value1          (rtu_cmt_val[1]),
+    .dbg_commit_value2          (rtu_cmt_val[2])
   );
 
   // ============================================================

@@ -521,13 +521,16 @@ assign ld_da_wb_data[31:0] = ld_da_data128[31:0];
 assign ld_da_data_vld = ld_da_inst_vld && (ld_da_fwd_vld || ld_da_dcache_hit) && !ld_da_expt;
 assign ld_da_rb_data_vld = ld_da_data_vld;
 
+logic ld_da_merge_mask = ld_da_merge_from_cb & ld_da_dcache_hit & !ld_da_fwd_vld;
+
 assign ld_da_rb_create_vld_unmask = ld_da_inst_vld
                                     & !ld_da_discard_dc_req
                                     & !ld_da_secd
                                     & (!ld_da_rb_data_vld | ld_da_boundary_after_mask)
                                     & !ld_da_expt;
 
-assign ld_da_boundary_after_mask = ld_da_inst_vld & ld_da_boundary & !ld_da_merge_from_cb;
+assign ld_da_boundary_after_mask = ld_da_inst_vld & ld_da_boundary & !ld_da_merge_mask & !ld_da_expt;
+assign ld_da_boundary_first = ld_da_boundary_after_mask & !ld_da_secd;
 
 assign ld_da_discard_from_rb_req = ld_da_rb_create_vld_unmask && rb_ld_da_hit_idx
                                    || ld_da_rb_merge_vld_unmask && rb_ld_da_merge_fail;
@@ -608,6 +611,7 @@ assign ld_da_rb_full_vld          = !ld_da_other_discard_sq_req
                                     &&  !ld_da_discard_wmb_final
                                     &&  !ld_da_hit_idx_discard_req
                                     &&  ld_da_rb_full_req;
+
 
 assign ld_da_mask_lsid[LSIQ_ENTRY-1:0]      = {LSIQ_ENTRY{ld_da_inst_vld}}
                                               & ld_da_lsid[LSIQ_ENTRY-1:0];

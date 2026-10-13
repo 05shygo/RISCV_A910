@@ -2,7 +2,7 @@ module ct_idu_id_dp(
   input  logic         cpurst_b,
   input  logic         forever_cpuclk,
   input  logic         ctrl_dp_id_stall,
-  input  logic [1:0]   ctrl_xx_is_inst0_sel,  // 新增：原代码中使用但端口列表缺失
+  //input  logic [1:0]   ctrl_xx_is_inst0_sel,  // 新增：原代码中使用但端口列表缺失
   input  logic [96:0]  ifu_idu_ib_inst0_data,
   input  logic [24:0]  ifu_idu_if_inst0_chk,
   input  logic [96:0]  ifu_idu_ib_inst1_data,
@@ -23,7 +23,9 @@ module ct_idu_id_dp(
   // 2026-10-08 修: 原来末端口后面还留了个**尾逗号**。ANSI 端口表的尾逗号在
   // IEEE 1800 里合法, 但本仓的 VCS 配置不接受 (报 "token is ')'")。
   // 全仓其它文件的端口表都没有尾逗号, 这里跟着去掉。
-  output logic [24:0]  dp_id_pipedown_inst2_chk
+  output logic [24:0]  dp_id_pipedown_inst2_chk,
+  input logic [1:0]  ctrl_id_ifu_pipedown_sel,
+  input logic [1:0]  ctrl_id_inst_sel
 );
 
 //==========================================================
@@ -137,7 +139,7 @@ logic [31:0]         id_inst2_pc;
 logic [24:0] id_inst2_chk;
 always @(*)
 begin
-  case(ctrl_xx_is_inst0_sel[1:0])
+  case(ctrl_id_ifu_pipedown_sel[1:0])
     2'b01  : begin
                dp_ib_inst0_data[ID_WIDTH-1:0] = id_inst2_data[ID_WIDTH-1:0];
                dp_ib_inst0_chk[24:0]          = id_inst2_chk[24:0];
@@ -315,7 +317,7 @@ assign dp_id_pipedown_inst2_data_raw[IR_WIDTH-1:0] = {
 
 always @(*)
 begin
-  case(ctrl_xx_is_inst0_sel[1:0])
+  case(ctrl_id_inst_sel[1:0])
     2'b01  : begin
                 dp_id_pipedown_inst0_data[IR_WIDTH-1:0] = crtl_ir_inst2_data[IR_WIDTH-1:0];
                 dp_id_pipedown_inst1_data[IR_WIDTH-1:0] = dp_id_pipedown_inst0_data_raw[IR_WIDTH-1:0];
@@ -335,7 +337,7 @@ begin
 end
 always @(*)
 begin
-  case(ctrl_xx_is_inst0_sel[1:0])
+  case(ctrl_id_inst_sel[1:0])
     2'b01  : begin
                 dp_id_pipedown_inst0_chk[24:0] = crtl_ir_inst2_chk[24:0];
                 dp_id_pipedown_inst1_chk[24:0] = id_inst0_chk[24:0];

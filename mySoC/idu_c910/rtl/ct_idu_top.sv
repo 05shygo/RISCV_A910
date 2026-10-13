@@ -322,10 +322,10 @@ logic [1:0] ctrl_ir_pre_dis_sdiq_create1_sel;
 logic [61:0] div_dp_issue_read_data;      // ★ 由 [62:0] 减 1 → [61:0]
 logic [59:0] lsiq_dp_pipe3_entry_read_data;
 logic [7:0] lsiq_dp_pipe3_issue_entry;
-logic [59:0] lsiq_dp_pipe3_issue_read_data;
+//logic [59:0] lsiq_dp_pipe3_issue_read_data;
 logic [59:0] lsiq_dp_pipe4_entry_read_data;
 logic [7:0] lsiq_dp_pipe4_issue_entry;
-logic [59:0] lsiq_dp_pipe4_issue_read_data;
+//logic [59:0] lsiq_dp_pipe4_issue_read_data;
 logic [61:0] mult_dp_issue_read_data;     // ★ 由 [62:0] 减 1 → [61:0]
 logic [3:0] sdiq_create0_entry;
 logic [3:0] sdiq_create1_entry;
@@ -451,6 +451,14 @@ logic        ctrl_is_inst2_vld;
 // ⚠️ 原声明是 1 位 —— 而它要驱动 4 个 [1:0] 端口, 会被零扩展, case 落 default ⇒
 //    整条 ID 数据路灌 X。加宽到 [1:0] 即可, 不需要额外驱动。
 logic [1:0]  ctrl_xx_is_inst0_sel;
+// 2026-10-12 新增: id_ctrl 产出的两根"顺延"选择码 (都是 {!raw, raw} 形式, 同
+// `ctrl_xx_is_inst0_sel` 的编码)。原来 ID/IR 两级直接吃 `ctrl_xx_is_inst0_sel`,
+// 而它**只由 IR 级的类型/有效位算出**, 不看窗口满不满 ⇒ 窗口有洞时 rotate 会把洞
+// 搬到 lane0, 下一圈就丢掉 lane1 那条已经改过名的指令 (见 id_ctrl 里的长注)。
+//   ctrl_id_ifu_pipedown_sel —— IFU→ID 与 ID 寄存器自己那一级 (已按 ID.lane2 满 门控)
+//   ctrl_id_inst_sel        —— ID→IR 那一级 (已按 IR.lane2 满 门控)
+logic [1:0]  ctrl_id_ifu_pipedown_sel;
+logic [1:0]  ctrl_id_inst_sel;
 logic        ctrl_aiq_create0_en;
 logic        ctrl_aiq_create1_en;
 logic [1:0]  ctrl_aiq_create0_sel;
@@ -613,7 +621,11 @@ ct_idu_id_ctrl u_ct_idu_id_ctrl (
     .idu_ifu_inst0_ready  (idu_ifu_inst0_ready ),//out
     .idu_ifu_inst1_ready  (idu_ifu_inst1_ready ),//out
     .idu_ifu_inst2_ready  (idu_ifu_inst2_ready ),//out
-    .ctrl_dp_id_stall     (ctrl_dp_id_stall    )
+    .ctrl_dp_id_stall     (ctrl_dp_id_stall    ),
+
+    // 新增的两根"顺延"选择码输出 (消费者是 id_dp 的同名输入)
+    .ctrl_id_ifu_pipedown_sel (ctrl_id_ifu_pipedown_sel),
+    .ctrl_id_inst_sel         (ctrl_id_inst_sel        )
 );
 
 ct_idu_id_dp u_ct_idu_id_dp (
@@ -623,7 +635,11 @@ ct_idu_id_dp u_ct_idu_id_dp (
 
     // 控制信号 (来自 Control 模块的流水线阻塞信号)
     .ctrl_dp_id_stall          (ctrl_dp_id_stall         ),
-    .ctrl_xx_is_inst0_sel       (ctrl_xx_is_inst0_sel),
+    // 2026-10-12: 原来这里是 `.ctrl_xx_is_inst0_sel` —— 现在拆成两根带门控的选择码。
+    //   数据路必须和 id_ctrl 控制侧**同一根**, 否则 vld 走了 1:1 而数据还按 rotate
+    //   取, 直接错位。
+    .ctrl_id_ifu_pipedown_sel  (ctrl_id_ifu_pipedown_sel),
+    .ctrl_id_inst_sel          (ctrl_id_inst_sel        ),
 
     // 从 IFU 输入的数据 (97 bits x 3)
     .ifu_idu_ib_inst0_data     (ifu_idu_ib_inst0_data    ),//in
@@ -791,6 +807,7 @@ ct_idu_ir_rt x_ct_idu_ir_rt (
   .forever_cpuclk                        (forever_cpuclk),//2026-10-08 补: 改名表的时钟
   .cpurst_b                              (cpurst_b),
   .ctrl_ir_stall                              (ctrl_ir_stall),
+  .ctrl_xx_is_inst0_sel                  (ctrl_xx_is_inst0_sel),//顺延那拍不写改名表
   .ctrl_rt_inst0_vld                     (ctrl_rt_inst0_vld),//2026-10-08 补: 原来是空连接
   .ctrl_rt_inst1_vld                     (ctrl_rt_inst1_vld),
   .ctrl_rt_inst2_vld                     (ctrl_rt_inst2_vld),
@@ -1249,7 +1266,7 @@ ct_idu_rf_dp x_ct_idu_rf_dp (
   .idu_div_src1                          (idu_div_src1),//out
   .idu_div_rslt_sel                      (idu_div_rslt_sel),//out
   .lsiq_dp_pipe3_issue_entry             (lsiq_dp_pipe3_issue_entry),
-  .lsiq_dp_pipe3_issue_read_data         (lsiq_dp_pipe3_issue_read_data),
+  .lsiq_dp_pipe3_issue_read_data         (lsiq_dp_pipe3_entry_read_data),
   .lsiq_xx_pipe3_issue_en                              (lsiq_xx_pipe3_issue_en),
   .lsiq_pipe3_entry_unalign_2nd          (lsiq_pipe3_entry_unalign_2nd),
   .lsiq_pipe3_entry_old                  (lsiq_pipe3_entry_old),
@@ -1266,7 +1283,7 @@ ct_idu_rf_dp x_ct_idu_rf_dp (
   .idu_lsu_ld_lch_entry                  (idu_lsu_ld_lch_entry),//out
   .idu_lsu_ld_oldest                     (idu_lsu_ld_oldest),//out
   .lsiq_dp_pipe4_issue_entry             (lsiq_dp_pipe4_issue_entry),
-  .lsiq_dp_pipe4_issue_read_data         (lsiq_dp_pipe4_issue_read_data),
+  .lsiq_dp_pipe4_issue_read_data         (lsiq_dp_pipe4_entry_read_data),
   .lsiq_xx_pipe4_issue_en                              (lsiq_xx_pipe4_issue_en),
   .lsiq_pipe4_entry_unalign_2nd          (lsiq_pipe4_entry_unalign_2nd),
   .lsiq_pipe4_entry_old                  (lsiq_pipe4_entry_old),
@@ -1311,6 +1328,7 @@ ct_idu_rf_dp x_ct_idu_rf_dp (
 // Instance 11: ct_idu_rf_prf_pregfile
 ct_idu_rf_prf_pregfile x_ct_idu_rf_prf_pregfile (
   .forever_cpuclk                      (forever_cpuclk),   // 原接 .forever_clk, 但该模块端口是 forever_cpuclk
+  .cpurst_b(cpurst_b),
   .dp_prf_rf_pipe0_src0_preg                              (dp_prf_rf_pipe0_src0_preg),
   .dp_prf_rf_pipe0_src1_preg                              (dp_prf_rf_pipe0_src1_preg),
   .dp_prf_rf_pipe1_src0_preg                              (dp_prf_rf_pipe1_src0_preg),

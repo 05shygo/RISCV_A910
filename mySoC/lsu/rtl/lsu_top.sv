@@ -261,11 +261,11 @@ logic [LSIQ_ENTRY-1:0] lfb_depd_wakeup;
 //==========================================================
 
 logic [LSIQ_ENTRY-1:0]st_ag_stall_restart_entry;
-logic [LSIQ_ENTRY-1:0]ld_ag_stall_restart_entry;
+//logic [LSIQ_ENTRY-1:0]ld_ag_stall_restart_entry;
 logic [LSIQ_ENTRY-1:0]ld_dc_imme_wakeup;
 assign lsu_idu_imme_wakeup[LSIQ_ENTRY-1:0] = ld_dc_imme_wakeup[LSIQ_ENTRY-1:0] |
                                             st_ag_stall_restart_entry[LSIQ_ENTRY-1:0] |
-                                            ld_ag_stall_restart_entry[LSIQ_ENTRY-1:0] |
+ //                                           ld_ag_stall_restart_entry[LSIQ_ENTRY-1:0] |
                                             sq_data_depd_wakeup[LSIQ_ENTRY-1:0] |
                                             sq_global_depd_wakeup[LSIQ_ENTRY-1:0] | 
                                             lfb_depd_wakeup[LSIQ_ENTRY-1:0];
@@ -734,7 +734,7 @@ logic ld_da_lfb_discard_grnt;
 logic ld_da_rb_cmit;
 logic ld_da_boundary_after_mask;
 logic [4:0] ld_da_idx;
-logic ld_da_discard_wmb;
+//logic ld_da_discard_wmb;
 
 // CB (Combine Buffer) signals
 logic cb_ld_da_data_vld;
@@ -1015,8 +1015,8 @@ lsu_ld_ag #(
   .ld_ag_bytes_vld(ld_ag_bytes_vld),
   .ld_ag_addr1_to4(ld_ag_addr1_to4),
   .ld_ag_dc_addr0(ld_ag_dc_addr0),
-  .ld_ag_raw_new(ld_ag_raw_new),
-  .ld_ag_stall_restart_entry(ld_ag_stall_restart_entry)
+  .ld_ag_raw_new(ld_ag_raw_new)
+  //.ld_ag_stall_restart_entry(ld_ag_stall_restart_entry)
 );
 
 //----------------------------------------------------------
@@ -1175,7 +1175,7 @@ lsu_ld_da #(
   .rtu_yy_xx_commit1_iid(rtu_yy_xx_commit1_iid),
   .rtu_yy_xx_commit2(rtu_yy_xx_commit2),
   .rtu_yy_xx_commit2_iid(rtu_yy_xx_commit2_iid),
-  .ld_da_discard_wmb(ld_da_discard_wmb),
+  .ld_da_discard_wmb(1'b0),
   .ld_da_inst_size(ld_da_inst_size),
   .ld_da_boundary(ld_da_boundary),
   .ld_da_secd(ld_da_secd),

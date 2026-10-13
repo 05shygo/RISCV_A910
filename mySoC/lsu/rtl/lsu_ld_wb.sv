@@ -276,7 +276,7 @@ assign lsu_rtu_wb_pipe3_iid[6:0]      = ld_wb_iid[6:0];
 assign lsu_rtu_wb_pipe3_expt_vld      = ld_wb_expt;
 assign lsu_rtu_wb_pipe3_expt_addr     = ld_wb_expt_addr;
 
-assign lsu_rtu_wb_pipe3_wb_preg_vld   = ld_wb_pre_preg_wb_vld;
+assign lsu_rtu_wb_pipe3_wb_preg_vld   = ld_wb_data_vld;
 assign lsu_rtu_wb_pipe3_wb_preg_expand[63:0] = ld_wb_data_preg_expand[63:0];
 
 assign lsu_rtu_async_expt_vld         = ld_wb_data_vld && ld_wb_bus_err;
@@ -284,7 +284,7 @@ assign lsu_rtu_async_expt_addr[31:0]  = (ld_wb_data_vld && ld_wb_bus_err)
                                         ? ld_wb_data_addr[31:0]
                                         : {PA_WIDTH{1'b0}};
 
-assign lsu_idu_wb_pipe3_wb_preg_vld          = ld_wb_pre_preg_wb_vld;
+assign lsu_idu_wb_pipe3_wb_preg_vld          = ld_wb_data_vld;
 assign lsu_idu_wb_pipe3_wb_preg[5:0]         = ld_wb_data_preg[5:0];
 assign lsu_idu_wb_pipe3_wb_preg_vld_dupx     = ld_wb_inst_vld;
 assign lsu_idu_wb_pipe3_wb_preg_expand[63:0] = ld_wb_data_preg_expand[63:0];

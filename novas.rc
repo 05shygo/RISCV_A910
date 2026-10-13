@@ -227,13 +227,13 @@ version = Verdi_V-2023.12-SP2
 autoSaveSession = FALSE
 TclAutoSource = 
 cmd_enter_form = FALSE
-SyncBrowserDir = TRUE
-recent_commands_Verdi = UndoTraceGroup,verdiSearchPaneAct,RedoTraceGroup,SearchPaneMatchCaseAct,TextShowCallingScopeGroup,srcShowFile
-recent_commands_nWave = previousEvent,nextEvent,editCut,digitalFBin,saveSignal
 ColorTheme = classic
+SyncBrowserDir = TRUE
 version = Verdi_V-2023.12-SP2
 prevColorTheme = classic
 SignalCaseInSensitive = FALSE
+recent_commands_Verdi = UndoTraceGroup,verdiSearchPaneAct
+recent_commands_nWave = editCut,digitalFBin,nextEvent,tsNWNodeShowActiveFaninRegisters,previousEvent
 [GlobalProp]
 ErrWindow_Font = Helvetica_M_R_12
 [Globals]
@@ -375,10 +375,9 @@ saveWaveformStat = TRUE
 savePropStat = FALSE
 savePropDtl = TRUE
 [QtDialog]
-Verdi_OpenFile = 985,644,590,340
-saveSigDlg = 1003,619,551,386
-QwWarnMsgDlg = 979,706,600,250
 QwUserAskDlg = 1118,750,324,127
+QwWarnMsgDlg = 979,817,600,250
+unknownSave = 1048,690,461,245
 [Relationship]
 hideRecursiceNode = FALSE
 [Safety]
@@ -667,40 +666,40 @@ isOneSearchVisible = FALSE
 [VIA.oneSearch.preference.vgifColumnSettingRC.setting0]
 parRuleSets = ""
 [VIA.oneSearch.preference.vgifColumnSettingRC.setting0.column0]
-name = "Severity"
-width = 60
-visualIndex = 2
-isHidden = FALSE
-isUserChangeColumnVisible = FALSE
-[VIA.oneSearch.preference.vgifColumnSettingRC.setting0.column1]
-name = "Time"
-width = 60
-visualIndex = 0
-isHidden = FALSE
-isUserChangeColumnVisible = FALSE
-[VIA.oneSearch.preference.vgifColumnSettingRC.setting0.column2]
-name = "Block's First Line"
-width = 120
-visualIndex = 1
-isHidden = TRUE
-isUserChangeColumnVisible = FALSE
-[VIA.oneSearch.preference.vgifColumnSettingRC.setting0.column3]
 name = "Message"
 width = 2000
 visualIndex = 5
 isHidden = FALSE
 isUserChangeColumnVisible = FALSE
-[VIA.oneSearch.preference.vgifColumnSettingRC.setting0.column4]
+[VIA.oneSearch.preference.vgifColumnSettingRC.setting0.column1]
+name = "Block's First Line"
+width = 120
+visualIndex = 1
+isHidden = TRUE
+isUserChangeColumnVisible = FALSE
+[VIA.oneSearch.preference.vgifColumnSettingRC.setting0.column2]
 name = "Code"
 width = 60
 visualIndex = 3
 isHidden = TRUE
 isUserChangeColumnVisible = FALSE
-[VIA.oneSearch.preference.vgifColumnSettingRC.setting0.column5]
+[VIA.oneSearch.preference.vgifColumnSettingRC.setting0.column3]
+name = "Severity"
+width = 60
+visualIndex = 2
+isHidden = FALSE
+isUserChangeColumnVisible = FALSE
+[VIA.oneSearch.preference.vgifColumnSettingRC.setting0.column4]
 name = "Type"
 width = 60
 visualIndex = 4
 isHidden = TRUE
+isUserChangeColumnVisible = FALSE
+[VIA.oneSearch.preference.vgifColumnSettingRC.setting0.column5]
+name = "Time"
+width = 60
+visualIndex = 0
+isHidden = FALSE
 isUserChangeColumnVisible = FALSE
 [Vi]
 ViFont = "Clean 14"
@@ -773,11 +772,8 @@ ShowDeltaTime = TRUE
 WaveExtendLastTick = TRUE
 displayMessageLabelOnly = TRUE
 AutoApplySeverityColor = TRUE
-scope_to_save_with_macro
-open_file_dir
-open_rc_file_dir
 getSignalForm = 0 0 800 479 100 30 100 30
-viewPort = 0 25 2560 228 289 65
+viewPort = 0 25 900 257 100 65
 legendBackground = -c ID_BLACK
 valueBackground = -c ID_BLACK
 curveBackground = -c ID_BLACK
@@ -917,6 +913,7 @@ displayDeltaY = FALSE
 signal_rc_abspath = TRUE
 signal_rc_no_natural_bus_range = FALSE
 save_scope_with_macro = FALSE
+scope_to_save_with_macro
 FitAnaByBusSize = FALSE
 DisplayVerticalZoomTools = FALSE
 DisplayIndicateBar = FALSE
@@ -943,8 +940,10 @@ printBasic = 1 0 0 FALSE FALSE
 printDest = -printer {}
 printSignature = {%f %h %t} {}
 curveWindow_Drag&Drop_Mode = TRUE
-RecentFile1 = "\"/x2025/GPrj1/IC2/RISCV_A910/waveform/a910_smoke.fsdb\""
+RecentFile1 = "\"/x2025/GPrj1/IC2/RISCV_A910/waveform/lb.fsdb\""
 open_file_time_range = FALSE
+open_file_dir
+open_rc_file_dir
 legend_window_font = -f COURIER12 -c ID_CYAN5
 value_window_font = -f COURIER12 -c ID_CYAN5
 curve_window_font = -f COURIER12 -c ID_CYAN5
@@ -952,18 +951,18 @@ group_name_font = -f COURIER12 -c ID_GREEN5
 ruler_value_font = -f COURIER12 -c ID_CYAN5
 analog_ruler_value_font = -f COURIER12 -c ID_CYAN5
 comment_string_font = -f COURIER12 -c ID_RED5
-getsignal_form_font = -f COURIER12 
+getsignal_form_font = -f COURIER12
 SigsCheckNum = on 1000
 filter_synthesized_net = off n
 filterOutNet = on
 exclude_signal_with_prefix = off n
 synthesizeNetOnly = on
-filter_synthesized_instance = off 
+filter_synthesized_instance = off
 filterOutInstance = on
 showGroupTree = TRUE
 hierGroupDelim = /
 MsgSeverityColor = {y \"Severity\"==\"1\" ID_RED5} {y \"Severity\"==\"2\" ID_RED6} {y \"Severity\"==\"3\" ID_RED7} {y \"Severity\"==\"4\" ID_RED8} {y \"Severity\"==\"5\" ID_ORANGE5} {y \"Severity\"==\"6\" ID_ORANGE6} {y \"Severity\"==\"7\" ID_ORANGE7} {y \"Severity\"==\"8\" \
-ID_GREEN7} {y \"Severity\"==\"9\" ID_GREEN6} {y \"Severity\"==\"10\" ID_GREEN5} 
+ID_GREEN7} {y \"Severity\"==\"9\" ID_GREEN6} {y \"Severity\"==\"10\" ID_GREEN5}
 waveDblClkActiveTrace = on
 SEQShowComparisonIcon = TRUE
 SEQAddDriverLoadInSameGroup = TRUE
@@ -976,6 +975,10 @@ maskFsaCoreRule = TRUE
 maskFsaSfsmRule = TRUE
 maskFsaEcrRule = TRUE
 maskTPropagation = TRUE
+RecentFile2 = "\"/x2025/GPrj1/IC2/RISCV_A910/waveform/branch_bench.fsdb\""
+RecentFile3 = "\"/x2025/GPrj1/IC2/RISCV_A910/waveform/sltiu.fsdb\""
+RecentFile4 = "\"/x2025/GPrj1/IC2/RISCV_A910/waveform/slti.fsdb\""
+RecentFile5 = "\"/x2025/GPrj1/IC2/RISCV_A910/waveform/slli.fsdb\""
 [cov_hier_name_column]
 justify = TRUE
 [coverageColors]
@@ -1053,7 +1056,7 @@ OutputPinStatus = 2
 RevisedComponentColor = ID_BLUE5
 SpareCellColor = ID_RED5
 UserName = IC2
-CommentFormat = Novas ECO updated by ${UserName} ${Date} ${Time} 
+CommentFormat = Novas ECO updated by ${UserName} ${Date} ${Time}
 PrefixN = eco_n
 PrefixP = eco_p
 PrefixI = eco_i
@@ -1319,7 +1322,7 @@ AddImportArgument = FALSE
 LineBreakWithScope = TRUE
 StopAfterCompileOption = -s
 [wave.0]
-viewPort = 0 25 2560 228 289 65
+viewPort = 0 25 900 257 100 65
 [wave.1]
 viewPort = 127 219 960 332 100 65
 [wave.2]

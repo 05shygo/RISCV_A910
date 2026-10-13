@@ -3,6 +3,7 @@ module ct_idu_rf_prf_pregfile (
   // 全局信号
   //==========================================================
   input  logic         forever_cpuclk,
+  input  logic         cpurst_b,
 
   //==========================================================
   // 来自 DP 的源寄存器索引（第一个模块的 output）
@@ -102,6 +103,7 @@ generate
   for (i = 1; i < 64; i = i + 1) begin : gen_preg
     ct_idu_rf_prf_gated_preg u_ct_idu_rf_prf_preg (
       .forever_cpuclk                (forever_cpuclk               ),
+      .cpurst_b                      (cpurst_b),
       .iu_idu_ex2_pipe0_wb_preg_data (iu_idu_ex2_pipe0_wb_preg_data),
       .iu_idu_ex2_pipe1_wb_preg_data (iu_idu_ex2_pipe1_wb_preg_data),
       .iu_idu_ex2_pipe2_wb_preg_data (iu_idu_ex2_pipe2_wb_preg_data),

@@ -52,6 +52,12 @@ assign funct7 = pipe0_decd_opcode[31:25];
 logic [31:0] imm_i;
 assign imm_i = {{20{pipe0_decd_opcode[31]}}, pipe0_decd_opcode[31:20]};
 
+// 提取 U-type 立即数 (inst[31:12] 左移 12 位, 低 12 位补 0)
+//   LUI   rd, imm20  ⇒ rd = {imm20, 12'b0}
+//   AUIPC rd, imm20  ⇒ rd = pc + {imm20, 12'b0}
+logic [31:0] imm_u;
+assign imm_u = {pipe0_decd_opcode[31:12], 12'b0};
+
 //==========================================================
 //                      译码逻辑
 //==========================================================
@@ -118,8 +124,17 @@ always_comb begin
     end
 
     // ================= U-type: LUI / AUIPC =================
-    7'b0110111: pipe0_decd_sel = ALU_LUI;
-    7'b0010111: pipe0_decd_sel = ALU_AUIPC;
+    // ⚠️ 立即数**必须**在这里给: 这两条 src1_vld=0, 操作数 B 走的就是
+    //    pipe0_decd_imm (见 ct_idu_rf_dp.sv 的 src1 mux), 漏赋值 ⇒ 立即数恒 0,
+    //    LUI 写成 x0、AUIPC 退化成 pc。
+    7'b0110111: begin
+      pipe0_decd_sel = ALU_LUI;
+      pipe0_decd_imm = imm_u;
+    end
+    7'b0010111: begin
+      pipe0_decd_sel = ALU_AUIPC;
+      pipe0_decd_imm = imm_u;
+    end
 
     default: begin
       pipe0_decd_sel = ALU_ILLEGAL;
