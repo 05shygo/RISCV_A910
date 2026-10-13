@@ -303,6 +303,103 @@ split/fence 重排取数（`id_normal_inst*` / `id_split_short*_inst*` / `id_spl
 > §6.5 是我们自己的，已修并留在树上（见 `doc/rtu_preg_alloc_plan_zh.md` §7）。
 > §6 有 §4.6 的完整证据链。
 
+### 4.6.2 ⚠️ lucy 已改**一半**（`e83df67` "debug 3dis"，2026-10-12 16:14）—— 还不够
+
+他改了 `ct_idu_ir_ctrl.sv:291`（给 `idu_rtu_ir_preg2_alloc_vld` 加
+`&& !ctrl_xx_is_inst0_sel[0]`），**但改名表的写使能没门** ——
+`ct_idu_ir_rt.sv:189` 的 `inst2_write_en` 照写不误。
+
+只门"门房请求"的后果：门房不换号了，**但 RAT 还是被写两次**，
+第二圈照样读到自己第一圈的产物。实测（`+PROBE_X4`，beq，叠在我们已提交的 §6.5 上）：
+
+```
+T305  IR: 0x12c,0x130,0x134   写en=101 → lane2 (0x134) RAT[x4] := 62
+T306  IR: 0x134,0x138,0x13c   写en=110 → lane0 (0x134) RAT[x4] := 59   ← 又写一次
+T318  退休 0x134 x4<=1 （参考 2）            ← 还是死在第 89 条, 一点没动
+```
+
+**缺的是第二行**（`inst2_write_en` 也要 `&& !<那根>`）—— 也就是 §4.6 改法 1 的**两处必须一起门**。
+只改一处时圆点上什么都没有变：`make a910-difftest TEST=beq` 依旧第 89 条，
+`a910-difftest-all` 依旧 5 PASS。
+
+### 4.7 LSU：三条与"load 的完成/写回"有关的口径差（**只定位，未改**）
+
+**起因**：RTU 侧 2026-10-13 给 preg 池补了 C910 那道"写回过才准回池"的门（`RTU_preg.v`
+的 `wb_ok`，见 `doc/rtu_plan_zh.md` 的 D6 更正块）。这道门**依赖"每个被分配出去的号
+最终一定有一个写回事件"**，所以下面三条要当面谈定。前两条是**阻断性**的（阶段 2 开
+真重命名之前必须修）。
+
+#### ① `lsu_ld_da.sv:515` 的完成条件比 C910 少两道门（**建议加**）
+
+```verilog
+// 现在
+assign ld_da_wb_cmplt_req = ld_da_inst_vld && !ld_da_secd;
+// C910 (ct_lsu_ld_da.v:2419-2424)
+assign ld_da_wb_cmplt_req = ld_da_inst_vld && !ecc_stall && !sq_fwd_ecc_discard
+                            && !restart_vld && !boundary_first && ld_da_inst_cmplt;
+```
+
+我们缺 `!ld_da_restart_vld && !ld_da_boundary_first`：**被 restart（重放）的那一拍也会
+报"完成"**。同拍 `ld_da_wb_data_req = cmplt_req & ld_da_data_vld` 也不排除那几种
+discard（C910 有 `ld_da_wb_data_req_mask` 掩掉五个源）⇒ 会往 PRF 写一次**本该丢弃**的数据。
+好消息：`ld_da_boundary_first` lucy 在 `d769f0d` 已经补上驱动（`lsu_ld_da.sv:533`），
+这两道门现在是现成可加的。**建议**：先加门，再对着 `ld_da_wb_data_req_mask` 那五项核一遍
+"哪些 discard 场景下 `data_vld` 仍为 1"。
+
+#### ② `lsu_mshr_entry.sv:572`：miss 的 load 只有 DA 那一拍报完成（**口径差异，供知情**）
+
+```verilog
+assign rb_entry_wb_cmplt_req = 1'b0;      // ← 同事原始交付版就是 1'b0
+// C910 (ct_lsu_rb_entry.v:1350)
+assign rb_entry_wb_cmplt_req = !wb_cmplt_success && dest_vld && (... REQ_WB ...);
+```
+
+⇒ 整核里 miss 的 load **在数据到手之前就被标成"完成"**（DA 级那一拍）。
+这不是必须改（RTU 侧已按 C910 在池子上补了写回门），但要知道：**`lsu_rtu_wb_pipe3_cmplt`
+不等于"数据已写回"**。`A910_cpu.sv` 的 difftest 延迟线（§2.1 那一节 / `:610-752`）就是
+为了这件事才存在的。
+
+#### ③ ⚠️ 疑似竞态：冲刷与"提交广播"同拍会**杀掉一条刚退休 load 的 RB 表项**（**请确认**）
+
+`lsu_mshr_entry.sv:655`：
+
+```verilog
+assign rb_entry_flush_clear   = rtu_yy_xx_flush && !rb_entry_cmit;
+```
+
+推理链（每一步都在本仓源码里核对过）：
+* RTU 的提交广播 `rtu_yy_xx_commit*` 是**寄存器**（`RTU.v:898-918` 的 `cmt_q`）⇒ 一条
+  指令在 T 拍退休、广播在 **T+1** 拍出现在 LSU 面前，`rb_entry_cmit` 在 T+1 边沿才置 1。
+* 冲刷 FSM 的 `backend_flush` / `ren_flush` / `flush_lvl` 都在 **F1 拍**（`RTU_flush.v:105-120`）
+  ⇒ 若 T 拍同时触发了冲刷（误预测/陷阱/中断/mret/重放都能与"某槽退休"同拍），
+  `rtu_yy_xx_flush` 也在 **T+1** 拍为 1。
+* 于是 T+1 拍上 LSU 同时看到 `cmit_set=1` 与 `flush=1`，而**判 flush_clear 用的是边沿前
+  的 `cmit`（=0）** ⇒ 边沿上"表项状态→IDLE"与"`cmit`→1"同时发生 ⇒ 表项死了、
+  **数据永远不会 grant** ⇒ 这条 load 的写回**永远不来**。
+
+后果：改动前 = "这条 load 的值是旧的"（错数）；**补上写回门之后 = 那个号永久出池**
+（池子单调缩水 → 停派遣）。⇒ 阶段 2 之前必须修。
+
+**建议修法（1 行，LSU 侧）**：
+
+```verilog
+assign rb_entry_flush_clear = rtu_yy_xx_flush && !rb_entry_cmit && !rb_entry_cmit_set;
+```
+
+（"这一拍正在被提交的表项不杀"。方向安全：能同拍提交的必然**已经退休**，它晚到的写回
+对 PRF 无害。⚠️ C910 那版 `ct_lsu_rb_entry.v:1487` 也**没有**这一项 —— 所以要么那边
+时序不同、要么是同一个潜伏问题；请按"定向验证"确认，别只按代码对比下结论。
+定向验证的作法：造一条 miss 的 load + 同拍触发冲刷，用 `+PROBE_RET` 看它有没有等到写回。）
+
+> 顺带两笔（都不阻断，记着）：
+> * `rb_entry_flush_clear` 相对 C910 还少了 `(rb_entry_boundary && !rb_entry_secd)`
+>   那一项（跨界 load 的第一半合并进第二半之后要清掉源表项）。少了它，第一半留在
+>   `WAIT_MERGE` ⇒ **RB 表项泄漏**。
+> * `rtu_lsu_async_flush` 在本核恒 0（`RTU.v:883`）。C910 那边它是**成对**用的：
+>   一边在 LSU 无条件清未提交表项，一边在 preg 池把 `wb_cur_state` 强置 WB
+>   （`ct_rtu_pst_preg_entry.v:349`）。**将来真接它必须两半一起接**，否则又是一个
+>   "写回不会来"的入口。
+
 ## 5. 复现命令
 
 ```bash

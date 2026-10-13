@@ -1404,6 +1404,16 @@ RTU u_rtu (
     // ⚠️ **必须显式写这一行**: 漏了它是悬空 Z ⇒ `st==RELEASE` 那支变 X ⇒ else-if 视为假
     //    ⇒ 号**永久漏在 RELEASE** (不是 X 爆炸, 是静默漏号)。极性见 RTU.v 端口注释。
     .preg_dealloc_mask (64'd0),
+    // ---- §6.1 写回门 (第 5 态的más道闸门, 2026-10-13) ----
+    // 全 1 = "每个号都已写回" ⇒ 这道门恒放行。本核**没有写回事件总线**
+    // (顺序核的 IU/LSU 不广播 wb_preg; C910 那套 `iu_idu_ex2_pipe*_wb_preg_*` /
+    //  `lsu_idu_wb_pipe3_wb_preg_*` 只有 a910 那份 RTL 有), 而且阶段 1 是恒等映射
+    // (`ret_free_vld ≡ 0` ⇒ 进不了 RELEASE) ⇒ 这道门**惰性**, 接全 1 与接真实事件
+    // 在行为上不可区分。
+    // ⚠️ 取全 1 而不是全 0: 全 0 = "全都还没写回" ⇒ 一旦哪天真进了 RELEASE, 就会
+    //    **永久卡住**(永远等不到事件) ⇒ 池子单调缩水。宁可多放行。
+    //    (与 RTU_preg 里 96 档上位补 1 是同一条口径: 未知段按放行处理。)
+    .preg_wb_mask (64'hFFFF_FFFF_FFFF_FFFF),
     // 阶段 1 的 CSR 仍在 EX 级读写, 所以这里喂进去的 csr_rdata 其实是**该条指令
     // 自己的 CSR 旧值**(= wb_wD_eff: CSR 的 rf_wsel 是 ALUC 且 A 口取旧值, 见
     // Control.v 的 SYSTEM 分支)。RTU 在退休拍正好需要"这条 CSR 指令的旧值"——

@@ -259,6 +259,22 @@ C910 的 `ct_rtu_pst_preg_entry.v`（577 行，例化 96 次）每个 preg 存
 > 备选是"只在这一拍掩码命中时才挂"，但掩码是 IDU 的**寄存值**、比 SDIQ 真实状态晚 1~2 拍，
 > 无条件写法多给一拍重新判的机会，而且计数器不必给每路释放加门控（少一类"两条判据不同源"
 > 的隐患）。代价：每个号回池晚一拍（阶段 1 恒等映射下 `ret_free_vld ≡ 0`，主流程一位不变）。
+>
+> ⚠️ **2026-10-13 追加：`RELEASE → FREE` 是**两道门**，不是一道。**
+> 上面那条（IDU 的掩码）管的是"**别人还要读**这个号"；还缺一条管"**它自己的写到了没有**"——
+> 因为"完成"**不蕴含**"已写回"（LSU 的 load 在 DA 级就报完成, miss 的数据要等 RB 回放;
+> 见 D6 的 2026-10-13 更正块）。没有第二条门时:
+> `load( miss ) 退休 → 号转 ARCH` → 更年轻、不读它的写者退休把它顶掉 → `RELEASE` →
+> 掩码没意见 → **FREE → 重分配 → 迟到的写打在新主人身上**。
+> C910 那里本来就是两道一起 AND (`ct_rtu_pst_preg_entry.v:382`):
+> `wb_cur_state_wb_masked = (wb_cur_state == WB) && !x_dealloc_mask`。
+> 落地: `rel_go_vec = rel_vec & ~mask_ext & wb_ok`, `wb_ok` 由写回总线
+> (`preg_wb_mask`, 见 §6.1 的 A10) 置位、**复位全 1** (初始映射没有生产者)、
+> 号装进门房与派遣认领那两拍清零。
+> ⚠️ **冲刷那支跟着改**: 掩码那条"冲刷一律绕过"的理由是"引用者比重定向那条年轻、一起被冲掉",
+> 而写回门等的是一条**已退休**指令的迟到写回 (比重定向那条**老**, 冲不掉) ⇒
+> 冲刷只放走"两道门都开"的, **仍被挡住的 RELEASE 留着** (照 C910: 冲刷只动
+> `ALLOC`/`WF_ALLOC`), 计数器同步改成 `NUM_PREG − arch_cnt − countones(rel_keep_vec)`。
 
 ```verilog
 // 每个 preg 3 bit，共 NUM_PREG×3 bit 状态 (64 档 192 / 96 档 288 —— 2026-10-08 可配)
@@ -311,8 +327,8 @@ localparam P_RELEASE = 3'd4; // 2026-10-08: 已被顶掉、但**还被 store 引
 | 优先编码选中 | 本拍选中的 preg：`FREE → WF_ALLOC`（**第 1 拍，只做选择**） |
 | 派遣确认 | 被派遣的 preg：`WF_ALLOC → ALLOC`（第 2 拍；没派成/被冲刷则回 `FREE`） |
 | 指令退休 | 新 preg：`ALLOC → ARCH`；`old_preg`（且 `old_preg != dst_preg`，见 D1.2）：**`ARCH → RELEASE`** |
-| **释放落下**（2026-10-08） | `RELEASE → FREE`：**电平**判据，每拍看 §6.1 的 `preg_dealloc_mask`，那一位撤下来就回池。⚠️ 必须有这一条：`ret_free_vld` 是**一拍脉冲**，只靠上一行就等于"被挡一次就永久丢了"（号卡在 `RELEASE` 出不了池，池子单调缩水） |
-| **冲刷** | **所有非 `ARCH`（含 `ALLOC`/`WF_ALLOC`/`RELEASE`）→ `FREE`**（每个 preg 各看各的，一拍并行，不需扫描）。⚠️ 这一条**绕过掩码**是对的：同一次冲刷里 IDU 把 SDIQ 表项的 vld 与掩码寄存器一起清掉（`ct_idu_is_sdiq_entry.sv:115` / `ct_idu_is_sdiq.sv:398-399`），而在飞指令全是比重定向那条年轻的（D3.1 的②）⇒ 冲刷那拍没有任何存活的引用者 |
+| **释放落下**（2026-10-08；**2026-10-13 加第二道门**） | `RELEASE → FREE`：**电平**判据，每拍判 `rel_go_vec = rel_vec & ~mask_ext & wb_ok` —— **掩码撤下 且 生产者已写回**（§6.1 的 A9 + A10 两根线）。⚠️ 必须有这一条：`ret_free_vld` 是**一拍脉冲**，只靠上一行就等于"被挡一次就永久丢了"（号卡在 `RELEASE` 出不了池，池子单调缩水）。`wb_ok` 复位全 1（初始映射没有生产者）、号装进门房+派遣认领两拍清零 |
+| **冲刷** | **`ARCH` 保留；`RELEASE` 里 "两道门都开" 的 → `FREE`、仍被挡住的 `rel_keep_vec` → 留 `RELEASE`；其余（`ALLOC`/`WF_ALLOC`）→ `FREE`**（每个 preg 各看各的，一拍并行，不需扫描）。⚠️ **掩码**那条绕过是对的：同一次冲刷里 IDU 把 SDIQ 表项的 vld 与掩码寄存器一起清掉（`ct_idu_is_sdiq_entry.sv:115` / `ct_idu_is_sdiq.sv:398-399`），而在飞指令全是比重定向那条年轻的（D3.1 的②）⇒ 冲刷那拍没有任何存活的引用者。⚠️ **写回门不能跟着绕过**：它等的是一条**已退休**指令的迟到写回，比重定向那条**老**（LSU 侧也只清 `!rb_entry_cmit` 的 RB 表项）⇒ 照 C910 留着。空闲计数的冲刷公式同步：`NUM_PREG − arch_cnt − countones(rel_keep_vec)` |
 | 复位 | `p0..p31 = ARCH`（x0..x31 的初始映射），`p32..p95 = FREE` |
 
 **"冲刷时所有 ALLOC 直接回 FREE"成立的前提是"冲刷由那条分支自己的退休触发"。**
@@ -518,7 +534,7 @@ C910 允许"指令退休先于写回"，代价是 PST 要区分 `RETIRE`（已�
 `RELEASE`（已释放未写回）两个状态，以及冲刷状态机里的 `WF_EMPTY`
 （等"已退休未写回"的 preg 写回）。
 
-**本核退休条件直接要求 `cmplt`（已写回）**，于是：
+**本核退休条件直接要求 `cmplt`**，于是：
 * 状态少一档（不需要 `RETIRE` / `RELEASE` 之分）；
 * 冲刷状态机里**没有 WF_EMPTY**；
 * "后端流水线是否清空"这个判据（C910 是 `pst_retire_retired_reg_wb && lsu_rtu_all_commit_data_vld`）
@@ -526,6 +542,56 @@ C910 允许"指令退休先于写回"，代价是 PST 要区分 `RETIRE`（已�
 
 代价：退休比 C910 晚几拍。在 64 项 ROB 下这点延迟基本不影响 IPC ——
 挡住退休的从来是"最慢的那条指令"，不是写回排队的最后几拍。
+
+> ⚠️⚠️ **2026-10-13 重要更正：这一条的**前提**是错的 —— "`cmplt` = 已写回"不成立。**
+>
+> 原文写的是"退休条件直接要求 `cmplt`（已写回）"。查两边 RTL 之后:
+> 1. LSU 对 load 报的是**两根独立的线**: `lsu_ld_da.sv:515` 的
+>    `ld_da_wb_cmplt_req = ld_da_inst_vld && !ld_da_secd` **不看命中**;
+>    数据写是另一根 `ld_da_wb_data_req = cmplt_req & ld_da_data_vld`
+>    (`data_vld` 里含 `dcache_hit`)。⇒ **miss 的 load 在 DA 级就报完成**,
+>    数据要等 RB/MSHR 回放才写。C910 同样如此 (`ct_lsu_ld_da.v:2405` 的
+>    `ld_da_inst_cmplt` 对普通 load 只看 `!page_so`, `inst_fof` 恒 0)。
+> 2. 本仓这份 LSU 还把 C910 的另一半掐了: `lsu_mshr_entry.sv:572`
+>    `rb_entry_wb_cmplt_req = 1'b0` (C910 `ct_lsu_rb_entry.v:1350` 是"数据回来时
+>    再报一次完成") ⇒ **整核里 miss 的 load 只有 DA 那一拍报完成**。
+>
+> **后果分两层**:
+> * "退休早于写回"**本身不崩**: 退休发布的是**映射**(AMT), 不是值; 值只走 preg,
+>   而吃这个 preg 的消费者被 IDU 的写回记分牌 (`lsu_idu_wb_pipe3_wb_preg_vld_dupx`
+>   → `ct_idu_dep_reg_entry.sv:57`) 摁着, 数据没到就发不出去。C910 就是这么活的。
+> * **崩在"号回收"上**: 一条 miss 的 load 退休(它的号转 ARCH)之后, 更年轻、且
+>   **不读那个号**的写者退休时会把它顶掉 → `ARCH → RELEASE`。原文那三条简化里,
+>   `RELEASE` 于 2026-10-08 已经因为 **store 数据读的 WAR** 回来了; 而
+>   `RELEASE → FREE` 当时只判**掩码**, **没有判"生产者写回没有"** ——
+>   C910 那里是**两道门** (`ct_rtu_pst_preg_entry.v:382` 的
+>   `wb_cur_state_wb_masked = (wb_cur_state == WB) && !x_dealloc_mask`)。
+>   > 于是: 号被放回池 → 重分配 → **迟到的写打在新主人身上 = 静默错数**。
+>
+> **落地 (2026-10-13)**: 照 C910 补上第二道门 —— `RTU_preg.v` 新增 `wb_ok`
+> (每 preg 1 位, 写回事件置位 / 号装进门房与派遣认领那两拍清零 /
+> **复位全 1**), `rel_go_vec = rel_vec & ~mask_ext & wb_ok`; 冲刷那支改成
+> "仍被门挡住的 RELEASE **留着**" (照 `ct_rtu_pst_preg_entry.v:288-317`);
+> 写回总线 (`A910_cpu.sv` 把 IU×3 + LSU 或成 `preg_wb_mask`, **CSR 的 rd 那第 5 个
+> 写口由 RTU 内部补** —— 漏了它号会永久出池)。端口契约见 §6.1 的 A10。
+>
+> **于是 D6 的账要重算**:
+> * `RETIRE` 态**仍然不需要** —— 有 `RELEASE` + 这道门就够了 (已退休未释放的号就
+>   停在 ARCH, 被顶掉才进 RELEASE);
+> * "cmplt 即已写回"**这句话不能再用**, 任何依赖它的推理都要回到"完成只蕴含
+>   **不会再 replay / 不会陷异常**";
+> * WF_EMPTY 与"后端流水线是否清空"**仍然不需要** (它们要等的是"在飞指令排水",
+>   不是"某个号的写回到没到")。
+>
+> ⚠️ **阶段性**: 阶段 1 恒等映射下 `old == dst ⇒ ret_free_vld ≡ 0`
+> (`RTU_commit.v:366`) ⇒ 永远进不了 RELEASE ⇒ 这道门**惰性**, 整核行为应逐位不变
+> (difftest 结果一条不差是这个改动的验收口径)。它是**阶段 2 开真重命名之前的雷**。
+>
+> ⚠️ **这条门同时暴露了 LSU 侧一个既有的坏路径** (只定位, 未改; 见
+> `doc/a910_difftest_zh.md` §4.7): `rb_entry_flush_clear = rtu_yy_xx_flush && !rb_entry_cmit`
+> 与"提交广播"同拍时会**杀掉一条刚退休的 load 的 RB 表项** (`cmt_q` 是寄存器、
+> `backend_flush` 在 F1 拍, 两者同拍), 写回**永远不会到** ⇒ 有了这道门之后那个号会
+> **永久出池** (改动前是"写回丢了、值错" 。两种都得修, 修在 LSU 侧一行)。
 
 ### D7 不做指令折叠（`cmplt_cnt`）
 
@@ -1425,6 +1491,31 @@ input [63:0] preg_dealloc_mask;       // ← IDU 的 idu_rtu_pst_preg_dealloc_ma
 //      即"p64..p95 永不否决"（IDU 报不出那些号）。见 `RTU_preg.v` 的 `mask_ext`。
 input [31:0] csr_rdata;               // 组合读：地址见 §6.2 的 rtu_csr_addr
 input        int_pending;             // 已按 mstatus/mie/mip 屏蔽过
+
+// —— A10（**2026-10-13 新增**）：写回门的总线 ——「这个号这一拍写回了」——
+input [63:0] preg_wb_mask;            // = 各写口总线的独热或（见下面的来源表）
+//   ⚠️ **极性：位 = 1 表示这个号的生产者已经写回，允许回池。**
+//      与 A9 那根**同形不同义**（A9 是"不许"，这根是"可以"），两条一起 AND 进
+//      `rel_go_vec`。两根都接错才会同时失效；只接错这一根 = 号的写回永远"没到"
+//      ⇒ 号永久停在 RELEASE = 永久出池（比 A9 接反更隐蔽：账目完全自洽）。
+//   来源（`A910_cpu.sv` 的合成段，与 PRF 的写口**逐字同式**，`{64{vld}} & expand`）：
+//     * IU pipe0/1/2 → `iu_idu_ex2_pipe{k}_wb_preg_{vld,expand}`
+//     * LSU  pipe3   → `lsu_rtu_wb_pipe3_wb_preg_{vld,expand}`
+//       （这两根本来就是 LSU 为 RTU 准备的, C910 `ct_rtu_pst_preg.v:6134` 的
+//         `wb_vld` 或项就是这么接的; 在本仓"观察口/有意留空"清单里挂到 2026-10-13）
+//     * **第 5 个写口**：CSR 指令的 rd 由 RTU 自己在退休拍写
+//       （`rtu_csr_rd_we/_addr` → PRF 第 5 写口, `ct_idu_rf_prf_pregfile.sv:135`），
+//       它**没有写回广播** ⇒ 由 `RTU.v` 内部并进掩码（`preg_wb_mask_i`）。
+//       **漏掉它 = CSR 指令的号永久出池**（单测台里 CSR 是随机流的一部分，会抓到）。
+//   ⚠️ 契约①（各写口侧）：每根 `vld` 必须与它那根 `expand` **同拍**（LSU 那侧
+//      d769f0d 刚把 `vld` 从"组合的 pre"改成"寄存的 `ld_wb_data_vld`"就是为了这件事）。
+//   ⚠️ 契约②（跨组）：**每个被分配出去的号最终必须有一个写回事件**。核里没有生产者的
+//      段（96 档的 `p64..p95`，IDU 只有 6 位）由 `RTU_preg` 按"恒已写回"处理，
+//      这条口径与 A9 的"位最终必须清零"是**姊妹条**，两条漏一条 = 号永久出池。
+//   ⚠️ 已知残余（本仓，未修）：若 LSU 的某条路让"已退休 load 的写回永远不会到"
+//      （见 `doc/a910_difftest_zh.md` §4.7 的 `rb_entry_flush_clear` 竞态），
+//      这道门会把"丢了一次写回"升级成"永久出池"。阶段 2 开真重命名**之前**
+//      必须先修掉那条（两行, 都在 LSU 侧）。
 
 // —— BEU → RTU（**D13 新增**；本计划内部信号，不进跨人契约）——
 input        beu_redirect_vld;        // EX 级真的发出了误预测重定向的那一拍。
@@ -2539,6 +2630,7 @@ entry 起在 `RETIRE` 态（`ct_rtu_pst_preg_entry.v:236` `reset_lifecycle_state
 | D2.3 | store 队列 rdy | `sq_rdy*=1` / `sq_stall=0` 恒值（`mycpu.v:1376`），因为顺序核到 MEM 就写出去 | OoO 下要由 LSU 按"这条 store 是不是最老的、能不能提交"来驱动，否则会乱序提交 |
 | D2.4 | `rtu_beu_retire_iid` 的定位 | D12/D13 之后**已不是门控口**（年龄比较搬去了 BEU 侧自己的寄存器），只剩 debug 观察 | 别让做 BEU 的人拿它当门控用 |
 | D2.5 | CSR 单槽的吞吐代价 | `csr_inflight` 直接进 `rtu_disp_stall`（`RTU.v:663`）⇒ **一条** CSR 在途就冻结**整个**派遣，直到它退休 | CoreMark 里 CSR 几乎不出现 ⇒ 可以先不动；但 OoO 下等于"一条 CSR 排空整机"，要不要放宽（只挡 CSR 之后的指令）值得评估 |
+| **D2.7** | **写回门的两条契约**（2026-10-13 新增，§6.1 的 A10） | RTU 侧**已落地**（`wb_ok` + `rel_go_vec` 的第二道门 + 冲刷留人 + `preg_wb_mask` 五路合成），单测台两档全绿、变异 R11 被抓 | ① **各写口侧**：`vld` 与 `expand` 必须**同拍**（LSU 的 d769f0d 已修）；② **"每个被分配出去的号最终必须有一个写回事件"** —— 与 A9 的"掩码位最终必须清零"是姊妹条，两条漏一条 = 号永久出池。核里没有生产者的段（96 档 `p64..p95`）按"恒已写回"处理，将来 IDU 支持 7 位时要改成真事件。③ **前置条件（阻断性）**：LSU 的 `rb_entry_flush_clear` 竞态（`doc/a910_difftest_zh.md` §4.7）必须先修 —— 否则"一次丢写回"会升级成"一个号永久出池" |
 | **D2.6** | **`preg_dealloc_mask` 的寿命口径**（2026-10-08 新增，§6.1 的 A9） | RTU 侧**已按"位=1 就押住"实现**（第 5 态 `RELEASE`，无条件先挂一拍），但交付的 IDU 里 SDIQ 的两个时钟 `src_mask_clk`/`cnt_clk` **全仓无驱动**（`ct_idu_is_sdiq.sv:38-39`）⇒ 掩码恒 0 | 三件事：① IDU 侧把 SDIQ 的时钟接上（与 RAT 时钟一起修，见接口待办）；② **冲刷那拍必须清零** —— 否则号永久停在 `RELEASE`（永久出池）⇒ RTU 会静默饿死；③ 它只覆盖 SDIQ 的 `src0`：LSU 若有"SDIQ 弹出之后还要重读 store 基址 preg"的重启路径，掩码兜不住，RTU 也无法补偿 |
 
 #### D3. 不变量探针的口径要改（与 D1.2 同拍决定）

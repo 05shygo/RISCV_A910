@@ -1692,6 +1692,33 @@ module A910_cpu
                              prf_wb3_hot[prf_raddrc] ? lsu_idu_wb_pipe3_wb_preg_data :
                                                        idu_rtu_csr_src_rdata_raw;
 
+  // ===========================================================================
+  // 写回门的总线合成 (2026-10-13) —— 「这个号这一拍写回了」的独热或
+  // ---------------------------------------------------------------------------
+  // 给 RTU 的物理寄存器池当"写回过才准回池"那道闸门 (RELEASE → FREE 的第二个条件)。
+  // 取的就是 PRF 的 4 个**外部**写口 (第 5 个是 CSR 的 rd, 由 RTU 自己产生, 在
+  // RTU.v 内部并进掩码 —— 见那里的 `preg_wb_mask_i`)。
+  //
+  //   * IU pipe0/1/2: `iu_idu_ex2_pipe{k}_wb_preg_{vld,expand}`。判命中一律用
+  //     `{64{vld}} & expand` —— **与 PRF 内部的写使能逐字同式**
+  //     (`ct_idu_rf_prf_pregfile.sv:128-134`)。用 `_dupx` 比索引不行: expand 才是
+  //     真正落到 PRF 写口上的独热 (本文件 PRF 旁路段 :1652-1654 记过同一句话)。
+  //   * LSU pipe3: `lsu_rtu_wb_pipe3_wb_preg_{vld,expand}`。这两根**本来就是
+  //     LSU 为 RTU 准备的** (C910 `ct_rtu_pst_preg.v:6134` 的 wb_vld 或项就是这么接的),
+  //     在这之前一直挂在"观察口/有意留空"清单里 —— 现在它有对端了。
+  //     ⚠️ 它与给 IDU 的 `lsu_idu_wb_pipe3_wb_preg_*` 是 lsu_top 的**同一对**输出
+  //        (lsu_ld_wb.sv:279/287 同式), 接哪一组都行; 这里取名字对的那一组。
+  //
+  // ⚠️ 这三根必须**同拍配对** (vld 与其 expand): LSU 那侧 d769f0d 刚把 vld 从
+  //    "组合的 pre" 改成"寄存的 data_vld"正是为了这件事 —— 配对错了会写错号。
+  // ⚠️ 只做"或", 不做寄存/打拍: 门是电平保持的 (RTU_preg 里 `wb_ok` 自己锁存)。
+  // ===========================================================================
+  wire [63:0] preg_wb_mask =
+        ({64{iu_idu_ex2_pipe0_wb_preg_vld}} & iu_idu_ex2_pipe0_wb_preg_expand)
+      | ({64{iu_idu_ex2_pipe1_wb_preg_vld}} & iu_idu_ex2_pipe1_wb_preg_expand)
+      | ({64{iu_idu_ex2_pipe2_wb_preg_vld}} & iu_idu_ex2_pipe2_wb_preg_expand)
+      | ({64{lsu_rtu_wb_pipe3_wb_preg_vld}} & lsu_rtu_wb_pipe3_wb_preg_expand);
+
   RTU u_rtu (
     .cpu_clk                    (clk),
     .cpu_rst                    (rst),
@@ -1814,6 +1841,11 @@ module A910_cpu
     // ============ §6.1 IDU 的释放否决掩码 ============
     // 位 = 1 ⇒ 这个号还被 store 引用着, 不许回池 (第 5 态 RELEASE)。
     .preg_dealloc_mask          (preg_dealloc_mask),
+
+    // ============ §6.1 写回门 ============
+    // 位 = 1 ⇒ 这个号的生产者已经写回, 准回池 (第 5 态 RELEASE 的第二道闸门)。
+    // 合成见上面 `preg_wb_mask`; CSR 的 rd 那一路由 RTU 自己并进去。
+    .preg_wb_mask               (preg_wb_mask),
 
     // ===================== BEU -> RTU (D13) =====================
     .beu_redirect_vld           (beu_redirect_vld),
@@ -2308,9 +2340,12 @@ module A910_cpu
   //       _vld0..2 / rtu_store_vld0..2 + rtu_store_sq_id0..2 / dbg_commit_* 15 根
   //  IFU: ifu_idu_flush (IDU 侧没有对应的口 —— IFU 内部冲刷时它自己把三槽 vld
   //       拉 0, IDU 看到的就是空 vld, 所以这根只是给波形看的) / ifu_init_done
-  //  LSU: lsu_rtu_wb_pipe3_wb_preg_expand / _wb_preg_vld
-  //       (按 doc/rtu_接口对照表.csv 归"暂无对应": RTU 按 iid 找表项, 不需要
-  //        按 preg 广播; 寿命信息走 idu_rtu_pst_preg_dealloc_mask)
+  //  LSU: (2026-10-13 起**不再留空**) `lsu_rtu_wb_pipe3_wb_preg_expand` / `_wb_preg_vld`
+  //       现在有对端了 —— 它们与 IU 的三组写回总线一起或成 `preg_wb_mask`, 喂给
+  //       RTU 的物理寄存器池当"写回过才准回池"那道闸门 (见上面的合成段与
+  //       rtu_plan_zh.md 的 D6 修正块)。原来按 doc/rtu_接口对照表.csv 归"暂无对应"
+  //       的理由 ("RTU 按 iid 找表项, 不需要按 preg 广播") 只对**完成**口成立;
+  //       写回门要的正是"按 preg"的寿命信息 —— 与掩码那条是同一类。
   //
   // ---------------------------------------------------------------------------
   // E. 已知的对接问题 (在 IDU/LSU/BIU 侧)

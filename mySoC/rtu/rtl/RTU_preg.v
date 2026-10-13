@@ -6,9 +6,14 @@
 //
 // 五态 (每 preg 3 bit, 共 3*`RTU_NUM_PREG` bit —— 64 档 192 / 96 档 288):
 //   FREE --(被 tap 选中补进"门房")--> WF_ALLOC --(派遣认领)--> ALLOC
-//   ALLOC --(退休且写回)--> ARCH        ALLOC --(陷阱那条)--> FREE
-//   ARCH  --(退休且 old_preg != dst_preg)--> RELEASE --(!mask)--> FREE
-//   冲刷: 非 ARCH 全部回 FREE (一拍并行, 每个 preg 各看各的, 不用扫描)
+//   ALLOC --(退休)--> ARCH              ALLOC --(陷阱那条)--> FREE
+//     ⚠️ 2026-10-13 更正: 这里原来写的是"退休且写回"。**退休不蕴含写回** ——
+//        LSU 的 load 在 DA 级就报完成 (`lsu_ld_da.sv:515`), miss 的数据要等 RB
+//        回放才写。兜底的是下面 RELEASE → FREE 的**两道门**(掩码 + wb_ok),
+//        不是退休这一拍。
+//   ARCH  --(退休且 old_preg != dst_preg)--> RELEASE --(!mask && wb_ok)--> FREE
+//   冲刷: ARCH 保留; RELEASE 里**仍被门挡着的**保留; 其余(ALLOC/WF_ALLOC/门开的
+//         RELEASE)回 FREE (一拍并行, 每个 preg 各看各的, 不用扫描)
 //
 // ⚠️ **2026-10-08: 释放改成"无条件先挂一拍" (ARCH→RELEASE), 第 5 态。**
 //    挡的是 store 数据读的 WAR: store 的"完成"不蕴含"数据已读"
@@ -23,6 +28,21 @@
 //       加门控 (少一类"两条判据不同源"的隐患)。**代价是每个号回池晚一拍**
 //       (阶段 1 恒等映射下 `ret_free_vld ≡ 0` ⇒ 主流程一位不变)。
 //    设计决策与验收见 doc/rtu_plan_zh.md §3 D2 的 2026-10-08 修正块。
+//
+// ⚠️ **2026-10-13: 第 5 态补上第二道闸门 —— `wb_ok`(写回过才准回池)。**
+//    起因: `doc/rtu_plan_zh.md` D6 的前提"本核退休条件直接要求 cmplt(已写回)"
+//    对 LSU 的 load **不成立** (完成在 DA 级就报, 数据要等 RB 回放; 我们这份 LSU
+//    还把"数据回来时再报一次完成"掐掉了, `lsu_mshr_entry.sv:572`)。于是:
+//      load I0 (miss) → 号 P；更年轻、且**不读 P** 的写者 I1 退休 → P: ARCH→RELEASE
+//      → (掩码没意见) → FREE → 被重分配 → I0 迟到的写打在新主人身上 = 静默错数。
+//    C910 早就有这道门 (`ct_rtu_pst_preg_entry.v:382` 的
+//    `wb_cur_state_wb_masked = (wb_cur_state == WB) && !x_dealloc_mask`), 我们这版
+//    原来是**残的** —— 只落了掩码那半。
+//    ⚠️ 于是 D6 那三条简化里的一条半作废 (详见 rtu_plan_zh.md 的 D6 修正块):
+//       `RETIRE` 态仍然不需要 (RELEASE 一个人够了), 但"cmplt 即已写回"这句话不能再用。
+//    ⚠️ 阶段性: 阶段 1 恒等映射下 `ret_free_vld ≡ 0` ⇒ 永远进不了 RELEASE ⇒
+//       这道门**惰性** (整核行为逐位不变, difftest 结果应当一条不差)。
+//       它是阶段 2 开真重命名之前的雷。
 //
 // ⚠️ **2026-10-07: 分配握手改成 C910 的"门房保持寄存器"(tap), 年龄回收删除。**
 //    完整理由与验收口径见 doc/rtu_preg_alloc_plan_zh.md, 摘要在文件末尾。
@@ -87,6 +107,24 @@ module RTU_preg (
     //    所以"掩码位最终必须清零"是一条跨组契约 (doc/rtu_plan_zh.md §10 D2)。
     input  wire [63:0] preg_dealloc_mask,
 
+    // ---- 写回门 (2026-10-13): 来自各写口总线的"这个号这一拍写回了" ----
+    // ⚠️ **极性: 位 = 1 表示这个号的生产者**已经写回**, 可以回池**。
+    //    (与上面那根掩码**同形不同义**: 掩码是"不许", 这根是"可以"。两条一起 AND 进
+    //     `rel_go_vec`, 极性只由那一行定义 —— 接反的后果同样是静默错, 但要"不写回"
+    //     才误放行, 比掩码那条更隐蔽。)
+    // ⚠️ 固定 64 位, 与 `preg_dealloc_mask` 同约定: 位宽跟着**交付的写口总线**走,
+    //    不跟着池子大小走。96 档下 bit≥64 那一段在核里没有生产者 (IDU 只有 6 位、
+    //    适配层只在 64 档可用) ⇒ 按**已写回**处理 (见下面的 `wb_ok_ext`)。
+    // ⚠️ 为什么必须有这一根 (doc/rtu_plan_zh.md §3 D6 的前提被证伪):
+    //    "完成" 不蕴含 "已写回"。LSU 的 load 在 DA 级就报完成, 而 miss 的数据要等
+    //    RB 回放才写 (`lsu_ld_da.sv:515` 的 `ld_da_wb_cmplt_req` 不看命中);
+    //    C910 另外还有一条"数据回来时再报一次完成" (`ct_lsu_rb_entry.v:1350`),
+    //    我们这份 LSU 把它掐掉了 (`lsu_mshr_entry.sv:572 = 1'b0`)。
+    //    ⇒ 一条 miss 的 load **会在数据到手之前退休** (退休本身不发布值, 不崩),
+    //      但它的号可能被"更年轻的写者退休"顶掉进 RELEASE。没有这根线就会:
+    //      RELEASE →(掩码没意见)→ FREE → 重分配 → 迟到的写打在新主人身上 = 静默错数。
+    input  wire [63:0] preg_wb_mask,
+
     // ---- 冲刷 (FLUSH_2) ----
     input  wire        flush_lvl,
 
@@ -115,6 +153,8 @@ module RTU_preg (
     reg         tap_vld0, tap_vld1, tap_vld2;
     reg  [`RTU_PREG_W-1:0] amt[0:31];
     reg  [6:0]  free_cnt_q;
+    // 写回门 (2026-10-13): 每个号一位 "生产者写回了没有"。见下面 `wb_ok_ext` 那段长注。
+    reg  [`RTU_NUM_PREG-1:0] wb_ok;
 
     integer     i;
     integer     k;
@@ -246,8 +286,42 @@ module RTU_preg (
     wire [`RTU_NUM_PREG-1:0] mask_ext = {32'd0, preg_dealloc_mask};
 `endif
 
+    // -----------------------------------------------------------------------
+    // 写回门的第二份"闸门位" (2026-10-13) —— 照 C910 `wb_cur_state`
+    //   (`ct_rtu_pst_preg_entry.v:334-382` 那张"这个 preg 写回了没有"的小状态机)
+    //
+    //   wb_ok    : 每个号 1 位, 1 = 它的生产者已经写回 (可以回池)
+    //   wb_ok_ext: 铺到池宽。64 档 = 掩码本身; 96 档在**上位补 1**。
+    //     ⚠️ 补 1 而不是补 0, 理由与掩码那条**正好相反**、但口径是同一条
+    //        ("未知段按放行处理"): 掩码补 0 = 恒不否决 (放行), 这里补 1 = 恒已写回
+    //        (放行)。若在上位补 0, 那 32 个号在核里没有任何生产者 ⇒ 永远等不到
+    //        写回事件 ⇒ 号永久卡在 RELEASE = **池子单调缩水**, 比误放行更糟。
+    //     ⚠️ C910 是靠它那边 `wb_vld[95:0]` 真的铺满 96 位来回避这件事
+    //        (`ct_rtu_pst_preg.v:6132`), 我们这根线只有 64 位, 所以在这里补。
+    //
+    //   转移 (与 C910 的两条一一对应):
+    //     复位     → 全 1: 初始映射 p0..p31 **天然"已写回"** (它们是架构初值,
+    //                没有任何指令会替它们写; 将来被顶掉时必须能直接回池)。
+    //                C910 对应的是 `reset_lifecycle_state = x_reset_mapped ? RETIRE : DEALLOC`
+    //                配上 `reset_wb_state = x_reset_mapped ? WB : IDLE`。
+    //                FREE 那一段的初值无所谓 (进 tap 时会被清掉)。
+    //     置位     → 写回事件 (每拍电平或进来)
+    //     清零     → **两个点**: 号"装进门房"(`sel_oh`) 与 "派遣认领"(`is_wf & hit_disp`)。
+    //                只清前者不够 —— 号备在门房里等派遣的窗口**无界**, 这段窗口里落在
+    //                它上面的写回不属于新主人 (新主人还没被派遣, 不可能写回), 留着就是
+    //                给新主人一份假的"已写回"。完整理由与 C910 对照见下面那个 always 块。
+    //     同拍撞上 (写回事件 与 清零点撞在同一个号上) ⇒ **清零赢** (failsafe):
+    //                表达成 `(wb_ok | wb_ok_ext) & ~wb_clr_vec` 就自带这个优先级。
+    // -----------------------------------------------------------------------
+`ifdef RTU_PREG64
+    wire [`RTU_NUM_PREG-1:0] wb_ok_ext = preg_wb_mask;
+`else
+    wire [`RTU_NUM_PREG-1:0] wb_ok_ext = {{32{1'b1}}, preg_wb_mask};
+`endif
+
     wire [`RTU_NUM_PREG-1:0] rel_vec;
     wire [`RTU_NUM_PREG-1:0] rel_go_vec;
+    wire [`RTU_NUM_PREG-1:0] rel_keep_vec;
     wire [`RTU_NUM_PREG-1:0] killable_vec;
     genvar      gr;
     generate
@@ -256,7 +330,14 @@ module RTU_preg (
             assign killable_vec[gr] = (st[gr] == `RTU_P_ALLOC) || (st[gr] == `RTU_P_WFALLOC);
         end
     endgenerate
-    assign rel_go_vec = rel_vec & ~mask_ext;
+    // ⚠️ 两道门一起判: **掩码撤下 且 已写回** 才准回池。
+    //    这一个向量同时喂状态表那一支与 `n_freed` 计数器 (本文件的既有纪律: 两处
+    //    各判各的 = 账目慢慢偏)。
+    assign rel_go_vec = rel_vec & ~mask_ext & wb_ok;
+    // 冲刷那一拍要用的"还被挡着的 RELEASE" (同样是**两处共用**一个向量):
+    // 冲刷的优先级最高, 它会先于 `rel_go_vec` 那一支被求值, 所以不能直接复用
+    // `rel_go_vec` —— 必须显式写出"这一拍仍被挡"的集合。
+    assign rel_keep_vec = rel_vec & ~rel_go_vec;
 
     // 本路本拍被**取走**: 消费者逐路告诉我们哪几路把门口的号拿走了。
     // "请求即取走" 是 C910 的语义 —— 它那边 alloc_vld、RAT 写、进 IS 由同一个
@@ -509,13 +590,21 @@ module RTU_preg (
                 nst[i] = `RTU_P_ARCH;
             end else if (flush_lvl) begin
                 // 冲刷: 没退休的一律回 FREE, 架构态不动。
-                // ⚠️ 这条**绕过否决掩码**是有理由的, 不是漏了: 同一次冲刷里 IDU
-                //    把 SDIQ 表项的 vld 与掩码寄存器一起清掉
+                // ⚠️ **掩码那一道门**在冲刷里绕过是有理由的, 不是漏了: 同一次冲刷里
+                //    IDU 把 SDIQ 表项的 vld 与掩码寄存器一起清掉
                 //    (ct_idu_is_sdiq_entry.sv:115 / ct_idu_is_sdiq.sv:398-399),
                 //    而本核的冲刷保证"重定向那条必然在队头"(执行级重定向 + 最旧门控,
                 //    见 D12/D13) ⇒ 在飞指令全是比它年轻的, 全部被冲掉 ⇒ 冲刷那一拍
-                //    没有任何存活的引用者。RELEASE 也在这条里回 FREE。
-                nst[i] = (st[i] == `RTU_P_ARCH) ? `RTU_P_ARCH : `RTU_P_FREE;
+                //    没有任何存活的引用者。
+                // ⚠️⚠️ **写回门 (2026-10-13) 不能跟着这条一起绕过** —— 它的引用者
+                //    不是"在飞的年轻指令", 而是**一条已经退休的指令的迟到写回**
+                //    (miss 在飞的 load): 那条比重定向更**老**, 冲刷冲不掉它。LSU 那侧
+                //    也只清 `!rb_entry_cmit` 的 RB 表项 (lsu_mshr_entry.sv:654),
+                //    已提交的那条一定会写回 ⇒ 门一定会解。所以这里照 C910
+                //    (`ct_rtu_pst_preg_entry.v:288-317`: 冲刷只动 ALLOC/WF_ALLOC):
+                //    仍被挡着的 RELEASE **原样留着**, 等门自己开。
+                nst[i] = (st[i] == `RTU_P_ARCH)    ? `RTU_P_ARCH :
+                         rel_keep_vec[i]           ? `RTU_P_RELEASE : `RTU_P_FREE;
             end else if ((ret_arch_vld[2] && (ret_dst_preg2 == i))) begin
                 nst[i] = `RTU_P_ARCH;
             end else if ((kill_hit[2] && (ret_dst_preg2 == i)) ||
@@ -596,6 +685,34 @@ module RTU_preg (
     end
 
     // -----------------------------------------------------------------------
+    // 写回门的状态更新 (2026-10-13) —— 照 C910 `wb_cur_state`
+    //   规则只有三条: 复位全 1 / 写回事件置位 / 装进门房清零 (清零赢)。
+    // ⚠️ 冲刷**不碰它**: 冲刷那一支还要靠它判断"哪些 RELEASE 留着" (见状态表里
+    //    `rel_keep_vec` 那一支)。C910 那边同样不在冲刷里动 `wb_cur_state`。
+    // ⚠️ 它是电平保持的: 写回事件是一拍脉冲, 但门开过就一直开着 —— 号再回池之后
+    //    才轮到 `sel_oh` 把它关上。
+    // ⚠️ `sel_oh` 在这里是"号**要**装进门房"的独热 (与 `nst` 那支同源), 不是在
+    //    门房里躺着的那几个已经装好的号。
+    // -----------------------------------------------------------------------
+    // ⚠️ **两个清零点, 都要** (2026-10-13, 照 C910 的 `create_vld` + "DEALLOC 电平"
+    //    两处): "装进门房"那一拍与"派遣认领"那一拍。
+    //    * 只清"装进门房"是不够的: 号备在门房里、等派遣的窗口**无界**
+    //      (IR→IS→派发被 IQ/ROB 满卡住任意多拍, 见文件末尾那段)。这段窗口里落在
+    //      这个号上的写回事件**不属于新主人** (新主人还没被派遣, 不可能写回) ——
+    //      留着它就等于给新主人一份假的"已写回", 那个号会被提前放回池子。
+    //      (真的会发生: 本核的 load 在被 `ld_da` 重启时可能**重复写一次** PRF,
+    //       那第二次写回就是这种"陈旧事件"。)
+    //    * 只清"派遣认领"也不够: 号在 tap 里收到的写回同样该被擦掉。
+    //    * 优先级: **清零赢** (`(wb_ok|ext) & ~clr`) —— 派遣/入户那拍落下的写回
+    //      一定是陈旧的, 不能让它把刚开的一生标成"已写回"。
+    wire [`RTU_NUM_PREG-1:0] wb_clr_vec = sel_oh | (is_wf & hit_disp);
+
+    always @(posedge cpu_clk or posedge cpu_rst) begin
+        if (cpu_rst) wb_ok <= {`RTU_NUM_PREG{1'b1}};
+        else         wb_ok <= (wb_ok | wb_ok_ext) & ~wb_clr_vec;
+    end
+
+    // -----------------------------------------------------------------------
     // 空闲计数 (加减计数器, 不让 popcount 上路径)
     // -----------------------------------------------------------------------
     // ⚠️ `kill_hit` **也要算进去**: 陷阱那条自己的 dst_preg 是 ALLOC -> FREE
@@ -647,10 +764,16 @@ module RTU_preg (
         // ⚠️ 复位值必须是**常数** 64 (= 96 − 32 项初始映射): 那一拍 st[] 在真实
         //    上电时是 X, `96 − arch_cnt` 会算出 X 并永久留在计数器里。
         if (cpu_rst)          free_cnt_q <= `RTU_NUM_PREG - 32;
-        // 冲刷公式不变: 冲刷那一拍 `nst` 只可能是 ARCH 或 FREE (RELEASE 也归 FREE)
-        // ⇒ 冲刷后的 FREE 数恰好是 `NUM_PREG − arch_cnt` (arch_cnt 是组合、取边沿前的
-        // st[], 而 ARCH 项在冲刷里原样保留, 两者同源)。
-        else if (flush_lvl)   free_cnt_q <= `RTU_NUM_PREG - arch_cnt;
+        // ⚠️ **冲刷公式 (2026-10-13 改)**: 冲刷后仍在池外的有两类 —— ARCH, 以及
+        //    **仍被门挡着的 RELEASE** (写回门那支把它们留下了)。所以要在
+        //    `NUM_PREG − arch_cnt` 之后再减掉 `rel_keep_vec` 的数。
+        //    与状态表那一支**共用同一个向量** (本文件的纪律): 两处各判各的,
+        //    计数与状态表当拍就对不上, 单测台的 6b popcount 自检会红。
+        //    (改之前 RELEASE 一律归 FREE, 所以只减 arch_cnt 就够了。)
+        //    ⚠️ `arch_cnt` 与 `rel_keep_vec` 都是组合、取**边沿前**的 st[] ——
+        //       与那两支看的同一帧。
+        else if (flush_lvl)   free_cnt_q <= `RTU_NUM_PREG - arch_cnt
+                                            - $countones(rel_keep_vec);
         // ⚠️ 加减**必须在 8 位里算** (n_freed/n_alloc 已是 8 位 ⇒ 表达式宽度 8):
         //    见上面那条位宽注释, 7 位中间值会回绕。
         else                  free_cnt_q <= free_cnt_q + n_freed - n_alloc;

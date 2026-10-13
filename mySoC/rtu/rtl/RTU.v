@@ -227,6 +227,29 @@ module RTU (
     //    跨组契约, 与 `sq_rdy*` 一起写在 §10 的 D2 表 (D2.6)。
     input  wire [63:0] preg_dealloc_mask,
 
+    // ============ §6.1 写回门 (2026-10-13 新增, 第 5 态的第二道闸门) ============
+    // 各写口总线的"这个号这一拍写回了"的独热或。集成层 (A910_cpu.sv) 把 4 类外部源
+    // 或起来送进来: IU pipe0/1/2 的 `iu_idu_ex2_pipe{k}_wb_preg_{vld,expand}` 与
+    // LSU pipe3 的 `lsu_idu_wb_pipe3_wb_preg_{vld,expand}` (就是 PRF 的 4 个写口,
+    // `ct_idu_rf_prf_pregfile.sv:120-150`)。
+    //
+    // ⚠️ **第 5 个写口在本模块内部补** —— 见下面的 `preg_wb_mask_i`: CSR 指令的 rd
+    //    是 RTU 自己在**退休当拍**经 PRF 的第 5 写口写的 (`rtu_csr_rd_we/_addr`,
+    //    §6.2 的 A1), 它**没有任何写回广播**。漏掉它 = CSR 指令的号进 RELEASE 之后
+    //    永远等不到门开 = 永久出池。
+    //
+    // ⚠️ **极性: 位 = 1 ⇒ 这个号的生产者已经写回, 允许回池** (与上面那根掩码同形
+    //    不同义: 掩码是"不许", 这根是"可以"; 两条一起 AND 进 `rel_go_vec`)。
+    // ⚠️ **为什么需要它** (端口契约见 §6.1 的 A10): "完成"**不蕴含**"已写回" ——
+    //    LSU 的 load 在 DA 级就报完成、miss 的数据要等 RB 回放才写。D6 原来那句
+    //    "本核退休条件直接要求 cmplt(已写回)" 对 LSU load 不成立, 于是 miss 的 load
+    //    的号可能在写回之前被顶掉、回池、重分配 ⇒ 迟到的写打在新主人身上 = 静默错数。
+    //    完整论证与 C910 对照见 RTU_preg.v 文件头与 rtu_plan_zh.md 的 D6 修正块。
+    // ⚠️ 位**不落**同样等于永久出池, 所以"每个被分配的号最终必须有写回事件"也是一条
+    //    跨组契约 (写在 §10): 核里没有生产者的段 (96 档的 p64..p95) 由 RTU_preg
+    //    按"已写回"处理。
+    input  wire [63:0] preg_wb_mask,
+
     // ===================== BEU -> RTU (D13) =====================
     // EX 级**真的发出**误预测重定向的那一拍 (mycpu.v 里就是 iu_ifu_chgflw_vld)。
     // 只用于置"未决快路重定向"锁存位 —— 把派遣冻结的窗口从"执行级重定向那拍"
@@ -738,6 +761,17 @@ module RTU (
     // =======================================================================
     // 物理寄存器状态 (五态表 + AMT)
     // =======================================================================
+    // ⚠️ 写回门 (2026-10-13): 把**第 5 个写口**并进掩码 —— CSR 指令的 rd 是 RTU
+    //    自己在退休拍写的 (`rtu_csr_rd_we` / `rtu_csr_rd_addr`, 由下面的 u_commit
+    //    驱动, 见 §6.2 A1), 它不在那 4 根外部写回总线上。不并进来的话这条指令的号
+    //    进 RELEASE 之后永远等不到门开: 池子只出不进, 而且是**静默**的
+    //    (账目自洽, 只是"剩几个可用"慢慢变小)。
+    //    ⚠️ 地址是 `RTU_PREG_W` 位: 96 档下可能 ≥64, 而掩码只有 64 位 ⇒ 那一段
+    //       (`<<` 溢出得 0) 恒不进掩码 —— 与 RTU_preg 那把"≥64 按已写回处理"的
+    //       口径一致, 不冲突。
+    wire [63:0] preg_wb_mask_i = preg_wb_mask
+                               | ({64{rtu_csr_rd_we}} & (64'd1 << rtu_csr_rd_addr));
+
     RTU_preg u_preg (
         .cpu_clk            (cpu_clk),
         .cpu_rst            (cpu_rst),
@@ -759,6 +793,7 @@ module RTU (
         .ret_dst_lreg1      (ret_dst_lreg1),
         .ret_dst_lreg2      (ret_dst_lreg2),
         .preg_dealloc_mask  (preg_dealloc_mask),
+        .preg_wb_mask       (preg_wb_mask_i),
         .flush_lvl          (flush_lvl),
         .rtu_preg_alloc0    (rtu_preg_alloc0),
         .rtu_preg_alloc1    (rtu_preg_alloc1),
@@ -776,6 +811,10 @@ module RTU (
     //    那拍进 RELEASE, 真正回池要等 `preg_dealloc_mask` 把这一位撤下来。所以
     //    `_vld = 1` 与"这一拍池子里多了这个号"不再等价 (差 ≥1 拍, 被掩码押住时更久)。
     //    没有消费者 (IDU 侧无对应口), 纯观察; 要判"真回池"请用 free_cnt 或状态表。
+    // ⚠️ 2026-10-13 (写回门): 这段距离**再拉长一截** —— RELEASE 还要等这个号的
+    //    生产者写回 (`preg_wb_mask`) 才回池。miss 在飞的 load 就是最坏情形: 它的号
+    //    可以押住一整个访存延迟。阶段 2 若拿这三个口去做自由池记账, 必须按"意图"
+    //    处理 (真正的"到手几个号"看 `rtu_preg_free_cnt`)。
     assign rtu_ren_free_vld0 = ret_free_vld[0];
     assign rtu_ren_free_vld1 = ret_free_vld[1];
     assign rtu_ren_free_vld2 = ret_free_vld[2];

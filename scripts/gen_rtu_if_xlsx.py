@@ -197,9 +197,19 @@ LSU = [
      "口 6 = **LSU 写**（store 完成）。D1.3 把这两路分开正是为它"),
     ("暂无对应", "LSU→(RTU)", "—", "—",
      "lsu_rtu_wb_pipe3_wb_preg_expand[95:0]", "96",
-     "C910 的一热 preg 展开；我们是**按 iid 寻址**的（表项只存回绕位）⇒ 不用"),
+     "⚠️ **2026-10-13 起不再是\"暂无对应\"** —— 见下面的写回门那一段。"
+     "（原来记的理由\"RTU 按 iid 寻址、不需要写哪个 preg\"只对**完成**口成立；"
+     "写回门要的正是\"按 preg\"的**寿命**信息，与 A9 那根掩码是同一类。）"),
     ("暂无对应", "LSU→(RTU)", "—", "—", "lsu_rtu_wb_pipe3_wb_preg_vld", "1",
-     "同上：RTU 不需要\"写哪个 preg\"，它按 iid 找表项"),
+     "同上：现在是写回门的一路源（`preg_wb_mask` 的 pipe3 项）"),
+    ("已有·需适配", "各写口→RTU", "preg_wb_mask[63:0]", "64",
+     "iu_idu_ex2_pipe{0,1,2}_wb_preg_{vld,expand} + "
+     "lsu_rtu_wb_pipe3_wb_preg_{vld,expand} + (CSR rd 内部并)", "64",
+     "**写回门（2026-10-13 新增）**：位 = 1 ⇒ 这个号的生产者已经写回, 准回池。"
+     "`RELEASE → FREE` 的第二道条件 (`rel_go_vec = rel_vec & ~mask_ext & wb_ok`)。"
+     "让 LSU 那两根从\"观察口\"变成真信号；IU 三组在集成层或进来；"
+     "**PRF 第 5 写口（CSR 的 rd, 由 RTU 自己在退休拍写）没有广播, 由 `RTU.v` 内部补** "
+     "—— 漏了它 CSR 指令的号会永久出池。端口契约见 rtu_plan_zh.md §6.1 的 A10"),
     ("已有·需适配", "LSU→RTU", "lsu_replay_vld / lsu_replay_iid[6:0]", "1 / 7",
      "lsu_rtu_wb_pipe4_flush  +  lsu_rtu_wb_pipe4_spec_fail", "1 + 1",
      "store 投机写失败 ⇒ 要重放。**RTU 侧已加**（2026-10-08）：两个输入口 + ROB 表项的 "

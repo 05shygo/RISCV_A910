@@ -41,10 +41,31 @@
 //   ./obj_unit_rtu/simv +SEED=12345 +NINSTR=400 [+TRACE]
 //   ./obj_unit_rtu/simv +MASKPCT=0      # 关掉否决掩码注入 (掩码恒 0 的口径)
 //   ./obj_unit_rtu/simv +MASKDIR        # 只走定向注入 (必打释放路径)
+//   ./obj_unit_rtu/simv +WBPCT=100      # 写回一律慢 1~6 拍 (写回门压到最狠)
 // +MASKPCT=n 是随机注入的百分比 (默认 30); +MASKDIR 是旗标 (不带值)。
 // ⚠️ `+MASKPCT=0` **不是**"与加第 5 态之前逐位一致" —— 关掉的只是**激励**, 释放
 //    仍然走 `RELEASE` 挂一拍才回池 (无条件写法的固有代价, 最长停 1 拍)。它是
 //    "没有引用者时的行为"口径, 不是"没有第 5 态"口径。
+//
+// 第 5 态的第二道闸门 —— 写回门 (2026-10-13):
+//   `RELEASE → FREE` 现在要**同时**满足两件事: 否决掩码撤下 **且 这个号的生产者已经写回**
+//   (`RTU_preg.v` 的 `rel_go_vec = rel_vec & ~mask_ext & wb_ok`)。挡的是同一个静默错的
+//   另一半: load miss 的完成报得早 (DA 级就报)、数据回来得晚 ⇒ 它的号可能在写回之前
+//   就被顶掉、回池、重分配, 迟到的写打在新主人身上。
+//   * 激励: 本台在每条"真写了 rd"的指令**退休那一拍**排一次写回 (gen_wb), 退休后
+//     d 拍发。**默认 `+WBPCT=100` = 每个生产者都慢 (d = 4~32)**: 这是把这道门压到
+//     最狠的配置, 也是本台打到它的唯一可靠配置 (混合比例下"释放那刻写回还没到"
+//     罕见 ⇒ n_wb_hold 恒 0 ⇒ 覆盖锚与变异 R11 一起空转)。
+//     `+WBPCT=n` 控制走慢路的分比; `n=0` = 写回即到 (快生产者对照: 门不挡人)。
+//     ⚠️ CSR 指令的 rd **不由本台发** —— 它由 RTU 自己在退休拍经 PRF 第 5 写口写,
+//        DUT 内部并进掩码。所以随机流里的 CSR 指令正好在反向校验那一项接没接。
+//     ⚠️ 本台只造"**真的会到的**晚写回" (每条真写 rd 的指令都会发一次)。整核里
+//        还有一类本台造不出的: 表项被冲刷杀掉的 load、`WAIT_MERGE` 泄漏的跨界 load
+//        —— 那类"写回永不到"由整核 difftest 守, 见 RTU_preg.v 头注与
+//        doc/a910_difftest_zh.md 的交接清单。
+//   * 判据: `ref_rel` 的电平清位与冲刷那两支都加了 `ref_wb_ok`; 收尾判"被写回门
+//     单独押住的拍数 > 0"(n_wb_hold) 与"冲刷拍仍被押 > 0"(n_flush_hold)。
+//     把门去掉的实现**账目照样自洽** (R11 就是这么设计的), 能钉住它的只有这两条。
 // ===========================================================================
 module tb_rtu_rob;
 
@@ -98,6 +119,7 @@ module tb_rtu_rob;
 
     logic        sq_rdy0, sq_rdy1, sq_rdy2, sq_stall;
     logic [63:0] dealloc_mask;                             // 第 5 态: 1 = 这个号还被 store 引用, 押住
+    logic [63:0] wb_mask;                                  // 写回门: 1 = 这个号这一拍写回 (本台合成的 4 类源)
     logic        int_pending;
     logic [31:0] csr_tvec, csr_mepc_i;
 
@@ -185,6 +207,7 @@ module tb_rtu_rob;
         .expt_st_cause(ex_st_cause), .expt_st_tval(ex_st_tval),
         .sq_rdy0(sq_rdy0), .sq_rdy1(sq_rdy1), .sq_rdy2(sq_rdy2), .sq_stall(sq_stall),
         .preg_dealloc_mask(dealloc_mask),
+        .preg_wb_mask(wb_mask),
         .csr_rdata(csr_rdata), .int_pending(int_pending),
         .preg_rdata0(prdata0), .preg_rdata1(prdata1), .preg_rdata2(prdata2),
         .rtu_csr_src_rdata(csrsrc_rdata),
@@ -289,8 +312,52 @@ module tb_rtu_rob;
     int   rel_age  [0:`RTU_NUM_PREG-1];     // 每个号在 RELEASE 连续停了几拍 (覆盖统计)
     integer n_mask_arm  = 0;                // 掩码注入次数 (置位一次算一次)
     integer n_veto      = 0;                // 真的押住一次释放的次数 (RELEASE 被激励到)
-    integer n_rel_free  = 0;                // RELEASE→FREE (掩码撤下) 的次数
+    integer n_rel_free  = 0;                // RELEASE→FREE (两道门都开) 的次数
     integer n_rel_max   = 0;                // 一个号在 RELEASE 停过的最长拍数
+
+    // ---- 写回门 (2026-10-13): 参考模型里"哪些号的生产者已经写回" ----
+    // 与 DUT 的 `wb_ok` 同义 (1 = 写回了, 准回池)。为什么这里能维护第二份派生量
+    // (而本台故意不维护"占用位图"): 它的两个转移本台都完全掌握 ——
+    //   置位: 本台自己发的那一拍写回激励 (gen_wb);
+    //   清零: 本台从门房**取走**这个号那一拍 (D_REQ 锁存 h_got 那一步, 新的一生开始)。
+    // ⚠️ DUT 是在"号装进门房"(sel_oh) 那拍清零, 比本台早 1~2 拍。两者之间的窗口里
+    //    号停在 WF_ALLOC —— 不在 RELEASE 集合里 (本台只比 RELEASE 集合), 而且
+    //    "号已经回到池子"本身就蕴含它的生产者写过了 ⇒ 那个窗口里不可能再有落在
+    //    同一个号上的写回事件。所以这 1~2 拍的错位在判据上不可观测。
+    logic [`RTU_NUM_PREG-1:0] ref_wb_ok = {`RTU_NUM_PREG{1'b1}};
+    // 每个号待发的写回拍号 (cycle 计数; -1 = 没有待发)。退休那一刻排, gen_wb 发。
+    int   wb_due [0:`RTU_NUM_PREG-1];
+    integer n_wb_hold   = 0;                // "掩码已撤、只等写回"的拍数 (新门的覆盖锚)
+    integer n_wb_late   = 0;                // 走了"慢写回"那条路的条数 (证明激励真的分了两支)
+    integer n_flush_hold= 0;                // 冲刷那拍"仍被门押住"的拍数 (钉冲刷口径)
+    integer n_sl        = 0;                // "同 lreg 连写"爆发的注入条数 (覆盖的前提)
+    integer sl_gap      = 32;               // 两份爆发之间的间隔 (计数驱动, 不抽随机)
+    integer sl_left     = 0;
+
+    // ---- 写回门的小 LFSR (2026-10-13) ----
+    // ⚠️ **声明必须在这里** (状态区, 早于 ref_retire 与 gen_plan): 本仓反复栽在
+    //    "先用后声明"上 —— 漏声明是静默错, 声明晚了是编译报错 (这次就是后者)。
+    // ⚠️ **专给写回的"晚几拍"用, 不许碰全局 `$urandom`**: 那是全局流, 多抽一次就把
+    //    后面所有随机激励 (指令类型 / lreg / PC / CSR 字段…) 整体挪位 ⇒ rev_check
+    //    固定种子下那几条**既有**的覆盖判据 (训练 FIFO / store 重放) 会莫名其妙变红
+    //    —— 它们与本改动毫无关系。(实测: 第一版在退休里抽 $urandom, seed=12345678 下
+    //     "训练 FIFO 没被激励到"当场变红, rev_check 的基线步骤直接拒绝往下跑。)
+    logic [15:0] wb_lfsr = 16'hBEEF;
+    function automatic logic [15:0] wb_lfsr_next;
+        begin
+            wb_lfsr      = {wb_lfsr[14:0], wb_lfsr[15] ^ wb_lfsr[13]
+                                          ^ wb_lfsr[12] ^ wb_lfsr[10]};
+            wb_lfsr_next = wb_lfsr;
+        end
+    endfunction
+    // ⚠️ 默认 **100** = "每个生产者都慢" (4~32 拍才写回)。
+    //    为什么不留一档"混合"当默认: 本台的激励结构里"释放那一刻写回还没到"本身
+    //    就罕见 (派遣跑在退休前面 ⇒ 释放者往往比生产者晚很多拍才退), 实测把慢路
+    //    比例降到 70%、延迟缩到 2~15 拍时, 一个种子跑下来 `n_wb_hold` **恒 0**
+    //    —— 覆盖锚与变异 R11 一起空转, 而"没覆盖到"与"测过且通过"在报告里长得一样。
+    //    全慢是把这道门压到最狠的配置 (整核里对应"满屏都是 miss 的 load"),
+    //    它同时把快路的对照留在 `+WBPCT=0` 那一档 (那时收尾不查这条覆盖)。
+    integer wb_pct      = 100;              // 随机延迟的百分比 (+WBPCT=n)
     // ⚠️ 必须是 int 数组, **不能**写成 `logic [63:0] mask_ttl` —— 那是一位一项的打包向量,
     //    `mask_ttl[q] = 3 + urandom%6` 会被截成 1 位 (3/5/7→1, 4/6/8→0), 而 0 永远
     //    不满足 `> 0` 的倒计时条件 ⇒ 那个位**永远撤不下来**, 释放被无限押住。
@@ -429,6 +496,7 @@ module tb_rtu_rob;
     logic [6:0]  x_dstp_q [0:2];
     logic        x_flvl_q = 1'b0;
     logic [63:0] x_mask_q = 64'd0;      // 2026-10-08: 边沿那拍的否决掩码 (第 5 态)
+    logic [63:0] x_wbmask_q = 64'd0;    // 2026-10-13: 边沿那拍的写回掩码 (写回门)
     logic [6:0]  x_oldp_q [0:2];
     logic [2:0]  ret_fv_q = 3'd0;
     logic [20:0] ret_fp_q = 21'd0;
@@ -531,6 +599,12 @@ module tb_rtu_rob;
         // 2026-10-08 (第 5 态): 否决掩码也要锁存 —— 状态表那一支判的就是"边沿这一拍
         // 掩码是什么", 诊断与参考模型都必须用 DUT 真正采到的那一帧, 不能用实时值。
         x_mask_q    <= dealloc_mask;
+        // 2026-10-13 (写回门): 写回掩码**同样要锁存**。⚠️ 这里是本台踩过的第二个
+        // "提前一拍"坑: 在 `gen_wb` 里驱动 wb_mask 的那一拍就置 `ref_wb_ok`, 而 DUT
+        // 要**下一个 posedge** 才把它锁进 `wb_ok` ⇒ 模型比 RTL 早一拍知道"写回了",
+        // 于是模型先放行、RTL 还押着 → 报 "RELEASE 集合不符" (WBPCT=100 时实测)。
+        // 照掩码那根的口径办: 边沿锁存, 参考模型用 DUT 真正采到的那一帧。
+        x_wbmask_q  <= wb_mask;
     end
     // 五态表在**冲沿前**的快照。"释放的编号不该是 FREE 态"这条不变量问的是
     // "释放发生在哪个状态上", 而释放本身就在同一个 posedge 把那个编号写成 FREE ——
@@ -1058,9 +1132,11 @@ module tb_rtu_rob;
                     if (st_snap_q[3*q +: 3] === `RTU_P_RELEASE) frel = frel + 1;
                     if ((cycle > 3) &&
                         ((st_snap_q[3*q +: 3] === `RTU_P_RELEASE) !== ref_rel[q]))
-                        err($sformatf("RELEASE 集合不符 (边沿前快照): p%0d 快照=%0d 模型=%b | 边沿那拍 mask=%b",
+                        err($sformatf("RELEASE 集合不符 (边沿前快照): p%0d 快照=%0d 模型=%b | 边沿那拍 mask=%b RTL_wb_ok=%b 模型wb_ok=%b flvl=%b wb_clr=%b",
                                       q, st_snap_q[3*q +: 3], ref_rel[q],
-                                      (q < 64) ? x_mask_q[q] : 1'b0));
+                                      (q < 64) ? x_mask_q[q] : 1'b0,
+                                      dut.u_preg.wb_ok[q], ref_wb_ok[q],
+                                      x_flvl_q, dut.u_preg.wb_clr_vec[q]));
                 end
                 if (dut.u_preg.free_cnt !== fcnt[6:0]) begin
                     string chg;
@@ -1248,15 +1324,23 @@ module tb_rtu_rob;
         begin
             vldv = ret_vld_q;                    // 用 posedge 锁存的那一份 (与 DUT 同刻)
 
-            // ---- 第 5 态 (2026-10-08): 这一步必须排在"本拍新释放的号嵌进去"**之前** ----
-            // 电平清位: 掩码没握住的 → 回 FREE。用**边沿同帧**的 x_mask_q (DUT 的
-            // 状态机那一支看的也是这一帧)。顺序反了就会把当拍新挂的号当拍清掉。
+            // ---- 第 5 态 (2026-10-08) + 写回门 (2026-10-13): 这一步必须排在
+            //      "本拍新释放的号嵌进去"**之前** ----
+            // 电平清位: **两道门都开**的 → 回 FREE (掩码没握住 且 生产者写回了)。
+            // 用**边沿同帧**的 x_mask_q / ref_wb_ok (DUT 的状态机那一支看的也是这一帧)。
+            // 顺序反了就会把当拍新挂的号当拍清掉。
+            // ⚠️ `n_wb_hold` 数的是"掩码已经撤了、只有写回还在挡"的拍数 —— 这是新门的
+            //    覆盖锚: 它恒 0 就说明这门一次都没被激励到 (变异 R11 靠它抓)。
             begin
-                logic [`RTU_NUM_PREG-1:0] rel_before;
+                logic [`RTU_NUM_PREG-1:0] rel_before, wb_only;
                 rel_before = ref_rel;
-                for (int q = 0; q < `RTU_NUM_PREG; q = q + 1)
-                    if ((q >= 64) || !x_mask_q[q]) ref_rel[q] = 1'b0;
+                wb_only    = {`RTU_NUM_PREG{1'b0}};
+                for (int q = 0; q < `RTU_NUM_PREG; q = q + 1) begin
+                    if (((q >= 64) || !x_mask_q[q]) && ref_wb_ok[q]) ref_rel[q] = 1'b0;
+                    else if (rel_before[q] && ((q >= 64) || !x_mask_q[q])) wb_only[q] = 1'b1;
+                end
                 n_rel_free = n_rel_free + $countones(rel_before & ~ref_rel);
+                n_wb_hold  = n_wb_hold  + $countones(wb_only);
             end
             // ⚠️ 这里连"陷阱是哪一类"都必须用锁存的那一份: `trap_cause` 是**组合**输出,
             //    没有 trap_hit 时它恒等于 `RTU_CAUSE_MTIP`(默认值)。早先这里读实时值,
@@ -1281,6 +1365,34 @@ module tb_rtu_rob;
                         i = n_ret;
                         if (x_rfwe[i] && (x_lreg[i] != 5'd0))
                             ref_amt[x_lreg[i]] = x_dpr[i];   // 模型只需要维护 AMT
+                        // ---- 写回门: 安排这条的写回 ----
+                        // 真写了 rd 的指令最终都要写回, 本台只决定它**晚几拍**:
+                        // d=0 = 紧跟退休那拍; d=1..6 = "这条是慢的" (整核里对应
+                        // load miss: 完成报得早、数据回来得晚 —— 正是这道门要挡的场景)。
+                        // ⚠️ CSR 指令的 rd **不在这里发**: 它由 RTU 自己在退休拍经 PRF
+                        //    第 5 写口写 (DUT 内部并进掩码)。拿它当激励会双发, 反而
+                        //    把"RTU 漏了 CSR 那一项"这个真问题盖住。
+                        // ⚠️ 号 ≥ 64 不发 (掩码是 64 位; DUT 那边这一段恒"已写回")。
+                        if (x_rfwe[i] && (x_lreg[i] != 5'd0)
+                            && !x_flg[i][`RTU_FLG_CSR] && (x_dpr[i] < 7'd64)) begin
+                            // ⚠️ 慢路的延迟下限 = 16 拍, **必须大于掩码 TTL 的上限
+                            //    (3~8 拍)**: 这样"号被释放 → 掩码撤下 → 写回才到"这个
+                            //    覆盖窗口是**由构造保证**的, 不靠种子运气。
+                            //    (踩过: 延迟 2~15 / 40% 时, 某些种子跑下来 n_wb_hold
+                            //     恒 0 —— 覆盖锚与变异 R11 一起空转, 而"没覆盖到"与
+                            //     "测过且通过"在报告里长得一样。)
+                            // ⚠️ **不许用 `$urandom`** —— 那是全局流, 抽一次就把后面
+                            //    所有随机激励 (指令类型/lreg/PC/CSR…) 挪位, 于是
+                            //    rev_check 固定种子下那些**既有的**覆盖判据 (训练 FIFO /
+                            //    store 重放) 会莫名其妙变红。用自己的小 LFSR。
+                            wb_lfsr = wb_lfsr_next();
+                            if ((wb_lfsr[7:0] % 100) < wb_pct) begin
+                                wb_due[x_dpr[i]] = cycle + 16 + (wb_lfsr_next()[7:0] % 17);
+                                n_wb_late = n_wb_late + 1;
+                            end else begin
+                                wb_due[x_dpr[i]] = cycle;
+                            end
+                        end
                         // 第 5 态: 这条真要释放 old_preg 吗 (与 check_cycle 的 exp_free_k 同式)
                         if (x_rfwe[i] && (x_lreg[i] != 5'd0) && (x_opr[i] != x_dpr[i]))
                             ref_rel[x_opr[i]] = 1'b1;
@@ -1294,16 +1406,50 @@ module tb_rtu_rob;
 
             // 提交点副作用也要用锁存的那一份 (实时值描述的是**下一个**事件, 会写错地址)
             if (ret_csrwe_q) csr_file[ret_csra_q] = ret_csrw_q;
-            if (ret_csrrd_q) pf[ret_csrra_q]      = ret_csrrw_q;
+            if (ret_csrrd_q) begin
+                pf[ret_csrra_q] = ret_csrrw_q;
+                // ---- 写回门: CSR 指令的 rd 是 DUT 用**第 5 写口**在退休拍自己写的 ----
+                // 本台**不**替它发写回激励 (那一路在 RTU.v 内部并进掩码), 但模型必须
+                // 同步把这一位置起来 —— 否则 DUT 放行、模型押住, 每条 CSR 指令都会
+                // 报一次"RELEASE 集合不符", 而红的原因被写成 DUT 的错。
+                // 补上它之后, 这条判据才真的变成"反向校验第 5 写口接没接"。
+                // ⚠️ 号 ≥ 64 不置 (掩码只有 64 位, DUT 那段恒"已写回")。
+                if (ret_csrra_q < 7'd64) ref_wb_ok[ret_csrra_q] = 1'b1;
+            end
 
-            // ---- 第 5 态: 冲刷排在最后 = 优先级最高 (状态表那一支就是最高优先) ----
-            if (x_flvl_q) ref_rel = {`RTU_NUM_PREG{1'b0}};
+            // ---- 第 5 态 + 写回门: 冲刷排在最后 = 优先级最高 (状态表那一支就是最高优先) ----
+            // ⚠️ **冲刷不能替写回门放行** (2026-10-13)。掩码那条"冲刷一律绕过"的理由
+            //    (SDIQ 表项与掩码同拍清、在飞指令全比重定向那条年轻) 对写回门**不成立**:
+            //    写回门等的是**已退休**的那条指令的写回, 它比重定向那条**老** ——
+            //    LSU 那边冲刷只清 `!rb_entry_cmit` 的 RB 表项, 已提交(miss 在飞的 load)
+            //    的写回一定会来。所以这里与 DUT 同式: 只有"两道门都开"的才归 FREE。
+            if (x_flvl_q) begin
+                logic fl_hold_any;
+                fl_hold_any = 1'b0;
+                for (int q = 0; q < `RTU_NUM_PREG; q = q + 1) begin
+                    if (((q >= 64) || !x_mask_q[q]) && ref_wb_ok[q]) ref_rel[q] = 1'b0;
+                    // 覆盖锚: 冲刷之后还有号**只因为写回没到**而留在 RELEASE。
+                    // 钉的是冲刷那支有没有按写回门留人 —— 没有它, 一个"冲刷照旧全放
+                    // FREE"的实现可能因为"押住的号恰好没撞上冲刷"而全绿。
+                    else if (ref_rel[q] && ((q >= 64) || !x_mask_q[q])) fl_hold_any = 1'b1;
+                end
+                if (fl_hold_any) n_flush_hold = n_flush_hold + 1;
+            end
             // 覆盖统计: 每个号在 RELEASE 连续停了几拍 (最长停留用来证明"押住"是持续行为,
             // 而不是只擦过一拍)
             for (int q = 0; q < `RTU_NUM_PREG; q = q + 1) begin
                 rel_age[q] = ref_rel[q] ? (rel_age[q] + 1) : 0;
                 if (rel_age[q] > n_rel_max) n_rel_max = rel_age[q];
             end
+
+            // ---- 写回门: **最后**才把本边沿锁存进来的写回事件记进模型 ----
+            // ⚠️ 位置很讲究, 必须排在**这一帧所有用到写回状态的判定之后** —— 电平清位
+            //    (**下一帧**才用它) 与冲刷留人 (**本帧**就用它) 两处。
+            //    DUT 那边 `wb_ok` 是寄存器: 本边沿到达的写回要到**下一个**边沿才进
+            //    `rel_go_vec`/`rel_keep_vec`。放在前面会让模型比 RTL 早一拍放行 ——
+            //    实测症状: 冲刷那拍 DUT 把号留在 RELEASE (`rel_keep_vec` 用的是边沿前的
+            //    `wb_ok`), 模型却把它放了 ⇒ 报 "RELEASE 集合不符 (p3 快照=4 模型=0)"。
+            ref_wb_ok = ref_wb_ok | x_wbmask_q;
         end
     endtask
 
@@ -1392,6 +1538,25 @@ module tb_rtu_rob;
                     pl_ca[k]=0;  pl_cop[k]=1;  pl_cimm[k]=0; pl_sqi[k]=0;
                 end
             end
+            // ---------------------------------------------------------------------
+            // 自动撒"同一条 lreg 连写"的爆发 (2026-10-13, 写回门的覆盖保证)
+            //
+            // 造的是这个模式 (整核里就是 `addi x1,a,b; addi x1,c,d` 这种相邻两条写
+            // 同一条寄存器): 车道 0 写 lreg L、车道 1 也写 lreg L ⇒ 车道 1 的
+            // `old_preg` 正好是车道 0 的 dst ⇒ **车道 0 一退休, 它的号很快就被释放**,
+            // 而它的写回被我们压到 16~32 拍之后 ⇒ "释放早于写回"必然出现。
+            // 与训练 FIFO 那条 `mbr_*` 爆发同一个道理: 纯随机激励下这种相邻同 lreg
+            // 的概率不足以保证覆盖, 而"没覆盖到"与"测过且通过"在报告里长得一样。
+            // ⚠️ 只动 lreg, 不动别的字段; 也不抽 $urandom (计数驱动, 见上面的告警)。
+            if ((sl_left == 0) && (sl_gap <= 0)) begin sl_left = 3; sl_gap = 32; end
+            if (sl_left > 0) begin
+                if (pl_rfwe[1] && (pl_lreg[0] != 5'd0)) pl_lreg[1] = pl_lreg[0];
+                sl_left = sl_left - 1;
+                n_sl    = n_sl + 1;
+            end else begin
+                sl_gap = sl_gap - 1;
+            end
+
             // §6.1 A7: **一拍最多一条 CSR**。CSR 单槽 (RTU_csr_slot) 只装得下一条,
             // 组里出现第二条时它既写不进槽、退休时又读到别人的字段 —— 契约只能
             // 把这条约束放在重命名级 (它看得见整组), 所以这里按契约把年轻的那条降级。
@@ -1538,6 +1703,17 @@ module tb_rtu_rob;
                 for (int k = 0; k < 3; k = k + 1) begin
                     if (acc_q[k]) nd = nd + 1;
                     // (编号的占用/归还由 DUT 自己的状态表负责, 这里不做镜像)
+                    // ---- 写回门: **派遣认领那一拍再清一次** ----
+                    // 与 DUT 的 `is_wf & hit_disp` 同义 (DUT 有两个清零点: 号装进门房
+                    // 的 `sel_oh` + 派遣认领的 `hit_disp`)。为什么必须有这一个: 号在
+                    // 门房里等派遣的窗口**无界** (IR→IS→派发被 IQ/ROB 满卡住任意多拍),
+                    // 这段窗口里落在这个号上的写回**不属于新主人** (新主人还没被派遣,
+                    // 不可能写回) —— 那是上一个主人迟到的/重复的写回 (整核里真会发生:
+                    // load 被 `ld_da` 重启时可能重复写一次 PRF)。
+                    // 少了这一个: 模型把那份陈旧事件当真 ⇒ 提前放行 ⇒ 报
+                    // "RELEASE 集合不符" (实测: 加上同 lreg 连写爆发后第一次跑就命中)。
+                    if (acc_q[k] && (cp_lreg[k] != 5'd0) && (cp_got[k] < 7'd64))
+                        ref_wb_ok[cp_got[k]] = 1'b0;
                 end
                 dispatch_record(nd);
                 commit_pending = 1'b0;
@@ -1579,6 +1755,12 @@ module tb_rtu_rob;
                             h_got[1] = s_got[1];
                             h_got[2] = s_got[2];
                             h_gotv   = s_gotv;
+                            // ---- 写回门: 号被取走 = 新的一生开始 ⇒ 它的"已写回"位清零 ----
+                            // (与 DUT 的 `wb_ok` 在"号装进门房"那拍清零同义; 差 1~2 拍
+                            //  在判据上不可观测 —— 理由见 ref_wb_ok 声明处。)
+                            // ⚠️ 号 ≥ 64 不清 (掩码只有 64 位, DUT 那段恒"已写回")。
+                            for (int k = 0; k < 3; k = k + 1)
+                                if (s_gotv[k] && (s_got[k] < 7'd64)) ref_wb_ok[s_got[k]] = 1'b0;
                             // (c) **现在**才算 old_preg: 要 (i) 上一份计划的账已经结完
                             //     (②在 disp_step 开头, 本分支之前), (ii) 本份计划的 dst_preg
                             //     刚锁存好 —— 两者只有在这一拍同时成立。放在 gen_plan 里算
@@ -1933,6 +2115,37 @@ module tb_rtu_rob;
     logic        mask_dir = 1'b0;
     integer      mask_pct = 30;
 
+    // =======================================================================
+    // 写回激励 (2026-10-13, 池子的第二道闸门)
+    //
+    // (小 LFSR `wb_lfsr` / `wb_lfsr_next` 的声明在**状态区**, 因为 ref_retire 先用
+    //  它 —— 本仓"先用后声明"的前科, 见那里。) 这
+    //   一根**不是"注入", 是"生产者把活干完"**: 每条真写了 rd 的指令最终都会写回,
+    //
+    // 这一根**不是"注入", 是"生产者把活干完"**: 每条真写了 rd 的指令最终都会写回,
+    // 本台只决定它**晚几拍** (退休那一拍在 ref_retire 里排, 这里到点发)。
+    //   * d = 0        → 紧跟退休那拍 (快生产者的口径);
+    //   * d = 1..6     → "这条慢" —— 整核里就是 load miss: 完成报得早、数据回来得晚。
+    //                    `+WBPCT=n` 控制走慢路的分比 (默认 40%)。
+    // ⚠️ **不能关**: 这条不是可选的注入 (对比 dealloc_mask 的 +MASKPCT=0)。真核里写回
+    //    一定会发生; 关掉它就等于"所有号都永不写回" ⇒ 池子只出不进、激励停摆。
+    //    +MASKPCT=0 那种"关掉激励"的用法在本门下仍然成立 —— 只要 wb 照发。
+    // =======================================================================
+    task automatic gen_wb;
+        begin
+            wb_mask = 64'd0;
+            for (int q = 0; q < 64; q = q + 1) begin
+                if ((wb_due[q] >= 0) && (wb_due[q] <= cycle)) begin
+                    wb_mask[q] = 1'b1;
+                    wb_due[q]  = -1;
+                    // ⚠️ 这里**不**置 `ref_wb_ok` —— DUT 要下一个 posedge 才把它锁进
+                    //    `wb_ok`。模型在 `ref_retire` 里用边沿锁存的 `x_wbmask_q` 置位,
+                    //    与掩码那根同一个口径 (踩过: 提前一拍 ⇒ 假报 RELEASE 集合不符)。
+                end
+            end
+        end
+    endtask
+
     task automatic gen_mask;
         int i, q, cnt, pick;
         begin
@@ -2073,6 +2286,9 @@ module tb_rtu_rob;
             gen_complete();
             gen_replay();
             gen_mask();         // 第 5 态: 合成 IDU 的释放否决掩码
+            gen_wb();           // 写回门: 合成"生产者写回"那几根总线
+
+
             gen_resolve();
             gen_expt();
             // 中断请求按**电平**建模: 置起来之后一直保持到被取走 —— 真机的 mip.MTIP
@@ -2129,6 +2345,12 @@ module tb_rtu_rob;
         void'($value$plusargs("MASKPCT=%d", mask_pct));
         if ($test$plusargs("MASKDIR")) mask_dir = 1'b1;
         if (mask_pct <= 0) mask_en = 1'b0;
+        // 写回门: 激励常开 (它就是"生产者写回"), 只有**延迟分比**是可调的。
+        //   +WBPCT=0  ⇒ 每条都当拍写回 (快生产者口径: 这道门几乎不挡人);
+        //   +WBPCT=100⇒ 每条都慢 1~6 拍 (门被压到最狠, 覆盖最浓)。
+        wb_mask = 64'd0;
+        void'($value$plusargs("WBPCT=%d", wb_pct));
+        for (int q = 0; q < `RTU_NUM_PREG; q = q + 1) wb_due[q] = -1;
         mbr_gap = 48; mbr_auto = 1;
         if ($test$plusargs("MULTIBR")) mbr_auto = 0;   // 定向模式: 关掉自动爆发
         for (int k = 0; k < 4; k = k + 1) tq_idx[k] = 0;
@@ -2207,6 +2429,25 @@ module tb_rtu_rob;
             if (n_rel_max < 2)
                 err($sformatf("RELEASE 最长只停了 %0d 拍 —— 押住不像持续行为, 检查是否当拍就回池了",
                               n_rel_max));
+        end
+
+        // 写回门 (2026-10-13) 的覆盖判据。
+        // ⚠️ 与上面那组同理: 把 `rel_go_vec` 里的 `& wb_ok` 拿掉的实现**账目照样自洽**
+        //    (计数与 popcount 自检看不出), 能钉住它的只有"掩码已经撤了、号却因为没写回
+        //    而不回池"这件事真的发生过。变异 R11 就锚在这条上。
+        $display("  写回门: 慢写回分比 %0d%% / 慢写回 %0d 条 / 同lreg连写注入 %0d 条 / '掩码已撤、只等写回'押住 %0d 拍 / 冲刷拍仍被押 %0d",
+                 wb_pct, n_wb_late, n_sl, n_wb_hold, n_flush_hold);
+        if (wb_pct <= 0)
+            $display("    (本次 +WBPCT=0: 每条都当拍写回 ⇒ 这道门不挡人, 测的是'不挡'那一半)");
+        else begin
+            if (n_wb_late == 0)
+                err("没有一条走慢写回 (激励分支出错: wb_pct>0 却全走了当拍)");
+            if (n_sl == 0)
+                err("'同 lreg 连写'的爆发一次都没撒出去 (激励生成器坏了) —— 这条是覆盖的前提");
+            if (n_wb_hold == 0)
+                err("写回门一次都没押住释放 (写回总在掩码撤下之前就到了): 换种子或调 +WBPCT");
+            if (n_flush_hold == 0)
+                err("冲刷那拍一次都没有'仍被写回门押住'的号 —— 冲刷留人的那支没被激励到");
         end
 
         if (errors == 0) begin

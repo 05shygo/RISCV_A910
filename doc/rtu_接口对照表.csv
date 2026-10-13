@@ -48,8 +48,9 @@
 ## 完成回报（LSU → RTU）：走 §6.1 的完成口 5/6,
 已有·直接接,LSU→RTU,cmplt_vld5 / cmplt_iid5[6:0],1 / 7,lsu_rtu_wb_pipe3_cmplt / _iid,1 / 7,口 5 = **LSU 读**（load 完成）。位宽/相位都对齐
 已有·直接接,LSU→RTU,cmplt_vld6 / cmplt_iid6[6:0],1 / 7,lsu_rtu_wb_pipe4_cmplt / _iid,1 / 7,口 6 = **LSU 写**（store 完成）。D1.3 把这两路分开正是为它
-暂无对应,LSU→(RTU),—,—,lsu_rtu_wb_pipe3_wb_preg_expand[95:0],96,C910 的一热 preg 展开；我们是**按 iid 寻址**的（表项只存回绕位）⇒ 不用
-暂无对应,LSU→(RTU),—,—,lsu_rtu_wb_pipe3_wb_preg_vld,1,"同上：RTU 不需要""写哪个 preg""，它按 iid 找表项"
+暂无对应,LSU→(RTU),—,—,lsu_rtu_wb_pipe3_wb_preg_expand[95:0],96,"⚠️ **2026-10-13 起不再是""暂无对应""** —— 见下面的写回门那一段。（原来记的理由""RTU 按 iid 寻址、不需要写哪个 preg""只对**完成**口成立；写回门要的正是""按 preg""的**寿命**信息，与 A9 那根掩码是同一类。）"
+暂无对应,LSU→(RTU),—,—,lsu_rtu_wb_pipe3_wb_preg_vld,1,同上：现在是写回门的一路源（`preg_wb_mask` 的 pipe3 项）
+已有·需适配,各写口→RTU,preg_wb_mask[63:0],64,"iu_idu_ex2_pipe{0,1,2}_wb_preg_{vld,expand} + lsu_rtu_wb_pipe3_wb_preg_{vld,expand} + (CSR rd 内部并)",64,"**写回门（2026-10-13 新增）**：位 = 1 ⇒ 这个号的生产者已经写回, 准回池。`RELEASE → FREE` 的第二道条件 (`rel_go_vec = rel_vec & ~mask_ext & wb_ok`)。让 LSU 那两根从""观察口""变成真信号；IU 三组在集成层或进来；**PRF 第 5 写口（CSR 的 rd, 由 RTU 自己在退休拍写）没有广播, 由 `RTU.v` 内部补** —— 漏了它 CSR 指令的号会永久出池。端口契约见 rtu_plan_zh.md §6.1 的 A10"
 已有·需适配,LSU→RTU,lsu_replay_vld / lsu_replay_iid[6:0],1 / 7,lsu_rtu_wb_pipe4_flush  +  lsu_rtu_wb_pipe4_spec_fail,1 + 1,store 投机写失败 ⇒ 要重放。**RTU 侧已加**（2026-10-08）：两个输入口 + ROB 表项的 `RTU_E_REPLAY` 位 + 第 5 类冲刷源 `RTU_FS_REPLAY`。适配层把 LSU 那两根**或**起来（对我们这条路径是同一个动作），iid 原样送。⚠️ 它跟完成**同拍**报 ⇒ RTU 里有一条同拍命中路径（否则那条 store 会在同一个边沿就退休、把内存写提交掉）
 ## 访存异常（LSU → RTU）—— 2026-10-08 新增；2026-10-10 改成三路平行,
 已有·需适配,LSU→RTU,expt_ld_vld / expt_ld_iid[6:0] / expt_ld_cause[4:0] / expt_ld_tval[31:0],1 / 7 / 5 / 32,lsu_rtu_wb_pipe3_expt_vld / _expt_addr[31:0],1 / 32,"**load 侧异常**（新加的两根）。语义 = **地址非对齐**：`ld_ag_expt = !ld_ag_align`（`lsu_ld_ag.sv:286-297`，按 `{inst_size, addr[2:0]}` 判：BYTE 任意 / HALF 需 `addr[0]=0` / WORD 需 `addr[1:0]=00`），随流水 AG→DC→DA→WB 打到底，**与 `lsu_rtu_wb_pipe3_cmplt` 同拍、同 iid**。⇒ 映射：`expt_ld_iid` = 同拍 `lsu_rtu_wb_pipe3_iid`（**原样，不许重编码**）；`expt_ld_cause` = **5'd4**（`EXC_LOAD_MISALIGNED`，defines.vh:301）；`expt_ld_tval` = `_expt_addr`（= `ld_da_addr`）"
@@ -75,7 +76,7 @@
 分类口径,含义,RTU↔IDU,RTU↔LSU
 "（""改哪一侧""写在最后一列开头；分类列只用四种规范值，便于筛选/计数）",,,
 已有·直接接,两侧端口都在，位宽/相位对得上 ⇒ 接线即可,10,5
-已有·需适配,两侧都在，但位宽/布局/极性/语义有差 ⇒ 适配层解决,4,3
+已有·需适配,两侧都在，但位宽/布局/极性/语义有差 ⇒ 适配层解决,4,4
 需新增,有一侧压根没有这个口 ⇒ 必须改 RTL（改哪一侧写在说明列开头）。⚠️ 这里计的是**条目/端口组**数，不是引脚数（派遣记录那 13 条 = 39 根引脚）,15,2
 暂无对应,一侧有、另一侧不需要（或我们的实现不走这条路）⇒ 记录，不接线,3,5
 约束（非端口）,写 RTL / 接线时要满足的硬约定，不是一根线,4,6
