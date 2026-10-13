@@ -71,6 +71,9 @@ module RTU_subsys (
   output wire dbg_commit_vld0                       ,
   output wire dbg_commit_vld1                       ,
   output wire dbg_commit_vld2                       ,
+  output wire [6:0] dbg_commit_iid0                 ,
+  output wire [6:0] dbg_commit_iid1                 ,
+  output wire [6:0] dbg_commit_iid2                 ,
   input  wire forever_cpuclk                        ,
   output wire [1:0] idu_accept_num                        ,
   output wire [5:0] idu_aiq_dst_preg                      ,
@@ -167,6 +170,7 @@ module RTU_subsys (
   output wire lsu_biu_w_vict_vld                    ,
   input  wire [7:0] lsu_idu_lsiq_pop_entry                ,
   output wire [5:0] lsu_idu_wb_pipe3_wb_preg              ,
+  output wire [6:0] lsu_idu_wb_pipe3_wb_preg_iid          ,
   input  wire [5:0] lsu_idu_wb_pipe3_wb_preg_dupx         ,
   output wire [63:0] lsu_rtu_wb_pipe3_wb_preg_expand       ,
   output wire lsu_rtu_wb_pipe3_wb_preg_vld          ,
@@ -607,6 +611,9 @@ module RTU_subsys (
     .dbg_commit_value0                  (dbg_commit_value0                 ),
     .dbg_commit_value1                  (dbg_commit_value1                 ),
     .dbg_commit_value2                  (dbg_commit_value2                 ),
+    .dbg_commit_iid0                    (dbg_commit_iid0                   ),
+    .dbg_commit_iid1                    (dbg_commit_iid1                   ),
+    .dbg_commit_iid2                    (dbg_commit_iid2                   ),
     .rtu_flush_busy                     (rtu_flush_busy                    )
     );
 
@@ -893,6 +900,7 @@ module RTU_subsys (
     .lsu_rtu_wb_pipe3_wb_preg_expand    (lsu_rtu_wb_pipe3_wb_preg_expand   ),
     .lsu_rtu_wb_pipe3_wb_preg_vld       (lsu_rtu_wb_pipe3_wb_preg_vld      ),
     .lsu_idu_wb_pipe3_wb_preg           (lsu_idu_wb_pipe3_wb_preg          ),
+    .lsu_idu_wb_pipe3_wb_preg_iid       (lsu_idu_wb_pipe3_wb_preg_iid      ),
     .lsu_idu_wb_pipe3_wb_preg_vld_dupx  (lsu_idu_wb_pipe3_wb_preg_vld_dupx ),
     .lsu_idu_wb_pipe3_wb_preg_data      (lsu_idu_wb_pipe3_wb_preg_data     ),
     .lsu_idu_wb_pipe3_wb_preg_expand    (lsu_idu_wb_pipe3_wb_preg_expand   ),

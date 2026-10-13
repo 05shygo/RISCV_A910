@@ -115,7 +115,8 @@ module lsu_ld_da #(
     output logic [LSIQ_ENTRY-1:0]         ld_da_idu_secd,
     output logic                          ld_da_vb_borrow_vb,
     output logic [255:0]                  ld_da_data256,
-    input  logic                          ld_dc_settle_way
+    input  logic                          ld_dc_settle_way,
+    output logic                          ld_da_hit_idx_discard_req
 );
 
 logic                          ld_da_cb_merge_en;
@@ -154,7 +155,7 @@ logic                          ld_da_rb_create_vld_unmask;
 logic                          ld_da_discard_from_rb_req;
 logic                          ld_da_rb_merge_vld_unmask;
 logic                          ld_da_discard_from_lfb_req;
-logic                          ld_da_hit_idx_discard_req;
+//logic                          ld_da_hit_idx_discard_req;
 
 logic                          ld_da_inst_vld;
 logic                          ld_da_borrow_vld;
@@ -512,7 +513,7 @@ assign ld_da_cb_data_vld    = ld_da_inst_vld
                               &&  !ld_da_expt; 
 assign ld_da_cb_data[127:0]  = ld_da_dcache_pass_data128_am;
 
-assign ld_da_wb_cmplt_req = ld_da_inst_vld && !ld_da_secd;
+assign ld_da_wb_cmplt_req = ld_da_inst_vld && !ld_da_restart_vld & !ld_da_boundary_first;
 assign ld_da_wb_expt_vld = ld_da_expt;
 assign ld_da_wb_expt_addr[31:0] = ld_da_addr[31:0];
 assign ld_da_wb_data_req  = ld_da_wb_cmplt_req & ld_da_data_vld;

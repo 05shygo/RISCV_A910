@@ -218,6 +218,7 @@ module lsu_top #(
   output logic [31:0]          lsu_idu_wb_pipe3_wb_preg_data,
   output logic [63:0]          lsu_idu_wb_pipe3_wb_preg_expand,
   output logic                 lsu_idu_wb_pipe3_wb_preg_vld,
+  output logic [6:0]           lsu_idu_wb_pipe3_wb_preg_iid,
 
   // LSU to RTU - Writeback pipe4
   output logic                 lsu_rtu_wb_pipe4_cmplt,
@@ -385,8 +386,8 @@ logic                        wmb_ce_update_dcache_way;
 logic                        st_da_dcache_valid;
 logic                        rb_wmb_ce_hit_idx;
 logic                        dcache_arb_lfb_ld_grnt;
-logic                        ld_da_lfb_set_wakeup_queue;
-logic [LSIQ_ENTRY-1:0]       ld_da_lfb_wakeup_queue_next;
+//logic                        ld_da_lfb_set_wakeup_queue;
+//logic [LSIQ_ENTRY-1:0]       ld_da_lfb_wakeup_queue_next;
 logic [31:0]                 wmb_write_req_addr;
 logic [7:0]                  lfb_dcache_arb_ld_data_gateclk_en;
 logic [127:0]                lfb_dcache_arb_ld_data_high_din;
@@ -825,7 +826,8 @@ logic [31:0] lsu_rtu_async_expt_addr;
 logic lsu_rtu_async_expt_vld;
 logic ld_da_wb_expt_vld;
 logic [31:0] ld_da_wb_expt_addr;
-assign lsu_biu_r_ready = 1'b1;
+logic lfb_biu_arready;
+assign lsu_biu_r_ready = lfb_biu_arready;
 // Control signals (placeholder)
 assign bus_arb_rb_ar_sel = bus_arb_rb_ar_grnt;
 //==========================================================
@@ -1108,6 +1110,7 @@ lsu_ld_dc #(
 //----------------------------------------------------------
 // Load Data Access
 //----------------------------------------------------------
+logic ld_da_hit_idx_discard_req;
 lsu_ld_da #(
   .IID_WIDTH(6),
   .LSIQ_ENTRY(LSIQ_ENTRY),
@@ -1215,7 +1218,8 @@ lsu_ld_da #(
   .ld_da_wb_expt_addr(ld_da_wb_expt_addr),
   .ld_da_wb_data_req(ld_da_wb_data_req),
   .ld_da_wb_data(ld_da_wb_data),
-  .ld_da_preg_sign_sel(ld_da_preg_sign_sel)
+  .ld_da_preg_sign_sel(ld_da_preg_sign_sel),
+  .ld_da_hit_idx_discard_req(ld_da_hit_idx_discard_req)
 );
 
 //----------------------------------------------------------
@@ -1265,7 +1269,8 @@ ct_lsu_ld_wb #(
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx(lsu_idu_wb_pipe3_wb_preg_vld_dupx),
   .lsu_idu_wb_pipe3_wb_preg_data(lsu_idu_wb_pipe3_wb_preg_data),
   .lsu_idu_wb_pipe3_wb_preg_expand(lsu_idu_wb_pipe3_wb_preg_expand),
-  .lsu_idu_wb_pipe3_wb_preg_vld(lsu_idu_wb_pipe3_wb_preg_vld)
+  .lsu_idu_wb_pipe3_wb_preg_vld(lsu_idu_wb_pipe3_wb_preg_vld),
+  .lsu_idu_wb_pipe3_wb_preg_iid(lsu_idu_wb_pipe3_wb_preg_iid)
 );
 
 ct_lsu_cache_buffer u_ct_lsu_cache_buffer (
@@ -1837,14 +1842,15 @@ ct_lsu_lfb #(
   .biu_lsu_r_last(biu_lsu_r_last),
   .biu_lsu_r_resp(biu_lsu_r_resp),
   .biu_lsu_r_vld(biu_lsu_r_vld),
+  .lfb_biu_arready(lfb_biu_arready),
   .bus_arb_rb_ar_sel(bus_arb_rb_ar_sel),
   .cpurst_b(cpurst_b),
   .forever_cpuclk(forever_cpuclk),
   .dcache_arb_lfb_ld_grnt(dcache_arb_lfb_ld_grnt),
   .ld_da_idx(ld_da_idx),
   .ld_da_lfb_discard_grnt(ld_da_lfb_discard_grnt),
-  .ld_da_lfb_set_wakeup_queue(ld_da_lfb_set_wakeup_queue),
-  .ld_da_lfb_wakeup_queue_next(ld_da_lfb_wakeup_queue_next),
+  .ld_da_lfb_set_wakeup_queue(ld_da_hit_idx_discard_req),
+  .ld_da_lfb_wakeup_queue_next(ld_da_lsid),
   .rb_biu_req_addr(rb_biu_req_addr),
   .rb_lfb_addr_tto4(rb_lfb_addr_tto4),
   .rb_lfb_boundary_depd_wakeup(rb_lfb_boundary_depd_wakeup),

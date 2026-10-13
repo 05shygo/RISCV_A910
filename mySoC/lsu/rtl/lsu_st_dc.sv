@@ -160,6 +160,7 @@ assign st_dc_dcwp_hit_idx = 1'b0;
     assign st_dc_sq_create_dp_vld     = st_dc_sq_create_vld;
     assign st_dc_sq_create_gateclk_en = st_dc_sq_create_dp_vld;
 
+   
     assign st_dc_sq_data_vld = 1'b0;
 
     assign st_dc_boundary_first = st_dc_boundary && !st_dc_secd;

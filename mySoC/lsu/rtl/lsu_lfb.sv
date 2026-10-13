@@ -25,6 +25,7 @@ module ct_lsu_lfb #(
     input  logic         biu_lsu_r_last,
     input  logic [1:0]   biu_lsu_r_resp,
     input  logic         biu_lsu_r_vld,
+    output logic         lfb_biu_arready,
     input  logic         bus_arb_rb_ar_sel,
     input  logic         cpurst_b,
     input  logic         forever_cpuclk,
@@ -221,6 +222,7 @@ endgenerate
 //==========================================================
 //                 Instantiate data entry
 //==========================================================
+logic [1:0] lfb_data_entry_id; 
 ct_lsu_lfb_data_entry u_lfb_data_entry (
     .biu_lsu_r_data                 (biu_lsu_r_data),
     .biu_lsu_r_last                 (biu_lsu_r_last),
@@ -241,7 +243,8 @@ ct_lsu_lfb_data_entry u_lfb_data_entry (
     .lfb_data_entry_data_v          (lfb_data_entry_data),
     .lfb_data_entry_last_x          (lfb_data_entry_last),
     .lfb_data_entry_lf_sm_req_x     (lfb_data_entry_lf_sm_req),
-    .lfb_data_entry_vld_x           (lfb_data_entry_vld)
+    .lfb_data_entry_vld_x           (lfb_data_entry_vld),
+    .lfb_data_entry_id(lfb_data_entry_id)
 );
 
 //==========================================================
@@ -384,8 +387,8 @@ assign lfb_r_resp_err = (biu_lsu_r_resp[1:0] == DECERR)
                         || (biu_lsu_r_resp[1:0] == SLVERR);
 
 //------------------data create signal----------------------
-assign lfb_data_create_vld = lfb_biu_r_id_hit;
-
+assign lfb_data_create_vld = lfb_biu_r_id_hit & !lfb_data_entry_vld;
+assign lfb_biu_arready =  lfb_biu_r_id_hit & (lfb_data_entry_id[1:0] == biu_lsu_r_id[1:0]) | !lfb_data_entry_vld;
 //------------------r id hit addr ptr------------------------
 always @( lfb_biu_id_2to0[1:0])
 begin

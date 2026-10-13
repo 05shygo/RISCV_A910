@@ -115,7 +115,7 @@ module ct_lsu_sq #(
     logic                sq_age_vec_set;
     logic                sq_clk;
     logic [SQ_ENTRY-1:0] sq_create_age_vec;
-    logic                sq_create_pop_clk;
+    //logic                sq_create_pop_clk;
     logic                sq_create_same_addr_newest;
     logic                sq_create_success;
     logic [SQ_ENTRY-1:0] sq_create_vld;
@@ -252,7 +252,7 @@ module ct_lsu_sq #(
                 .sd_rf_ex1_sdid                            (idu_lsu_rf_pipe5_sdiq_entry),
                 .sq_age_vec_set                            (sq_age_vec_set),
                 .sq_create_age_vec                         (sq_create_age_vec),
-                .sq_create_pop_clk                         (sq_create_pop_clk),
+              //  .sq_create_pop_clk                         (sq_create_pop_clk),
                 .sq_create_same_addr_newest                (sq_create_same_addr_newest),
                 .sq_create_success                         (sq_create_success),
                 .sq_create_vld                             (sq_create_vld),
@@ -377,7 +377,7 @@ module ct_lsu_sq #(
     assign sq_ld_dc_fwd_req = sq_fwd_req;
 
     assign sq_ld_dc_data_discard_req = sq_data_discard_req &&  !sq_newest_fwd_req;
-    assign sq_ld_dc_fwd_id = sq_fwd_req_id;
+    assign sq_ld_dc_fwd_id = sq_data_discard_req & !sq_newest_fwd_req ? sq_entry_data_discard_req : sq_fwd_req_id;
     assign sq_fwd_req_id = sq_newest_fwd_req ? sq_newest_fwd_req_id : sq_entry_fwd_req;
 
     always_comb begin
@@ -475,7 +475,12 @@ module ct_lsu_sq #(
     // Pop entry
     //==========================================================
     always_ff @(posedge sq_pop_clk) begin
-        if (sq_pe_sel_age_vec_zero_entry_vld) begin
+        if(!cpurst_b)begin
+            sq_pop_addr        <= 32'b0;
+            sq_pop_bytes_vld   <= 16'b0;
+            sq_pop_ptr         <= 6'b0;
+        end 
+        else if (sq_pe_sel_age_vec_zero_entry_vld) begin
             sq_pop_addr        <= sq_pe_age_vec_zero_addr[31:0];
             sq_pop_bytes_vld   <= sq_pe_age_vec_zero_bytes_vld;
             sq_pop_ptr         <= sq_entry_age_vec_zero_ptr;
@@ -487,7 +492,7 @@ module ct_lsu_sq #(
         end
     end
 
-    assign sq_pe_sel_age_vec_zero_entry_vld = |(sq_entry_age_vec_zero_ptr & (~sq_entry_dcache_info_vld));
+    assign sq_pe_sel_age_vec_zero_entry_vld = |sq_entry_age_vec_zero_ptr;//& (~sq_entry_dcache_info_vld));
     assign sq_pe_sel_age_vec_surplus1_entry_vld = wmb_sq_pop_to_ce_grnt;
 
     always_comb begin

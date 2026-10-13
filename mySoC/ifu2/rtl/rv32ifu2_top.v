@@ -437,7 +437,16 @@ wire [ 3:0] sl_vld   = btb_vld & {4{btb_init_done}};
 // 并进去会让每条用例开头白等几百拍, 而这几百拍里"猜不跳"本来也只影响预测率。
 // BP_EN=0 同样把方向按住 —— BP_EN 此前是**死参数**(只在 lint 抑制式里出现过),
 // 顺手接上, 让"预测器全关"能当一个干净基线。
-wire [ 3:0] sl_taken = (btb_cond & dir_pred & {4{dir_init_done & BP_EN}})
+// ⚠️ 使能掩码必须**先收成 1 位再 4 次复制**。`BP_EN` 是无位宽 parameter ⇒ 32 位,
+//    `{4{dir_init_done & BP_EN}}` 是 **128 位**的 `{32'h1 ×4}`; 它和 4 位的
+//    `btb_cond & dir_pred` 相与后只取低 4 位 ⇒ 掩码实际是 `4'b0001`, **只有
+//    slot0 的方向预测活着**, slot1/2/3 被静默关掉(编译一条警告都不给)。
+//    症状: 所有 `pc[3:2]!=0` 的条件分支永远预测不跳 ⇒ 每条 taken 都吃满误预测
+//    惩罚(branch_bench 的 class1 回边全在 slot2, 周期数翻 ~4 倍), 而 difftest
+//    逐条全绿 —— 只有跑分看得出来。`!= 0` 把它折成 1 位即可。
+//    ⚠️ 这条只在**不做 1 位参数覆盖**的例化里现形: mycpu.v 传的是 1 位
+//    `IFU_BP_EN`, 拼接后正好是 1111; A910_cpu.sv 不覆盖 ⇒ 吃 32 位默认值。
+wire [ 3:0] sl_taken = (btb_cond & dir_pred & {4{dir_init_done & (BP_EN != 0)}})
                      | (~btb_cond & btb_jmp);
 wire        init_all = ic_init_done & btb_init_done;
 

@@ -170,6 +170,7 @@ module A910_cpu
   logic [ 31:0] lsu_idu_wb_pipe3_wb_preg_data;
   logic [ 63:0] lsu_idu_wb_pipe3_wb_preg_expand;
   logic         lsu_idu_wb_pipe3_wb_preg_vld;
+  logic [  6:0] lsu_idu_wb_pipe3_wb_preg_iid;   // 数据写回那条的 iid (观察口按 iid 配对用)
 
   // ---------------------------------------------------------------------------
   // LSU ↔ BIU: 总线口 (读地址/读数据 + 两路写: store 走 WMB, victim 走 VB)
@@ -647,6 +648,7 @@ module A910_cpu
   logic [2:0][4:0]  rtu_cmt_reg;
   logic [2:0][31:0] rtu_cmt_val;
   logic [2:0][5:0]  rtu_cmt_preg;
+  logic [2:0][6:0]  rtu_cmt_iid;      // 退休包自己的 iid (与 LSU 写回按 iid 配对)
 
   // 延迟线 (每槽一条) + LSU 写回事件窗口
   logic [DBG_HOLD-1:0]       h_vld  [0:2];
@@ -654,10 +656,12 @@ module A910_cpu
   logic [DBG_HOLD-1:0][31:0] h_pc   [0:2];
   logic [DBG_HOLD-1:0][4:0]  h_reg  [0:2];
   logic [DBG_HOLD-1:0][5:0]  h_preg [0:2];
+  logic [DBG_HOLD-1:0][6:0]  h_iid  [0:2];
   logic [DBG_HOLD-1:0][31:0] h_val  [0:2];
   logic [DBG_HOLD-1:0]       w_vld;
   logic [DBG_HOLD-1:0][63:0] w_hot;
   logic [DBG_HOLD-1:0][31:0] w_dat;
+  logic [DBG_HOLD-1:0][6:0]  w_iid;
   logic [31:0]               dbg_val_out [0:2];
 
   // ⚠️ LSU 写回口这三根**必须同拍**才能配对 (拿 vld 当闸门, 用同拍的 expand/data
@@ -669,10 +673,17 @@ module A910_cpu
   wire        lsu_evt = lsu_idu_wb_pipe3_wb_preg_vld;
   wire [63:0] lsu_hot = lsu_idu_wb_pipe3_wb_preg_expand;
   wire [31:0] lsu_dat = lsu_idu_wb_pipe3_wb_preg_data;
+  wire [ 6:0] lsu_iid = lsu_idu_wb_pipe3_wb_preg_iid;
 
   assign rtu_cmt_preg[0] = rtu_preg_raddr0[5:0];
   assign rtu_cmt_preg[1] = rtu_preg_raddr1[5:0];
   assign rtu_cmt_preg[2] = rtu_preg_raddr2[5:0];
+
+  // 退休包自己的 iid (与上面三个槽一一对应) —— 旁路窗口现在按 **iid** 配对。
+  // ⚠️ 用 RTU 的 `dbg_commit_iid*` (**与 dbg_commit_* 同拍**, 取自 ROB 影子窗口头部),
+  //    **不能**用 `rtu_yy_xx_commit*_iid` —— 那个是寄存一拍的提交广播, 比 dbg_commit_*
+  //    晚一拍, 会把上一包的 iid 存进延迟线 (实测 lh: pc=0x24 存到了 iid=6)。
+  //    (连接在下面 RTU 实例的 `.dbg_commit_iid*` 上)
 
   always @(posedge clk or posedge rst) begin
     if (rst) begin
@@ -682,11 +693,13 @@ module A910_cpu
         h_pc  [i] <= '0;
         h_reg [i] <= '0;
         h_preg[i] <= '0;
+        h_iid [i] <= '0;
         h_val [i] <= '0;
       end
       w_vld <= '0;
       w_hot <= '0;
       w_dat <= '0;
+      w_iid <= '0;
     end
     else begin
       for (int i = 0; i < 3; i = i + 1) begin
@@ -695,11 +708,13 @@ module A910_cpu
         h_pc  [i] <= {h_pc  [i][DBG_HOLD-2:0], rtu_cmt_pc  [i]};
         h_reg [i] <= {h_reg [i][DBG_HOLD-2:0], rtu_cmt_reg [i]};
         h_preg[i] <= {h_preg[i][DBG_HOLD-2:0], rtu_cmt_preg[i]};
+        h_iid [i] <= {h_iid [i][DBG_HOLD-2:0], rtu_cmt_iid [i]};
         h_val [i] <= {h_val [i][DBG_HOLD-2:0], rtu_cmt_val [i]};
       end
       w_vld <= {w_vld[DBG_HOLD-2:0], lsu_evt};
       w_hot <= {w_hot[DBG_HOLD-2:0], lsu_hot};
       w_dat <= {w_dat[DBG_HOLD-2:0], lsu_dat};
+      w_iid <= {w_iid[DBG_HOLD-2:0], lsu_iid};
     end
   end
 
@@ -707,14 +722,23 @@ module A910_cpu
   // 所以 index0 = 上一拍的输入 (只延 1 拍), index(DBG_HOLD-1) 才是延迟 DBG_HOLD 拍。
   localparam int DBG_OUT = DBG_HOLD - 1;
 
-  // 出口: 目的 preg 在窗口里被 LSU 写回过 ⇒ 用 LSU 的终值顶替
-  // (`j==0` 那支看**当拍**; 独热 preg 保证至多命中一条, 不会打架)
+  // 出口: 窗口里有一拍 LSU 写回了**这条退休包自己的目的 preg** ⇒ 用 LSU 的终值顶替
+  // (`j==0` 那支看**当拍**)
+  //
+  // ⚠️ 2026-10-13 修: 配对从"只比 preg"改成 **"比 preg + 比 iid"**。
+  //    只比 preg 不安全 —— preg 会被**回收**: 16 拍窗口内同一 preg 完全可能被
+  //    两条不同指令写 (前一条退休后释放, 后一条重新分配)。实测 (lb, cache 修好
+  //    后): `lui x1` (retire #14, dst_preg=1) 的值被窗口里另一条 load (iid=33,
+  //    也写 preg 1) 的数据顶成了 0 —— 核里 x1 明明是 0x2000。
+  //    加上 iid 比较后, 只有"这条包自己的数据写回"才会顶替。
   always_comb begin
     for (int i = 0; i < 3; i = i + 1) begin
       dbg_val_out[i] = h_val[i][DBG_OUT];
       for (int j = 0; j < DBG_HOLD; j = j + 1) begin
-        if ((j == 0) ? (lsu_evt && lsu_hot[h_preg[i][DBG_OUT]])
-                     : (w_vld[j] && w_hot[j][h_preg[i][DBG_OUT]]))
+        if ((j == 0) ? (lsu_evt && (lsu_iid == h_iid[i][DBG_OUT])
+                                 && lsu_hot[h_preg[i][DBG_OUT]])
+                     : (w_vld[j] && (w_iid[j] == h_iid[i][DBG_OUT])
+                                 && w_hot[j][h_preg[i][DBG_OUT]]))
           dbg_val_out[i] = (j == 0) ? lsu_dat : w_dat[j];
       end
     end
@@ -1439,6 +1463,7 @@ module A910_cpu
     .lsu_idu_wb_pipe3_wb_preg_data  (lsu_idu_wb_pipe3_wb_preg_data),
     .lsu_idu_wb_pipe3_wb_preg_expand(lsu_idu_wb_pipe3_wb_preg_expand),
     .lsu_idu_wb_pipe3_wb_preg_vld   (lsu_idu_wb_pipe3_wb_preg_vld),
+    .lsu_idu_wb_pipe3_wb_preg_iid   (lsu_idu_wb_pipe3_wb_preg_iid),
 
     // LSU to RTU - Writeback pipe4 (store 完成 / 非对齐异常 / 投机写失败)
     // ⚠️ `_flush` / `_spec_fail` 对 RTU 是**同一个动作**(这条 store 的投机结果
@@ -1968,6 +1993,9 @@ module A910_cpu
     .dbg_commit_reg0            (rtu_cmt_reg[0]),
     .dbg_commit_reg1            (rtu_cmt_reg[1]),
     .dbg_commit_reg2            (rtu_cmt_reg[2]),
+    .dbg_commit_iid0            (rtu_cmt_iid[0]),
+    .dbg_commit_iid1            (rtu_cmt_iid[1]),
+    .dbg_commit_iid2            (rtu_cmt_iid[2]),
     .dbg_commit_value0          (rtu_cmt_val[0]),
     .dbg_commit_value1          (rtu_cmt_val[1]),
     .dbg_commit_value2          (rtu_cmt_val[2])

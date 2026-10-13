@@ -18,7 +18,8 @@ module ct_lsu_lfb_data_entry (
     output logic [255:0] lfb_data_entry_data_v,
     output logic         lfb_data_entry_last_x,
     output logic         lfb_data_entry_lf_sm_req_x,
-    output logic         lfb_data_entry_vld_x
+    output logic         lfb_data_entry_vld_x,
+    output logic [1:0]   lfb_data_entry_id
 );
 
 // 内部寄存器
@@ -226,5 +227,6 @@ assign lfb_data_entry_data_v            = lfb_data_entry_data;
 assign lfb_data_entry_last_x            = lfb_data_entry_last;
 assign lfb_data_entry_addr_pop_req_v    = lfb_data_entry_addr_pop_req;
 assign lfb_data_entry_lf_sm_req_x       = lfb_data_entry_lf_sm_req;
+assign lfb_data_entry_id[1:0]           = lfb_data_entry_biu_id[1:0];
 
 endmodule

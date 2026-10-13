@@ -1,0 +1,7 @@
+Command Line: /mnt/tools/synopsys/verdi/V-2023.12-SP2/platform/LINUXAMD64/bin/fsdbextract waveform/sb.fsdb -s tb_a910_difftest/clk -s tb_a910_difftest/dut/idu_lsu_sdiq_sel -s tb_a910_difftest/dut/idu_lsu_st_sdiq_entry -s tb_a910_difftest/dut/idu_lsu_st_sel -s tb_a910_difftest/dut/idu_lsu_st_iid -o /tmp/sb_sd2.vcd -vcd_tree
+uname(Linux localhost.localdomain 3.10.0-1160.119.1.el7.x86_64 #1 SMP Tue Jun 4 14:43:51 UTC 2024 x86_64)
+First time to read tree time 0.003037 0.002060 0.000977 delta 4018176 4018176 total 305651712 305651712
+fsdbextract:Find signals time 0.008426 0.007606 0.000812 delta 1339392 1339392 total 306991104 306991104
+fsdbextract:Retrieve VC time 0.000006 0.000000 0.000006 delta 0 0 total 306991104 306991104
+fsdbextract main program time 0.029024 0.017578 0.007962 delta 43581440 43581440 total 239681536 239681536
+au time 0.029166 0.017630 0.008048 delta 43581440 43581440 total 239681536 239681536

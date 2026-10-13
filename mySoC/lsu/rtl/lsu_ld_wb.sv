@@ -46,7 +46,8 @@ module ct_lsu_ld_wb #(
     output logic         lsu_idu_wb_pipe3_wb_preg_vld_dupx,
     output logic [31:0]  lsu_idu_wb_pipe3_wb_preg_data,
     output logic [63:0]  lsu_idu_wb_pipe3_wb_preg_expand,
-    output logic         lsu_idu_wb_pipe3_wb_preg_vld
+    output logic         lsu_idu_wb_pipe3_wb_preg_vld,
+    output logic [6:0]   lsu_idu_wb_pipe3_wb_preg_iid
 );
 
 //------------------------------------------------------------------
@@ -286,9 +287,12 @@ assign lsu_rtu_async_expt_addr[31:0]  = (ld_wb_data_vld && ld_wb_bus_err)
 
 assign lsu_idu_wb_pipe3_wb_preg_vld          = ld_wb_data_vld;
 assign lsu_idu_wb_pipe3_wb_preg[5:0]         = ld_wb_data_preg[5:0];
-assign lsu_idu_wb_pipe3_wb_preg_vld_dupx     = ld_wb_inst_vld;
+assign lsu_idu_wb_pipe3_wb_preg_vld_dupx     = ld_wb_data_vld;
 assign lsu_idu_wb_pipe3_wb_preg_expand[63:0] = ld_wb_data_preg_expand[63:0];
 assign lsu_idu_wb_pipe3_wb_preg_data[31:0]   = ld_wb_preg_data_sign_extend[31:0];
+// 数据写回那条指令的 iid —— 给顶层 difftest 观察口按 iid 配对用
+// (原先只按 preg 配对, preg 会被回收 ⇒ 16 拍窗口内能错配到另一条 load)
+assign lsu_idu_wb_pipe3_wb_preg_iid[6:0]     = ld_wb_data_iid[6:0];
 
 // &ModuleEnd; @1056
 endmodule

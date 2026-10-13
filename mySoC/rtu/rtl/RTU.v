@@ -414,6 +414,12 @@ module RTU (
     output wire [31:0] dbg_commit_value0,    // 槽 0 的结果 (摘自 preg_rdata0; CSR 那条换成旧值)
     output wire [31:0] dbg_commit_value1,    // 槽 1 的结果
     output wire [31:0] dbg_commit_value2,    // 槽 2 的结果
+    // ⚠️ 槽 0/1/2 的 iid，**与上面 dbg_commit_* 同拍**（直接取 ROB 影子窗口的头部 iid）。
+    //    别用 `rtu_yy_xx_commit*_iid` —— 那个是 `cmt_iid_q*`（`win_iid*` **寄存一拍**），
+    //    与 dbg_commit_* 差一拍；观察口拿它配对会配到上一包的 iid。
+    output wire [ 6:0] dbg_commit_iid0,
+    output wire [ 6:0] dbg_commit_iid1,
+    output wire [ 6:0] dbg_commit_iid2,
     output wire        rtu_flush_busy     // 冲刷状态机非 IDLE (给 IFU 侧的冻结闸门:
                                          // 脉冲发完但收尾没完那几拍也要冻住前端)
 );
@@ -918,6 +924,11 @@ module RTU (
     assign rtu_yy_xx_commit0_iid = cmt_iid_q0;
     assign rtu_yy_xx_commit1_iid = cmt_iid_q1;
     assign rtu_yy_xx_commit2_iid = cmt_iid_q2;
+
+    // 与 dbg_commit_* 同拍的槽 iid (直接取 ROB 影子窗口头部, 见端口注释)
+    assign dbg_commit_iid0 = win_iid0;
+    assign dbg_commit_iid1 = win_iid1;
+    assign dbg_commit_iid2 = win_iid2;
 
     assign rtu_lsu_async_flush = 1'b0;   // 无 debug 模块 ⇒ 见端口注释
 

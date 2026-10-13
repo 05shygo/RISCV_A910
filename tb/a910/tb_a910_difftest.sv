@@ -458,6 +458,189 @@ module tb_a910_difftest;
     end
   end
 
+  // 【临时诊断】卡死现场逐拍: ROB 队头 + 判退门控 —— `+PROBE_STALL` (窗由 STL_LO/STL_HI 给)
+  integer stl_lo = 270, stl_hi = 330;
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_STALL") && cycles >= stl_lo && cycles <= stl_hi) begin
+      $display("  [STL] T%0d occ=%0d | 队头 pc=%08x,%08x,%08x iid=%0d,%0d,%0d",
+               cycles, dut.u_rtu.u_rob.occ,
+               dut.u_rtu.u_rob.win_q0[120:89], dut.u_rtu.u_rob.win_q1[120:89],
+               dut.u_rtu.u_rob.win_q2[120:89],
+               dut.u_rtu.u_rob.win_iid0, dut.u_rtu.u_rob.win_iid1, dut.u_rtu.u_rob.win_iid2);
+      $display("        vld=%b,%b,%b cmplt=%b,%b,%b br=%b,%b,%b mispred_flag=%b,%b,%b store=%b,%b,%b",
+               dut.u_rtu.u_commit.w0_vld, dut.u_rtu.u_commit.w1_vld, dut.u_rtu.u_commit.w2_vld,
+               dut.u_rtu.u_commit.w0_cmplt, dut.u_rtu.u_commit.w1_cmplt, dut.u_rtu.u_commit.w2_cmplt,
+               dut.u_rtu.u_commit.w0_br, dut.u_rtu.u_commit.w1_br, dut.u_rtu.u_commit.w2_br,
+               dut.u_rtu.u_commit.w0_misp, dut.u_rtu.u_commit.w1_misp, dut.u_rtu.u_commit.w2_misp,
+               dut.u_rtu.u_commit.w0_store, dut.u_rtu.u_commit.w1_store, dut.u_rtu.u_commit.w2_store);
+      $display("        commit: ok=%b,%b,%b okp=%b,%b,%b ret_cnt=%b | fsm_busy=%b flushing=%b st_q=%b | flush_trig=%b mispred_hit=%b mret=%b trap=%b replay=%b",
+               dut.u_rtu.u_commit.ok0, dut.u_rtu.u_commit.ok1, dut.u_rtu.u_commit.ok2,
+               dut.u_rtu.u_commit.okp0, dut.u_rtu.u_commit.okp1, dut.u_rtu.u_commit.okp2,
+               dut.rtu_retire_cnt,
+               dut.u_rtu.fsm_busy, dut.u_rtu.flushing, dut.u_rtu.u_flush.st_q,
+               dut.u_rtu.u_commit.flush_trig, dut.u_rtu.u_commit.mispred_hit,
+               dut.u_rtu.u_commit.mret_hit, dut.u_rtu.u_commit.trap_hit,
+               dut.u_rtu.u_commit.replay_hit);
+      $display("        resolve: vld=%b iid=%0d mispred=%b | gate_hold=%b yy_flush=%b | sq: stall=%b rdy=%b,%b,%b | int_pending=%b",
+               dut.resolve_vld, dut.resolve_iid, dut.resolve_mispred,
+               dut.mispred_hold_q, dut.rtu_yy_xx_flush,
+               dut.u_rtu.u_commit.sq_stall, dut.u_rtu.u_commit.sq_rdy0,
+               dut.u_rtu.u_commit.sq_rdy1, dut.u_rtu.u_commit.sq_rdy2,
+               dut.u_rtu.u_commit.int_pending);
+      $display("        LSU: ld_da_vld=%b lsid=%0d secd=%b wb_cmplt_req=%b | ld_wb_inst_vld=%b pipe3_wb_preg_vld=%b | LFB: r_vld=%b r_id=%b id_hit=%b data_vld=%b create_vld=%b entry_id=%0d r_last=%b arready=%b",
+               dut.u_lsu_top.u_lsu_ld_da.ld_da_inst_vld, dut.u_lsu_top.u_lsu_ld_da.ld_da_lsid,
+               dut.u_lsu_top.u_lsu_ld_da.ld_da_secd,
+               dut.u_lsu_top.ld_da_wb_cmplt_req, dut.u_lsu_top.ld_wb_inst_vld,
+               dut.lsu_rtu_wb_pipe3_wb_preg_vld,
+               dut.u_lsu_top.u_lsu_lfb.biu_lsu_r_vld, dut.u_lsu_top.u_lsu_lfb.biu_lsu_r_id,
+               dut.u_lsu_top.u_lsu_lfb.lfb_biu_r_id_hit,
+               dut.u_lsu_top.u_lsu_lfb.lfb_data_entry_vld,
+               dut.u_lsu_top.u_lsu_lfb.lfb_data_create_vld,
+               dut.u_lsu_top.u_lsu_lfb.lfb_data_entry_id,
+               dut.u_lsu_top.u_lsu_lfb.biu_lsu_r_last,
+               dut.u_lsu_top.u_lsu_lfb.lfb_biu_arready);
+    end
+  end
+
+  // 【临时诊断】发射/完成总线 —— `+PROBE_ISS` (窗由 STL_LO/STL_HI 给)
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_ISS") && cycles >= stl_lo && cycles <= stl_hi) begin
+      if (dut.idu_aiq_sel)
+        $display("  [ISS] T%0d ALU: pc=%08x iid=%0d dst=%0d src0=%08x src1=%08x",
+                 cycles, dut.idu_aiq_pc, dut.idu_aiq_iid, dut.idu_aiq_dst_preg,
+                 dut.idu_aiq_src0, dut.idu_aiq_src1);
+      $display("  [LWB] T%0d inst_vld=%b inst_iid=%0d | data_vld=%b data_preg=%0d data_iid=%0d data=%08x | da:req=%b preg=%0d | rb:req=%b preg=%0d | dbg: pc=%08x,%08x,%08x val=%08x,%08x,%08x",
+               cycles,
+               dut.u_lsu_top.u_lsu_ld_wb.ld_wb_inst_vld, dut.u_lsu_top.u_lsu_ld_wb.ld_wb_iid,
+               dut.u_lsu_top.u_lsu_ld_wb.ld_wb_data_vld, dut.u_lsu_top.u_lsu_ld_wb.ld_wb_data_preg,
+               dut.u_lsu_top.u_lsu_ld_wb.ld_wb_data_iid,
+               dut.lsu_idu_wb_pipe3_wb_preg_data,
+               dut.u_lsu_top.u_lsu_ld_wb.ld_da_wb_data_req, dut.u_lsu_top.u_lsu_ld_wb.ld_da_preg,
+               dut.u_lsu_top.u_lsu_ld_wb.rb_ld_wb_data_req, dut.u_lsu_top.u_lsu_ld_wb.rb_ld_wb_preg,
+               dut.dbg_commit_pc0, dut.dbg_commit_pc1, dut.dbg_commit_pc2,
+               dut.dbg_commit_value0, dut.dbg_commit_value1, dut.dbg_commit_value2);
+      if (|{dut.cmplt_vld6, dut.cmplt_vld5, dut.cmplt_vld4, dut.cmplt_vld3,
+            dut.cmplt_vld2, dut.cmplt_vld1, dut.cmplt_vld0})
+        $display("  [CMP] T%0d cmplt=%b%b%b%b%b%b%b iid=%0d,%0d,%0d,%0d,%0d,%0d,%0d",
+                 cycles, dut.cmplt_vld6, dut.cmplt_vld5, dut.cmplt_vld4, dut.cmplt_vld3,
+                 dut.cmplt_vld2, dut.cmplt_vld1, dut.cmplt_vld0,
+                 dut.cmplt_iid0, dut.cmplt_iid1, dut.cmplt_iid2, dut.cmplt_iid3,
+                 dut.cmplt_iid4, dut.cmplt_iid5, dut.cmplt_iid6);
+      if (dut.lsu_idu_wb_pipe3_wb_preg_vld_dupx || dut.iu_idu_ex2_pipe0_wb_preg_vld_dupx
+          || dut.iu_idu_ex2_pipe1_wb_preg_vld_dupx || dut.iu_idu_ex2_pipe2_wb_preg_vld_dupx)
+        $display("  [WB ] T%0d 写回: LSU_p3=%b#%0d | IU_p0=%b#%0d p1=%b#%0d p2=%b#%0d",
+                 cycles, dut.lsu_idu_wb_pipe3_wb_preg_vld_dupx,
+                 dut.lsu_idu_wb_pipe3_wb_preg,
+                 dut.iu_idu_ex2_pipe0_wb_preg_vld_dupx, dut.iu_idu_ex2_pipe0_wb_preg_dupx,
+                 dut.iu_idu_ex2_pipe1_wb_preg_vld_dupx, dut.iu_idu_ex2_pipe1_wb_preg_dupx,
+                 dut.iu_idu_ex2_pipe2_wb_preg_vld_dupx, dut.iu_idu_ex2_pipe2_wb_preg_dupx);
+    end
+  end
+
+  // 【临时诊断】load 地址/数据流水 —— `+PROBE_LD` (窗用 STL_LO/STL_HI)
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_LD") && cycles >= stl_lo && cycles <= stl_hi) begin
+      if (dut.idu_rtu_disp0_vld && dut.idu_rtu_disp0_pc == 32'h218)
+        $display("  [LDI] T%0d 派发 pc=0x218 → iid=%0d", cycles, dut.rtu_disp_iid0);
+      if (dut.idu_rtu_disp1_vld && dut.idu_rtu_disp1_pc == 32'h218)
+        $display("  [LDI] T%0d 派发 pc=0x218 → iid=%0d", cycles, dut.rtu_disp_iid1);
+      if (dut.idu_rtu_disp2_vld && dut.idu_rtu_disp2_pc == 32'h218)
+        $display("  [LDI] T%0d 派发 pc=0x218 → iid=%0d", cycles, dut.rtu_disp_iid2);
+      $display("  [LFB] T%0d hit_idx=%b set_wkq=%b lsid=%b | wkq=%b pop=%b wakeup=%b | lf_create=%b lf_vld=%b refill_way=%b | dc_wr: tag_req=%b tag_wen=%b data_req=%b idx=%0d",
+               cycles,
+               dut.u_lsu_top.u_lsu_lfb.lfb_ld_da_hit_idx,
+               dut.u_lsu_top.u_lsu_lfb.ld_da_lfb_set_wakeup_queue,
+               dut.u_lsu_top.ld_da_lsid,
+               dut.u_lsu_top.u_lsu_lfb.lfb_wakeup_queue,
+               dut.u_lsu_top.u_lsu_lfb.lfb_pop_depd_ff,
+               dut.u_lsu_top.lfb_depd_wakeup,
+               dut.u_lsu_top.u_lsu_lfb.lfb_lf_sm_create_vld,
+               dut.u_lsu_top.u_lsu_lfb.lfb_lf_sm_vld,
+               dut.u_lsu_top.u_lsu_lfb.lfb_lf_sm_refill_way,
+               dut.u_lsu_top.u_lsu_lfb.lfb_dcache_arb_ld_tag_req,
+               dut.u_lsu_top.u_lsu_lfb.lfb_dcache_arb_ld_tag_wen,
+               dut.u_lsu_top.u_lsu_lfb.lfb_dcache_arb_ld_req,
+               dut.u_lsu_top.u_lsu_lfb.lfb_dcache_arb_ld_tag_idx);
+      $display("  [CMD] T%0d 延迟线输入: v=%b%b%b pc=%08x,%08x,%08x iid=%0d,%0d,%0d | rtu_yy_xx_commit=%b%b%b iid=%0d,%0d,%0d",
+               cycles,
+               dut.rtu_cmt_vld[0], dut.rtu_cmt_vld[1], dut.rtu_cmt_vld[2],
+               dut.rtu_cmt_pc[0], dut.rtu_cmt_pc[1], dut.rtu_cmt_pc[2],
+               dut.rtu_cmt_iid[0], dut.rtu_cmt_iid[1], dut.rtu_cmt_iid[2],
+               dut.rtu_yy_xx_commit0, dut.rtu_yy_xx_commit1, dut.rtu_yy_xx_commit2,
+               dut.rtu_yy_xx_commit0_iid, dut.rtu_yy_xx_commit1_iid, dut.rtu_yy_xx_commit2_iid);
+      $display("  [DCW] T%0d lfb_sel=%b lfb_grnt=%b | tag_gwen_b=%b tag_sel_b=%b tag_wen_b=%b | data_gwen_b=%b data_sel_b=%b",
+               cycles,
+               dut.u_lsu_top.u_dcache_arb.dcache_arb_lfb_ld_sel,
+               dut.u_lsu_top.u_dcache_arb.dcache_arb_lfb_ld_grnt,
+               dut.u_lsu_top.lsu_dcache_ld_tag_gwen_b,
+               dut.u_lsu_top.lsu_dcache_ld_tag_sel_b,
+               dut.u_lsu_top.lsu_dcache_ld_tag_wen_b,
+               dut.u_lsu_top.lsu_dcache_ld_data_gwen_b,
+               dut.u_lsu_top.lsu_dcache_ld_data_sel_b);
+      if (dut.u_lsu_top.u_lsu_ld_da.ld_da_inst_vld)
+        $display("  [LDC] T%0d iid=%0d addr=%08x secd=%b hit=%b way=%b fwd=%b expt=%b | data_vld=%b cmplt_req=%b data_req=%b | disc_lfb=%b rb_create=%b",                 cycles, dut.u_lsu_top.u_lsu_ld_da.ld_da_iid,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_addr,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_secd,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_dcache_hit,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_settle_way,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_fwd_vld,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_expt,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_data_vld,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_wb_cmplt_req,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_wb_data_req,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_discard_from_lfb_req,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_rb_create_vld);
+      if (dut.u_lsu_top.u_lsu_ld_da.ld_da_inst_vld)
+        $display("  [LDA] T%0d iid=%0d preg=%0d addr=%08x | cb_vld=%b cb_data=%08x | rb_vld=%b | rot=%0d | d256lo=%032x d256hi=%032x | wb_req=%b wb_data=%08x",
+                 cycles, dut.u_lsu_top.u_lsu_ld_da.ld_da_iid,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_preg,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_addr,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_cb_data_vld,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_cb_data,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_rb_data_vld,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_data_rot_sel,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_data256[127:0],
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_data256[255:128],
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_wb_data_req,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_wb_data);
+    end
+  end
+
+  // 【临时诊断】store 数据进 SQ → 旋转 → 旁路给 load 整条数据链 —— `+PROBE_SQ`
+  //   [SQD] IDU pipe5 送来的 store 数据 / SDIQ 选中
+  //   [SQR] SQ 顶层的 settle 旋转:rot_sel 是不是 one-hot(非 one-hot ⇒ rot_data default 全 X)
+  //   [SQE] 各 SQ 表项里存的数据 + 该表项的 rot_sel
+  //   [SQL] load 拿到的那一拍:SQ 给的数据 / 字节掩码 / 旋转量 / 最终写回值
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_SQ") && cycles >= stl_lo && cycles <= stl_hi) begin
+      $display("  [SQD] T%0d sdiq_sel=%b sdiq_id=%b pipe5_src0=%08x | settle_hit=%b rot_sel=%b settle_data=%08x",
+               cycles, dut.idu_lsu_sdiq_sel, dut.idu_lsu_rf_pipe5_sdiq_entry,
+               dut.idu_lsu_rf_pipe5_src0,
+               dut.u_lsu_top.u_lsu_sq.sq_entry_settle_data_hit,
+               dut.u_lsu_top.u_lsu_sq.sq_settle_rot_sel,
+               dut.u_lsu_top.u_lsu_sq.sq_data_settle);
+      $display("  [SQE] T%0d data=%08x %08x %08x %08x %08x %08x | rot=%02x %02x %02x %02x %02x %02x",
+               cycles,
+               dut.u_lsu_top.u_lsu_sq.sq_entry_data[0], dut.u_lsu_top.u_lsu_sq.sq_entry_data[1],
+               dut.u_lsu_top.u_lsu_sq.sq_entry_data[2], dut.u_lsu_top.u_lsu_sq.sq_entry_data[3],
+               dut.u_lsu_top.u_lsu_sq.sq_entry_data[4], dut.u_lsu_top.u_lsu_sq.sq_entry_data[5],
+               dut.u_lsu_top.u_lsu_sq.sq_entry_rot_sel[0], dut.u_lsu_top.u_lsu_sq.sq_entry_rot_sel[1],
+               dut.u_lsu_top.u_lsu_sq.sq_entry_rot_sel[2], dut.u_lsu_top.u_lsu_sq.sq_entry_rot_sel[3],
+               dut.u_lsu_top.u_lsu_sq.sq_entry_rot_sel[4], dut.u_lsu_top.u_lsu_sq.sq_entry_rot_sel[5]);
+      if (dut.u_lsu_top.u_lsu_ld_da.ld_da_inst_vld)
+        $display("  [SQL] T%0d iid=%0d addr=%08x fwd_vld=%b fwd_sq=%b fwd_bytes=%04x ld_rot=%0d | sq_fwd_id=%b sq_fwd_data=%08x | d128=%032x wb=%08x",
+                 cycles, dut.u_lsu_top.u_lsu_ld_da.ld_da_iid,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_addr,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_fwd_vld,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_fwd_sq_vld,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_fwd_bytes_vld,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_data_rot_sel,
+                 dut.u_lsu_top.sq_ld_dc_fwd_id, dut.u_lsu_top.sq_ld_da_fwd_data,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_data128,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_wb_data);
+    end
+  end
+
   integer preg_lines = 0;
   always @(posedge clk) begin
     if (!rst && $test$plusargs("PROBE_PREG") && preg_lines < 120 && cycles >= 96) begin
@@ -505,6 +688,8 @@ module tb_a910_difftest;
   initial begin
     void'($value$plusargs("IDIR_LO=%d", IDIR_LO));
     void'($value$plusargs("IDIR_HI=%d", IDIR_HI));
+    void'($value$plusargs("STL_LO=%d", stl_lo));
+    void'($value$plusargs("STL_HI=%d", stl_hi));
   end
   always @(posedge clk) begin
     if (!rst && $test$plusargs("PROBE_IDIR") && cycles >= IDIR_LO && cycles <= IDIR_HI) begin

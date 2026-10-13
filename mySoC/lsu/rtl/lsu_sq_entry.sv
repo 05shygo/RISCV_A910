@@ -55,7 +55,7 @@ module ct_lsu_sq_entry #(
     //==========================================================
     input  logic                  sq_age_vec_set,
     input  logic [SQ_ENTRY-1:0]   sq_create_age_vec,
-    input  logic                  sq_create_pop_clk,
+   // input  logic                  sq_create_pop_clk,
     input  logic                  sq_create_same_addr_newest,
     input  logic                  sq_create_success,
     input  logic [SQ_ENTRY-1:0]   sq_create_vld,
@@ -377,8 +377,10 @@ module ct_lsu_sq_entry #(
         end
     end
 
-    always_ff @(posedge sq_create_pop_clk) begin
-        if (sq_entry_create_vld)
+    always_ff @(posedge forever_cpuclk) begin
+        if(!cpurst_b)
+            sq_entry_age_vec[SQ_ENTRY-1:0]<= 6'b0;
+        else if (sq_entry_create_vld)
             sq_entry_age_vec[SQ_ENTRY-1:0] <= sq_create_age_vec[SQ_ENTRY-1:0];
         else if (sq_age_vec_set && sq_entry_vld)
             sq_entry_age_vec[SQ_ENTRY-1:0] <= sq_entry_age_vec_next[SQ_ENTRY-1:0];
@@ -392,7 +394,7 @@ module ct_lsu_sq_entry #(
         else if (sq_entry_depd_set)
             sq_entry_depd <= 1'b1;
     end
-
+/*
 
     always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
         if (!cpurst_b)
@@ -402,7 +404,7 @@ module ct_lsu_sq_entry #(
         else if (sq_entry_vld && !sq_entry_data_vld)
             sq_entry_st_data_sdid_hit <= sq_entry_sdid_hit;
     end
-
+*/
     always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
         if (!cpurst_b)
             sq_entry_bond_first_only <= 1'b0;
@@ -446,10 +448,10 @@ module ct_lsu_sq_entry #(
 
     assign sq_entry_sdid_hit = sq_entry_sdid[3:0] == sd_rf_ex1_sdid[3:0];
 
-    assign sq_entry_settle_data_hit = sq_entry_vld && !sq_entry_data_vld && sq_entry_st_data_sdid_hit;
+    assign sq_entry_settle_data_hit = sq_entry_vld && !sq_entry_data_vld && sq_entry_sdid_hit;
 
     assign sq_entry_data_set = sq_entry_vld && !sq_entry_data_vld &&
-                               sd_ex1_inst_vld && sq_entry_st_data_sdid_hit;
+                               sd_ex1_inst_vld && sq_entry_sdid_hit;
 
     assign sq_entry_addr_11to4_hit_st_dc = (sq_entry_addr0[11:4] == st_dc_addr0[11:4]);
     assign sq_entry_st_dc_bv_do_hit = |(st_dc_bytes_vld[15:0] & sq_entry_bytes_vld[15:0]);

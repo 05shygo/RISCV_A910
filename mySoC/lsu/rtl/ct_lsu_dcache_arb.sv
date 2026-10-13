@@ -304,8 +304,7 @@ assign lsu_dcache_ld_tag_din = ({LD_TAG_WIDTH{dcache_arb_lfb_ld_sel}} & lfb_dcac
                                 | ({LD_TAG_WIDTH{dcache_arb_vb_ld_sel}} & vb_dcache_arb_ld_tag_din);
 
 assign lsu_dcache_ld_tag_wen_b = ({2{dcache_arb_lfb_ld_sel}} & ~lfb_dcache_arb_ld_tag_wen)
-                                  | ({2{dcache_arb_vb_ld_sel}} & ~vb_dcache_arb_ld_tag_wen)
-                                  | 2'b11;
+                                  | ({2{dcache_arb_vb_ld_sel}} & ~vb_dcache_arb_ld_tag_wen);
 
 //==========================================================
 //            Store tag array mux
@@ -325,7 +324,7 @@ assign lsu_dcache_st_tag_idx = ({INDEX_WIDTH{dcache_arb_lfb_st_sel}} & lfb_dcach
 
 assign lsu_dcache_st_tag_din = ({ST_TAG_WIDTH{dcache_arb_lfb_st_sel}} & lfb_dcache_arb_st_tag_din);
 
-assign lsu_dcache_st_tag_wen_b = ({2{dcache_arb_lfb_st_sel}} & ~lfb_dcache_arb_st_tag_wen) | 2'b11;
+assign lsu_dcache_st_tag_wen_b = ({2{dcache_arb_lfb_st_sel}} & ~lfb_dcache_arb_st_tag_wen);
 
 assign dcache_tag_din  = lsu_dcache_st_tag_din;
 assign dcache_tag_gwen = ~lsu_dcache_st_tag_gwen_b;
@@ -400,7 +399,7 @@ assign lsu_dcache_ld_data_high_din = ({128{dcache_arb_lfb_ld_sel}} & lfb_dcache_
 
 assign lsu_dcache_ld_data_wen_b = ({32{dcache_arb_lfb_ld_sel}} & 32'h0)
                                    | ({32{dcache_arb_wmb_ld_sel}} & ~wmb_dcache_arb_ld_data_wen)
-                                   | 32'hFFFF_FFFF;
+                                   | {32{~(dcache_arb_lfb_ld_sel | dcache_arb_wmb_ld_sel)}};
 
 assign lsu_dcache_ld_xx_gwen = ~lsu_dcache_ld_data_gwen_b[0];
 

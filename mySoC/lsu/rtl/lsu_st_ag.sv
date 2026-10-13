@@ -60,14 +60,14 @@ module ct_lsu_st_ag #(
     //==========================================================
     logic st_ag_stall_vld;
     logic st_ag_stall_mask;
-    logic st_ag_stall_restart;
+    //logic st_ag_stall_restart;
     logic st_ag_dcache_stall_req;
     logic st_ag_dcache_stall_unmask;
 
     assign st_ag_dcache_stall_unmask = !dcache_arb_ag_st_sel;
     assign st_ag_dcache_stall_req = st_ag_dcache_stall_unmask && st_ag_inst_vld;
-    assign st_ag_stall_vld = st_ag_dcache_stall_req && !st_ag_stall_mask;
-    assign st_ag_stall_restart = st_ag_dcache_stall_req && st_ag_stall_mask;
+    assign st_ag_stall_vld = st_ag_dcache_stall_req;// && !st_ag_stall_mask;
+   // assign st_ag_stall_restart = st_ag_dcache_stall_req && st_ag_stall_mask;
 
     always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
         if (!cpurst_b)
@@ -267,6 +267,7 @@ assign st_ag_expt = !st_ag_align;
     //==========================================================
     //        Generate stall/restart signal
     //==========================================================
+    /*
     logic rf_iid_older_than_st_ag;
 
     ct_rtu_compare_iid x_lsu_rf_compare_st_ag_iid (
@@ -280,11 +281,11 @@ assign st_ag_expt = !st_ag_align;
     assign st_ag_stall_restart_entry[LSIQ_ENTRY-1:0] =
         st_ag_stall_mask ? st_ag_lsid[LSIQ_ENTRY-1:0]
                          : idu_lsu_st_lch_entry[LSIQ_ENTRY-1:0];
-
+*/
     //==========================================================
     //        Generate to DC stage signal
     //==========================================================
-    assign st_ag_dc_inst_vld = st_ag_inst_vld && !st_ag_stall_restart;
+    assign st_ag_dc_inst_vld = st_ag_inst_vld && !st_ag_stall_vld;
 
     assign st_ag_dc_addr0[31:0] = dcache_arb_st_ag_borrow_addr_vld
         ? dcache_arb_st_ag_addr[31:0]

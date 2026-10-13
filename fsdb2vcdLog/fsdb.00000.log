@@ -1,7 +1,7 @@
 #######################################################################################
 # fsdb.xxxxx.log : log primitive debug message of FSDB Reader
 # This is for R&D to analyze when there are issues happening when FSDB reading
-# The corresponding FSDB file is /x2025/GPrj1/IC2/RISCV_A910/waveform/a910_difftest.fsdb
+# The corresponding FSDB file is /x2025/GPrj1/IC2/RISCV_A910/waveform/sb.fsdb
 #######################################################################################
 [BASIC]Reader version : Chronologic Simulation VCS Release V-2023.12-SP2_Full64
 [BASIC]simulator version : Chronologic Simulation VCS Release V-2023.12-SP2_Full64
@@ -11,28 +11,18 @@ Async open disabled.
 [THREAD]Secondary thread count: 8
 [PERF]VC decompress count : 2
 [PERF]VCChain decompress count : 1
-[PERF]VC decompress count : 2
+[PERF]VC decompress count : 1
 [PERF]VCChain decompress count : 1
-[PERF]VC decompress count : 2
+[PERF]VC decompress count : 0
 [PERF]VCChain decompress count : 1
-[PERF]VC decompress count : 2
-[PERF]VCChain decompress count : 1
-[PERF]VC decompress count : 2
-[PERF]VCChain decompress count : 1
-[PERF]VC decompress count : 2
-[PERF]VCChain decompress count : 1
-[PERF]VC decompress count : 2
-[PERF]VCChain decompress count : 1
-[PERF]VC decompress count : 2
-[PERF]VCChain decompress count : 1
-[READSCOPE]ReadScopeTree calling time is 3
+[READSCOPE]ReadScopeTree calling time is 2
 [READSCOPE]ReadScope_PartialLoad calling time is 0
 [READSCOPE]Scope read by partial load count is 0
-[READSCOPE]Scope read count is 6
+[READSCOPE]Scope read count is 4
 [READSCOPE]Decompressed blk is 1
 [MAXCHAIN]Decompressed cnt 1
-[PERF]VC decompress count : 2
-[PERF]VCChain decompress count : 1
+[PERF]VC decompress count : 0
+[PERF]VCChain decompress count : 0
 [FSDBGate Info] start
-[FSDBGate Info] Total fhdb_compute_count = 2032
+[FSDBGate Info] Total fhdb_compute_count = 37
 [FSDBGate Info] end
