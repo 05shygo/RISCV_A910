@@ -385,8 +385,25 @@ assign dcache_dirty_wen  = ~lsu_dcache_st_dirty_wen_b;
 //==========================================================
 //            Data array mux
 //==========================================================
-assign lsu_dcache_ld_data_sel_b = {8{!(dcache_arb_lfb_ld_sel || dcache_arb_vb_ld_sel
-                                        || dcache_arb_wmb_ld_sel)}} || ag_dcache_arb_ld_data_req;
+// ⚠️ 2026-10-14 修复 (coremark_i1 第 1689 条失配的真凶):
+//    `sel_b` 接的是数据阵列 SRAM 的 **CEN** (片选, 低有效) —— CEN=1 那一拍的**写被整个丢掉**
+//    (见 ct_spsram_32x32.sv: `if (!CEN && !GWEN) ... mem_q[A][i] <= D[i]`; 读是无条件同步读,
+//     所以 CEN 只影响写 ⇒ 症状是"数据没写进去", 不是"读出来全错")。
+//    原来写成 `{8{~(lfb||vb||wmb)}} || ag_dcache_arb_ld_data_req`: LFB (miss 回填) 选中时
+//    上式塌成 `ag_dcache_arb_ld_data_req` —— 那是**当拍 AG 级那条 load** 要用的 bank。
+//    于是"回填正在写 line X" 与 "某条 load 正好在读 bank i" 同拍时, bank i 的 CEN=1 ⇒
+//    **回填把那个字整块漏掉**, 阵列里保持旧值(复位清 0) ⇒ 之后命中该行的 load 读到 0。
+//    实测: coremark_i1 T2174 回填 0xf940 行 (low_din=...01082424 完全正确), 但
+//    `sel_b=01` (AG 那条 load 要 bank0) ⇒ 0xf940 那个字没写进去, 保持 0;
+//    T2669 `lh a5,0(a0)`@0xf940 命中该行读出 0 ⇒ 第 1689 条失配。
+//    原版 (ct_lsu_dcache_arb.v:995-1003) 是**按选中源**取 req:
+//      lsu_dcache_ld_data_sel_b = ~dcache_arb_ld_data_req, 其中
+//      dcache_arb_ld_data_req = {8{lfb_sel}}&8'hff | {8{wmb_sel}}&wmb_req | {8{ag_sel}}&ag_req ...
+//    这里照原版口径改回: LFB/VB/WMB 占口时**整行 8 个 bank 全使能**(逐字节掩码由 WEN 负责);
+//    只有 AG 独占用口时才只使能它自己要的 bank。
+assign lsu_dcache_ld_data_sel_b = ~( {8{dcache_arb_lfb_ld_sel || dcache_arb_vb_ld_sel
+                                        || dcache_arb_wmb_ld_sel}}
+                                   | ({8{dcache_arb_ag_ld_sel}} & ag_dcache_arb_ld_data_req) );
 
 assign lsu_dcache_ld_data_gwen_b = {8{!(dcache_arb_lfb_ld_sel || dcache_arb_wmb_ld_sel)}};
 

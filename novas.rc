@@ -228,8 +228,8 @@ autoSaveSession = FALSE
 TclAutoSource = 
 cmd_enter_form = FALSE
 SyncBrowserDir = TRUE
-recent_commands_Verdi = UndoTraceGroup,hbTextCopy,verdiSearchPaneAct,textCaretWordRight
-recent_commands_nWave = digitalFBin,editCut,digitalFUDec,nextEvent,tsNWNodeShowActiveFaninRegisters,previousEvent
+recent_commands_nWave = editCut,digitalFBin,digitalFUDec,createMarker,usrMarker,tsNWAddSpreadSheet,nextEvent,tsNWNodeShowActiveFaninRegisters,previousEvent
+recent_commands_Verdi = UndoTraceGroup,RedoTraceGroup,hbSearchScope,hbTextCopy,verdiSearchPaneAct,textCaretWordRight
 ColorTheme = classic
 version = Verdi_V-2023.12-SP2
 prevColorTheme = classic
@@ -375,10 +375,13 @@ saveWaveformStat = TRUE
 savePropStat = FALSE
 savePropDtl = TRUE
 [QtDialog]
-QwWarnMsgDlg = 979,1152,600,250
 unknownSave = 1048,610,461,245
-QwUserAskDlg = 1118,670,324,127
 tipViewerDlg = 1080,585,398,259
+usrMarkerDialog_SaveMarkerReport = 984,642,590,340
+usrMarkerDialog = 879,662,800,300
+spreadSheetDialog = 964,615,629,395
+QwWarnMsgDlg = 979,1226,600,250
+QwUserAskDlg = 1118,750,324,127
 [Relationship]
 hideRecursiceNode = FALSE
 [Safety]
@@ -576,7 +579,7 @@ pdmlMacro = ID_BLACK
 font = COURIER12
 annotFont = FIXED12
 [Text.1]
-viewport = -1 27 2560 1337 45
+viewport = -1 27 2560 1497 45
 [TextPrinter]
 Orientation = Landscape
 Indicator = FALSE
@@ -685,21 +688,21 @@ visualIndex = 0
 isHidden = FALSE
 isUserChangeColumnVisible = FALSE
 [VIA.oneSearch.preference.vgifColumnSettingRC.setting0.column3]
+name = "Block's First Line"
+width = 120
+visualIndex = 1
+isHidden = TRUE
+isUserChangeColumnVisible = FALSE
+[VIA.oneSearch.preference.vgifColumnSettingRC.setting0.column4]
 name = "Message"
 width = 2000
 visualIndex = 5
 isHidden = FALSE
 isUserChangeColumnVisible = FALSE
-[VIA.oneSearch.preference.vgifColumnSettingRC.setting0.column4]
+[VIA.oneSearch.preference.vgifColumnSettingRC.setting0.column5]
 name = "Code"
 width = 60
 visualIndex = 3
-isHidden = TRUE
-isUserChangeColumnVisible = FALSE
-[VIA.oneSearch.preference.vgifColumnSettingRC.setting0.column5]
-name = "Block's First Line"
-width = 120
-visualIndex = 1
 isHidden = TRUE
 isUserChangeColumnVisible = FALSE
 [Vi]
@@ -943,11 +946,11 @@ printBasic = 1 0 0 FALSE FALSE
 printDest = -printer {}
 printSignature = {%f %h %t} {}
 curveWindow_Drag&Drop_Mode = TRUE
-RecentFile1 = "\"/x2025/GPrj1/IC2/RISCV_A910/waveform/sb.fsdb\""
+RecentFile1 = "\"/x2025/GPrj1/IC2/RISCV_A910/waveform/coremark_i1.fsdb\""
 RecentFile2 = "\"/x2025/GPrj1/IC2/RISCV_A910/waveform/sh.fsdb\""
-RecentFile3 = "\"/x2025/GPrj1/IC2/RISCV_A910/waveform/branch_bench.fsdb\""
-RecentFile4 = "\"/x2025/GPrj1/IC2/RISCV_A910/waveform/sw.fsdb\""
-RecentFile5 = "\"/x2025/GPrj1/IC2/RISCV_A910/waveform/lhu.fsdb\""
+RecentFile3 = "\"/x2025/GPrj1/IC2/RISCV_A910/waveform/sb.fsdb\""
+RecentFile4 = "\"/x2025/GPrj1/IC2/RISCV_A910/waveform/branch_bench.fsdb\""
+RecentFile5 = "\"/x2025/GPrj1/IC2/RISCV_A910/waveform/sw.fsdb\""
 open_file_time_range = FALSE
 legend_window_font = -f COURIER12 -c ID_CYAN5
 value_window_font = -f COURIER12 -c ID_CYAN5

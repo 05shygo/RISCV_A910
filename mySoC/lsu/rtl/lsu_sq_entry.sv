@@ -623,7 +623,7 @@ module ct_lsu_sq_entry #(
     //==========================================================
     //                 Generate pop signal
     //==========================================================
-    assign sq_entry_flush_pop_vld = rtu_yy_xx_flush && !sq_entry_cmit;
+    assign sq_entry_flush_pop_vld = rtu_yy_xx_flush && !sq_entry_cmit & !sq_entry_cmit_set;
 
     assign sq_entry_pop_vld = sq_entry_vld && sq_entry_in_wmb_ce && wmb_sq_pop_grnt;
 

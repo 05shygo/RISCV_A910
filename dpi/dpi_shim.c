@@ -64,6 +64,16 @@ void gm_set_irq(int pending) {
   cpu_set_irq(pending);
 }
 
+// TEMP DEBUG: dump the reference model's data memory so a difftest mismatch can
+// be compared word-for-word against the DUT's AXI slave memory (u_mem.mem[]).
+void gm_dump_mem(int addr, int nwords) {
+  int i;
+  for (i = 0; i < nwords; i++) {
+    unsigned a = (unsigned)addr + 4 * (unsigned)i;
+    fprintf(stderr, "  GM_MEM[0x%08x] = 0x%08x\n", a, memory[a >> 2]);
+  }
+}
+
 // Compare the DUT's CSR file against the model's. Called once per commit, but
 // ONLY on cycles where the DUT reports no redirect: a trap's own mepc/mcause/
 // mstatus writes land on that same clock edge, while the model applies them

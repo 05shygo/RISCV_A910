@@ -120,7 +120,7 @@ module lsu_wmb #(
   output logic [2:0]           wmb_biu_aw_prot,
   output logic                 wmb_biu_aw_req,
   output logic [2:0]           wmb_biu_aw_size,
-  output logic [2:0]           wmb_biu_aw_snoop,
+ // output logic [2:0]           wmb_biu_aw_snoop,
  // output logic                 wmb_biu_aw_user,
 
   // BIU W channel
@@ -217,6 +217,8 @@ module lsu_wmb #(
   logic                  wmb_write_ptr_shift_imme_grnt;
   logic                  wmb_entry_write_ptr_shift_imme;
   logic                  wmb_entry_data_ptr_shift_imme;
+  logic                  wmb_write_ptr_next1_met_create;
+  logic                  wmb_write_pop_up_wmb_ce_vld;
 
   logic [PA_WIDTH-1:0]   wmb_write_req_addr;
   logic                  wmb_write_biu_req_unmask;
@@ -490,18 +492,29 @@ assign wmb_rb_biu_req_hit_idx = |wmb_entry_rb_biu_req_hit_idx;
   //==========================================================
   //          BIU AW channel (simplified - no icc/fence/sync)
   //==========================================================
-  // ⚠️ 原版这里是"建表项时装载 wmb_ce_addr" + "写指针移位时装载 next1 地址"两级;
-  //    移植只留了后者, 且取的是 `wmb_write_ptr_next1`(移位后那位) —— 那位常常**还没建
-  //    表项**(wmb_entry_addr = X) ⇒ 记下的 AW 地址是 X ⇒ store 写到空处, 后续 load
-  //    读到的是没被更新的老内存。
-  //    改为: 建表项时装载新表项地址; 移位时按**当前**写指针取地址。
+  // ⚠️ 2026-10-14: 装载条件原来用的是 `wmb_create_vld`(任何一次建表都把 AW 地址寄存器
+  //    改写成**最新那笔 store** 的地址)。原版 (ct_lsu_wmb.v:3852 `wmb_write_pop_up_wmb_ce_vld`)
+  //    只在"写指针追上建表指针"(write_ptr==create_ptr, 或移位后 ==)时才用 wmb_ce_addr 装载 ——
+  //    那才是"这一笔就是要写出去的那笔"。
+  //    用 wmb_create_vld 的后果: 建一笔新表项会把**正在写出的老表项**的地址冲掉, 于是
+  //    AW 地址取到了别的表项的地址, 而 W 数据/wstrb 仍来自写指针那项 ⇒ store 被写到
+  //    **错误的那条 128 位线**上, 目标线却仍是旧内容 ⇒ 后续 load 的 miss-refill 从内存
+  //    读回旧值。实测 coremark_i1 第 939 条 `lw a1,4(t3)`@0xf8dc: E3(addr 0xf8dc, data 0xf95c)
+  //    的 AW 被 E0 的建表冲成了 0xf950, 写到了 0xf950 上; 而 0xf8d0 线收到的是 E0 的旧行
+  //    内容 0x7fff5b5b ⇒ load 读到 0x7fff5b5b (应为 0xf95c)。
+  assign wmb_write_ptr_next1_met_create = (wmb_write_ptr_next1 == wmb_create_ptr);
+  assign wmb_write_pop_up_wmb_ce_vld    = wmb_ce_create_wmb_req
+                                          && (wmb_write_ptr_met_create
+                                              || (wmb_write_ptr_next1_met_create && wmb_write_ptr_shift_vld));
   always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
     if (!cpurst_b)
       wmb_write_req_addr <= '0;
-    else if (wmb_create_vld)
+    else if (wmb_write_pop_up_wmb_ce_vld)
       wmb_write_req_addr <= wmb_ce_addr;
     else if (wmb_write_ptr_shift_vld)
-      wmb_write_req_addr <= wmb_entry_addr[encode_ptr(wmb_write_ptr)];
+      // 移位后要写的是**移位后**那位 (原版 `wmb_write_req_addr_next1` 用的就是
+      // `wmb_write_ptr_next1`); 取移位前那位 ⇒ AW 地址永远晚上一笔 ⇒ 写错线。
+      wmb_write_req_addr <= wmb_entry_addr[encode_ptr(wmb_write_ptr_next1)];
   end
 
   assign wmb_write_biu_req_unmask = |wmb_entry_write_biu_req;
@@ -526,7 +539,7 @@ assign wmb_rb_biu_req_hit_idx = |wmb_entry_rb_biu_req_hit_idx;
   //assign wmb_biu_aw_lock = 1'b0;
   assign wmb_biu_aw_cache = 4'b1111;  // All cacheable
   assign wmb_biu_aw_prot = 3'b000;
-  assign wmb_biu_aw_snoop = 3'b000;  // No snoop
+  //assign wmb_biu_aw_snoop = 3'b000;  // No snoop
  // assign wmb_biu_aw_domain = 2'b00;
  // assign wmb_biu_aw_bar = 2'b00;
  // assign wmb_biu_aw_user = 1'b0;

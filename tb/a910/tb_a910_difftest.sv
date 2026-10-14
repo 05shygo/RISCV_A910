@@ -40,6 +40,7 @@ module tb_a910_difftest;
                                                      input int dut_wb_irq_safe);
   import "DPI-C" context function int  gm_halted();
   import "DPI-C" context function int  gm_exit_code();
+  import "DPI-C" context function void gm_dump_mem(input int addr, input int nwords);
   import "DPI-C" context function void gm_set_timer(input int lo, input int hi);
 
   // -------------------------------------------------------------------------
@@ -121,6 +122,131 @@ module tb_a910_difftest;
     .bid     (pad_biu_bid),      .bresp   (pad_biu_bresp),
     .bvalid  (pad_biu_bvalid),   .bready  (biu_pad_bready)
   );
+
+  // -------------------------------------------------------------------------
+  // 【临时诊断】写通道落盘现场 + AXI 从机内存看门狗 (2026-10-14, coremark_i1 #1689)
+  //
+  // 【为什么加它】失灵点 pc=0x44 `lh a5,0(a0)` (a0=0xf940) 上, 黄金模型读回 0x2424,
+  //   DUT 读回 0 —— 而 AXI 上同地址回填的是 0x6464。即 **DUT 内存本身被写成了错值**,
+  //   不是 load 通路的问题。
+  //   光看 `+PROBE_AXI` 的 AW/W 打印对不上: 按"第 i 个 AW 配第 i 个 W"重建出来的
+  //   写序列给出的是正确值 0x2424, 与从机实际内存 0x6464 矛盾 ⇒ 总线上 AW/W 两条
+  //   通道的**真实配对**不是打印顺序。必须让从机在**真正落盘那一拍**自己报出来。
+  //
+  //   [SLVW] 从机在 wvalid&wready 那拍实际写的那笔: 用的 wr_addr + strb + data。
+  //   [MEMW] 从机内存 mem[f93..f96] 的每次变化 (带当拍总线状态), 定位是哪一笔写坏的。
+  // -------------------------------------------------------------------------
+  always @(posedge clk) begin
+    if (!rst && biu_pad_wvalid && pad_biu_wready)
+      $display("  [SLVW] T%0d wr_addr=%08x strb=%04x data=%032x",
+               cycles, u_mem.wr_addr, biu_pad_wstrb, biu_pad_wdata);
+  end
+
+  // [WDC] WMB → dcache 数据阵列写口: 逐笔 store 的 way / high_sel / data / bytes_vld。
+  //   用来查 "store 数据到底写进了高半还是低半、字节掩码对不对"。
+  always @(posedge clk) begin
+    if (!rst && dut.u_lsu_top.u_lsu_wmb.wmb_dcache_arb_req)
+      $display("  [WDC] T%0d addr=%08x way=%b a4=%b hin=%b data=%032x bv=%04x region=%b grnt=%b",
+               cycles, dut.u_lsu_top.u_lsu_wmb.wmb_write_dcache_addr,
+               dut.u_lsu_top.u_lsu_wmb.wmb_write_req_dcache_way,
+               dut.u_lsu_top.u_lsu_wmb.wmb_write_dcache_addr[4],
+               dut.u_lsu_top.u_lsu_wmb.wmb_dcache_data_high_sel,
+               dut.u_lsu_top.u_lsu_wmb.wmb_write_dcache_data,
+               dut.u_lsu_top.u_lsu_wmb.wmb_write_dcache_bytes_vld,
+               dut.u_lsu_top.u_lsu_wmb.wmb_dcache_data_region,
+               dut.u_lsu_top.u_lsu_wmb.wmb_write_dcache_success);
+  end
+
+  // [LFBW] LFB → dcache 数据阵列写口 (miss 回填): 低/高半 din 与写使能。
+  always @(posedge clk) begin
+    if (!rst && dut.u_lsu_top.u_dcache_arb.dcache_arb_lfb_ld_sel)
+      $display("  [LFBW] T%0d low_idx=%0d low_din=%032x high_din=%032x wen_b=%08x sel_b=%02x",
+               cycles, dut.u_lsu_top.u_dcache_arb.lsu_dcache_ld_data_low_idx,
+               dut.u_lsu_top.u_dcache_arb.lsu_dcache_ld_data_low_din,
+               dut.u_lsu_top.u_dcache_arb.lsu_dcache_ld_data_high_din,
+               dut.u_lsu_top.u_dcache_arb.lsu_dcache_ld_data_wen_b,
+               dut.u_lsu_top.u_dcache_arb.lsu_dcache_ld_data_sel_b);
+  end
+
+  // [HOLD] 误预测冻结窗 (A910_cpu.sv 的本地补丁) 的闸门状态
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_HOLD") && cycles >= 2680 && cycles <= 2720)
+      $display("  [HOLD] T%0d mispred_hold=%b pulse_seen=%b | iu_chgflw_vld=%b rtu_flush_busy=%b rtu_yy_xx_flush=%b | flush_trig=%b mispred_hit=%b",
+               cycles, dut.mispred_hold_q, dut.hold_pulse_seen_q,
+               dut.iu_chgflw_vld, dut.rtu_flush_busy, dut.rtu_yy_xx_flush,
+               dut.u_rtu.u_commit.flush_trig, dut.u_rtu.u_commit.mispred_hit);
+  end
+
+  // [ST] store 流水三级 (AG/DC/DA/WB) + SQ 接收口 —— 看队头那条 store 卡在哪一级
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_ST") && cycles >= 2680 && cycles <= 2720)
+      $display("  [ST] T%0d st_ag v=%b iid=%0d addr=%08x old=%b | st_dc v=%b iid=%0d | st_da v=%b iid=%0d | st_wb v=%b iid=%0d | sq_full=%b inst_hit=%b",
+               cycles,
+               dut.u_lsu_top.st_ag_inst_vld, dut.u_lsu_top.st_ag_iid,
+               dut.u_lsu_top.st_ag_dc_addr0, dut.u_lsu_top.st_ag_old,
+               dut.u_lsu_top.st_dc_inst_vld, dut.u_lsu_top.st_dc_iid,
+               dut.u_lsu_top.st_da_inst_vld, dut.u_lsu_top.st_da_iid,
+               dut.u_lsu_top.st_wb_inst_vld, 0,
+               dut.u_lsu_top.sq_st_dc_full, dut.u_lsu_top.sq_st_dc_inst_hit);
+  end
+
+  // [SQD2] SQ 排空路径: 有没有 pop 请求 / CE 有没有收 / 谁挡着
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_SQ2") && cycles >= 2680 && cycles <= 2720)
+      $display("  [SQD2] T%0d pop_unmask=%b pop_to_ce=%b merge_req=%b | ce_vld=%b ce_create=%b pop_vld=%b sqptr=%b | vld=%b cmit=%b create_ptr=%b pop_ptr=%b | grnt=%b",
+               cycles,
+               dut.u_lsu_top.u_lsu_sq.sq_pop_req_unmask,
+               dut.u_lsu_top.u_lsu_sq.sq_pop_to_ce_req,
+               dut.u_lsu_top.sq_wmb_merge_req,
+               dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_vld,
+               dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_create_vld,
+               dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_pop_vld,
+               dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_sq_ptr,
+               dut.u_lsu_top.u_lsu_sq.sq_entry_vld,
+               dut.u_lsu_top.u_lsu_sq.sq_entry_cmit,
+               dut.u_lsu_top.u_lsu_sq.sq_create_ptr,
+               dut.u_lsu_top.u_lsu_sq.sq_pop_ptr,
+               dut.u_lsu_top.wmb_sq_pop_grnt);
+  end
+
+  // [SQD3] 逐表项: pop_req 为什么是 0 (data_vld / no_restart / in_wmb_ce)
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_SQ3") && cycles >= 2690 && cycles <= 2692) begin
+      $display("  [SQD3] T%0d e0 vld=%b cmit=%b data_vld=%b no_restart=%b in_ce=%b pop_req=%b | e1 vld=%b cmit=%b data_vld=%b no_restart=%b in_ce=%b pop_req=%b | e2 in_ce=%b pop_req=%b",
+        cycles,
+        dut.u_lsu_top.u_lsu_sq.sq_entry_vld[0], dut.u_lsu_top.u_lsu_sq.sq_entry_cmit[0],
+        dut.u_lsu_top.u_lsu_sq.gen_sq_entry[0].x_ct_lsu_sq_entry.sq_entry_data_vld,
+        dut.u_lsu_top.u_lsu_sq.gen_sq_entry[0].x_ct_lsu_sq_entry.sq_entry_no_restart,
+        dut.u_lsu_top.u_lsu_sq.gen_sq_entry[0].x_ct_lsu_sq_entry.sq_entry_in_wmb_ce,
+        dut.u_lsu_top.u_lsu_sq.gen_sq_entry[0].x_ct_lsu_sq_entry.sq_entry_pop_req,
+        dut.u_lsu_top.u_lsu_sq.sq_entry_vld[1], dut.u_lsu_top.u_lsu_sq.sq_entry_cmit[1],
+        dut.u_lsu_top.u_lsu_sq.gen_sq_entry[1].x_ct_lsu_sq_entry.sq_entry_data_vld,
+        dut.u_lsu_top.u_lsu_sq.gen_sq_entry[1].x_ct_lsu_sq_entry.sq_entry_no_restart,
+        dut.u_lsu_top.u_lsu_sq.gen_sq_entry[1].x_ct_lsu_sq_entry.sq_entry_in_wmb_ce,
+        dut.u_lsu_top.u_lsu_sq.gen_sq_entry[1].x_ct_lsu_sq_entry.sq_entry_pop_req,
+        dut.u_lsu_top.u_lsu_sq.gen_sq_entry[2].x_ct_lsu_sq_entry.sq_entry_in_wmb_ce,
+        dut.u_lsu_top.u_lsu_sq.gen_sq_entry[2].x_ct_lsu_sq_entry.sq_entry_pop_req);
+    end
+  end
+
+  reg [127:0] memw_prev [0:3];
+  reg         memw_init = 0;
+  integer     memw_i;
+  always @(posedge clk) begin
+    if (!rst) begin
+      for (memw_i = 0; memw_i < 4; memw_i = memw_i + 1) begin
+        if (!memw_init || u_mem.mem[12'hf93 + memw_i] !== memw_prev[memw_i]) begin
+          if (memw_init)
+            $display("  [MEMW] T%0d mem[%05x]=%032x  aw(v=%b,%08x) w(v=%b,r=%b,strb=%04x,data=%032x)",
+                     cycles, 16 * (12'hf93 + memw_i), u_mem.mem[12'hf93 + memw_i],
+                     biu_pad_awvalid, biu_pad_awaddr,
+                     biu_pad_wvalid, pad_biu_wready, biu_pad_wstrb, biu_pad_wdata);
+          memw_prev[memw_i] = u_mem.mem[12'hf93 + memw_i];
+        end
+      end
+      memw_init = 1;
+    end
+  end
 
   // -------------------------------------------------------------------------
   // TIMER 外设 (0xFFFFF040) —— A910_cpu 顶层**没有外设**, 总线上的 TIMER 由本 TB 现造
@@ -279,6 +405,15 @@ module tb_a910_difftest;
     $display("");
     $display("  ⚠️ 失配前的累计退休 = %0d 条, 本拍 = T%0d", retired - 1, cycles);
     $display("     上面的 REFERENCE/MYCPU 对照就是第一个不一致点 (dpi_shim.c 打的)");
+    // 【临时诊断】DUT 的 AXI 从机内存 vs 黄金模型内存 (栈上 0xf930..0xf96f)
+    begin : mem_dump
+      integer di;
+      $display("  ---- DUT 内存 (u_mem.mem) 0xf930..0xf96f ----");
+      for (di = 0; di < 8; di = di + 1)
+        $display("    DUT_MEM[0x%08x] = %032x", 16 * (12'hf93 + di), u_mem.mem[12'hf93 + di]);
+      $display("  ---- 黄金模型内存 0xf930..0xf96f ----");
+      gm_dump_mem(32'h0000_f930, 32);
+    end
     // 带诊断探针时多等一拍: 探针是另一个 always 块, 同一拍谁先跑没有保证,
     // 先 $fatal 会把失配那一拍的现场吞掉。
     if ($test$plusargs("PROBE_WB") || trace_en) @(posedge clk);
@@ -753,6 +888,85 @@ module tb_a910_difftest;
                dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_sq_ptr, dut.u_lsu_top.sq_pop_data,
                dut.u_lsu_top.u_lsu_wmb.wmb_entry_data[0], dut.u_lsu_top.u_lsu_wmb.wmb_entry_data[1],
                dut.u_lsu_top.u_lsu_wmb.wmb_entry_data[2]);
+    end
+  end
+
+  // 【临时诊断】WMB (写合并缓冲) 的合并通路 —— `+PROBE_WMB` (窗由 STL_LO/STL_HI 给)
+  //
+  // 【为什么加它】coremark_i1 第 939 条 (`lw a1,4(t3)` @ pc=0x938, addr=0xf8dc) 失配:
+  //   提供数据的那笔 store (`sw a7,4(a3)` @ pc=0x8d8, iid=105) 在 SQ 里是对的
+  //   (entry2: addr=0xf8dc data=0x0000f95c), 也带着 0xf95c pop 给了 CE, 但这条 128 位
+  //   线的最终 AXI 写 (T1356 AW=0xf8d0 / T1357 W strb=0xf000) 里 data[127:96] 却是
+  //   **旧行内容 0x7fff5b5b** —— strb 更新了、data 没换成新值。
+  //   所以要逐拍看: sq_pop → CE → WMB 表项 这一路, 新数据在哪一拍哪一根上丢的。
+  //
+  // 排障顺序: 先看 mstall (merge 被 stall 而没重试 ⇒ 丢数据), 再看 CE 给的
+  //   bytes_vld/data_vld 是否覆盖了目标 word3(bit3)/字节 12-15, 最后看表项
+  //   E? 的 data 有没有真的被新值覆盖。
+  integer wmb_k;
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_WMB") && cycles >= stl_lo && cycles <= stl_hi) begin
+      $display("  [WCE] T%0d pop: ptr=%b addr=%08x bv=%04x data=%032x | mreq=%b mstall_req=%b pce=%b",
+               cycles, dut.u_lsu_top.sq_pop_ptr, dut.u_lsu_top.sq_pop_addr,
+               dut.u_lsu_top.sq_pop_bytes_vld, dut.u_lsu_top.sq_pop_data,
+               dut.u_lsu_top.sq_wmb_merge_req, dut.u_lsu_top.sq_wmb_merge_stall_req,
+               dut.u_lsu_top.sq_wmb_pop_to_ce_req);
+      $display("        CE锁存: vld=%b merge=%b stall=%b mptr=%b sqptr=%b | 建表 vld=%b merge=%b stall=%b mptr=%b wreq=%b wdreq=%b | pop_vld=%b",
+               dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_vld,
+               dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_merge,
+               dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_stall,
+               dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_merge_ptr,
+               dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_sq_ptr,
+               dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_create_vld,
+               dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_create_merge,
+               dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_create_stall,
+               dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_create_merge_ptr,
+               dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_create_wmb_req,
+               dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_create_wmb_data_req,
+               dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_pop_vld);
+      $display("        CE活: mwreq=%b ahit=%b mstall=%b mnotvld=%b | data_vld=%b bytes_vld=%04x data128=%032x",
+               dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_merge_wmb_req,
+               dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_merge_data_addr_hit,
+               dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_merge_data_stall,
+               dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_merge_not_vld,
+               dut.u_lsu_top.wmb_ce_data_vld, dut.u_lsu_top.wmb_ce_bytes_vld,
+               dut.u_lsu_top.wmb_ce_data128);
+      $display("        WMB: mrgvld=%b ahit=%b mstall=%b", dut.u_lsu_top.u_lsu_wmb.wmb_merge_vld,
+               dut.u_lsu_top.u_lsu_wmb.wmb_merge_data_addr_hit,
+               dut.u_lsu_top.u_lsu_wmb.wmb_merge_data_stall);
+      for (wmb_k = 0; wmb_k < 4; wmb_k = wmb_k + 1)
+        $display("        E%0d v=%b cv=%b mv=%b ah=%b st=%b addr=%08x bv=%04x data=%032x",
+                 wmb_k,
+                 dut.u_lsu_top.u_lsu_wmb.wmb_entry_vld[wmb_k],
+                 dut.u_lsu_top.u_lsu_wmb.wmb_entry_create_vld[wmb_k],
+                 dut.u_lsu_top.u_lsu_wmb.wmb_entry_merge_data_vld[wmb_k],
+                 dut.u_lsu_top.u_lsu_wmb.wmb_entry_merge_data_addr_hit[wmb_k],
+                 dut.u_lsu_top.u_lsu_wmb.wmb_entry_merge_data_stall[wmb_k],
+                 dut.u_lsu_top.u_lsu_wmb.wmb_entry_addr[wmb_k],
+                 dut.u_lsu_top.u_lsu_wmb.wmb_entry_bytes_vld[wmb_k],
+                 dut.u_lsu_top.u_lsu_wmb.wmb_entry_data[wmb_k]);
+    end
+  end
+
+  // 【临时诊断】WMB 两根独立指针 (write_ptr 管 AW 地址 / data_ptr 管 W 数据) —— `+PROBE_PTR`
+  //   若二者错位, 就会出现 "AW 地址来自表项 X、W 数据来自表项 Y" 的交叉写。
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_PTR") && cycles >= stl_lo && cycles <= stl_hi) begin
+      $display("  [PTR] T%0d wptr=%b dptr=%b cptr=%b | aw_addr=%08x w_data=%032x w_strb=%04x",
+               cycles,
+               dut.u_lsu_top.u_lsu_wmb.wmb_write_ptr,
+               dut.u_lsu_top.u_lsu_wmb.wmb_data_ptr,
+               dut.u_lsu_top.u_lsu_wmb.wmb_create_ptr,
+               {dut.u_lsu_top.u_lsu_wmb.wmb_write_req_addr[31:4], 4'b0},
+               dut.u_lsu_top.u_lsu_wmb.wmb_data_req_data,
+               dut.u_lsu_top.u_lsu_wmb.wmb_data_req_bytes_vld);
+      $display("        ptrbit: w0=%b w1=%b w2=%b w3=%b | d0=%b d1=%b d2=%b d3=%b | aw_req=%b w_req=%b | shift: wsh=%b dsh=%b",
+               dut.u_lsu_top.u_lsu_wmb.wmb_write_ptr[0], dut.u_lsu_top.u_lsu_wmb.wmb_write_ptr[1],
+               dut.u_lsu_top.u_lsu_wmb.wmb_write_ptr[2], dut.u_lsu_top.u_lsu_wmb.wmb_write_ptr[3],
+               dut.u_lsu_top.u_lsu_wmb.wmb_data_ptr[0], dut.u_lsu_top.u_lsu_wmb.wmb_data_ptr[1],
+               dut.u_lsu_top.u_lsu_wmb.wmb_data_ptr[2], dut.u_lsu_top.u_lsu_wmb.wmb_data_ptr[3],
+               dut.u_lsu_top.u_lsu_wmb.wmb_biu_aw_req, dut.u_lsu_top.u_lsu_wmb.wmb_data_req,
+               dut.u_lsu_top.u_lsu_wmb.wmb_write_ptr_shift_vld, dut.u_lsu_top.u_lsu_wmb.wmb_data_ptr_shift_vld);
     end
   end
 

@@ -349,7 +349,7 @@ logic [1:0]   wmb_biu_aw_len;
 logic [2:0]   wmb_biu_aw_prot;
 logic         wmb_biu_aw_req;
 logic [2:0]   wmb_biu_aw_size;
-logic [2:0]   wmb_biu_aw_snoop;
+//logic [2:0]   wmb_biu_aw_snoop;
 //logic         wmb_biu_aw_user;
 logic [127:0] wmb_biu_w_data;
 logic [3:0]   wmb_biu_w_id;
@@ -1797,7 +1797,7 @@ lsu_wmb #(
   .wmb_biu_aw_prot(wmb_biu_aw_prot),
   .wmb_biu_aw_req(wmb_biu_aw_req),
   .wmb_biu_aw_size(wmb_biu_aw_size),
-  .wmb_biu_aw_snoop(wmb_biu_aw_snoop),
+ // .wmb_biu_aw_snoop(wmb_biu_aw_snoop),
   //.wmb_biu_aw_user(wmb_biu_aw_user),
   .wmb_biu_w_data(wmb_biu_w_data),
   .wmb_biu_w_id(wmb_biu_w_id),
