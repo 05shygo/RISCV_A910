@@ -975,9 +975,43 @@ module A910_cpu
     end
   end
 
-  assign idu_inst0_vld = ifu_inst0_vld & ~mispred_hold_q;
-  assign idu_inst1_vld = ifu_inst1_vld & ~mispred_hold_q;
-  assign idu_inst2_vld = ifu_inst2_vld & ~mispred_hold_q;
+  // ===========================================================================
+  //  【2026-10-14 补漏】闸门必须**连冲刷脉冲那一拍一起夹** —— `rtu_yy_xx_flush`
+  // ===========================================================================
+  //  `mispred_hold_q` 是**寄存器**, 只在 `iu_chgflw_vld` (BEU 的 EX 级重定向) 时
+  //  置位; 而 RTU 那条重定向走的是**另一条时序**, 它罩不住:
+  //
+  //      T   : `rtu_ifu_chgflw_vld` + `rtu_ifu_flush` 同拍同值拉高 (RTU_flush.v:156-161)
+  //            ⇒ IFU 当拍转向 (零气泡), 目标行当拍进阵列
+  //      T+1 : `rtu_yy_xx_flush` 才到 (RTU_flush.v 的 F1) —— **后端的大扫帚比前端晚一拍**
+  //            ⇒ IFU2 命中 I-Cache 时 T+1 正好把目标那条交出来 (空队列旁路)
+  //            ⇒ "交货"与"被清"撞在同一拍:
+  //               * ID 级寄存器 `else if(rtu_yy_xx_flush)` 优先级高于 pipedown
+  //                 (ct_idu_id_ctrl.sv:77 / ct_idu_id_dp.sv:178) ⇒ 当拍交来那条被丢;
+  //               * 而 `idu_accept_num` **不看 vld** (ct_idu_id_ctrl.sv:53-65)
+  //                 ⇒ IBUF 当"已收下"弹掉 ⇒ **永久丢** (不是晚一拍)。
+  //
+  //  【实测 (2026-10-14, `+PROBE_RACE`, 全套 45 用例扫过)】
+  //      sw : T185 src=4(REPLAY) 重定向 0x158 → T+1 交出的 0x158/0x15c 被弹掉
+  //           ⇒ 退休流 0x154 → 0x160, 黄金模型指着 `0x158 = sw`  ⇒ FAIL
+  //      sh : 同型 (T184 src=4 → 0x148)                            ⇒ FAIL
+  //      其余 41 条: RTU 前端重定向 0 次 (没触发过)                ⇒ PASS
+  //      ⇒ 两条 FAIL 与两条"撞车即丢"**一一对应**。
+  //
+  //  为什么"并进脉冲那拍"就够 (而不是也要提前置位):
+  //    脉冲那拍 IDU 的 ID/IR/IS 全在被清 ⇒ 当拍交进去什么都会被丢, 所以那拍
+  //    "不交付、也不许弹"是**普适安全**的 (指令老实待在 IBUF, 下一拍照常交)。
+  //    RTU 那条的前端转向(T)与脉冲(T+1)紧邻 ⇒ 夹这一拍正好够, 代价 1 拍/次。
+  //    误预测那条 (转向在 EX, 离脉冲好几拍) 照旧靠上面的寄存器闸门。
+  //  ⚠️ 别写成"清于 ~rtu_flush_busy"或只夹自己的口: 判据必须是**IDU 自己看到的
+  //     那根** `rtu_yy_xx_flush` (同源同拍), 否则相位又对不上。
+  // ===========================================================================
+  wire idu_hold;
+  assign idu_hold = mispred_hold_q | rtu_yy_xx_flush;
+
+  assign idu_inst0_vld = ifu_inst0_vld & ~idu_hold;
+  assign idu_inst1_vld = ifu_inst1_vld & ~idu_hold;
+  assign idu_inst2_vld = ifu_inst2_vld & ~idu_hold;
 
   // ⚠️ **只关 vld 是不够的, 必须连 `accept_num` 一起夹 0。**
   //    实测 (第一版就只关了 vld): 闸门期间 IBUF 里的 0x7c 还是**没了** ——
@@ -985,7 +1019,7 @@ module A910_cpu
   //    `ifu_idu_ib_inst*_vld` (这是已知的契约违例, 见文件末尾待接清单第 1 条)。
   //    ⇒ IBUF 照 IDU 报的条数把它弹走, 而 IDU 那边因为 vld 被我夹掉没收 ⇒
   //      **指令被弹进了黑洞**。夹住 accept_num, 指令就老实待在 IBUF 里等开闸。
-  assign ifu_accept_num = mispred_hold_q ? 2'd0 : idu_accept_num;
+  assign ifu_accept_num = idu_hold ? 2'd0 : idu_accept_num;
   // ⚠️ 车道 1 原来写的是 `idu_inst2_data[122]` —— 复制粘贴时漏改车道号。后果是
   //    **车道 1 的方向预测被车道 2 的顶掉**: 一拍交两条时, 车道 1 的 taken 取自
   //    车道 2 ⇒ 分支预测器的方向快照随指令走错一条, BIQ 拿它算 NPC 也会错。

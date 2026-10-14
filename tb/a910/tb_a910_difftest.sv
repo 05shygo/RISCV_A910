@@ -850,6 +850,58 @@ module tb_a910_difftest;
     end
   end
 
+  // -------------------------------------------------------------------------
+  // 【临时诊断】RTU 重定向 → T+1 撞车探针 —— `A910_DT_ARGS=+PROBE_RACE`
+  //
+  //  追的是这条时序癌: RTU 在 T 拍发**前端**重定向 (`rtu_ifu_chgflw_vld`, 与
+  //  `rtu_ifu_flush` 同拍同值, 见 RTU_flush.v:156-161), 但它给 IDU 的**大扫帚**
+  //  `rtu_yy_xx_flush` 是 **T+1** 才到 (RTU_flush.v 的 F1)。而 IFU2 命中 I-Cache
+  //  时 T+1 就能把目标那条交出来 (零气泡重定向 + 空队列旁路, ibuf:93-99)
+  //  ⇒ "交货"和"被清"撞在同一拍:
+  //    * ID 级寄存器 `else if(rtu_yy_xx_flush)` 的优先级高于 pipedown
+  //      (ct_idu_id_ctrl.sv:77 / ct_idu_id_dp.sv:178) ⇒ 当拍交来那条被丢;
+  //    * 而 IDU 报给 IFU 的 `idu_accept_num` **不看 vld** (ct_idu_id_ctrl.sv:53-65)
+  //      ⇒ IBUF 把它当"已收下"弹掉 ⇒ **永久丢** (不是晚一拍)。
+  //
+  //  ⚠️ 只看**生效值** —— 闸门之后的 `idu_inst*_vld` / `ifu_accept_num`:
+  //     改了闸门 (hold 里并进 `rtu_yy_xx_flush` 或 `rtu_ifu_chgflw_vld`) 之后,
+  //     撞车那拍这两组应当全 0 ⇒ 指令留在 IBUF 里等下一拍, 不丢。
+  //     所以判据是**末尾那行的 `真丢` 必须为 0**, 而不是"撞车次数"。
+  // -------------------------------------------------------------------------
+  integer race_reds  = 0;     // RTU 非误预测前端重定向 (T 拍) 次数
+  integer race_hit   = 0;     // 其中 T+1 撞上大扫帚、且 IFU 真的交货了的次数
+  integer race_lost  = 0;     // 其中 IBUF 还把它弹走了 (accept != 0) ⇒ 真丢
+  integer race_lines = 0;
+  reg     race_pend  = 1'b0;
+  reg [2:0]  race_src;
+  reg [31:0] race_pc;
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_RACE")) begin
+      if (race_pend) begin
+        race_pend = 1'b0;
+        if (dut.rtu_yy_xx_flush) begin
+          if (dut.idu_inst0_vld || dut.idu_inst1_vld || dut.idu_inst2_vld) race_hit = race_hit + 1;
+          if (dut.idu_inst0_vld && (dut.ifu_accept_num != 2'b0)) race_lost = race_lost + 1;
+          if (race_lines < 200) begin
+            race_lines = race_lines + 1;
+            $display("  [RACE] T%0d src=%0d tgt=%08x | T+1: 大扫帚=1 闸门=%b | IFU 备货=%b%b%b 交出=%b%b%b accept=%b ⇒ %s",
+                     cycles, race_src, race_pc, dut.mispred_hold_q,
+                     dut.ifu_inst2_vld, dut.ifu_inst1_vld, dut.ifu_inst0_vld,
+                     dut.idu_inst2_vld, dut.idu_inst1_vld, dut.idu_inst0_vld,
+                     dut.ifu_accept_num,
+                     (dut.idu_inst0_vld && (dut.ifu_accept_num != 2'b0)) ? "★真丢" : "留着");
+          end
+        end
+      end
+      if (dut.rtu_ifu_chgflw_vld) begin
+        race_reds = race_reds + 1;
+        race_pend = 1'b1;
+        race_src  = dut.u_rtu.flush_src;
+        race_pc   = dut.rtu_ifu_chgflw_pc;
+      end
+    end
+  end
+
   integer ifu_win = 0;
   always @(posedge clk) begin
     if (!rst && $test$plusargs("PROBE_IFU")) begin
@@ -942,6 +994,12 @@ module tb_a910_difftest;
 
     while (!halted && !bad && cycles < max_cycles) @(posedge clk);
     repeat (2) @(posedge clk);        // 让 halt/bad 那两个 always 块先跑完
+
+    // [RACE] 汇总: 重定向次数 / 撞车次数 / **真丢条数** (判据是最后一列 = 0)
+    if ($test$plusargs("PROBE_RACE")) begin
+      $display("  [RACE] TEST=%0s | RTU 前端重定向 %0d 次 | T+1 撞车 %0d 次 | 真丢 %0d 条",
+               test_name, race_reds, race_hit, race_lost);
+    end
 
     $display("");
     $display("==================================================");
