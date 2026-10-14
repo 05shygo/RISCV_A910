@@ -64,6 +64,7 @@ module ct_lsu_st_dc #(
     output logic         st_dc_da_tag1_hit,
     output logic [7:0]  st_dc_idu_sq_full,
     output logic         st_dc_dcwp_hit_idx,
+    output logic         st_dc_get_dcache_tag_dirty,
     output logic         st_dc_spec_fail,
     output logic [SDIQ_ENTRY-1:0] lsu_idu_has_in_sq
 );
@@ -208,6 +209,14 @@ assign st_dc_dcwp_hit_idx = 1'b0;
 
     assign st_dc_sq_full_vld = st_dc_sq_create_dp_vld && sq_st_dc_full;
     assign st_dc_restart_vld = st_dc_sq_full_vld;
+
+    // ⚠️ 原版 ct_lsu_st_dc.v:1211 有一根 `st_dc_get_dcache_tag_dirty`, 本仓**整个漏了**
+    //    ⇒ lsu_top 里同名线悬空 ⇒ `ct_lsu_st_da` 里那排 dcache tag/dirty 寄存器
+    //    (装载条件就是它) **永远不装** ⇒ st_da 看到的 tag=0/dirty=0 ⇒ store 恒判
+    //    "线不在 dcache" ⇒ store 全走写内存、dcache 永不更新。
+    //    原版 = inst_vld && !vector_nop && !utlb_miss && (st_inst | atomic | 1line);
+    //    本仓 RV32I 精简版只有 store, 没有 vector/utlb/atomic ⇒ 就是"有 store 在 SC"。
+    assign st_dc_get_dcache_tag_dirty = st_dc_inst_vld || st_dc_borrow_vld;
 
     //==========================================================
     //        Generate to DA stage signal

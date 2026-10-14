@@ -63,13 +63,15 @@ module lsu_wmb #(
   input  logic [7:0]           ld_dc_addr1_11to4,
   input  logic [15:0]          ld_dc_bytes_vld,
   input  logic                 ld_dc_chk_ld_inst_vld,
-
+  input  logic                 lfb_wmb_write_req_hit_idx,
+  input  logic                 vb_wmb_hit_idx,
   // LFB/VB address for conflict check (at set granularity)
+  /*
   input  logic [26:0]          lfb_vb_addr_tto5,
   input  logic                 lfb_vb_create_vld,
   input  logic [31:0]          vb_biu_aw_addr,
   input  logic                 vb_biu_aw_req,
-
+*/
   // Flush
   input  logic                 rtu_yy_xx_flush,
 
@@ -431,17 +433,24 @@ assign wmb_rb_biu_req_hit_idx = |wmb_entry_rb_biu_req_hit_idx;
   assign wmb_write_req = |wmb_entry_write_req;
   assign wmb_data_req = |wmb_entry_data_req;
 
-  // ⚠️ 这里原来取 `wmb_entry_write_ptr_after_write_shift_imme`, 但那是根**谁都没驱动**
+  // ⚠️ 原来取的是 `wmb_entry_write_ptr_after_write_shift_imme` —— 那是根**谁都没驱动**
   //    的向量(表项只引出 `..._unconditional_shift_imme_x`) ⇒ shift_imme = X/Z ⇒
-  //    `wmb_write_ptr_shift_vld` 变成 X ⇒ 写指针不走 ⇒ `wmb_write_req_addr` 落到
-  //    未建表项上(其 addr 是 X) ⇒ 发出去的 AW 地址 `xxxxxxx0`, store 写到空处。
-  //    改回表项真正引出的那根。
-  assign wmb_entry_write_ptr_shift_imme = wmb_entry_write_ptr_unconditional_shift_imme[wmb_write_ptr];
-  assign wmb_entry_data_ptr_shift_imme = wmb_entry_data_ptr_after_write_shift_imme[wmb_data_ptr];
+  //    `wmb_write_ptr_shift_vld` 变 X ⇒ 写指针不走 ⇒ `wmb_write_req_addr` 落到未建
+  //    表项上(addr=X) ⇒ AW 地址 `xxxxxxx0`。
+  //    我曾把它改成本仓那根真向量, 但**取法又抄错了**: `array[wmb_write_ptr]` 是拿
+  //    4 位 one-hot 当下标 ⇒ 越界 ⇒ X。原版 (ct_lsu_wmb.v:3242/3247) 就是**对全部
+  //    表项直接 OR**, 不套下标。这里照原版改回。
+  assign wmb_entry_write_ptr_shift_imme = |wmb_entry_write_ptr_unconditional_shift_imme;
+  assign wmb_entry_data_ptr_shift_imme  = |wmb_entry_data_ptr_after_write_shift_imme;
 
-
-  assign wmb_write_ptr_shift_vld = wmb_write_grnt && wmb_write_req || |(wmb_entry_write_ptr_shift_imme);
-  assign wmb_data_ptr_shift_vld = wmb_data_grnt && wmb_data_req || |(wmb_entry_data_ptr_shift_imme);
+  // 移位条件也照原版 (ct_lsu_wmb.v:3270):
+  //   shift_vld = wmb_write_grnt || (!met_create && shift_imme)
+  // 原来是 `wmb_write_grnt && wmb_write_req || |(imme)` —— 多了个 `&& req`、少了
+  // `!met_create` 门, 都会让写指针在需要"跳过无效/已完成表项"时不走。
+  assign wmb_write_ptr_shift_vld = wmb_write_grnt
+                                   || (!wmb_write_ptr_met_create && wmb_entry_write_ptr_shift_imme);
+  assign wmb_data_ptr_shift_vld  = wmb_data_grnt
+                                   || (!wmb_data_ptr_met_create && wmb_entry_data_ptr_shift_imme);
 
   //==========================================================
   //          SQ interface - create/merge logic
@@ -498,6 +507,7 @@ assign wmb_rb_biu_req_hit_idx = |wmb_entry_rb_biu_req_hit_idx;
   assign wmb_write_biu_req_unmask = |wmb_entry_write_biu_req;
 
   // Conflict check: WMB can only issue BIU AW if no conflict with LFB/VB at set granularity
+  /*
   logic wmb_lfb_conflict;
   logic wmb_vb_conflict;
 
@@ -506,8 +516,8 @@ assign wmb_rb_biu_req_hit_idx = |wmb_entry_rb_biu_req_hit_idx;
 
   assign wmb_vb_conflict = vb_biu_aw_req
                          && (wmb_write_req_addr[INDEX_MSB:INDEX_LSB] == vb_biu_aw_addr[INDEX_MSB:INDEX_LSB]);
-
-  assign wmb_biu_aw_req = wmb_write_biu_req_unmask && !wmb_lfb_conflict && !wmb_vb_conflict;
+*/
+  assign wmb_biu_aw_req = wmb_write_biu_req_unmask & !vb_wmb_hit_idx & !lfb_wmb_write_req_hit_idx; //&& !wmb_lfb_conflict && !wmb_vb_conflict;
   assign wmb_biu_aw_addr = {wmb_write_req_addr[PA_WIDTH-1:4], 4'b0};
   assign wmb_biu_aw_id = {BIU_R_NORM_ID_T, wmb_write_ptr_encode};
   assign wmb_biu_aw_len = 2'b00;  // Single beat
@@ -569,10 +579,14 @@ assign wmb_rb_biu_req_hit_idx = |wmb_entry_rb_biu_req_hit_idx;
   logic                 wmb_dcache_req_next;
   logic                 wmb_write_dcache_pop_up;
 
-  assign wmb_dcache_req_set = wmb_entry_write_dcache_req & ~wmb_write_dcache_ptr;
+  assign wmb_dcache_req_ptr[WMB_ENTRY-1:0] = {WMB_ENTRY{wmb_write_dcache_pop_req}} & wmb_write_dcache_ptr[WMB_ENTRY-1:0];
+  // ⚠️ 原版 (ct_lsu_wmb.v:4091) 屏蔽的是 `~wmb_dcache_req_ptr` (= 仅"正在弹的那项"),
+  //    本仓抄成了 `~wmb_write_dcache_ptr` ⇒ **指针指着的那项被恒屏蔽**。若指针恰好
+  //    就停在那唯一请求写 dcache 的表项上, req_set 恒 0 ⇒ req_next 恒 0 ⇒ pop_req
+  //    永不抬 ⇒ 指针也永不前进 ⇒ 死锁: store 的数据永远写不进 dcache。
+  assign wmb_dcache_req_set = wmb_entry_write_dcache_req & ~wmb_dcache_req_ptr;
   assign wmb_dcache_req_next = |wmb_dcache_req_set;
   assign wmb_write_dcache_pop_up = wmb_write_dcache_success || (!wmb_write_dcache_pop_req && wmb_dcache_req_next);
-  assign wmb_dcache_req_ptr[WMB_ENTRY-1:0] = {WMB_ENTRY{wmb_write_dcache_pop_req}} & wmb_write_dcache_ptr[WMB_ENTRY-1:0];
 
   always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
     if (!cpurst_b)

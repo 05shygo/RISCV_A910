@@ -358,10 +358,16 @@ assign lsu_dcache_st_dirty_din = ({5{dcache_arb_lfb_st_sel}} & lfb_dcache_arb_st
                                   | ({5{wmb_dcache_arb_st_req}} & wmb_dcache_arb_st_dirty_din);
 
 
-assign lsu_dcache_st_dirty_wen_b = ({5{dcache_arb_lfb_st_sel}} & ~lfb_dcache_arb_st_dirty_wen)
-                                    | ({5{dcache_arb_vb_st_sel}} & ~vb_dcache_arb_st_dirty_wen)
-                                    | ({5{wmb_dcache_arb_st_req}} & ~wmb_dcache_arb_st_dirty_wen)
-                                    | 5'h1F;
+// ⚠️ 原来末尾硬写了 `| 5'h1F` ⇒ wen_b 恒 = 1 ⇒ `dcache_dirty_wen = ~wen_b` 恒 = 0
+//    ⇒ **dcache 的 dirty 数组一次都没被写过** ⇒ 填线后 valid 位永远不置 1 ⇒
+//    store 的 `st_da_dcache_valid` 恒判"线不在 dcache" ⇒ store 全走写内存、
+//    dcache 永远不反映 store ⇒ 后续 load 命中老线读到旧值。
+//    另外原来把 `~` 写进了每一项 (`{sel} & ~src_wen` 再 OR): 未获授权那路
+//    (比如 WMB 在 req 但没被选中、wen=0) 会贡献一堆 1, 同样会把使能压成 0。
+//    原版语义 (ct_lsu_dcache_arb.v): 各路**正 wen** 按选中屏蔽后 OR, 最后整体取反。
+assign lsu_dcache_st_dirty_wen_b = ~( ({5{dcache_arb_lfb_st_sel}} & lfb_dcache_arb_st_dirty_wen)
+                                    | ({5{dcache_arb_vb_st_sel}}  & vb_dcache_arb_st_dirty_wen)
+                                    | ({5{wmb_dcache_arb_st_req}} & wmb_dcache_arb_st_dirty_wen) );
 
 assign dcache_dirty_din  = lsu_dcache_st_dirty_din;
 assign dcache_dirty_gwen = ~lsu_dcache_st_dirty_gwen_b;

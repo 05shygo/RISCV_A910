@@ -17,6 +17,8 @@ module ct_lsu_vb #(
     //==========================================================
     input  logic         cpurst_b,
     input  logic         forever_cpuclk,
+    input  logic [31:0]  wmb_biu_aw_addr,
+    output logic         vb_wmb_hit_idx,
 
     //==========================================================
     // LFB request (only source)
@@ -25,6 +27,7 @@ module ct_lsu_vb #(
     output logic         vb_rb_biu_req_hit_idx,
     input  logic [26:0]  lfb_vb_addr_tto5,
     input  logic         lfb_vb_create_vld,
+    
     input  logic [1:0]   lfb_vb_id,
 
     //==========================================================
@@ -190,6 +193,9 @@ assign vb_lfb_vb_req_hit_idx = vb_vld
                                && (vb_addr_tto5[INDEX_WIDTH-1:0] == lfb_vb_addr_tto5[INDEX_WIDTH-1:0]);
 assign vb_rb_biu_req_hit_idx    = vb_vld
                                && (vb_addr_tto5[INDEX_WIDTH-1:0] == rb_biu_req_addr[INDEX_WIDTH+4:5]);
+assign vb_wmb_hit_idx  = vb_vld
+                               && (vb_addr_tto5[INDEX_WIDTH-1:0] == wmb_biu_aw_addr[INDEX_WIDTH+4:5]);
+
 //==========================================================
 //                 addr entry register (merged)
 //==========================================================
