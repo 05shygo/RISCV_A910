@@ -47,7 +47,32 @@ secs_ret time_in_secs(CORE_TICKS ticks) {
     return ticks / 1000000u;
 }
 
-ee_u32 default_num_contexts = 1;
+ee_u32 default_num_contexts = COREMARK_CONTEXTS;
+
+// ---------------------------------------------------------------------------
+// 多 context 的入口 (2026-10-14) —— CoreMark 在 `MULTITHREAD > 1` 时走这对钩子
+// (core_main.c:317-321), "怎么并行"由平台层回答。本 port 没有 pthread/fork/socket
+// (裸核上没必要), 所以这里就是**顺序**跑: 每个 context 依次调同一个 `iterate()`。
+//
+//   ⇒ 分数口径要看清: CoreMark 报的是 `default_num_contexts * iterations / 时间`,
+//     而时间是 N 个 context **串行**的总时间。所以本 port 的"N 路"提供的是
+//     **多 context 的功能/压力覆盖** (N 份独立数据块 + N 份 CRC 都要对, 窗口更宽、
+//     重命名/preg 回收的压力更大), **不是**真并行加速比 —— 报告的
+//     `Parallel Sequential : N` 那行就是照着这个口径写的。
+// ⚠️ 这两个函数在 coremark.h 里只于 `#if (MULTITHREAD > 1)` 下声明 ⇒ 定义也必须挂
+//    在同一个条件里。无条件定义会让 MULTITHREAD=1 时多出没人用的函数, 基线二进制的
+//    md5 就变了 (顺序核那条 11,438,398 拍的基线要求逐位可复现)。
+// ---------------------------------------------------------------------------
+#if (MULTITHREAD > 1)
+ee_u8 core_start_parallel(core_results *res) {
+    iterate(res);
+    return 0;
+}
+ee_u8 core_stop_parallel(core_results *res) {
+    (void)res;
+    return 0;
+}
+#endif
 
 void portable_init(core_portable *p, int *argc, char *argv[]) {
     if (sizeof(ee_ptr_int) != sizeof(ee_u8 *)) {

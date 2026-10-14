@@ -19,7 +19,16 @@ CFLAGS = -march=$(ARCH) -mabi=$(ABI) -O2 -g -nostdlib -nostartfiles -fno-builtin
 # 10 secs for a valid result". 想要一个完全有效、带 CRC 校验的分数就用
 #   make -f Makefile.coremark ITERATIONS=25
 ITERATIONS ?= 1
+# 并行 context 数 (2026-10-14)。CoreMark 里 `MULTITHREAD` 是**数组维度**,
+# 真正跑几路由 `default_num_contexts` 决定 ⇒ 两个都由这个宏驱动 (见
+# riscv-port/core_portme.h 的说明)。默认 1 = 与入库的 bin/coremark.bin 逐位一致,
+# 顺序核那条基线 (11,438,398 拍) 不许动。
+#   多 context:  make coremark COREMARK_ITERATIONS=30 COREMARK_CONTEXTS=4
+#    只编出来:   make -C coremark -f Makefile.coremark ITERATIONS=30 CONTEXTS=4 \
+#                  BUILD_DIR=build_c4 BIN_TARGET=../bin/coremark_c4.bin
+CONTEXTS ?= 1
 CFLAGS += -Iriscv-port -I. -DITERATIONS=$(ITERATIONS) -DPERFORMANCE_RUN=1
+CFLAGS += -DCOREMARK_CONTEXTS=$(CONTEXTS)
 
 # Linker flags - use hardware multiply/divide (RV32M)
 LDFLAGS = -march=$(ARCH) -mabi=$(ABI) -nostdlib -nostartfiles

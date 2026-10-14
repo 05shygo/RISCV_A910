@@ -507,3 +507,84 @@ free_cnt 长期在 16~21 徘徊 (复位后是 32)
 `ct_rtu_pst_preg.v:6995` 的 `alloc_preg{k}_invalid` 各自看 `idu_rtu_ir_preg{k}_alloc_vld`）。
 这条会动 §6.0 的接口，`doc/rtu_if_*.xlsx` 是生成的 ⇒ 要改 `gen_rtu_if_xlsx.py` 再重跑。
 **因为 §4.6 才是 beq 的拦路虎，这条没有急迫性，等定了一起做。**
+
+---
+
+## 7. 2026-10-14：CoreMark 上 A910 —— 两个 bug（**只定位，未改，转同事**）
+
+【为什么盯 CoreMark】它是唯一同时压 取指/分支/访存/重命名 的真实负载，也是"乱序核到底
+比顺序核快多少"的口径来源。台子已经能跑它了（§7.3 是为此新加的能力），但**跑不完** ——
+第 132 条就分叉。下面两条互相独立，都卡在 LSU。
+
+### 7.1 🔴 已提交的 store 丢写（确定性复现，`coremark_i1` 第 132 条）
+
+复现（编译好的台子，约 30 秒）：
+
+    make a910-difftest TEST=coremark_i1 A910_DT_MAX_CYCLES=3000000 A910_DT_ARGS=+NOVALID
+
+现象（每次都同一条指令、同一拍）：
+
+    T424  slot0 pc=00002728 ena=0        ← sh a5,16(sp)：把 seed3=0x66 存到 sp+16 = 0xF7B0
+    T507  [AX] AR addr=0000f7a0 len=1    ← 后面 lh a14,2032(a5) 缺行，回填
+    T508  [AX] R  data=0000...0000       ← 整行全 0：0x66 根本不在内存里
+    T537  ❌ 第 132 条退休 pc=00002758 lh a14,2032(a5)：模型 0x66 / DUT 0
+    之后 beqz a14 走了错路（T523 冲刷 tgt=00002ab4）
+
+【已经排除的】
+
+* **不是二进制/我的 TB 改动**：同一个 `bin/coremark_i1.bin` 在顺序核上 **0 失配**
+  跑完 339,458 条（`make run TEST=coremark_i1 MAX_CYCLES=2000000 BUILD_DIR=$PWD/obj_nofsdb
+  VERDI_HOME= NOVAS_HOME= VERDI_ROOTS=`）。
+* **不是"没 AW 因为写进了 cache"**：本核的 store 是**直通总线**的 —— 拿**能过的** `sh`
+  用例对照（`make a910-difftest TEST=sh A910_DT_ARGS="+PROBE_AXI +STL_LO=0 +STL_HI=900"`），
+  它的写在 T106/T107 立刻上 AXI，strb/data 都对。
+* **不是写通道 lane/strb 错位**：我一度按 hex 自左向右读成"数据在最低字却配 strb=0xF000"，
+  实际 128 位里**最左是 w3**，与 strb 一致（用 `sw`/`sh` 的每一笔 AW/W 逐条核过）。
+
+【指向】整跑里 `0xF7A0` 那一带**只有一次 AW**（T233，strb=0x00f0 的零写），那两笔 `sh`
+（0x2718 → 0xF7AE、0x2728 → 0xF7B0）**退休了，但从没上过写通道**。store 已提交却既没落
+内存、83 拍后同地址的 load 也没被挡住/转发 ⇒ 两个可查点：
+
+  (a) SQ/WMB 里那条表项被谁清了 —— 时间线上 T430/T445/T458/T480/T495/T523 全是
+      `src=MISPRED` 的冲刷，与 §4.7 ① **同族**（"冲刷条件把已提交的东西一起杀了"）；
+  (b) load 的 WMB 依赖判据（`lsu_wmb_entry.sv` 的 `wmb_entry_depd_do_hit`）漏了这笔。
+
+探针：`+PROBE_AXI` / `+PROBE_SQ` / `+PROBE_SD2`（窗用 `STL_LO/STL_HI`）；现场留在
+`/tmp/a910_dt/coremark_i1.log`（`A910_DT_ARGS="+PROBE_AXI +STL_LO=90 +STL_HI=560"`）。
+
+### 7.2 🟠 LSU/dcache 没有 device/uncached 旁路（MMIO 读全废）
+
+`asm/a910_timer.S`（本轮新增的最小用例）**同一地址连读三次**：AXI 上**只有一次 AR**
+（T100 `addr=fffff040 len=1`），三次都返回第一次填进 cache 的那个值 ⇒ 任何 MMIO 读
+（TIMER 的 mtime、NPU 寄存器……）第二次起全是陈值。
+
+后果：CoreMark 的 `timer_counter`（`coremark/riscv-port/core_portme.h` 的 `CM_TIMER_ADDR`）
+恒等 ⇒ `total_time = 0` ⇒ 打 "ERROR! Must execute for at least 10 secs" ⇒ **分数不合法**
+（这就是 §7.3 里 `+NOVALID` 存在的原因）。
+
+修法方向：给 load 的 tag 命中与行填充各加一根 `cacheable` 判据（设备地址：不命中 +
+不填充 + 直走 BIU；store 侧同理别去更新/分配 cache 行）。取值域按 SoC 约定 ——
+本台 RAM 只有低 64KB，`0xFFFF_F0xx` / `0x4000_0xxx` 都是设备。
+
+### 7.3 台子这边已经就位的（不是 bug，是能力，供跑 CoreMark 用）
+
+* **A910 顶层没有外设**（`Peripheral name:` 那几行是黄金模型自己打的），所以 TIMER 由
+  difftest 台在 AXI 从机上**现造**：读 `0xFFFFF040` 返回 TB 的周期计数器。见
+  `tb/a910/tb_a910_difftest.sv` 顶部 "TIMER 外设" 那段。
+* **模型计时器按"这条指令自己带回来的值"对齐**（喂每条退休包之前
+  `gm_set_timer(dbg_commit_value)`）。顺序核那套"延迟 N 拍采样 `mtime`"在乱序核上不成立
+  —— load 的 读→提交 距离不固定，固定延迟必然对不上。
+* **`+NOVALID`**：照 `tb_miniRV_dpi.sv` 的同名开关 —— 逐拍 difftest 通过 = 功能无误，
+  只是跑分不合法（退出码 1），降级成 PASS 并把**退休条数/用了多少拍**打出来。
+  用它跑出来的分数**不能引用**，只能看周期/退休数。
+* **CoreMark 的 context 数可配**：
+
+      make -C coremark -f Makefile.coremark ITERATIONS=30 CONTEXTS=4 \
+           BUILD_DIR=build_c4 BIN_TARGET=../bin/coremark_c4.bin
+
+  （CoreMark 里 `MULTITHREAD` 是**数组维度**、`default_num_contexts` 才决定跑几路 ⇒
+  两者一起由 `-DCOREMARK_CONTEXTS` 驱动；port 里补了缺失的 `core_start_parallel` /
+  `core_stop_parallel` = 顺序跑。默认 1，与入库的 `bin/coremark.bin` **逐位相同**，`cmp` 验过。）
+
+⚠️ 4-context 那版**还没在 A910 上跑过**：§7.1 的丢写会让 DUT 在 #132 之后走错分支，
+周期数不可引用。**§7.1 修完再跑才作数。**
