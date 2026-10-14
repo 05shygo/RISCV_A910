@@ -1,6 +1,6 @@
-Command Line: /mnt/tools/synopsys/verdi/V-2023.12-SP2/platform/LINUXAMD64/bin/fsdb2vcd waveform/sb.fsdb -o /tmp/sb_sd2.vcd -s tb_a910_difftest/clk -s tb_a910_difftest/dut/idu_lsu_sdiq_sel -s tb_a910_difftest/dut/idu_lsu_st_sdiq_entry -s tb_a910_difftest/dut/idu_lsu_st_sel -s tb_a910_difftest/dut/idu_lsu_st_iid
+Command Line: /mnt/tools/synopsys/verdi/V-2023.12-SP2/platform/LINUXAMD64/bin/fsdb2vcd waveform/sb.fsdb -o /tmp/sb.vcd
 uname(Linux localhost.localdomain 3.10.0-1160.119.1.el7.x86_64 #1 SMP Tue Jun 4 14:43:51 UTC 2024 x86_64)
-Load signals (0)-(1255000) time 0.016616 0.006802 0.010888 delta 103940096 103940096 total 416079872 416079872
-Write signals (0)-(1255000) time 0.000479 0.000479 0.000000 delta 0 0 total 416079872 416079872
-Unload (0)-(1255000) time 0.000238 0.000239 0.000000 delta 0 0 total 416079872 416079872
-au time 0.119253 0.037459 0.021183 delta 107892736 107892736 total 302346240 302346240
+Load signals (0)-(1675000) time 0.378241 0.831794 0.403235 delta 171139072 171139072 total 483262464 483262464
+Write signals (0)-(1675000) time 0.160921 0.160844 0.000000 delta 978944 978944 total 484241408 484241408
+Unload (0)-(1675000) time 0.006375 0.006375 0.000000 delta 0 0 total 484241408 484241408
+au time 0.637015 1.079797 0.410967 delta 172969984 172969984 total 367423488 367423488

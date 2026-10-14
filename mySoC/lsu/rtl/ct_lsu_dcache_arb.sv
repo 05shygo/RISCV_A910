@@ -303,8 +303,15 @@ assign lsu_dcache_ld_tag_idx = ({INDEX_WIDTH{dcache_arb_lfb_ld_sel}} & lfb_dcach
 assign lsu_dcache_ld_tag_din = ({LD_TAG_WIDTH{dcache_arb_lfb_ld_sel}} & lfb_dcache_arb_ld_tag_din)
                                 | ({LD_TAG_WIDTH{dcache_arb_vb_ld_sel}} & vb_dcache_arb_ld_tag_din);
 
-assign lsu_dcache_ld_tag_wen_b = ({2{dcache_arb_lfb_ld_sel}} & ~lfb_dcache_arb_ld_tag_wen)
-                                  | ({2{dcache_arb_vb_ld_sel}} & ~vb_dcache_arb_ld_tag_wen);
+// ⚠️ 原来把 `~` 推进了每一项 (逐路取反后 OR) ⇒ 两路都没被选中时结果是 `2'b00`,
+//    而 tag 数组的 wen_b 是**按路低有效**(`tag_wen_b_all = {way1,way0}`) ⇒ `2'b00`
+//    恰好 = **两路都写**。WMB 来查 dcache tag 时 (`dcache_arb_wmb_ld_sel=1`) 会把
+//    `ld_tag_gwen_b` 拉成 0 (写允许), 于是 arb 拿残留的 wen_b=00 + din=0 **把整条
+//    tag 条目(含 valid)写成 0** ⇒ 刚被 LFB 回填好的行立刻失效 ⇒ 后续 load 全 miss。
+//    原版 (ct_lsu_dcache_arb.v:971/976) 是先 OR 出正 `wen` 再整体取反, 无源选中时
+//    `wen=0 ⇒ wen_b=2'b11` (谁都不写)。同 bc29663 给 dirty 数组修的正是一类错。
+assign lsu_dcache_ld_tag_wen_b = ~( ({2{dcache_arb_lfb_ld_sel}} & lfb_dcache_arb_ld_tag_wen)
+                                  | ({2{dcache_arb_vb_ld_sel}}  & vb_dcache_arb_ld_tag_wen) );
 
 //==========================================================
 //            Store tag array mux
@@ -324,7 +331,9 @@ assign lsu_dcache_st_tag_idx = ({INDEX_WIDTH{dcache_arb_lfb_st_sel}} & lfb_dcach
 
 assign lsu_dcache_st_tag_din = ({ST_TAG_WIDTH{dcache_arb_lfb_st_sel}} & lfb_dcache_arb_st_tag_din);
 
-assign lsu_dcache_st_tag_wen_b = ({2{dcache_arb_lfb_st_sel}} & ~lfb_dcache_arb_st_tag_wen);
+// 同 ld_tag_wen_b: 逐项取反 OR ⇒ 无源选中时 2'b00 (=两队都写)。这里目前被
+// `st_tag_gwen_b = !lfb_st_sel` 挡着(lfb 不选就不开写), 属潜伏同类错, 一并照原版改。
+assign lsu_dcache_st_tag_wen_b = ~( ({2{dcache_arb_lfb_st_sel}} & lfb_dcache_arb_st_tag_wen) );
 
 assign dcache_tag_din  = lsu_dcache_st_tag_din;
 assign dcache_tag_gwen = ~lsu_dcache_st_tag_gwen_b;

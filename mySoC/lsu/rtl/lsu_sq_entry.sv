@@ -210,7 +210,6 @@ module ct_lsu_sq_entry #(
     logic                  sq_entry_depd_exact_hit;
     logic                  sq_entry_depd_hit1;
     logic                  sq_entry_depd_hit4;
-    logic                  sq_entry_depd_hit5;
     logic                  sq_entry_depd_hit6;
     logic                  sq_entry_depd_hit7;
     logic                  sq_entry_depd_hit8;
