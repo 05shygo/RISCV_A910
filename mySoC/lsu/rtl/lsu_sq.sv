@@ -215,7 +215,7 @@ module ct_lsu_sq #(
     logic [IID_WIDTH-1:0] sq_entry_iid [0:SQ_ENTRY-1];
     logic [7:0]  sq_entry_rot_sel [0:SQ_ENTRY-1];
     logic [7:0]  sq_entry_data_depd_wakeup [0:SQ_ENTRY-1];
-
+logic [SQ_ENTRY-1:0]sq_entry_cmit_data_not_vld;
     //==========================================================
     // SQ entry instances
     //==========================================================
@@ -292,7 +292,7 @@ module ct_lsu_sq #(
                 .sq_entry_bytes_vld_v                      (sq_entry_bytes_vld[i]),
                 .sq_entry_cancel_acc_req_x                 (sq_entry_cancel_acc_req[i]),
                // .sq_entry_cmit_data_vld_x                  (sq_entry_cmit_data_vld[i]),
-                .sq_entry_cmit_data_not_vld(sq_entry_cmit_data_not_vld),
+                .sq_entry_cmit_data_not_vld(sq_entry_cmit_data_not_vld[i]),
                 .sq_entry_cmit_x                           (sq_entry_cmit[i]),
                 .sq_entry_data_depd_wakeup_v               (sq_entry_data_depd_wakeup[i]),
                 .sq_entry_data_discard_req_x               (sq_entry_data_discard_req[i]),

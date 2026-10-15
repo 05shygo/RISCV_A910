@@ -1525,26 +1525,37 @@ module tb_a910_difftest;
   end
 
   // 【临时诊断】RTU 冲刷闸 `lsu_rtu_all_commit_data_vld` 的"谁在挡"逐拍表 —— `+PROBE_FLG`
-  //   2026-10-15 加, 追"补了冲刷闸之后新出现的卡死": 闸门是 0 时, 到底是
-  //     * st 侧: 哪个 SQ 表项已 cmit 却没有 data_vld (还是等 SDIQ); 还是
-  //     * ld 侧: 哪个 RB (MSHR) 表项已 cmit 且 dest_vld 却没走完写回;
-  //   顺带把 RTU 冲刷 FSM 停在 IDLE/WAIT/F1 哪一态一起打出来。
+  //   2026-10-15 加, 追"补了冲刷闸之后新出现的卡死": 闸门是 0 时, 是哪个 SQ 表项
+  //   已 cmit 却没有 store data (还在等 SDIQ); 顺带把 RTU 冲刷 FSM 停在
+  //   IDLE/WAIT/F1 哪一态一起打出来。
+  //
+  //   ⚠️ 这里**不再打 ld 侧** —— 原来的 `lsu_rtu_all_commit_ld_data_vld` /
+  //      `u_lsu_mshr.rb_entry_cmit_data_vld` 两根在本仓**根本没有**:
+  //      * ld 侧的冲刷闸整个没移植 (见 lsu_top.sv:1510、lsu_mshr.sv:158 的注释);
+  //      * MSHR 表项内部今天虽有 `rb_entry_cmit_data_not_vld`
+  //        (lsu_mshr_entry.sv:693), 但 lsu_mshr 既没引出、也没聚合。
+  //      所以 `dut.lsu_rtu_all_commit_data_vld` 现在**恒等于** st 侧那一根。
+  //
+  //   ⚠️ 口径: sq 侧的口是本仓重写的 `sq_entry_cmit_data_not_vld`
+  //      (lsu_sq.sv:218 声明 / :295 连表项 / :354 用), 语义与名字相反 ——
+  //      **1 = 这个已退休表项还缺数据**, 即"就是它在挡闸门"。C910 原版的
+  //      `sq_entry_cmit_data_vld` 在移植时没留。
+  //      另注: 该线现在是**标量**且被 SQ_ENTRY 个表项并联驱动, 探针读到的值
+  //      未必可信, 见 lsu_sq.sv:218 处的隐患。
   always @(posedge clk) begin
     if (!rst && $test$plusargs("PROBE_FLG") && cycles >= stl_lo && cycles <= stl_hi) begin
-      $display("  [FLG] T%0d all=%b st=%b ld=%b | fsm_st=%0d busy=%b flushing=%b flush_trig=%b | sq_vld=%b sq_cmit=%b sq_cmitdvld=%b | rb_vld=%b rb_cmitdvld=%b",
+      $display("  [FLG] T%0d all=%b st=%b | fsm_st=%0d busy=%b flushing=%b flush_trig=%b | sq_vld=%b sq_cmit=%b sq_cmitnodvld=%b | rb_vld=%b",
         cycles,
         dut.lsu_rtu_all_commit_data_vld,
         dut.u_lsu_top.lsu_rtu_all_commit_st_data_vld,
-        dut.u_lsu_top.lsu_rtu_all_commit_ld_data_vld,
         dut.u_rtu.u_flush.st_q,
         dut.u_rtu.u_flush.fsm_busy,
         dut.u_rtu.u_flush.flushing,
         dut.u_rtu.u_flush.flush_trig,
         dut.u_lsu_top.u_lsu_sq.sq_entry_vld,
         dut.u_lsu_top.u_lsu_sq.sq_entry_cmit,
-        dut.u_lsu_top.u_lsu_sq.sq_entry_cmit_data_vld,
-        dut.u_lsu_top.u_lsu_mshr.rb_entry_vld,
-        dut.u_lsu_top.u_lsu_mshr.rb_entry_cmit_data_vld);
+        dut.u_lsu_top.u_lsu_sq.sq_entry_cmit_data_not_vld,
+        dut.u_lsu_top.u_lsu_mshr.rb_entry_vld);
     end
   end
 
