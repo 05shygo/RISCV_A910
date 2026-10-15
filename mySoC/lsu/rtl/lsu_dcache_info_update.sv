@@ -59,7 +59,25 @@ module lsu_dcache_info_update #(
     //==========================================================
     //        Compare dcache write port index
     //==========================================================
-    assign compare_dcwp_hit_idx = compare_dcwp_addr[12:5] == dcache_idx[INDEX_WIDTH-1:0];
+    // ⚠️ 2026-10-15 修 (coremark_i1 #49777 真凶): 原版 (ct_lsu_dcache_info_update.v:113/117)
+    //    两边**位宽相同** —— `compare_dcwp_addr[13:6] == dcache_idx[7:0]` (32K) /
+    //    `[14:6] == [8:0]` (64K)。本仓移植时把左切片留在"8 位"上 ([12:5]), 而本仓
+    //    dcache 是 2KB/32B 线/32 set ⇒ `dcache_idx` 只有 INDEX_WIDTH=5 位
+    //    (= addr[9:5], 见 lsu_top `INDEX_LSB=OFFSET_WIDTH=5`)。
+    //    8 位 vs 5 位的比较在 Verilog 里会把右操作数**零扩展**成 8 位 ⇒ 判据退化成
+    //    `addr[12:10]==0 && addr[9:5]==idx` ⇒ **凡是 addr[12:10]!=0 (即地址 ≥0x2000,
+    //    本用例的数据段 0xfxxx 全在里面) 的地址一律判"不是这个 set"**。
+    //    后果: 本模块的 `compare_dcwp_miss_up_*` 永远不拉 ⇒ WMB 表项 (和 SQ 表项)
+    //    在"store 判 miss、随后该行被 LFB 回填进 dcache"这件事上**永远不更新自己的
+    //    `dcache_valid`** ⇒ `wmb_entry_write_biu_req` 一直是 1 ⇒ 这笔 store 被
+    //    **直写 DRAM**, 而 dcache 里是回填时读到的**旧值**(且被后面命中的 load 读到)。
+    //    实测 (coremark_i1): T67884 LFB 把 0xfa80 行回填进 dcache (数据是旧的 0x0003),
+    //    T67878 判 miss 的那笔 store (pc=0xef8, 写 0xfa8c=0x0014) 没能恢复 valid,
+    //    T67889 直写 DRAM (SLVW strb=3000 data byte12=0x14) ⇒ DRAM 里是 0x14,
+    //    dcache 里还是 0x0003 ⇒ T68520 第二条循环的 load (pc=0xf2c) 命中 dcache 读回 3。
+    localparam int INDEX_LSB = 5;                                  // = lsu_top OFFSET_WIDTH (32B 线)
+    localparam int INDEX_MSB = INDEX_LSB + INDEX_WIDTH - 1;         // 2KB ⇒ 9
+    assign compare_dcwp_hit_idx = compare_dcwp_addr[INDEX_MSB:INDEX_LSB] == dcache_idx[INDEX_WIDTH-1:0];
 
     //==========================================================
     //        Update if dcache hit

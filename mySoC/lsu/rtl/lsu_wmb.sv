@@ -107,6 +107,10 @@ module lsu_wmb #(
   output logic [WMB_ENTRY-1:0] wmb_ce_create_merge_ptr,
   output logic                 wmb_ce_create_stall,
   output logic [WMB_ENTRY-1:0] wmb_entry_vld,
+  // 各表项当前收不收得下 merge —— 给 CE 做"当拍能不能 merge"的判据 (见 lsu_wmb_ce.sv)
+  //   ⚠️ 用的是**不带地址比较**的 nopermit (不是 merge_data_stall): CE 持有 store 期间 SQ 的
+  //      pop 地址早已翻到下一笔, 带地址比较的那根在这个窗口里恒 0 ⇒ 判据失效。
+  output logic [WMB_ENTRY-1:0] wmb_entry_merge_data_nopermit_vec,
 
   // BIU AW channel
   output logic [PA_WIDTH-1:0]  wmb_biu_aw_addr,
@@ -183,6 +187,7 @@ module lsu_wmb #(
   logic [WMB_ENTRY-1:0]  wmb_entry_cancel_acc_req;
   logic [WMB_ENTRY-1:0]  wmb_entry_merge_data_addr_hit;
   logic [WMB_ENTRY-1:0]  wmb_entry_merge_data_stall;
+  logic [WMB_ENTRY-1:0]  wmb_entry_merge_data_nopermit;
   logic [WMB_ENTRY-1:0]  wmb_entry_merge_data_vld;
   logic [WMB_ENTRY-1:0]  wmb_entry_hit_sq_pop_dcache_line;
   logic [WMB_ENTRY-1:0]  wmb_entry_dcache_way;
@@ -338,6 +343,7 @@ lsu_wmb_entry #(
         .wmb_entry_dcache_way_x(wmb_entry_dcache_way[i]),
         .wmb_entry_merge_data_addr_hit_x(wmb_entry_merge_data_addr_hit[i]),
         .wmb_entry_merge_data_stall_x(wmb_entry_merge_data_stall[i]),
+        .wmb_entry_merge_data_nopermit_x(wmb_entry_merge_data_nopermit[i]),
         .wmb_entry_hit_sq_pop_dcache_line_x(wmb_entry_hit_sq_pop_dcache_line[i]),
         .wmb_entry_fwd_req_x(wmb_entry_fwd_req[i]),
         .wmb_entry_fwd_data_pe_req_x(wmb_entry_fwd_data_pe_req[i]),
@@ -459,6 +465,9 @@ assign wmb_rb_biu_req_hit_idx = |wmb_entry_rb_biu_req_hit_idx;
   //==========================================================
   assign wmb_merge_data_addr_hit = |wmb_entry_merge_data_addr_hit;
   assign wmb_merge_data_stall = |wmb_entry_merge_data_stall;
+
+  // 逐表项的 merge 资格向量, 供 CE 组合判定"当拍这个目标能不能 merge"
+  assign wmb_entry_merge_data_nopermit_vec = wmb_entry_merge_data_nopermit;
 
   assign wmb_ce_create_merge = sq_wmb_merge_req && (wmb_merge_data_addr_hit || wmb_ce_merge_data_addr_hit);
   assign wmb_ce_create_stall = wmb_merge_data_stall || wmb_ce_merge_data_stall

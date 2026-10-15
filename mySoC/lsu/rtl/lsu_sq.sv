@@ -88,7 +88,10 @@ module ct_lsu_sq #(
     output logic         wmb_ce_update_dcache_dirty,
     output logic         wmb_ce_update_dcache_valid,
     output logic         wmb_ce_update_dcache_way,
-    output logic         lsu_idu_sq_not_full
+    output logic         lsu_idu_sq_not_full,
+    // 给 RTU 的冲刷闸 (见 lsu_sq_entry.sv:436 的口径): "没有哪个**已退休**的表项
+    // 还在等 store data"。C910 就是这根 (`ct_lsu_sq.v:3728`), 本仓移植时整条丢了。
+    output logic         lsu_rtu_all_commit_st_data_vld
 );
 
     localparam int PA_WIDTH = 32;
@@ -332,6 +335,22 @@ module ct_lsu_sq #(
 
     assign sq_has_cmit = |(sq_entry_cmit[SQ_ENTRY-1:0] & sq_entry_vld[SQ_ENTRY-1:0]);
     assign sq_full = &sq_entry_vld[SQ_ENTRY-1:0];
+
+    // -----------------------------------------------------------------------
+    // 【2026-10-15 补漏, coremark_i1 T394913 死锁的真凶】
+    // C910 `ct_lsu_sq.v:3728`: `assign lsu_rtu_all_commit_st_data_vld =
+    //                            &sq_entry_cmit_data_vld[SQ_ENTRY-1:0];`
+    // 本仓把 `sq_entry_cmit_data_vld` 从各表项收上来了 (见 :291), **但全仓再没人
+    // 用它** —— 这根线连同 RTU 那侧的冲刷闸 (`retire_flush_pipeline_empty`) 一起
+    // 在移植时丢了。后果:
+    //   一条 store 退休了 (cmit=1) 但它的 store data 还没到 (data_vld=0), 此时来
+    //   一次冲刷 ⇒ IDU 的 SDIQ 表项 (数据**唯一**来源) 被冲掉 ⇒ 这个 SQ 表项永远
+    //   拿不到数据 ⇒ 永不 pop; 而更年轻的 load 若在 LD_DA 因它被 discard, 会把自己
+    //   登记进它的 wakeup_queue 等 `data_set` ⇒ 永远不唤醒 ⇒ ROB 队头不完 ⇒ 死锁。
+    // 口径: 表项内部 `sq_entry_cmit_data_vld = !(vld && (cmit|cmit_set) && !data_vld)`,
+    // 无效表项恒 1 ⇒ 这里的 &-reduce 恰好是"没有任何已退休表项缺数据"。
+    // -----------------------------------------------------------------------
+    assign lsu_rtu_all_commit_st_data_vld = &sq_entry_cmit_data_vld[SQ_ENTRY-1:0];
     assign sq_empty_less2 = &(sq_entry_vld[SQ_ENTRY-1:0] | sq_create_ptr[SQ_ENTRY-1:0]);
     assign sq_st_dc_inst_hit = |sq_entry_inst_hit[SQ_ENTRY-1:0];
     assign sq_st_dc_full = sq_full || (!st_dc_old && sq_empty_less2 && !sq_has_cmit);

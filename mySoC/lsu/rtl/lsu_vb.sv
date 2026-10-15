@@ -52,6 +52,7 @@ module ct_lsu_vb #(
 
     input  logic         st_da_dcache_hit,
     input  logic         st_da_dcache_way,
+    input  logic         st_da_dcache_replace_way,
     input  logic         st_da_dcache_replace_valid,
     input  logic         st_da_dcache_replace_dirty,
     input  logic [21:0]  st_da_vb_feedback_addr_tto10,
@@ -94,6 +95,14 @@ module ct_lsu_vb #(
     //==========================================================
     output logic         vb_dcache_arb_ld_borrow_req,
     output logic         vb_dcache_arb_st_borrow_req,
+    // ⚠️ 2026-10-15 新增: 给 dcache 仲裁器的 **st 请求** (≠ borrow)。
+    //   原版 ct_lsu_vb.v 里这是两根**不同**的信号:
+    //     vb_dcache_arb_st_req        (寄存器, `vb_dcache_arb_st_req_set` 于
+    //                                  RCL_R_TAG_DIRTY/READ_DATA1/RCL_INVALID 置起)
+    //     vb_dcache_arb_st_borrow_req (组合, 只在 RCL_R_TAG_DIRTY)
+    //   本仓把仲裁器那一根错接成了 borrow 那根 (见 lsu_top.sv) ⇒ RCL_INVALID 状态
+    //   一个请求都不发, 却在那儿等 `dcache_arb_vb_st_grnt` ⇒ 死锁。详见下面的 assign。
+    output logic         vb_dcache_arb_st_req,
     output logic         vb_dcache_arb_data_way,
     output logic [31:0]  vb_dcache_arb_borrow_addr,
 
@@ -252,12 +261,20 @@ begin
 end
 
 // dcache way captured at CMP_TAG
+// 本仓 VB 只有一个 create 源 (LFB linefill), 所以这里要取**被替换的那一路**
+// (st_da_dcache_replace_way = dirty_array[4], miss 时报文路的 LRU 指针),
+// 而不是 `st_da_dcache_way` (= st_da_hit_way1, miss 时恒 0)。
+// 原版 ct_lsu_vb.v:1242 `vb_rcl_sm_reg_set_dcache_way = vb_rcl_sm_lfb_create
+// ? st_da_dcache_replace_way : st_da_dcache_way;` —— 本仓把那个 mux 丢了。
+// 取错的后果: LFB 回填永远写 way0, 而 VB 判定的牺牲者是 way1 (恒 invalid) ⇒
+// VB 直接 RCL_IDLE "不用换出" ⇒ 回填把 way0 里 valid+dirty 的行**无声覆盖掉**
+// (dirty 数据永不写回内存, vb_biu_aw_req 全程 0)。
 always @(posedge forever_cpuclk or negedge cpurst_b)
 begin
   if (!cpurst_b)
     vb_rcl_sm_dcache_way <= 1'b0;
   else if (vb_rcl_sm_state[2:0] == RCL_CMP_TAG)
-    vb_rcl_sm_dcache_way <= st_da_dcache_way;
+    vb_rcl_sm_dcache_way <= st_da_dcache_replace_way;
 end
 
 always @(*)
@@ -337,7 +354,15 @@ assign vb_addr_feedback_vld = rcl_cmp_tag_vld;
 //==========================================================
 assign vb_lfb_addr_entry_rcl_done[2:0] = {3{vb_rcl_done}} & vb_source_id_expand[2:0];
 assign vb_lfb_dcache_hit[2:0]           = {3{vb_rcl_done && st_da_dcache_hit}} & vb_source_id_expand[2:0];
-assign vb_lfb_dcache_way[2:0]           = {3{vb_rcl_sm_dcache_way}} & vb_source_id_expand[2:0];
+// ⚠️ `vb_rcl_done` 在 RCL_CMP_TAG 那一拍就拉高 (hit/无需换出时直接结束), 而
+//    `vb_rcl_sm_dcache_way` 要**下一拍**才寄存进去 ⇒ 直接用它, LFB 抓到的永远是
+//    上一次 VB 残留的 way。原版 ct_lsu_vb.v:1200 是
+//      vb_lfb_dcache_way = vb_rcl_sm_sel_dcache_reg_info ? vb_rcl_sm_dcache_way
+//                                                        : vb_rcl_sm_reg_set_dcache_way;
+//    (sel = state[2], 即 CMP_TAG 之后的那两个态)。CMP_TAG 当期必须给组合值。
+assign vb_lfb_dcache_way[2:0]           = {3{ vb_rcl_sm_state[2] ? vb_rcl_sm_dcache_way
+                                                                    : st_da_dcache_replace_way }}
+                                          & vb_source_id_expand[2:0];
 assign vb_lfb_rcl_done                  = vb_rcl_done;
 
 //==========================================================
@@ -379,6 +404,22 @@ assign vb_dcache_arb_ld_data_idx[INDEX_WIDTH:0]        = {vb_addr_tto5[INDEX_WID
 assign vb_dcache_arb_ld_borrow_req       = (vb_rcl_sm_state[2:0] == RCL_READ_DATA);
 assign vb_dcache_arb_data_way            = vb_rcl_sm_dcache_way;
 assign vb_dcache_arb_st_borrow_req       = (vb_rcl_sm_state[2:0] == RCL_R_TAG);
+// ⚠️⚠️ 2026-10-15 修 (coremark_i1 卡死真凶): 仲裁器的 st 请求必须**连 RCL_INVALID
+//   一起拉高**。原版 (ct_lsu_vb.v:1284-1288)
+//      vb_dcache_arb_st_req_set = (next == RCL_R_TAG_DIRTY) || (next == RCL_READ_DATA1)
+//                                 || (next == RCL_INVALID);
+//   本仓只拉 RCL_R_TAG ⇒ **RCL_INVALID 状态下 `dcache_arb_st_req[2]`=0 ⇒ VB 永远
+//   选不中 ⇒ `dcache_arb_vb_st_grnt` 恒 0**。而 RCL_INVALID 的出口条件恰恰就是它:
+//      RCL_INVALID: if (dcache_arb_vb_st_grnt) -> RCL_IDLE; else 自环;
+//   ⇒ VB 在 RCL_INVALID 里**永久自环**, 牺牲行的 valid/dirty 位永远清不掉 ⇒
+//   `vb_rcl_done` 不拉 ⇒ LFB 表项永远等不到 "rcl done" ⇒ 该表项不回填 ⇒ 等它的
+//   load 永远不 wakeup ⇒ ROB 队头永不完成 ⇒ 它后面那条**已误预测的分支永远提交不了**
+//   ⇒ 没有冲刷脉冲 ⇒ A910_cpu.sv 的 `mispred_hold_q` 闸门永远不开 ⇒ IDU 永久冻结。
+//   实测 (coremark_i1): 首次走到这条路的 T68341 起 VB 停在 state=4(RCL_INVALID),
+//   dcache_arb_st_req 全 0, 整机在 T68357 之后一条指令都不退休 (卡死在 0xeec 循环)。
+//   (borrow 那根保持只 RCL_R_TAG: 它给的是 borrow 地址, 只有读 tag 定牺牲路时才要。)
+assign vb_dcache_arb_st_req             = (vb_rcl_sm_state[2:0] == RCL_R_TAG)
+                                          || (vb_rcl_sm_state[2:0] == RCL_INVALID);
 assign vb_dcache_arb_borrow_addr[31:0]   = {vb_addr_tto5[26:0], 5'b0};
 
 //==========================================================
@@ -458,7 +499,28 @@ assign vb_biu_aw_prot[2:0]     = 3'b000;
 //==========================================================
 //            write data state machine (W channel)
 //==========================================================
-assign vb_wd_sm_start_vld = vb_data_wd_sm_req;
+// ⚠️⚠️ 2026-10-15 修 (coremark_i1 卡死真凶): start 必须门控"本 SM 还没在跑"。
+//   原版 (ct_lsu_vb.v:1560-1561)
+//      vb_wd_sm_permit    = !vb_wd_sm_vld || vb_wd_sm_vld_permit;
+//      vb_wd_sm_start_vld = vb_data_wd_sm_req && vb_wd_sm_permit;
+//   原版的 `vb_data_wd_sm_req` 是**表项来的脉冲** (表项被 vm_wd_sm_grnt 消费掉就自己撤),
+//   所以它只在"新一笔要写"的那一拍为 1。本仓把它简化成
+//      vb_data_wd_sm_req = (vb_data_state == DATA_REQ_W)
+//   —— 这是**电平**, 整个 W burst 期间一直是 1。于是 `start_vld` 也整段为 1,
+//   而两个 always 块里 `start_vld` 的优先级都高于"推进/撤销":
+//      vld  : start_vld -> 1  (永远压过 vld_permit -> 0)
+//      bias : start_vld -> 2'b01 (永远压过 {bias[0],1'b0} 左移)
+//   ⇒ bias 卡在 2'b01 ⇒ `vb_biu_w_last = bias[1]` **恒 0** ⇒ W 通道只会发出一串
+//   "最后一拍"标志永远不置位的 beat。
+//   实测 (coremark_i1): T68345 牺牲行 0x3700 的 AW 成交后, T68347/T68348 两拍
+//   W **last 都是 0**, 从机按 wr_cnt==wr_len 收满 2 拍就自己收尾 (aw_done=0/bvalid_r
+//   过了), 而 BIU 写通道 `w_done` 靠 `wlast` 才置位 ⇒ 永远置不上 ⇒ FSM 永远停在
+//   WR_ACTIVE/sel=0/aw_done=1/w_done=0, 且 VB 的 W SM 卡在 beat0 (bias=01) 一直重发
+//   ⇒ AXI 写通道死锁, WMB 的 store AW 被这笔"占着通道"的 victim 事务挡死。
+//   本仓只有一个 vb_data 寄存器 (不可能像原版那样背靠背串新表项), 所以正确门控就是
+//   "SM 没在跑" —— 等价于 `vb_data_wd_sm_req && vb_wd_sm_permit` 在这个结构下的写法。
+//   (末拍那拍 vld_permit=1 会让 permit=1, 但 `!vld` 已为 0 ⇒ start 仍为 0, 不会重启。)
+assign vb_wd_sm_start_vld = vb_data_wd_sm_req && !vb_wd_sm_vld;
 
 always @(posedge forever_cpuclk or negedge cpurst_b)
 begin

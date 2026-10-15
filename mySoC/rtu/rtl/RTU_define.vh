@@ -103,6 +103,9 @@
 `define RTU_FSM_IDLE    2'd0
 `define RTU_FSM_F1      2'd1
 `define RTU_FSM_F2      2'd2        // ⚠️ **已废弃**: 合成一拍后不再使用 (留着只占编码, 无人引用)
+// 2026-10-15: 复用上面这个空出来的编码 2'd2 当"等 LSU 访存数据"的等待态
+// (IDLE -> WAIT -> F1 -> IDLE)。见 RTU_flush.v 里 FSM 那段的长注。
+`define RTU_FSM_WAIT    2'd2
 
 // ---- disp_flags 的位序 (§6.1, 7 位) ----
 `define RTU_FLG_BRANCH  0

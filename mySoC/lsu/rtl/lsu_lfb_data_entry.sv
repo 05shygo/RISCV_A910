@@ -4,6 +4,7 @@ module ct_lsu_lfb_data_entry (
     input  logic         biu_lsu_r_vld,
     input  logic         cpurst_b,
     input  logic         forever_cpuclk,
+    input  logic [2:0]   lfb_addr_entry_linefill_abort,
     input  logic [2:0]   lfb_addr_entry_linefill_permit,
     input  logic [1:0]   lfb_biu_id_2to0,
     input  logic         lfb_biu_r_id_hit,
@@ -39,6 +40,7 @@ logic [2:0]   lfb_data_entry_addr_pop_req;
 logic         lfb_data_entry_create_vld;
 logic         lfb_data_entry_finish_line;
 logic         lfb_data_entry_lf_sm_req;
+logic         lfb_data_entry_linefill_abort;
 logic         lfb_data_entry_linefill_permit;
 logic         lfb_data_entry_pass_data0_vld;
 logic         lfb_data_entry_pass_data1_vld;
@@ -193,8 +195,17 @@ end
 assign lfb_data_entry_linefill_permit = |(lfb_data_entry_addr_id[2:0]
                                           & lfb_addr_entry_linefill_permit[2:0]);
 
-assign lfb_data_entry_abort = lfb_data_entry_linefill_permit
-                              && lfb_data_entry_bus_err;
+assign lfb_data_entry_linefill_abort = |(lfb_data_entry_addr_id[2:0]
+                                         & lfb_addr_entry_linefill_abort[2:0]);
+
+// 两条放弃回填的出路 (原版 C910 的结构):
+//   1) 回填时发现线已经在 dcache 里 (linefill_abort)  —— 本仓以前**整根丢了** ⇒ 死锁
+//   2) 总线报错 (bus_err)
+// 新增的那条**必须用 `finish_line` 门控**: 这一笔 AXI 读还在途, 得先把 2 拍数据收完
+// 再 pop, 否则表项提前空出来、后续 R beat 会 create 一个没有 addr 表项的孤儿表项。
+// (老路径的 bus_err 原样不动, 只把 linefill_abort 并进来。)
+assign lfb_data_entry_abort = (lfb_data_entry_linefill_permit && lfb_data_entry_bus_err)
+                              || (lfb_data_entry_finish_line && lfb_data_entry_linefill_abort);
 
 assign lfb_data_entry_addr_pop_req[2:0] = lfb_data_entry_addr_id
                                          & {3{lfb_data_entry_abort}};

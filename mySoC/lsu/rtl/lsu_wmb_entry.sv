@@ -76,6 +76,13 @@ module lsu_wmb_entry #(
   // Output: merge control
   output logic          wmb_entry_merge_data_addr_hit_x,
   output logic          wmb_entry_merge_data_stall_x,
+  // 【新增】"本表项当拍还能不能吃 merge 数据" —— **与地址无关**。
+  //   为什么必须单独引一根: `wmb_entry_merge_data_stall_x` 里那个地址比较的对象是**当拍的
+  //   `sq_pop_addr`**。CE 在 create 那拍锁存 merge 目标后, 会**持有这笔 store 若干拍**才真正
+  //   执行 merge; 期间 SQ 已经把 pop 地址翻到下一笔 store 上了 ⇒ `addr_hit` 恒 0 ⇒
+  //   `stall` 恒 0 ⇒ CE 误判"目标还能 merge" ⇒ 数据落进**已经写出去的**表项 ⇒ store 丢失。
+  //   这根不带地址比较, 只回答"这个表项现在还有没有位置收数据"。
+  output logic          wmb_entry_merge_data_nopermit_x,
   output logic          wmb_entry_hit_sq_pop_dcache_line_x,
 
   // Output: forward control
@@ -149,6 +156,7 @@ module lsu_wmb_entry #(
   logic                   wmb_entry_merge_data_addr_hit;
   logic                   wmb_entry_merge_data_permit;
   logic                   wmb_entry_merge_data_stall;
+  logic                   wmb_entry_merge_data_nopermit;
 
   logic                   wmb_entry_depd_addr_tto12_hit;
   logic                   wmb_entry_depd_addr_11to4_hit;
@@ -356,8 +364,21 @@ module lsu_wmb_entry #(
   //                 Create/Merge Logic
   //==========================================================
   // Match at dcache set granularity (INDEX_MSB:INDEX_LSB)
+  // ⚠️ 2026-10-15 修 (coremark_i1 #49307 真凶): 原版 ct_lsu_wmb_entry.v:1364-1366 是
+  //      tto6 = addr[PA_WIDTH-1:6]
+  //      5to4 = addr[5:4]
+  //    合起来正好是 **addr[31:4] = 一个 16B block** (WMB 表项的粒度)。
+  //    本仓把 C910 的常量 6 / 5:4 换成 dcache 派生的 `INDEX_MSB+1`(=10) / `INDEX_LSB-1`(=4),
+  //    第二项变成只比 **bit 4** ⇒ **整个 set index bits[9:5] 从比较里掉了** ⇒ `tto4` 退化成
+  //    "同 tag + 同 16B 半", **不同 set 的两个地址会互相误判成同一个 block**。
+  //    后果: CE 把一笔 store 合并进**另一个 set 的 WMB 表项** ⇒ 数据被写到**错误的地址**,
+  //    而本该收到它的地址一个字节都没写 (症状: 某地址 load 读回旧值, 另一个地址凭空多出数据)。
+  //    实测: store 0xfa8c(块 0xfa80, set20) 被并进 E3=0xfb2e(块 0xfb20, set25) —— tag 都是 62、
+  //    bit4 都是 0 ⇒ 误命中; 数据最后 `[SLVW] T9148 wr_addr=0000fb20 strb=f000` 写到 0xfb2c,
+  //    而 0xfa8c 全程没有任何写。
+  //    同文件 line 405 `wmb_entry_depd_addr_11to4_hit` 用的就是 `[INDEX_MSB:4]`(对的), 这里照它改。
   assign wmb_entry_hit_sq_pop_addr_tto6 = (wmb_entry_addr[PA_WIDTH-1:INDEX_MSB+1] == sq_pop_addr[PA_WIDTH-1:INDEX_MSB+1]);
-  assign wmb_entry_hit_sq_pop_addr_5to4 = (wmb_entry_addr[INDEX_LSB-1:4] == sq_pop_addr[INDEX_LSB-1:4]);
+  assign wmb_entry_hit_sq_pop_addr_5to4 = (wmb_entry_addr[INDEX_MSB:4] == sq_pop_addr[INDEX_MSB:4]);
   assign wmb_entry_hit_sq_pop_addr_tto4 = wmb_entry_hit_sq_pop_addr_tto6 && wmb_entry_hit_sq_pop_addr_5to4;
 
   // Dcache line match at set granularity
@@ -373,6 +394,12 @@ module lsu_wmb_entry #(
 
   assign wmb_entry_merge_data_stall = wmb_entry_merge_data_addr_hit
                                       && !wmb_entry_merge_data_permit;
+
+  // 供 CE 持有 store 期间逐拍复用的判据 (不带地址比较, 见端口注释):
+  //   - 表项已经失效 ⇒ 数据落进去等于丢, 必须 stall 走"等目标失效后另建表项"那条路;
+  //   - 表项已经/正在写出 ⇒ 同上。
+  assign wmb_entry_merge_data_nopermit = !wmb_entry_vld
+                                         || !wmb_entry_merge_data_permit;
 
   assign wmb_entry_merge_data[3:0] = {4{wmb_entry_merge_data_vld}} & wmb_ce_data_vld[3:0];
   assign wmb_entry_create_data[3:0] = {4{wmb_entry_create_data_vld}} & wmb_ce_data_vld[3:0];
@@ -541,6 +568,7 @@ module lsu_wmb_entry #(
   assign wmb_entry_dcache_way_x = wmb_entry_dcache_way;
   assign wmb_entry_merge_data_addr_hit_x = wmb_entry_merge_data_addr_hit;
   assign wmb_entry_merge_data_stall_x = wmb_entry_merge_data_stall;
+  assign wmb_entry_merge_data_nopermit_x = wmb_entry_merge_data_nopermit;
   assign wmb_entry_hit_sq_pop_dcache_line_x = wmb_entry_hit_sq_pop_dcache_line;
   assign wmb_entry_fwd_req_x = wmb_entry_fwd_req;
   assign wmb_entry_fwd_data_pe_req_x = wmb_entry_fwd_data_pe_req;

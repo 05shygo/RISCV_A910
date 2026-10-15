@@ -59,6 +59,9 @@ module RTU_subsys (
   output wire dbg_commit_ena0                       ,
   output wire dbg_commit_ena1                       ,
   output wire dbg_commit_ena2                       ,
+  output wire [6:0] dbg_commit_iid0                       ,
+  output wire [6:0] dbg_commit_iid1                       ,
+  output wire [6:0] dbg_commit_iid2                       ,
   output wire [31:0] dbg_commit_pc0                        ,
   output wire [31:0] dbg_commit_pc1                        ,
   output wire [31:0] dbg_commit_pc2                        ,
@@ -71,9 +74,6 @@ module RTU_subsys (
   output wire dbg_commit_vld0                       ,
   output wire dbg_commit_vld1                       ,
   output wire dbg_commit_vld2                       ,
-  output wire [6:0] dbg_commit_iid0                 ,
-  output wire [6:0] dbg_commit_iid1                 ,
-  output wire [6:0] dbg_commit_iid2                 ,
   input  wire forever_cpuclk                        ,
   output wire [1:0] idu_accept_num                        ,
   output wire [5:0] idu_aiq_dst_preg                      ,
@@ -170,8 +170,8 @@ module RTU_subsys (
   output wire lsu_biu_w_vict_vld                    ,
   input  wire [7:0] lsu_idu_lsiq_pop_entry                ,
   output wire [5:0] lsu_idu_wb_pipe3_wb_preg              ,
-  output wire [6:0] lsu_idu_wb_pipe3_wb_preg_iid          ,
   input  wire [5:0] lsu_idu_wb_pipe3_wb_preg_dupx         ,
+  output wire [6:0] lsu_idu_wb_pipe3_wb_preg_iid          ,
   output wire [63:0] lsu_rtu_wb_pipe3_wb_preg_expand       ,
   output wire lsu_rtu_wb_pipe3_wb_preg_vld          ,
   input  wire [3:0] lsu_sdiq_has_in_sq_sdiq               ,
@@ -376,6 +376,7 @@ module RTU_subsys (
     wire lsu_idu_wb_pipe3_wb_preg_vld_dupx     ;   // 内部
     wire [6:0] lsu_replay_iid                        ;   // 内部
     wire lsu_replay_vld                        ;   // 内部
+    wire lsu_rtu_all_commit_data_vld           ;   // 内部
     wire lsu_rtu_wb_pipe3_cmplt                ;   // 内部
     wire [31:0] lsu_rtu_wb_pipe3_expt_addr            ;   // 内部
     wire lsu_rtu_wb_pipe3_expt_vld             ;   // 内部
@@ -509,6 +510,7 @@ module RTU_subsys (
     .resolve_target                     (resolve_target                    ),
     .lsu_replay_vld                     (lsu_replay_vld                    ),
     .lsu_replay_iid                     (lsu_replay_iid                    ),
+    .lsu_rtu_all_commit_data_vld        (lsu_rtu_all_commit_data_vld       ),
     .expt_iu_vld                        (expt_iu_vld                       ),
     .expt_iu_iid                        (expt_iu_iid                       ),
     .expt_iu_cause                      (expt_iu_cause                     ),
@@ -893,6 +895,7 @@ module RTU_subsys (
     .lsu_idu_sq_full                    (lsu_idu_sq_full                   ),
     .lsu_idu_sq_not_full                (lsu_idu_sq_not_full               ),
     .lsu_idu_has_in_sq                  (lsu_idu_has_in_sq                 ),
+    .lsu_rtu_all_commit_data_vld        (lsu_rtu_all_commit_data_vld       ),
     .lsu_rtu_wb_pipe3_cmplt             (lsu_rtu_wb_pipe3_cmplt            ),
     .lsu_rtu_wb_pipe3_iid               (lsu_rtu_wb_pipe3_iid              ),
     .lsu_rtu_wb_pipe3_expt_vld          (lsu_rtu_wb_pipe3_expt_vld         ),
@@ -900,11 +903,11 @@ module RTU_subsys (
     .lsu_rtu_wb_pipe3_wb_preg_expand    (lsu_rtu_wb_pipe3_wb_preg_expand   ),
     .lsu_rtu_wb_pipe3_wb_preg_vld       (lsu_rtu_wb_pipe3_wb_preg_vld      ),
     .lsu_idu_wb_pipe3_wb_preg           (lsu_idu_wb_pipe3_wb_preg          ),
-    .lsu_idu_wb_pipe3_wb_preg_iid       (lsu_idu_wb_pipe3_wb_preg_iid      ),
     .lsu_idu_wb_pipe3_wb_preg_vld_dupx  (lsu_idu_wb_pipe3_wb_preg_vld_dupx ),
     .lsu_idu_wb_pipe3_wb_preg_data      (lsu_idu_wb_pipe3_wb_preg_data     ),
     .lsu_idu_wb_pipe3_wb_preg_expand    (lsu_idu_wb_pipe3_wb_preg_expand   ),
     .lsu_idu_wb_pipe3_wb_preg_vld       (lsu_idu_wb_pipe3_wb_preg_vld      ),
+    .lsu_idu_wb_pipe3_wb_preg_iid       (lsu_idu_wb_pipe3_wb_preg_iid      ),
     .lsu_rtu_wb_pipe4_cmplt             (lsu_rtu_wb_pipe4_cmplt            ),
     .lsu_rtu_wb_pipe4_expt_vld          (lsu_rtu_wb_pipe4_expt_vld         ),
     .lsu_rtu_wb_pipe4_expt_addr         (lsu_rtu_wb_pipe4_expt_addr        ),

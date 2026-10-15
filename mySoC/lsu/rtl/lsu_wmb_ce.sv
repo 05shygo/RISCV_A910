@@ -23,6 +23,17 @@ module lsu_wmb_ce #(
   input  logic                 wmb_ce_dcache_valid,
   input  logic                 wmb_ce_pop_vld,
   input  logic [WMB_ENTRY-1:0] wmb_entry_vld,
+  // 【新增】各 WMB 表项"当前收不收得下 merge", **不带地址比较**(= wmb_entry_merge_data_nopermit)。
+  //   为什么必须引进来: `wmb_ce_stall` 只在 create 那一拍锁存, 而 create 那拍目标表项还没被
+  //   选中写 dcache(`wmb_dcache_req_ptr`=0) ⇒ 采到的 stall 恒 0 ⇒ CE 以为能 merge; 下一拍
+  //   真正执行 merge 时目标已经写出去了 ⇒ merge 数据落进已写出/将释放的表项, 那笔 store 丢失。
+  //   ⚠️ 这里**不能**用带地址比较的 `wmb_entry_merge_data_stall`: 那个比较的对象是**当拍的
+  //      `sq_pop_addr`**, 而 CE 会持有这笔 store 若干拍才 merge; 期间 SQ 的 pop 地址已经翻到
+  //      下一笔(常常是另一条 16B 线) ⇒ `addr_hit`=0 ⇒ `stall` 恒 0 ⇒ 判据在最需要它的那一刻
+  //      失效。实测 coremark_i1: 写 0xfc1c 的 `sw` 被并进表项 E2(addr=0xfc18, 同一线、刚被
+  //      写出), 数据在 dcache 和内存两边都没落 ⇒ 之后 load 一直读到上一代的旧值, 第 75039
+  //      条退休失配。
+  input  logic [WMB_ENTRY-1:0] wmb_merge_data_nopermit_vec,
   input  logic                 rb_wmb_ce_hit_idx,
 
   output logic [PA_WIDTH-1:0]  wmb_ce_addr,
@@ -45,6 +56,7 @@ module lsu_wmb_ce #(
 
   logic                 wmb_ce_merge;
   logic                 wmb_ce_merge_not_vld;
+  logic                 wmb_ce_merge_target_stall;
   logic [WMB_ENTRY-1:0] wmb_ce_merge_ptr_and_not_vld;
   logic                 wmb_ce_stall;
   logic                 wmb_ce_hit_sq_pop_addr_5to4;
@@ -99,6 +111,12 @@ module lsu_wmb_ce #(
       wmb_ce_stall     <= wmb_ce_create_stall;
       wmb_ce_merge_ptr <= wmb_ce_create_merge_ptr;
     end
+    else if (wmb_ce_vld && wmb_ce_merge)
+      // 【新增】create 那拍采到的 stall 不可信(见端口注释), 持有这笔 store 期间要按目标的
+      //   实际状态补采。补采后 CE 转入 "等目标表项失效再 create 新表项" 那条原版老路
+      //   (`wmb_ce_merge_wmb_wait_not_vld_req` + `wmb_ce_create_wmb_req`), 走这条路才会
+      //   拉 `wmb_ce_create_wmb_data_req` 把数据装进新表项。
+      wmb_ce_stall     <= wmb_ce_merge_target_stall;
   end
 //+------------+
 //| hit rb idx |
@@ -133,9 +151,16 @@ assign wmb_ce_hit_rb_idx_set  = wmb_ce_hit_rb_idx
   assign wmb_ce_merge_ptr_and_not_vld = wmb_ce_merge_ptr & ~wmb_entry_vld;
   assign wmb_ce_merge_not_vld = |wmb_ce_merge_ptr_and_not_vld;
 
+  // 目标表项**当拍**收不收得下 merge。组合门控, 不能再等一拍 —— merge 数据是在这一拍
+  //   落地(`wmb_entry_merge_data_vld`), 落进已写出的表项就跟着表项一起被丢掉。
+  //   stall 之后走的是原版老路: `wmb_ce_merge_wmb_wait_not_vld_req` 等目标表项失效,
+  //   再由 `wmb_ce_create_wmb_req`+`wmb_ce_create_wmb_data_req`(stall ⇒ 拉数据)另建表项。
+  assign wmb_ce_merge_target_stall = |(wmb_ce_merge_ptr & wmb_merge_data_nopermit_vec);
+
   assign wmb_ce_merge_wmb_req = wmb_ce_vld
                                 && wmb_ce_merge
-                                && !wmb_ce_stall;
+                                && !wmb_ce_stall
+                                && !wmb_ce_merge_target_stall;
 
   assign wmb_ce_merge_wmb_wait_not_vld_req = wmb_ce_vld
                                              && wmb_ce_merge

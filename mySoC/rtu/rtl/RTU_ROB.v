@@ -132,11 +132,13 @@ module RTU_ROB (
     wire [5:0]  win_idx1 = rptr + 6'd1;
     wire [5:0]  win_idx2 = rptr + 6'd2;
 
-    // 影子窗口重填的下标。⚠️ 冲刷那拍指针要归零, 阵列同拍被清空 —— 所以直接取 0/1/2,
+    // 影子窗口重填的下标。⚠️ 冲刷那拍阵列被清空, 所以要取**追齐后**的 rptr (= cptr),
     // 否则会拿"旧 rptr"去读一个刚被清掉的阵列, 窗口里留下上一代的数据。
-    wire [5:0]  rld_idx0 = flush_lvl ? 6'd0 : nxt_rptr;
-    wire [5:0]  rld_idx1 = flush_lvl ? 6'd1 : nxt_rptr + 6'd1;
-    wire [5:0]  rld_idx2 = flush_lvl ? 6'd2 : nxt_rptr + 6'd2;
+    // (2026-10-15 之前冲刷把指针归零, 这里写死 0/1/2; 现在 cptr 不再归零 ⇒ 跟着
+    //  cptr_idx 走。)
+    wire [5:0]  rld_idx0 = flush_lvl ? cptr_idx        : nxt_rptr;
+    wire [5:0]  rld_idx1 = flush_lvl ? cptr_idx + 6'd1 : nxt_rptr + 6'd1;
+    wire [5:0]  rld_idx2 = flush_lvl ? cptr_idx + 6'd2 : nxt_rptr + 6'd2;
 
     // -----------------------------------------------------------------------
     // 表项阵列
@@ -295,10 +297,30 @@ module RTU_ROB (
             rptr_msb <= 1'b0;
             occ_q    <= 7'd0;
         end else if (flush_lvl) begin
-            cptr_oh  <= 64'd1;
-            cptr_msb <= 1'b0;
-            rptr     <= 6'd0;
-            rptr_msb <= 1'b0;
+            // ⚠️⚠️ 2026-10-15 (coremark_i1 #49312/#49451): **冲刷不再把创造指针
+            //    (`cptr_oh`) 与回绕位 (`cptr_msb`) 归零** —— 只把退休指针追到创造
+            //    指针、占用清 0 (= ROB 空)。表项的失效靠 `occ` 与下面 `flush_clr` 的
+            //    清 VLD, 不靠指针归零。
+            //
+            //    【为什么】iid = `{cptr_msb, cptr_idx}` 是**在飞指令的唯一标识**,
+            //    而 `rptr==cptr` 时"回绕位 == 下标所在那一格存的位"。原来冲刷把两者
+            //    一起归零 ⇒ **每次冲刷 iid 都从 0,1,2 重来**。本工作负载(矩阵缩放
+            //    循环)每轮都误预测后向分支 ⇒ 每轮一次冲刷 ⇒ iid 隔十来拍就重用,
+            //    同时 preg 也被回收重分配 ⇒ **「同一个 (iid, preg)」在十几拍里出现
+            //    两次**。任何用 iid 记"在飞/刚退休"指令的地方都会被张冠李戴:
+            //      * LSU 的 MSHR/RB: `cmit=1` 的表项**冲刷不清**(等回填), 新的 load
+            //        拿到同一个 iid ⇒ `rb_entry_iid_hit` 误并表;
+            //      * difftest 观察口 (A910_cpu.sv 的 DBG_HOLD 延迟线): 按 (iid,preg)
+            //        配 LSU 写回 —— 实测 G1.eec(iid=0,preg=63) T67906 退休, 下一轮的
+            //        G2.eec(iid 也是 0、preg 也是 63) T67920 写回 0xc 被顶进 G1 的包,
+            //        报 MYCPU=0xc (黄金模型要 6) —— 核其实是对的。
+            //
+            //    【改后】cptr 一路往前走 ⇒ iid 要重复得等整整 128 次派遣
+            //    (3 条/拍 ⇒ ≥43 拍), 远长于任何观察窗/在飞窗口。rptr 追齐 cptr
+            //    (下标 + 回绕位都追), 于是 `rtu_beu_retire_iid` 与 `win_iid*` 仍与
+            //    表项里存的 WRAP 自洽。
+            rptr     <= cptr_idx;
+            rptr_msb <= cptr_msb;
             occ_q    <= 7'd0;
         end else begin
             cptr_oh  <= (ndisp == 2'd0) ? cptr_oh :

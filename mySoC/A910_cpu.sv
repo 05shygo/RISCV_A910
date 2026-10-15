@@ -346,6 +346,16 @@ module A910_cpu
   // ---------------------------------------------------------------------------
   // RTU ↔ LSU: 经适配层 (完成口 5/6 / store 重放 / 访存异常)
   // ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // 【2026-10-15】冲刷闸: "LSU 里已退休的访存都拿到数据了吗"。
+  //   C910 `ct_lsu_top.v` 的同名口 = `&sq_entry_cmit_data_vld && &rb_entry_cmit_data_vld`。
+  //   0 ⇒ RTU 的冲刷状态机先进 WAIT 态等它, **不发后端冲刷** —— 否则一笔"已退休、
+  //   但 store data 还在路上"的 store, 它数据的唯一来源 (IDU 的 SDIQ 表项) 会被冲掉,
+  //   而 SQ 表项因为已 cmit 不会被冲掉 ⇒ 永不 pop; 在 LD_DA 因它被 discard 的 load
+  //   会登记进它的 wakeup_queue 等 `data_set` ⇒ 永不唤醒 ⇒ ROB 队头不完 ⇒ 死锁。
+  //   来龙去脉见 mySoC/rtu/rtl/RTU_flush.v 的 FSM 长注。
+  // ---------------------------------------------------------------------------
+  logic         lsu_rtu_all_commit_data_vld;
   logic         lsu_rtu_wb_pipe3_cmplt;
   logic [  6:0] lsu_rtu_wb_pipe3_iid;
   logic         lsu_rtu_wb_pipe3_expt_vld;
@@ -1480,6 +1490,9 @@ module A910_cpu
 
     .lsu_idu_has_in_sq              (lsu_idu_has_in_sq),
 
+    // LSU to RTU - 冲刷闸 (见上面 logic 声明处的长注)
+    .lsu_rtu_all_commit_data_vld    (lsu_rtu_all_commit_data_vld),
+
     // LSU to RTU - Writeback pipe3 (load 完成 / 非对齐异常)
     .lsu_rtu_wb_pipe3_cmplt         (lsu_rtu_wb_pipe3_cmplt),
     .lsu_rtu_wb_pipe3_iid           (lsu_rtu_wb_pipe3_iid),
@@ -1868,6 +1881,9 @@ module A910_cpu
     // ===================== §6.1 LSU store 重放请求 =====================
     .lsu_replay_vld             (lsu_replay_vld),
     .lsu_replay_iid             (lsu_replay_iid),
+
+    // ===================== 冲刷闸: LSU 已退休访存的数据就绪 =====================
+    .lsu_rtu_all_commit_data_vld(lsu_rtu_all_commit_data_vld),
 
     // ===================== §6.1 异常 (三个平行源) =====================
     // 三源 **平行** 进来, 锦标赛在 RTU_expt 内部做。适配层只做完成门控与

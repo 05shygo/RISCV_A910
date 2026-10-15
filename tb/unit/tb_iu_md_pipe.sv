@@ -141,41 +141,95 @@ module tb_iu_md_pipe;
   //       被丢弃的在飞项, 所以这个等式必须严格成立。
   //
   // ⚠️ 除法要发的条数按"队列里总有货"算 —— 模拟 `md_xx_issue_en` 每拍都可能拉高。
+  //
+  // ⚠️⚠️ 2026-10-15 修 (coremark_i1 卡在 `divu` 上, 就是这段 TB 漏掉的那一拍):
+  //   **`idu_div_sel` 不是 `md_xx_issue_en`, 而是它打了一拍的结果。**
+  //   `ct_idu_rf_ctrl.sv:117` 写着 `rf_pipe2_inst_vld <= div_xx_issue_en`
+  //   (乘法是 `rf_pipe1_inst_vld`, 同理), 也就是 IDU 的 RF 流水线里有一级寄存器。
+  //   所以"队列发出决策"与"单元看到请求"**天然差一拍**:
+  //
+  //     拍     | 队列决策 (issue_en)   | 单元看到的 sel | 单元收不收
+  //     -------+-----------------------+----------------+-----------
+  //      A     | 发第 1 条             | (上一条 或 0)  | —
+  //      A+1   | 发第 2 条 ← **要挡这** | 第 1 条        | 收 (hold←1)
+  //      A+2   | (该被挡住)            | 第 2 条        | 收不收?
+  //
+  //   老驱动把 `d_sel` 当成"当拍决策"直接摆出去 (same-cycle 语义), 于是**永远
+  //   构不成"单元看着上一条、队列发下一条"的那个窗口** —— 单元 TB 因此一路绿灯,
+  //   而整机在 `core_print_int` 的 `remu`/`divu` 背靠背上死锁。
+  //   这里补上一级流水线寄存器 (`d_pd_*`/`m_pd_*`), 让驱动**逐位对上真实 IDU**。
+  //
+  //   ⇒ 所以 `md_unit_stall` 必须连"这一拍正在被收下"(`div_accept`) 一起盖住;
+  //     不盖的话第 A+1 拍队列以为端口空闲、照发第 2 条, 而那一条到 A+2 拍
+  //     `div_accept = sel & ~hold & ~busy = 0`、`mul_req_vld = 0` ⇒ **静默蒸发**,
+  //     且队列那一拍已经把表项 pop 掉了, 补救不回来。
   task automatic idu_style_issue(
       input integer n_div,
       input integer n_mul,
       input integer max_cyc
   );
     integer cyc, di, mi;
+    // 发射流水线寄存器 (= 真实 IDU 的 rf_pipe{1,2}_inst_vld 那一级 + RF 读出口)
+    reg          d_pd_vld, m_pd_vld;
+    reg          ie_d, ie_m;
+    reg [6:0]    d_pd_iid,  m_pd_iid;
+    reg [5:0]    d_pd_preg, m_pd_preg;
+    reg [31:0]   d_pd_s0, d_pd_s1, m_pd_s0, m_pd_s1;
+    reg [3:0]    d_pd_rs, m_pd_rs;
     begin
       di = 0; mi = 0; cyc = 0;
+      d_pd_vld = 1'b0; m_pd_vld = 1'b0;
       d_sel = 1'b0; m_sel = 1'b0;
-      while (((di < n_div) || (mi < n_mul)) && (cyc < max_cyc)) begin
-        // 只认 md_unit_stall —— 这就是 IDU 的全部视角 (它没有别的反压输入)
-        if (md_unit_stall === 1'b0) begin
-          d_sel = 1'b0; m_sel = 1'b0;
-          // 乘、除是两条独立队列, **可以同拍都发**
-          if (di < n_div) begin
-            d_iid  = 7'h30 + di[6:0];
-            d_preg = 6'd10 + di[5:0];
-            d_s0   = 32'd1000 + di;  d_s1 = 32'd7;
-            d_rs   = D_DIV;          d_dvld = 1'b1;
-            d_sel  = 1'b1;
-            di = di + 1;  n_issue = n_issue + 1;
-          end
-          if (mi < n_mul) begin
-            m_iid  = 7'h30 + mi[6:0];
-            m_preg = 6'd40 + mi[5:0];
-            m_s0   = 32'd3 + mi;     m_s1 = 32'd5;
-            m_rs   = M_MUL;
-            m_sel  = 1'b1;
-            mi = mi + 1;  n_issue = n_issue + 1;
-          end
+      // 循环条件带上流水线寄存器: 最后一条也要**真摆到端口上**才算发完
+      while (((di < n_div) || (mi < n_mul) || d_pd_vld || m_pd_vld)
+             && (cyc < max_cyc)) begin
+        // ---- 本拍: 把流水线寄存器摆到端口 (= 单元的 idu_div_sel / idu_mult_sel) ----
+        d_sel  = d_pd_vld;   m_sel  = m_pd_vld;
+        d_iid  = d_pd_iid;   m_iid  = m_pd_iid;
+        d_preg = d_pd_preg;  m_preg = m_pd_preg;
+        d_s0   = d_pd_s0;    m_s0   = m_pd_s0;
+        d_s1   = d_pd_s1;    m_s1   = m_pd_s1;
+        d_rs   = d_pd_rs;    m_rs   = m_pd_rs;
+        d_dvld = d_pd_vld;
+        // ⚠️ 必须让组合逻辑**落定**再读 `md_unit_stall`。它是这些端口的组合函数
+        //    (含 `div_accept = idu_div_sel & ~hold & ~busy`) —— 而连续赋值要等下一个
+        //    delta 才更新, 同一拍紧接着直接读会拿到**上一拍的旧值**。
+        //    实测症状 (2026-10-15, 就是这段): cyc=1 那拍 `dsel=1` 而 `acc`/`stall`
+        //    读出来还是 0 ⇒ 第二条除被误判成"端口空"发出 ⇒ 到下一拍被单元丢掉。
+        //    真实 IDU 里 `sel` 是寄存器输出, 组合逻辑有整拍时间落定, 不存在这个问题。
+        //    `#1` = 1ns; 时钟 `always #5` ⇒ 距下一个 posedge 还有 4ns, 不会踩到。
+        #1;
+        // 摆完之后 `md_unit_stall` 才是本拍的真值。
+        // ---- 决策: 只看 md_unit_stall —— IDU 的全部视角 (它没有别的反压输入) ----
+        // 乘、除是两条独立队列, **可以同拍都发**
+        ie_d = (di < n_div) && (md_unit_stall === 1'b0);
+        ie_m = (mi < n_mul) && (md_unit_stall === 1'b0);
+        if ($test$plusargs("MDDBG"))
+          $display("  [TB] cyc=%0d dsel=%b dpd=%b msel=%b mpd=%b | stall=%b hold=%b busy=%b acc=%b state=%0d req=%b resp=%b wb=%b | ie_d=%b ie_m=%b di=%0d mi=%0d",
+            cyc, d_sel, d_pd_vld, m_sel, m_pd_vld,
+            md_unit_stall, u_dut.div_hold_vld, u_dut.div_busy, u_dut.div_accept,
+            u_dut.u_muldiv.U_DIV_PIPE.state, u_dut.req_vld_mux, u_dut.resp_valid, wb_vld,
+            ie_d, ie_m, di, mi);
+        if (ie_d) begin
+          d_pd_iid  = 7'h30 + di[6:0];
+          d_pd_preg = 6'd10 + di[5:0];
+          d_pd_s0   = 32'd1000 + di;  d_pd_s1 = 32'd7;
+          d_pd_rs   = D_DIV;
+          di = di + 1;  n_issue = n_issue + 1;
+        end
+        if (ie_m) begin
+          m_pd_iid  = 7'h30 + mi[6:0];
+          m_pd_preg = 6'd40 + mi[5:0];
+          m_pd_s0   = 32'd3 + mi;     m_pd_s1 = 32'd5;
+          m_pd_rs   = M_MUL;
+          mi = mi + 1;  n_issue = n_issue + 1;
         end
         @(negedge clk);
+        // 时钟沿: 流水线寄存器更新 (上一拍决策的内容本拍已经摆出去/被收下了)
+        d_pd_vld = ie_d;  m_pd_vld = ie_m;
         cyc = cyc + 1;
       end
-      d_sel = 1'b0; m_sel = 1'b0;
+      d_sel = 1'b0; m_sel = 1'b0; d_pd_vld = 1'b0; m_pd_vld = 1'b0;
       if ((di < n_div) || (mi < n_mul))
         $display("  ⚠️ 驱动超时: 只发出 %0d/%0d 除 + %0d/%0d 乘", di, n_div, mi, n_mul);
     end

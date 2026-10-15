@@ -74,6 +74,15 @@ void gm_dump_mem(int addr, int nwords) {
   }
 }
 
+// Read one word of the reference model's data memory. Used by temporary tb
+// probes that compare the DUT's AXI slave memory against the model word-for-word
+// to find the FIRST cycle at which a store failed to reach DRAM.
+unsigned gm_read_mem(int addr) {
+  if (!initialized) return 0;
+  if ((unsigned)addr + 4u > MEM_SZ) return 0xdeadbeefu;
+  return memory[(unsigned)addr >> 2];
+}
+
 // Compare the DUT's CSR file against the model's. Called once per commit, but
 // ONLY on cycles where the DUT reports no redirect: a trap's own mepc/mcause/
 // mstatus writes land on that same clock edge, while the model applies them

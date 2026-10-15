@@ -698,7 +698,23 @@ logic [LSIQ_WIDTH-1:0] lsiq_create1_data;
 assign dp_lsiq_create0_data[LSIQ_WIDTH-1:0]                  = lsiq_create0_data[LSIQ_WIDTH-1:0];
 assign dp_lsiq_create1_data[LSIQ_WIDTH-1:0]                  = lsiq_create1_data[LSIQ_WIDTH-1:0];
 
-assign lsiq_create0_data[LSIQ_SDIQ_ENTRY:LSIQ_SDIQ_ENTRY-3] = ctrl_is_sdiq_create0_entry[3:0];
+// ⚠️ 2026-10-14 修复 (coremark_i1 卡死的真凶): 原版 ct_idu_is_dp.v:5459-5473 这里是一次
+//    **重映射** —— SDIQ 的 create0/create1 是按"这拍窗口里第几条 store"分配的, 而 LSIQ 的
+//    create0/create1 是按"第几条 LSU 指令(load 或 store)"分配的, **两者不是一回事**。
+//    原版口径:
+//      slot0: 是 load ⇒ 用 VMB 表项(本仓 RV32I 无 vector ⇒ 0); 是 store ⇒ 用 SDIQ create0
+//      slot1: 是 load ⇒ 0; 是 store ⇒ 看 **slot0 是不是 store**:
+//                 是   ⇒ 用 SDIQ create1 (第 2 条 store)
+//                 不是 ⇒ 用 SDIQ create0 (它其实是窗口里**第 1 条** store)
+//    本仓原来硬绑成"slot0←create0, slot1←create1" ⇒ 窗口是 **[load, store]** 时,
+//    slot1 那条 store 拿到的是 create1 = 0 ⇒ LSIQ 表项的 `sdiq_entry` 记成 0 ⇒ 传到
+//    SQ 表项就是 `sq_entry_sdid=0` ⇒ 那笔 store 的 store data 永远认领不上
+//    (`sq_entry_data_set` 要求 `sq_entry_sdid == 广播的 sdid`) ⇒ `data_vld` 永远 0
+//    ⇒ `sq_entry_pop_req` 永远 0 ⇒ **SQ 排不空** ⇒ ROB 队头 store 永不退休 ⇒ 整个核死锁。
+//    实测: coremark_i1 有 6 次这样的建表 (T404/T453/T572/T2262/T2450/T2558),
+//    每次都是 `lsiq_c0=1 lsiq_c1=1 sdiq_c0=1 sdiq_c1=0` 且 c1 的 sdiq 字段 = 0。
+assign lsiq_create0_data[LSIQ_SDIQ_ENTRY:LSIQ_SDIQ_ENTRY-3] =
+       is_lsiq_create0_data[IS_LOAD] ? 4'b0 : ctrl_is_sdiq_create0_entry[3:0];
 assign lsiq_create0_data[LSIQ_STORE]                         = is_lsiq_create0_data[IS_STORE];
 assign lsiq_create0_data[LSIQ_LOAD]                          = is_lsiq_create0_data[IS_LOAD];
 assign lsiq_create0_data[LSIQ_SRC0_DATA:LSIQ_SRC0_DATA-6]    = is_lsiq_create0_data[IS_SRC0_DATA:IS_SRC0_DATA-6];
@@ -708,7 +724,15 @@ assign lsiq_create0_data[LSIQ_SRC0_VLD]                      = is_lsiq_create0_d
 assign lsiq_create0_data[LSIQ_IID:LSIQ_IID-6]                = is_lsiq_create0_iid[6:0];
 assign lsiq_create0_data[LSIQ_OPCODE:LSIQ_OPCODE-31]         = is_lsiq_create0_data[IS_OPCODE:IS_OPCODE-31];
 
-assign lsiq_create1_data[LSIQ_SDIQ_ENTRY:LSIQ_SDIQ_ENTRY-3] = ctrl_is_sdiq_create1_entry[3:0];
+// ⚠️ 2026-10-14 修复 (同上): slot1 的 sdiq_entry 要按"窗口里第几条 store"选 SDIQ 的
+//    create0/create1, 不能硬绑 create1。原版 ct_idu_is_dp.v:5470-5473。
+//    ⚠️⚠️ 2026-10-14 二次修: 上面那段注释写对了口径, 但**这一行漏了 slot0 是不是 store 的
+//    判断** (硬绑 create1) ⇒ 窗口是 [load, store] 时 slot1 那条 store 仍然拿 create1=0
+//    ⇒ 1694 条卡死照旧。必须按原版补 `is_lsiq_create0_data[IS_STADDR]` 这个条件。
+assign lsiq_create1_data[LSIQ_SDIQ_ENTRY:LSIQ_SDIQ_ENTRY-3] =
+       is_lsiq_create1_data[IS_LOAD] ? 4'b0
+     : ( is_lsiq_create0_data[IS_STADDR] ? ctrl_is_sdiq_create1_entry[3:0]  // slot0 也是 store ⇒ 这是第 2 条
+                                         : ctrl_is_sdiq_create0_entry[3:0] );// slot0 是 load ⇒ 这是第 1 条
 assign lsiq_create1_data[LSIQ_STORE]                         = is_lsiq_create1_data[IS_STORE];
 assign lsiq_create1_data[LSIQ_LOAD]                          = is_lsiq_create1_data[IS_LOAD];
 assign lsiq_create1_data[LSIQ_SRC0_DATA:LSIQ_SRC0_DATA-6]    = is_lsiq_create1_data[IS_SRC0_DATA:IS_SRC0_DATA-6];

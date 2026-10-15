@@ -113,6 +113,7 @@ logic [LFB_ADDR_ENTRY-1:0] lfb_addr_entry_dcache_hit;
 logic [LFB_ADDR_ENTRY-1:0] lfb_addr_entry_depd;
 logic [LFB_ADDR_ENTRY-1:0] lfb_addr_entry_discard_vld;
 logic [LFB_ADDR_ENTRY-1:0] lfb_addr_entry_ld_da_hit_idx;
+logic [LFB_ADDR_ENTRY-1:0] lfb_addr_entry_linefill_abort;
 logic [LFB_ADDR_ENTRY-1:0] lfb_addr_entry_linefill_permit;
 logic [LFB_ADDR_ENTRY-1:0] lfb_addr_entry_not_resp;
 logic [LFB_ADDR_ENTRY-1:0] lfb_addr_entry_pop_vld;
@@ -204,6 +205,7 @@ generate
             .lfb_addr_entry_depd_x                  (lfb_addr_entry_depd[i]),
             .lfb_addr_entry_discard_vld_x           (lfb_addr_entry_discard_vld[i]),
             .lfb_addr_entry_ld_da_hit_idx_x         (lfb_addr_entry_ld_da_hit_idx[i]),
+            .lfb_addr_entry_linefill_abort_x        (lfb_addr_entry_linefill_abort[i]),
             .lfb_addr_entry_linefill_permit_x       (lfb_addr_entry_linefill_permit[i]),
             .lfb_addr_entry_not_resp_x              (lfb_addr_entry_not_resp[i]),
             .lfb_addr_entry_pop_vld_x               (lfb_addr_entry_pop_vld[i]),
@@ -229,6 +231,7 @@ ct_lsu_lfb_data_entry u_lfb_data_entry (
     .biu_lsu_r_vld                  (biu_lsu_r_vld),
     .cpurst_b                       (cpurst_b),
     .forever_cpuclk                    (forever_cpuclk),
+    .lfb_addr_entry_linefill_abort  (lfb_addr_entry_linefill_abort),
     .lfb_addr_entry_linefill_permit (lfb_addr_entry_linefill_permit),
     .lfb_biu_id_2to0                (lfb_biu_id_2to0),
     .lfb_biu_r_id_hit               (lfb_biu_r_id_hit),

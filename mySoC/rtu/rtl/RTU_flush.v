@@ -53,6 +53,7 @@ module RTU_flush (
     input  wire         flush_trig,
     input  wire [2:0]   flush_src,
     input  wire [31:0]  flush_pc,
+    input  wire         lsu_all_commit_data_vld,   // 见下面 WAIT 态的长注
     input  wire [32*`RTU_PREG_W-1:0] amt_flat,   // 架构映射表 (RTU_preg 出), 宽度随档
     input  wire         beu_redirect_vld,// D13: EX 级真的发出误预测重定向的那一拍
 
@@ -76,6 +77,7 @@ module RTU_flush (
     reg [31:0] pc_q;
 
     wire idle = (st_q == `RTU_FSM_IDLE);
+    wire wait_st = (st_q == `RTU_FSM_WAIT);   // (`wait` 是关键字, 不能当标识符)
     wire f1   = (st_q == `RTU_FSM_F1);
 
     always @(posedge cpu_clk or posedge cpu_rst) begin
@@ -101,8 +103,46 @@ module RTU_flush (
             // 时序: T = flush_trig 那一拍(退休拍), 冻结覆盖 T 与 T+1, T+2 放开 ——
             //   因为 T+1 边沿 ROB 指针已复位, T+2 的 flush_trig 自然为 0。
             // -----------------------------------------------------------------
+            // -----------------------------------------------------------------
+            // 2026-10-15: IDLE --(flush_trig)--> [WAIT] --> F1 --> IDLE
+            //
+            // 【为什么要多这个 WAIT 态 —— coremark_i1 T394913 死锁的真凶】
+            // 一条 store 会**先退休、后拿到 store data** (C910 的设计就这样: 数据
+            // 走 SDIQ → SQ, 与退休解耦)。若在"已退休、还没数据"这个窗口里来一次
+            // 冲刷, IDU 的 SDIQ 表项 (那笔 store data 的**唯一来源**) 会被冲掉,
+            // 而 SQ 表项因为已经 cmit 不会被冲掉 (`sq_entry_flush_pop_vld` 只清
+            // 未提交的) ⇒ 它永远拿不到数据 ⇒ 永不 pop; 更年轻的 load 若在 LD_DA
+            // 因它被 discard, 就把自己登记进它的 wakeup_queue 等 `data_set` ⇒
+            // **永远不唤醒** ⇒ ROB 队头不完 ⇒ 整个核死锁。
+            // 实测: T394834 冲刷脉冲与 SDIQ 表项0"当拍被选中发射"撞在一起
+            // (`sdiq_entry_issue_en=1` 而 `idu_lsu_sdiq_sel` 被冲刷压成 0), 表项
+            // 随即被清 ⇒ 之后整跑再没有一次该 sdid 的广播。
+            //
+            // C910 的对策 (`ct_rtu_retire.v`): `retire_flush_pipeline_empty =
+            //   pst_retire_retired_reg_wb && lsu_rtu_all_commit_data_vld;`
+            //   FLUSH_IDLE: pipeline_empty ? FLUSH_IS_BE : FLUSH_IS  ← 不满足就
+            //   **先不发后端冲刷**, 在 WF_EMPTY 里等。本仓 DSP 无此等, 补在这里。
+            //
+            // WAIT 期间:
+            //   * `fsm_busy` = 1 ⇒ `ok*` = 0 ⇒ **判退停住** (否则队头那条会被
+            //     反复退休 —— flush_trig 是组合信号, 只要停在 IDLE 它就一直是 1);
+            //   * `flushing` = 1 ⇒ 派遣继续冻着、BEU 继续屏蔽, 与原来 T..F1 一致;
+            //   * 后端**没有**被冲刷, IDU/LSU 的队列照常排水 ⇒ SDIQ 把那笔数据发出来;
+            //   * `amt` 只在退休那拍写 (RTU_preg.v), 此时不退休 ⇒ 恢复映射表仍有效。
+            // 数据到齐 ⇒ 进 F1 照原样冲刷。
+            //
+            // ⚠️ 等待**不设超时**: 若这笔数据真的永远不来 (别的 bug), 会在这里挂住
+            //    而不是换一种方式挂住 —— 这是有意的, 静默绕过只会把问题挪到后面。
+            // ⚠️ 别把 WAIT 折进 IDLE (即 `st_q <= flush_trig && data_vld ? F1 : IDLE`):
+            //    那样 WAIT 期间 fsm_busy=0, 队头那条会**每拍退休一次**。
+            // -----------------------------------------------------------------
             case (st_q)
-                `RTU_FSM_IDLE: st_q <= flush_trig ? `RTU_FSM_F1 : `RTU_FSM_IDLE;
+                `RTU_FSM_IDLE: st_q <= flush_trig
+                                            ? (lsu_all_commit_data_vld ? `RTU_FSM_F1
+                                                                       : `RTU_FSM_WAIT)
+                                            : `RTU_FSM_IDLE;
+                `RTU_FSM_WAIT: st_q <= lsu_all_commit_data_vld ? `RTU_FSM_F1
+                                                               : `RTU_FSM_WAIT;
                 default      : st_q <= `RTU_FSM_IDLE;
             endcase
             if (flush_trig) pc_q <= flush_pc;   // 目标留下来 (F1 期间读)

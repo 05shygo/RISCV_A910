@@ -31,6 +31,7 @@ module ct_lsu_lfb_addr_entry #(
     output logic         lfb_addr_entry_depd_x,
     output logic         lfb_addr_entry_discard_vld_x,
     output logic         lfb_addr_entry_ld_da_hit_idx_x,
+    output logic         lfb_addr_entry_linefill_abort_x,
     output logic         lfb_addr_entry_linefill_permit_x,
     output logic         lfb_addr_entry_not_resp_x,
     output logic         lfb_addr_entry_pop_vld_x,
@@ -63,6 +64,7 @@ logic        lfb_addr_entry_vld;
 
 logic        lfb_addr_entry_discard_vld;
 logic        lfb_addr_entry_ld_da_hit_idx;
+logic        lfb_addr_entry_linefill_abort;
 logic        lfb_addr_entry_linefill_permit;
 logic        lfb_addr_entry_not_resp;
 logic        lfb_addr_entry_pop_vld;
@@ -193,6 +195,17 @@ assign lfb_addr_entry_vb_pe_req_success_set = (lfb_addr_entry_rb_create_vld
 assign lfb_addr_entry_linefill_permit = lfb_addr_entry_rcl_done
                                         && !lfb_addr_entry_dcache_hit;
 
+// 回填时(rcl)发现线**已经在 dcache 里** ⇒ 这次 linefill 没有意义, 而且**写回去
+// 会盖掉期间被 store 改脏的内容**。原版 C910 正是在这里放弃 (linefill_abort):
+// 把 addr/data 两个表项都 pop 掉, 只是**不写 dcache**。
+// 少了它: permit=0 且无 abort ⇒ data 表项 `pop_vld = abort || lf_sm_data_pop_req`
+// 恒 0 ⇒ 表项永久占死 ⇒ `lfb_biu_arready` 恒 0 ⇒ 别的 LFB 表项收不进 R beat
+// ⇒ 那些 load 永不唤醒 ⇒ LQ 排不空 ⇒ ROB 队头不完 ⇒ 整核停摆。
+// (load 的数据由 rb/MSHR 直接给, 不依赖 LFB 的数据, 所以丢掉这份数据不丢东西。)
+// rcl_done 与 dcache_hit 是同一拍寄存进来的, 所以两者恒同拍有效。
+assign lfb_addr_entry_linefill_abort = lfb_addr_entry_rcl_done
+                                       && lfb_addr_entry_dcache_hit;
+
 //for rready
 assign lfb_addr_entry_not_resp = lfb_addr_entry_vld
                                  && !lfb_addr_entry_resp;
@@ -255,6 +268,7 @@ assign lfb_addr_entry_not_resp_x = lfb_addr_entry_not_resp;
 assign lfb_addr_entry_vb_pe_req_x = lfb_addr_entry_vb_pe_req;
 assign lfb_addr_entry_pop_vld_x = lfb_addr_entry_pop_vld;
 assign lfb_addr_entry_discard_vld_x = lfb_addr_entry_discard_vld;
+assign lfb_addr_entry_linefill_abort_x = lfb_addr_entry_linefill_abort;
 assign lfb_addr_entry_linefill_permit_x = lfb_addr_entry_linefill_permit;
 assign lfb_addr_entry_ld_da_hit_idx_x = lfb_addr_entry_ld_da_hit_idx;
 assign lfb_addr_entry_st_da_hit_idx_x = lfb_addr_entry_st_da_hit_idx;

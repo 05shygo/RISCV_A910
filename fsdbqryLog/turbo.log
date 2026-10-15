@@ -1,3 +1,3 @@
-Command Line: /mnt/tools/synopsys/verdi/V-2023.12-SP2/platform/LINUXAMD64/bin/fsdbqry waveform/branch_bench.fsdb -scope tb_a910_difftest -level 1 -o fsdbqryLog/top.txt
+Command Line: /mnt/tools/synopsys/verdi/V-2023.12-SP2/platform/LINUXAMD64/bin/fsdbqry waveform/coremark_i1.fsdb -level 1
 uname(Linux localhost.localdomain 3.10.0-1160.119.1.el7.x86_64 #1 SMP Tue Jun 4 14:43:51 UTC 2024 x86_64)
-au time 0.015395 0.003937 0.007946 delta 42889216 42889216 total 235065344 235065344
+au time 0.011926 0.006476 0.002274 delta 42975232 42975232 total 235151360 235151360

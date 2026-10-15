@@ -204,6 +204,10 @@ module lsu_top #(
 
 
 
+  // LSU to RTU - 冲刷闸: 还有"已退休但数据没到"的访存时, RTU 不许发后端冲刷。
+  // C910 `ct_lsu_top.v` 的 `lsu_rtu_all_commit_data_vld`。
+  output logic                 lsu_rtu_all_commit_data_vld,
+
   // LSU to RTU - Writeback pipe3
   output logic                 lsu_rtu_wb_pipe3_cmplt,
   output logic [6:0]           lsu_rtu_wb_pipe3_iid,
@@ -262,13 +266,15 @@ logic [LSIQ_ENTRY-1:0] lfb_depd_wakeup;
 //==========================================================
 
 logic [LSIQ_ENTRY-1:0]st_ag_stall_restart_entry;
-//logic [LSIQ_ENTRY-1:0]ld_ag_stall_restart_entry;
+// ⚠️ 2026-10-15 恢复: 这一项原本被注释掉 ⇒ LSIQ 表项"发射落空"后永远不会再发射 ⇒ 死锁。
+//   详见 lsu_ld_ag.sv 里 `ld_ag_stall_restart_entry` 的大段注释。
+logic [LSIQ_ENTRY-1:0]ld_ag_stall_restart_entry;
 logic [LSIQ_ENTRY-1:0]ld_dc_imme_wakeup;
 assign lsu_idu_imme_wakeup[LSIQ_ENTRY-1:0] = ld_dc_imme_wakeup[LSIQ_ENTRY-1:0] |
                                             st_ag_stall_restart_entry[LSIQ_ENTRY-1:0] |
- //                                           ld_ag_stall_restart_entry[LSIQ_ENTRY-1:0] |
+                                            ld_ag_stall_restart_entry[LSIQ_ENTRY-1:0] |
                                             sq_data_depd_wakeup[LSIQ_ENTRY-1:0] |
-                                            sq_global_depd_wakeup[LSIQ_ENTRY-1:0] | 
+                                            sq_global_depd_wakeup[LSIQ_ENTRY-1:0] |
                                             lfb_depd_wakeup[LSIQ_ENTRY-1:0];
 
 logic [LSIQ_ENTRY-1:0]ld_da_idu_pop_entry;
@@ -673,6 +679,7 @@ logic [1:0] lfb_vb_id;
 // VB to dcache arbiter signals
 logic vb_dcache_arb_ld_borrow_req;
 logic vb_dcache_arb_st_borrow_req;
+logic vb_dcache_arb_st_req;      // 仲裁器的 st 请求 (≠ borrow, 见 lsu_vb.sv)
 logic [31:0] vb_dcache_arb_borrow_addr;
 logic [LD_TAG_WIDTH-1:0] vb_dcache_arb_ld_tag_din;
 logic [INDEX_WIDTH-1:0] vb_dcache_arb_ld_tag_idx;
@@ -1017,8 +1024,8 @@ lsu_ld_ag #(
   .ld_ag_bytes_vld(ld_ag_bytes_vld),
   .ld_ag_addr1_to4(ld_ag_addr1_to4),
   .ld_ag_dc_addr0(ld_ag_dc_addr0),
-  .ld_ag_raw_new(ld_ag_raw_new)
-  //.ld_ag_stall_restart_entry(ld_ag_stall_restart_entry)
+  .ld_ag_raw_new(ld_ag_raw_new),
+  .ld_ag_stall_restart_entry(ld_ag_stall_restart_entry)
 );
 
 //----------------------------------------------------------
@@ -1493,6 +1500,18 @@ ct_lsu_st_wb u_lsu_st_wb (
 );
 
 //----------------------------------------------------------
+// Store / Load Queue 冲刷闸 (C910 `ct_lsu_top.v`: lsu_rtu_all_commit_data_vld)
+//----------------------------------------------------------
+// "所有**已退休**的访存都拿到数据了吗" —— 给 RTU 用: 只要还有一条已退休的 store
+// 等着 store data (或已退休的 load 等着数据回写), 后端冲刷就必须压住, 否则唯一
+// 的数据来源 (SDIQ 表项 / RB 表项) 会被冲掉, 而对应的 SQ/LQ 表项因为已经 cmit
+// 不会被冲掉 ⇒ 永远拿不到数据 ⇒ 等它的指令永不唤醒。详见 lsu_sq.sv 的补注。
+logic lsu_rtu_all_commit_st_data_vld;
+logic lsu_rtu_all_commit_ld_data_vld;
+assign lsu_rtu_all_commit_data_vld = lsu_rtu_all_commit_st_data_vld
+                                     && lsu_rtu_all_commit_ld_data_vld;
+
+//----------------------------------------------------------
 // Store Queue
 //----------------------------------------------------------
 // WMB CE signals used by SQ
@@ -1607,7 +1626,8 @@ ct_lsu_sq #(
   .wmb_ce_update_dcache_dirty(wmb_ce_update_dcache_dirty),  
   .wmb_ce_update_dcache_valid(wmb_ce_update_dcache_valid),  
   .wmb_ce_update_dcache_way(wmb_ce_update_dcache_way),
-  .lsu_idu_sq_not_full(lsu_idu_sq_not_full)  
+  .lsu_idu_sq_not_full(lsu_idu_sq_not_full),
+  .lsu_rtu_all_commit_st_data_vld(lsu_rtu_all_commit_st_data_vld)
 );
 
 //----------------------------------------------------------
@@ -1646,6 +1666,9 @@ ct_lsu_lq u_lsu_lq (
 // WMB Create Entry (CE)
 //----------------------------------------------------------
 logic [WMB_ENTRY-1:0] wmb_entry_vld;
+// 各 WMB 表项"当拍收不收得下 merge"(不带地址比较): u_lsu_wmb -> u_lsu_wmb_ce
+//   (见 lsu_wmb_ce.sv / lsu_wmb_entry.sv 端口注释)
+logic [WMB_ENTRY-1:0] wmb_entry_merge_data_nopermit_vec;
 
 lsu_wmb_ce #(
   .PA_WIDTH(32),
@@ -1667,6 +1690,7 @@ lsu_wmb_ce #(
   .wmb_ce_dcache_valid(st_da_dcache_valid),
   .wmb_ce_pop_vld(wmb_ce_pop_vld),
   .wmb_entry_vld(wmb_entry_vld),
+  .wmb_merge_data_nopermit_vec(wmb_entry_merge_data_nopermit_vec),
   .rb_wmb_ce_hit_idx(rb_wmb_ce_hit_idx),
   .wmb_ce_addr(wmb_ce_addr),
   .wmb_ce_bytes_vld(wmb_ce_bytes_vld),
@@ -1784,6 +1808,7 @@ lsu_wmb #(
   //    同名概念的正确连接在上面 .wmb_ce_same_dcache_line(wmb_ce_same_dcache_line)。
   .wmb_ce_create_stall(wmb_ce_create_stall),
   .wmb_entry_vld(wmb_entry_vld),
+  .wmb_entry_merge_data_nopermit_vec(wmb_entry_merge_data_nopermit_vec),
 
   // BIU interface
   .wmb_biu_aw_addr(wmb_biu_aw_addr),
@@ -1934,6 +1959,7 @@ ct_lsu_vb #(
   .ld_da_vb_borrow_vb(ld_da_vb_borrow_vb),
   .st_da_dcache_hit(st_da_dcache_hit),
   .st_da_dcache_way(st_da_dcache_way),
+  .st_da_dcache_replace_way(st_da_dcache_replace_way),
   .st_da_dcache_replace_valid(st_da_dcache_replace_valid),
   .st_da_dcache_replace_dirty(st_da_dcache_replace_dirty),
   .st_da_vb_feedback_addr_tto10(st_da_vb_feedback_addr_tto10),
@@ -1961,6 +1987,7 @@ ct_lsu_vb #(
   .vb_dcache_arb_ld_borrow_req(vb_dcache_arb_ld_borrow_req),
   .vb_dcache_arb_data_way(vb_dcache_arb_data_way),
   .vb_dcache_arb_st_borrow_req(vb_dcache_arb_st_borrow_req),
+  .vb_dcache_arb_st_req(vb_dcache_arb_st_req),
   .vb_dcache_arb_borrow_addr(vb_dcache_arb_borrow_addr),
   .vb_dcache_arb_ld_tag_din(vb_dcache_arb_ld_tag_din),
   .vb_dcache_arb_ld_tag_idx(vb_dcache_arb_ld_tag_idx),
@@ -2053,7 +2080,7 @@ ct_lsu_dcache_arb #(
   .vb_dcache_arb_ld_tag_gateclk_en(vb_dcache_arb_ld_tag_gateclk_en),
   .vb_dcache_arb_ld_tag_idx(vb_dcache_arb_ld_tag_idx),
   .vb_dcache_arb_ld_tag_wen(vb_dcache_arb_ld_tag_wen),
-  .vb_dcache_arb_st_req(vb_dcache_arb_st_borrow_req),
+  .vb_dcache_arb_st_req(vb_dcache_arb_st_req),
   .vb_dcache_arb_st_borrow_req(vb_dcache_arb_st_borrow_req),
   .vb_dcache_arb_st_tag_req(vb_dcache_arb_st_tag_req),
   .vb_dcache_arb_st_tag_gateclk_en(vb_dcache_arb_st_tag_gateclk_en),
@@ -2237,7 +2264,8 @@ lsu_mshr #(
   .rb_lfb_depd(rb_lfb_depd),
   .rb_biu_req_addr(rb_biu_req_addr),
   .rb_sq_pop_hit_idx(rb_sq_pop_hit_idx),
-  .lsu_idu_rb_not_full(lsu_idu_rb_not_full)
+  .lsu_idu_rb_not_full(lsu_idu_rb_not_full),
+  .lsu_rtu_all_commit_ld_data_vld(lsu_rtu_all_commit_ld_data_vld)
 );
 
 

@@ -66,7 +66,17 @@ module ct_lsu_st_ag #(
 
     assign st_ag_dcache_stall_unmask = !dcache_arb_ag_st_sel;
     assign st_ag_dcache_stall_req = st_ag_dcache_stall_unmask && st_ag_inst_vld;
-    assign st_ag_stall_vld = st_ag_dcache_stall_req;// && !st_ag_stall_mask;
+    // ⚠️⚠️ 2026-10-15 补: 与 lsu_ld_ag.sv 同款 —— **必须带 `&& !st_ag_stall_mask`**。
+    //   原版 ct_lsu_st_ag.v:1331-1332
+    //      st_ag_stall_vld = st_ag_stall_ori && !st_ag_stall_mask;
+    //   (原版注释同 ld_ag: "for performance, when ag stall, let oldest inst go")
+    //   本仓原来把它注掉了 ⇒ mask=1 (RF 那条 store 比 AG 里那条**更老**) 时 AG 仍自称
+    //   stall ⇒ 拒收更老的那条 store, 而 RF 级下拍就换下一条 ⇒ 这条 store 既没进 AG、
+    //   LSIQ 表项也没被 pop; 那拍 `st_ag_stall_restart_entry` 又选的是 `st_ag_lsid`
+    //   (AG 里更年轻那条) ⇒ 更老的表项没有任何 wakeup 去解 `frz` ⇒ 永远不再发射。
+    //   ⚠️ 原来是**整段注释掉**的 (连输出口一起悬空 → Z → `lsu_idu_imme_wakeup` 全 X),
+    //   2026-10-15 先补了 restart_entry 那一段, 这一项 (取反) 是第二步。
+    assign st_ag_stall_vld = st_ag_dcache_stall_req && !st_ag_stall_mask;
    // assign st_ag_stall_restart = st_ag_dcache_stall_req && st_ag_stall_mask;
 
     always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
@@ -267,7 +277,28 @@ assign st_ag_expt = !st_ag_align;
     //==========================================================
     //        Generate stall/restart signal
     //==========================================================
-    /*
+    // ⚠️⚠️ 2026-10-15 恢复 (coremark_i1 T71237 整机死锁的真凶, 与 lsu_ld_ag.sv 同款):
+    //   下面这一整段原来被注释掉了 ⇒ 输出口 `st_ag_stall_restart_entry` **没有任何
+    //   驱动** (Z)。它经 lsu_top:
+    //       lsu_idu_imme_wakeup = ld_dc_imme_wakeup | st_ag_stall_restart_entry
+    //                             | ld_ag_stall_restart_entry | sq_data/global/lfb_depd_wakeup
+    //   并进 LSIQ 表项的 `frz` 清条件 (`ct_idu_is_lsiq_entry.sv:121`):
+    //       else if(lsu_frz_clr | x_unalign_2nd_set | lsu_idu_imme_wakeup) frz <= 1'b0;
+    //   ① Z 让整根 `lsu_idu_imme_wakeup` 变 **X** ⇒ `if(X)` 取假分支 ⇒ 所有靠这条
+    //      wakeup 解锁的表项都**永远解不开**;
+    //   ② 就算把它接成 0 也一样死 —— 这段逻辑本来就是"LSIQ 把表项发给 RF、AG 这拍收不下
+    //      (等 dcache 仲裁) 时把该表项的 frz 打掉"的**唯一**通道, 缺了它, 发射落空一次
+    //      的表项就再也不发射。
+    //   实测 (coremark_i1): T71248 起 ROB 队头 iid=40 (pc=00000cd8 `lh a4,0(a6)`) 停在
+    //   LSIQ entry2 上 `vld=1 frz=1 x_raw_rdy=0` 且 `iss_en=0`, 而
+    //   `ld_ag_re=0 / ld_dc_imme_wakeup=0 / st_ag_re=X` ⇒ 没有任何一条能把 frz 清掉;
+    //   T71237 之后一条指令都不退休, 队头完不成 ⇒ 它后面那条已误预测的分支永远提交不了
+    //   ⇒ 没有冲刷脉冲 ⇒ `A910_cpu.sv` 的 mispred 闸门永不开 ⇒ 整机冻结。
+    //   接法与判据**照抄 lsu_ld_ag.sv:507-546** (那份是 2026-10-15 修好并验证过的):
+    //   使能必须用 `st_ag_stall_vld` (= `!dcache_arb_ag_st_sel && st_ag_inst_vld`), 与
+    //   原版在 ct_lsu_ctrl.v 里那层 `& {LSIQ_ENTRY{st_rf_restart_vld}}` 等价 —— 只有
+    //   "这拍真在发射且真落空"才发 wakeup。若误用 `st_ag_stall_restart` 而无 inst_vld,
+    //   AG 级空着、新 store 刚发进来那拍会发一次多余的 wakeup ⇒ 表项解锁后重复发射。
     logic rf_iid_older_than_st_ag;
 
     ct_rtu_compare_iid x_lsu_rf_compare_st_ag_iid (
@@ -278,10 +309,15 @@ assign st_ag_expt = !st_ag_align;
 
     assign st_ag_stall_mask = idu_lsu_st_sel && rf_iid_older_than_st_ag;
 
+    // ⚠️ 使能用的是**加 mask 之前**的 `st_ag_dcache_stall_req` (它已含 st_ag_inst_vld),
+    //   不是 `st_ag_stall_vld` —— 否则 mask=1 那拍 (正是"AG 把更年轻那条挤出去"的场合)
+    //   stall_vld 已被上面的取反项拉低, `st_ag_lsid` 这一支永远选不中, 被挤出去的那条
+    //   store 就再也发不回来了。对齐原版: 使能用的也是**未取反**的 stall_ori。
     assign st_ag_stall_restart_entry[LSIQ_ENTRY-1:0] =
-        st_ag_stall_mask ? st_ag_lsid[LSIQ_ENTRY-1:0]
-                         : idu_lsu_st_lch_entry[LSIQ_ENTRY-1:0];
-*/
+        (idu_lsu_st_sel && st_ag_dcache_stall_req)
+          ? (st_ag_stall_mask ? st_ag_lsid[LSIQ_ENTRY-1:0]
+                              : idu_lsu_st_lch_entry[LSIQ_ENTRY-1:0])
+          : {LSIQ_ENTRY{1'b0}};
     //==========================================================
     //        Generate to DC stage signal
     //==========================================================

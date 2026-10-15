@@ -60,6 +60,7 @@ module lsu_mshr_entry #(
     output logic         rb_entry_biu_req_x,
     output logic         rb_entry_boundary_wakeup_x,
     output logic         rb_entry_bus_err_x,
+    output logic         rb_entry_cmit_data_vld_x,
     output logic         rb_entry_create_lfb_x,
     output logic [31:0]  rb_entry_data_v,
     output logic         rb_entry_depd_x,
@@ -652,8 +653,19 @@ assign rb_entry_wmb_ce_hit_idx  = rb_entry_wmb_ce_cmp_vld
 //                 Flush dest_vld/Pop signal
 //==========================================================
 //req_biu_success && !cmit will cancel dest_vld
+// ⚠️ 2026-10-14 修 (coremark_i1 #7800 失配的真凶): 原判据只看**寄存的** `rb_entry_cmit`,
+//    而 `cmit` 要等提交**广播** (`rtu_yy_xx_commit*`) 才置起 —— 比 ROB 真正提交晚一拍。
+//    于是"ROB 已经提交了这条 load、但它的 cmit 还没置起来"的那一拍, 只要撞上
+//    `rtu_yy_xx_flush`, 这条**已退休** load 的 refill-buffer 表项就被当"没提交的"清掉,
+//    回填数据 (0x3658) 跟着丢 ⇒ PRF 永远拿不到它 ⇒ 退休时报陈旧值 (9)。
+//    实测 (coremark_i1): T11538 ROB 提交, T11539 commit 广播 + 回填数据到齐 (**同拍**
+//    `yy_flush=1`), 那拍 `cmit=0` ⇒ `flush_clear=1` 清表项; T11540 `cmit` 才变 1 (晚了)。
+//    补上 `!rb_entry_cmit_set` = "这一拍正在提交"也要当成已提交 ⇒ 表项保住。
+//    ⚠️ 原版 ct_lsu_rb_entry.v:1487 也只有 `!rb_entry_cmit` —— 不是抄漏, 是本仓
+//    (IFU2 零气泡重定向) 的相位正好踩中这个竞态。
 assign rb_entry_flush_clear   = rtu_yy_xx_flush
-                                    &&  !rb_entry_cmit;
+                                    &&  !rb_entry_cmit
+                                    &&  !rb_entry_cmit_set;
  //                                       ||  rb_entry_boundary &&  !rb_entry_secd);
 
 //==========================================================
@@ -671,6 +683,17 @@ assign rb_entry_wb_data_grnt            = rb_entry_wb_data_grnt_x;
 //------------------output----------------------------------
 //-----------rb entry signal------------
 assign rb_entry_vld_x                   = rb_entry_vld;
+// ---------------------------------------------------------------------------
+// 【2026-10-15 补漏】C910 `ct_lsu_rb_entry.v:1498`: "for rtu flush" ——
+//   已经退休(cmit)、但它的数据还没回写的 load 表项。`dest_vld` = 这是 load 建的表项
+//   且目的寄存器还欠一次写回。与 store 侧 `sq_entry_cmit_data_vld` 同一用途:
+//   喂 RTU 的冲刷闸"还有已退休访存没拿到数据时先别冲刷"。
+//   本仓原来这根 `rb_entry_cmit_data_not_vld` **只声明、没赋值** (也没人用)。
+// ---------------------------------------------------------------------------
+assign rb_entry_cmit_data_not_vld       = rb_entry_vld
+                                          && rb_entry_cmit
+                                          && rb_entry_dest_vld;
+assign rb_entry_cmit_data_vld_x         = !rb_entry_cmit_data_not_vld;
 assign rb_entry_addr_v[31:0]            = rb_entry_addr[31:0];
 assign rb_entry_iid_v[6:0]              = rb_entry_iid[6:0];
 assign rb_entry_sign_extend_x           = rb_entry_sign_extend;

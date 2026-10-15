@@ -94,8 +94,9 @@ module lsu_ld_ag #(
   output logic [15:0]                   ld_ag_bytes_vld,
   output logic [27:0]                   ld_ag_addr1_to4,
   output logic [31:0]                   ld_ag_dc_addr0,
-  output logic                          ld_ag_raw_new
- // output logic [LSIQ_ENTRY-1:0]         ld_ag_stall_restart_entry
+  output logic                          ld_ag_raw_new,
+  // 2026-10-15 恢复: AG 级"发射落空"要把 LSIQ 表项的 frz 打掉 (见下面的 assign)
+  output logic [LSIQ_ENTRY-1:0]         ld_ag_stall_restart_entry
 );
 
 //==========================================================
@@ -152,7 +153,8 @@ logic                         ld_ag_va_plus_sel;
 logic                         ld_ag_dcache_stall_unmask;
 logic                         ld_ag_stall_ori;
 logic                         ld_ag_stall_vld;
-//logic                         ld_ag_stall_mask;
+logic                         rf_iid_older_than_ld_ag;
+logic                         ld_ag_stall_mask;
 
 
 //==========================================================
@@ -502,9 +504,40 @@ assign ld_ag_dcache_stall_unmask    = !dcache_arb_ag_ld_sel;
 
 assign ld_ag_stall_ori            = ld_ag_dcache_stall_unmask;
 
-assign ld_ag_stall_vld            = ld_ag_inst_vld & ld_ag_stall_ori;
-                             //       && !ld_ag_stall_mask;
-/*
+// ⚠️⚠️ 2026-10-15 补 (coremark_i1 T71237 整机死锁的真凶): **漏了 `&& !ld_ag_stall_mask`**。
+//   原版 (ct_lsu_ld_ag.v:1318-1321):
+//      ld_ag_stall_ori = (cross_page || dcache_stall || mmu_stall) && !atomic;
+//      ld_ag_stall_vld = ld_ag_stall_ori && !ld_ag_stall_mask;
+//   而 `ld_ag_stall_vld` 又是 **AG 级"这拍收不下新指令"的判据** —— 三处寄存器装载都是
+//      if (!ld_ag_stall_vld && idu_lsu_rf_pipe3_sel) <= RF 来的新指令;
+//   所以 mask=1 (RF 那条比 AG 里那条**更老**) 时必须把它拉低, AG 才肯把更老的那条收进来、
+//   把手里更年轻的那条挤出去 (原版注释: "for performance, when ag stall, let oldest inst go")。
+//   本仓原来掩掉了这个取反项 ⇒ mask=1 时 AG 仍自称 stall ⇒ **拒收那条更老的 load**,
+//   而 RF 级那拍过后就换下一条 ⇒ 这条更老的 load **既没进 AG、LSIQ 表项也没被 pop**。
+//   更糟的是那拍 `ld_ag_stall_restart_entry` 选的是 `ld_ag_lsid` (AG 里那条更年轻的),
+//   LSIQ 里那条更老的表项**没有任何 wakeup 去解它的 `frz`** ⇒ 永远不再发射。
+//   实测 (coremark_i1): T71215 LSIQ 发 entry2 (iid=40, pc=0x0cd8 `lh a4,0(a6)`, 正是 ROB
+//   队头); T71216 它到了 RF 级 (`ld_lch=00000100`), 而 AG 里是更年轻的 iid=41
+//   (`ld_ag_iid=41`) ⇒ `rf_iid_older_than_ld_ag=1` ⇒ mask=1: 该拍 `ld_ag_stall_vld=1`
+//   ⇒ AG 拒收 ⇒ 下拍 RF 换成 iid=48, entry2 永久 `vld=1 frz=1 x_raw_rdy=0`
+//   (`src0_rdy` 明明是 1) ⇒ ROB 队头永不完成 ⇒ T71237 起一条指令都不退休。
+assign ld_ag_stall_vld            = ld_ag_inst_vld & ld_ag_stall_ori & !ld_ag_stall_mask;
+
+// ⚠️⚠️ 2026-10-15 恢复 (coremark_i1 T68485 整机死锁的真凶): 下面这一整段原来被注释掉了,
+//   连端口一起删了 (lsu_top 的 `lsu_idu_imme_wakeup` 那行也把这一项注释掉了)。
+//   原版 ct_lsu_ld_ag.v:1331-1334 + ct_lsu_ctrl.v:901-903 的机制是:
+//      ld_rf_restart_vld = idu_lsu_rf_pipe3_sel && ld_ag_stall_ori;   // "这拍发射落空"
+//      ld_rf_imme_wakeup = ld_ag_stall_restart_entry & {LSIQ_ENTRY{ld_rf_restart_vld}};
+//   即 **LSIQ 把一个表项发给 RF 级、但 AG 级这拍收不下 (等 dcache 仲裁) 时, 要把那个
+//   LSIQ 表项的 `frz` 打掉**, 让它能在下一拍重新发射。
+//   LSIQ 表项的 `frz` 是"发过一次"就置死、只在收到这个 wakeup 时才清的
+//   (`ct_idu_is_lsiq_entry.sv` 的 frz 块)。这条 wakeup 没了 ⇒ **发射落空一次, 这个
+//   表项就永远不再发射**, 而 ROB 队头正是它 ⇒ 队头永不完成 ⇒ 它后面那条已误预测的
+//   分支永远提交不了 ⇒ 没有冲刷脉冲 ⇒ `A910_cpu.sv` 的 mispred 闸门永不开 ⇒ 整机冻结。
+//   实测 (coremark_i1): T68461 LSIQ 发 entry7 (iid=118, pc=0x0eec, 正是 ROB 队头),
+//   那两拍 AG 级正被 iid=113 占着等 dcache 仲裁 (`ld_ag_stall_ori=1`) ⇒ 没接住,
+//   而 entry7 的 frz 已经在 T68462 置死、再没人清 ⇒ T68485 起一条指令都不退休。
+//   恢复后 entry7 每拍都能重发, AG 级一空就读进来。
 ct_rtu_compare_iid  x_lsu_rf_compare_ld_ag_iid (
   .x_iid0                    (idu_lsu_ld_iid[6:0]),
   .x_iid0_older              (rf_iid_older_than_ld_ag  ),
@@ -514,11 +547,25 @@ ct_rtu_compare_iid  x_lsu_rf_compare_ld_ag_iid (
 assign ld_ag_stall_mask = idu_lsu_ld_sel
                           && rf_iid_older_than_ld_ag;
 
-
+// 把原版在 ct_lsu_ctrl.v 里做的那层 `& {LSIQ_ENTRY{ld_rf_restart_vld}}` 并进来
+// (少一根跨模块的 stall_ori 端口): 只有"这拍真的在发射且真的落空"才发 wakeup。
+// ⚠️ 原版 `ld_ag_stall_ori` 里**含 `ld_ag_inst_vld`** (它 = ... || `ld_ag_dcache_stall_req`,
+//   而后者 = `!dcache_arb_ag_ld_sel && ld_ag_inst_vld`)；本仓把 inst_vld 挪到了
+//   `ld_ag_stall_vld` 里 ⇒ 这里必须用 `ld_ag_stall_vld` 当原版的 stall_ori。
+//   若误用 `ld_ag_stall_ori` (无 inst_vld): AG 级空着、新 load 刚发进来的那拍
+//   `dcache_arb_ag_ld_sel` 还没拉 (req = ld_ag_inst_vld = 0) ⇒ 会发一次**多余的** wakeup
+//   ⇒ LSIQ 表项被解锁后**重复发射**同一笔 load。
+// ⚠️ 使能用的是**加 mask 之前**的 `ld_ag_inst_vld & ld_ag_stall_ori`, 不是 `ld_ag_stall_vld`
+//   —— 否则 mask=1 那拍 (正是"AG 把更年轻那条挤出去"的场合) stall_vld 已被上面取反项拉低,
+//   `ld_ag_lsid` 这一支永远选不中, 被挤出去的那条就再也发不回来了。
+//   对齐原版: 使能 `ld_rf_restart_vld = idu_lsu_rf_pipe3_sel && ld_ag_stall_ori` 用的也是
+//   **未取反**的 stall_ori。这里额外带上 `ld_ag_inst_vld`, 是为了避免 AG 空着那拍
+//   (`dcache_arb_ag_ld_sel` 还没拉) 发一次多余的 wakeup ⇒ 表项解锁后重复发射。
 assign ld_ag_stall_restart_entry[LSIQ_ENTRY-1:0] =
-        ld_ag_stall_mask ? ld_ag_lsid[LSIQ_ENTRY-1:0]
-                         : idu_lsu_ld_lch_entry[LSIQ_ENTRY-1:0];
-*/
+        (idu_lsu_ld_sel && ld_ag_inst_vld && ld_ag_stall_ori)
+          ? (ld_ag_stall_mask ? ld_ag_lsid[LSIQ_ENTRY-1:0]
+                              : idu_lsu_ld_lch_entry[LSIQ_ENTRY-1:0])
+          : {LSIQ_ENTRY{1'b0}};
 //-----------for timing--------------------------
 //compare iid ahead for dc restart timing
 //compare the instruction in the entry is newer or older

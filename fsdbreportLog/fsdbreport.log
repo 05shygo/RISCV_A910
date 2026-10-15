@@ -1,0 +1,3 @@
+Command Line: /mnt/tools/synopsys/verdi/V-2023.12-SP2/platform/LINUXAMD64/bin/fsdbreport -h
+uname(Linux localhost.localdomain 3.10.0-1160.119.1.el7.x86_64 #1 SMP Tue Jun 4 14:43:51 UTC 2024 x86_64)
+au time 0.004231 0.001325 0.000367 delta 290816 290816 total 211992576 211992576

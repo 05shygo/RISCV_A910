@@ -172,6 +172,14 @@ module RTU (
     input  wire        lsu_replay_vld,
     input  wire [6:0] lsu_replay_iid,
 
+    // ===================== 冲刷闸: LSU 的"已退休访存都拿到数据了吗" =====================
+    // C910 `ct_lsu_top.v` 的同名口 = `&sq_entry_cmit_data_vld & &rb_entry_cmit_data_vld`。
+    // 1 = 可以冲刷; 0 = 还有已退休的 store 在等 store data / 已退休的 load 在等数据
+    // 回写 ⇒ 冲刷状态机先进 WAIT 态等它, **不发后端冲刷** (否则那笔数据的唯一来源
+    // 会被冲掉, 而对应的 SQ/LQ 表项已 cmit 不会被冲掉 ⇒ 永不 pop ⇒ 死锁)。
+    // 来龙去脉见 RTU_flush.v 的 FSM 长注。
+    input  wire        lsu_rtu_all_commit_data_vld,
+
     // ===================== §6.1 异常 (三个平行源, 最旧者胜) =====================
     // ⚠️ **2026-10-10: 由 1 路扩成 3 路, 与 C910 同构** (`ct_rtu_top` 的
     //    `iu_rtu_pipe0_expt_*` / `lsu_rtu_wb_pipe3_expt_*` / `lsu_rtu_wb_pipe4_expt_*`)。
@@ -838,6 +846,7 @@ module RTU (
         .flush_src      (flush_src),
         .flush_pc       (flush_pc),
         .amt_flat       (amt_flat),
+        .lsu_all_commit_data_vld(lsu_rtu_all_commit_data_vld),
         .beu_redirect_vld(beu_redirect_vld),
         .fsm_busy       (fsm_busy),
         .flushing       (flushing),
