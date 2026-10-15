@@ -151,11 +151,11 @@ module lsu_mshr #(
     //==========================================================
     // Other
     //==========================================================
-    output logic         lsu_idu_rb_not_full,
+    output logic         lsu_idu_rb_not_full
     // 给 RTU 的冲刷闸: "没有哪个**已退休**的 load 表项还在等数据回写"。
     // C910 `ct_lsu_rb.v:2902`。与 lsu_sq 的同名口一起 AND 成
     // `lsu_rtu_all_commit_data_vld` (见 lsu_top.sv)。
-    output logic         lsu_rtu_all_commit_ld_data_vld
+// output logic         lsu_rtu_all_commit_ld_data_vld
 );
 
 //==========================================================
@@ -206,8 +206,8 @@ logic [RB_ENTRY-1:0] rb_entry_biu_pe_req_grnt;
 logic [RB_ENTRY-1:0] rb_entry_biu_req;
 logic [RB_ENTRY-1:0] rb_entry_boundary_wakeup;
 logic [RB_ENTRY-1:0] rb_entry_bus_err;
-logic [RB_ENTRY-1:0] rb_entry_cmit_data_vld;
-logic [RB_ENTRY-1:0] rb_entry_cmit_data_vld;
+//logic [RB_ENTRY-1:0] rb_entry_cmit_data_vld;
+//logic [RB_ENTRY-1:0] rb_entry_cmit_data_vld;
 logic [RB_ENTRY-1:0] rb_entry_create_lfb;
 logic [RB_ENTRY-1:0] rb_entry_depd;
 logic [RB_ENTRY-1:0] rb_entry_discard_vld;
@@ -300,7 +300,7 @@ lsu_mshr_entry u_mshr_entry (
     .rb_entry_biu_req_x             (rb_entry_biu_req[i]),
     .rb_entry_boundary_wakeup_x     (rb_entry_boundary_wakeup[i]),
     .rb_entry_bus_err_x             (rb_entry_bus_err[i]),
-    .rb_entry_cmit_data_vld_x       (rb_entry_cmit_data_vld[i]),
+   // .rb_entry_cmit_data_vld_x       (rb_entry_cmit_data_vld[i]),
     .rb_entry_create_lfb_x          (rb_entry_create_lfb[i]),
     .rb_entry_data_v                (rb_entry_data[i]),
     .rb_entry_depd_x                (rb_entry_depd[i]),
@@ -568,7 +568,7 @@ assign rb_ld_wb_bus_err     = |(rb_ld_wb_data_ptr[RB_ENTRY-1:0] & rb_entry_bus_e
 
 // C910 `ct_lsu_rb.v:2902` —— 已退休 load 的数据回写闸 (口径同 sq 侧的
 // `sq_entry_cmit_data_vld`)。表项内部 :1554 定义, 无效表项恒 1。
-assign lsu_rtu_all_commit_ld_data_vld = &rb_entry_cmit_data_vld[RB_ENTRY-1:0];
+//assign lsu_rtu_all_commit_ld_data_vld = &rb_entry_cmit_data_vld[RB_ENTRY-1:0];
 
 assign rb_ld_wb_bus_err_addr[31:0]
     = {32{rb_ld_wb_data_ptr[0]}} & rb_entry_addr[0][31:0]

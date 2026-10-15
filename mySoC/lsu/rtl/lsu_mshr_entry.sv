@@ -60,7 +60,7 @@ module lsu_mshr_entry #(
     output logic         rb_entry_biu_req_x,
     output logic         rb_entry_boundary_wakeup_x,
     output logic         rb_entry_bus_err_x,
-    output logic         rb_entry_cmit_data_vld_x,
+  //  output logic         rb_entry_cmit_data_vld_x,
     output logic         rb_entry_create_lfb_x,
     output logic [31:0]  rb_entry_data_v,
     output logic         rb_entry_depd_x,
@@ -693,7 +693,7 @@ assign rb_entry_vld_x                   = rb_entry_vld;
 assign rb_entry_cmit_data_not_vld       = rb_entry_vld
                                           && rb_entry_cmit
                                           && rb_entry_dest_vld;
-assign rb_entry_cmit_data_vld_x         = !rb_entry_cmit_data_not_vld;
+//assign rb_entry_cmit_data_vld_x         = !rb_entry_cmit_data_not_vld;
 assign rb_entry_addr_v[31:0]            = rb_entry_addr[31:0];
 assign rb_entry_iid_v[6:0]              = rb_entry_iid[6:0];
 assign rb_entry_sign_extend_x           = rb_entry_sign_extend;

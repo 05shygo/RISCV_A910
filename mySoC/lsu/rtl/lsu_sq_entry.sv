@@ -110,7 +110,8 @@ module ct_lsu_sq_entry #(
     output logic                  sq_entry_age_vec_zero_ptr_x,
     output logic [15:0]           sq_entry_bytes_vld_v,
     output logic                  sq_entry_cancel_acc_req_x,
-    output logic                  sq_entry_cmit_data_vld_x,
+    output logic                  sq_entry_cmit_data_not_vld,
+   // output logic                  sq_entry_cmit_data_vld_x,
     output logic                  sq_entry_cmit_x,
     output logic [LSIQ_ENTRY-1:0] sq_entry_data_depd_wakeup_v,
 
@@ -186,7 +187,7 @@ module ct_lsu_sq_entry #(
     logic                  sq_entry_cmit1_iid_pre_hit;
     logic                  sq_entry_cmit2_iid_pre_hit;
     logic                  sq_entry_cmit_data_not_vld;
-    logic                  sq_entry_cmit_data_vld;
+  //  logic                  sq_entry_cmit_data_vld;
     logic                  sq_entry_cmit_hit0;
     logic                  sq_entry_cmit_hit1;
     logic                  sq_entry_cmit_hit2;
@@ -434,7 +435,7 @@ module ct_lsu_sq_entry #(
                                         (sq_entry_cmit || sq_entry_cmit_set) &&
                                         !sq_entry_data_vld;
 
-    assign sq_entry_cmit_data_vld = !sq_entry_cmit_data_not_vld;
+   // assign sq_entry_cmit_data_vld = !sq_entry_cmit_data_not_vld;
 
     assign sq_entry_st_da_info_set = sq_entry_vld && st_da_inst_vld &&
                                      !sq_entry_no_restart &&
@@ -642,7 +643,7 @@ module ct_lsu_sq_entry #(
     assign sq_entry_same_addr_newest_x  = sq_entry_same_addr_newest;
     assign sq_entry_addr0_v[31:0]       = sq_entry_addr0[31:0];
     assign sq_entry_bytes_vld_v[15:0]   = sq_entry_bytes_vld[15:0];
-    assign sq_entry_cmit_data_vld_x     = sq_entry_cmit_data_vld;
+    //assign sq_entry_cmit_data_vld_x     = sq_entry_cmit_data_vld;
     assign sq_entry_data_v[31:0]        = sq_entry_data[31:0];
     assign sq_entry_rot_sel_v[7:0]      = sq_entry_rot_sel[7:0];
     assign sq_entry_dcache_valid_x      = sq_entry_dcache_valid;

@@ -136,7 +136,7 @@ module ct_lsu_sq #(
     logic [SQ_ENTRY-1:0] sq_entry_age_vec_zero_ptr;
     logic [SQ_ENTRY-1:0] sq_entry_cancel_acc_req;
     logic [SQ_ENTRY-1:0] sq_entry_cmit;
-    logic [SQ_ENTRY-1:0] sq_entry_cmit_data_vld;
+   // logic [SQ_ENTRY-1:0] sq_entry_cmit_data_vld;
     logic [SQ_ENTRY-1:0] sq_entry_create_vld;
     logic [SQ_ENTRY-1:0] sq_entry_data_discard_grnt;
     logic [SQ_ENTRY-1:0] sq_entry_data_discard_req;
@@ -291,7 +291,8 @@ module ct_lsu_sq #(
                 .sq_entry_age_vec_zero_ptr_x               (sq_entry_age_vec_zero_ptr[i]),
                 .sq_entry_bytes_vld_v                      (sq_entry_bytes_vld[i]),
                 .sq_entry_cancel_acc_req_x                 (sq_entry_cancel_acc_req[i]),
-                .sq_entry_cmit_data_vld_x                  (sq_entry_cmit_data_vld[i]),
+               // .sq_entry_cmit_data_vld_x                  (sq_entry_cmit_data_vld[i]),
+                .sq_entry_cmit_data_not_vld(sq_entry_cmit_data_not_vld),
                 .sq_entry_cmit_x                           (sq_entry_cmit[i]),
                 .sq_entry_data_depd_wakeup_v               (sq_entry_data_depd_wakeup[i]),
                 .sq_entry_data_discard_req_x               (sq_entry_data_discard_req[i]),
@@ -350,7 +351,7 @@ module ct_lsu_sq #(
     // 口径: 表项内部 `sq_entry_cmit_data_vld = !(vld && (cmit|cmit_set) && !data_vld)`,
     // 无效表项恒 1 ⇒ 这里的 &-reduce 恰好是"没有任何已退休表项缺数据"。
     // -----------------------------------------------------------------------
-    assign lsu_rtu_all_commit_st_data_vld = &sq_entry_cmit_data_vld[SQ_ENTRY-1:0];
+    assign lsu_rtu_all_commit_st_data_vld = |sq_entry_cmit_data_not_vld[SQ_ENTRY-1:0];
     assign sq_empty_less2 = &(sq_entry_vld[SQ_ENTRY-1:0] | sq_create_ptr[SQ_ENTRY-1:0]);
     assign sq_st_dc_inst_hit = |sq_entry_inst_hit[SQ_ENTRY-1:0];
     assign sq_st_dc_full = sq_full || (!st_dc_old && sq_empty_less2 && !sq_has_cmit);

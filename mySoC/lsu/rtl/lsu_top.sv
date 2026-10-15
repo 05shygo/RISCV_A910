@@ -1507,9 +1507,9 @@ ct_lsu_st_wb u_lsu_st_wb (
 // 的数据来源 (SDIQ 表项 / RB 表项) 会被冲掉, 而对应的 SQ/LQ 表项因为已经 cmit
 // 不会被冲掉 ⇒ 永远拿不到数据 ⇒ 等它的指令永不唤醒。详见 lsu_sq.sv 的补注。
 logic lsu_rtu_all_commit_st_data_vld;
-logic lsu_rtu_all_commit_ld_data_vld;
-assign lsu_rtu_all_commit_data_vld = lsu_rtu_all_commit_st_data_vld
-                                     && lsu_rtu_all_commit_ld_data_vld;
+//logic lsu_rtu_all_commit_ld_data_vld;
+assign lsu_rtu_all_commit_data_vld = lsu_rtu_all_commit_st_data_vld;
+                                  //   && lsu_rtu_all_commit_ld_data_vld;
 
 //----------------------------------------------------------
 // Store Queue
@@ -2264,8 +2264,8 @@ lsu_mshr #(
   .rb_lfb_depd(rb_lfb_depd),
   .rb_biu_req_addr(rb_biu_req_addr),
   .rb_sq_pop_hit_idx(rb_sq_pop_hit_idx),
-  .lsu_idu_rb_not_full(lsu_idu_rb_not_full),
-  .lsu_rtu_all_commit_ld_data_vld(lsu_rtu_all_commit_ld_data_vld)
+  .lsu_idu_rb_not_full(lsu_idu_rb_not_full)
+ // .lsu_rtu_all_commit_ld_data_vld(lsu_rtu_all_commit_ld_data_vld)
 );
 
 
