@@ -144,8 +144,11 @@ module tb_a910_difftest;
   //   [SLVW] 从机在 wvalid&wready 那拍实际写的那笔: 用的 wr_addr + strb + data。
   //   [MEMW] 从机内存 mem[f93..f96] 的每次变化 (带当拍总线状态), 定位是哪一笔写坏的。
   // -------------------------------------------------------------------------
+  // ⚠️ 2026-10-15: 原来**没有 plusarg 门** ⇒ 每笔 AXI 写都打, 千万拍级用例
+  //    (CoreMark 30 迭代) 光这一条就能刷出百万行、明显拖慢仿真。按本文件惯例补门,
+  //    要回看时加 `A910_DT_ARGS=+PROBE_SLVW`。
   always @(posedge clk) begin
-    if (!rst && biu_pad_wvalid && pad_biu_wready)
+    if (!rst && $test$plusargs("PROBE_SLVW") && biu_pad_wvalid && pad_biu_wready)
       $display("  [SLVW] T%0d wr_addr=%08x strb=%04x data=%032x",
                cycles, u_mem.wr_addr, biu_pad_wstrb, biu_pad_wdata);
   end
@@ -153,7 +156,7 @@ module tb_a910_difftest;
   // [WDC] WMB → dcache 数据阵列写口: 逐笔 store 的 way / high_sel / data / bytes_vld。
   //   用来查 "store 数据到底写进了高半还是低半、字节掩码对不对"。
   always @(posedge clk) begin
-    if (!rst && dut.u_lsu_top.u_lsu_wmb.wmb_dcache_arb_req)
+    if (!rst && $test$plusargs("PROBE_WDC") && dut.u_lsu_top.u_lsu_wmb.wmb_dcache_arb_req)
       $display("  [WDC] T%0d addr=%08x way=%b a4=%b hin=%b data=%032x bv=%04x region=%b grnt=%b",
                cycles, dut.u_lsu_top.u_lsu_wmb.wmb_write_dcache_addr,
                dut.u_lsu_top.u_lsu_wmb.wmb_write_req_dcache_way,
@@ -167,7 +170,7 @@ module tb_a910_difftest;
 
   // [LFBW] LFB → dcache 数据阵列写口 (miss 回填): 低/高半 din 与写使能。
   always @(posedge clk) begin
-    if (!rst && dut.u_lsu_top.u_dcache_arb.dcache_arb_lfb_ld_sel)
+    if (!rst && $test$plusargs("PROBE_LFBW") && dut.u_lsu_top.u_dcache_arb.dcache_arb_lfb_ld_sel)
       $display("  [LFBW] T%0d low_idx=%0d low_din=%032x high_din=%032x wen_b=%08x sel_b=%02x",
                cycles, dut.u_lsu_top.u_dcache_arb.lsu_dcache_ld_data_low_idx,
                dut.u_lsu_top.u_dcache_arb.lsu_dcache_ld_data_low_din,
@@ -293,6 +296,115 @@ module tb_a910_difftest;
                dut.u_lsu_top.u_lsu_sq.sq_create_ptr,
                dut.u_lsu_top.u_lsu_sq.sq_pop_ptr,
                dut.u_lsu_top.wmb_sq_pop_grnt);
+  end
+
+  // 【临时诊断 2026-10-14】SQ 队头 ↔ SDIQ 绑定: 队头表项绑的是哪个 SDIQ 号、
+  //   那个 SDIQ 表项还在不在(vld/has_in_sq/rdy)、LSU 回的 has_in_sq 是什么。
+  //   `+PROBE_SQSD` (窗固定 2686..2700, 悬挂期)
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_SQSD") && cycles >= 2686 && cycles <= 2700) begin
+      $display("  [SQSD] T%0d e0 sdid=%b data_vld=%b vld=%b cmit=%b no_rst=%b | lsu_has_in_sq=%b | p5_sdid=%b st_sdiq=%b | p5_vld=%b issue_en=%b | sd0 vld=%b has=%b rdy=%b | sd1 vld=%b has=%b rdy=%b | sd2 vld=%b has=%b rdy=%b | sd3 vld=%b has=%b rdy=%b",
+        cycles,
+        dut.u_lsu_top.u_lsu_sq.gen_sq_entry[0].x_ct_lsu_sq_entry.sq_entry_sdid,
+        dut.u_lsu_top.u_lsu_sq.gen_sq_entry[0].x_ct_lsu_sq_entry.sq_entry_data_vld,
+        dut.u_lsu_top.u_lsu_sq.sq_entry_vld[0],
+        dut.u_lsu_top.u_lsu_sq.sq_entry_cmit[0],
+        dut.u_lsu_top.u_lsu_sq.gen_sq_entry[0].x_ct_lsu_sq_entry.sq_entry_no_restart,
+        dut.u_lsu_top.lsu_idu_has_in_sq,
+        dut.idu_lsu_rf_pipe5_sdiq_entry,
+        dut.idu_lsu_st_sdiq_entry,
+        dut.u_ct_idu_top.x_ct_idu_rf_ctrl.rf_pipe5_inst_vld,
+        dut.u_ct_idu_top.sdiq_xx_issue_en,
+        dut.u_ct_idu_top.x_ct_idu_is_sdiq.u_ct_idu_is_sdiq_entry_0.vld,
+        dut.u_ct_idu_top.x_ct_idu_is_sdiq.u_ct_idu_is_sdiq_entry_0.has_in_sq,
+        dut.u_ct_idu_top.x_ct_idu_is_sdiq.u_ct_idu_is_sdiq_entry_0.x_rdy,
+        dut.u_ct_idu_top.x_ct_idu_is_sdiq.u_ct_idu_is_sdiq_entry_1.vld,
+        dut.u_ct_idu_top.x_ct_idu_is_sdiq.u_ct_idu_is_sdiq_entry_1.has_in_sq,
+        dut.u_ct_idu_top.x_ct_idu_is_sdiq.u_ct_idu_is_sdiq_entry_1.x_rdy,
+        dut.u_ct_idu_top.x_ct_idu_is_sdiq.u_ct_idu_is_sdiq_entry_2.vld,
+        dut.u_ct_idu_top.x_ct_idu_is_sdiq.u_ct_idu_is_sdiq_entry_2.has_in_sq,
+        dut.u_ct_idu_top.x_ct_idu_is_sdiq.u_ct_idu_is_sdiq_entry_2.x_rdy,
+        dut.u_ct_idu_top.x_ct_idu_is_sdiq.u_ct_idu_is_sdiq_entry_3.vld,
+        dut.u_ct_idu_top.x_ct_idu_is_sdiq.u_ct_idu_is_sdiq_entry_3.has_in_sq,
+        dut.u_ct_idu_top.x_ct_idu_is_sdiq.u_ct_idu_is_sdiq_entry_3.x_rdy);
+    end
+  end
+
+  // 【临时诊断 2026-10-14】SQ 表项 0 **建表那一拍**抓到了什么 —— 定位
+  //   `data_vld=0 & sdid=0000` 这个非法孤儿态是哪来的。`+PROBE_SQCR` (只打前 40 次)
+  integer sqcr_lines = 0;
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_SQCR") && sqcr_lines < 40
+        && dut.u_lsu_top.u_lsu_sq.gen_sq_entry[0].x_ct_lsu_sq_entry.sq_entry_create_vld
+        && dut.u_lsu_top.u_lsu_sq.gen_sq_entry[0].x_ct_lsu_sq_entry.st_dc_sdid == 4'b0000) begin
+      sqcr_lines = sqcr_lines + 1;
+      $display("  [SQCR] T%0d e0 create: st_dc_sdid_lat=%b st_dc_sq_data_vld=%b st_dc_iid=%0d | idu_st_sdiq=%b idu_st_iid=%0d st_sel=%b | st_dc_inst_vld=%b st_dc_iid=%0d | full=%b has_in_sq=%b",
+        cycles,
+        dut.u_lsu_top.u_lsu_sq.gen_sq_entry[0].x_ct_lsu_sq_entry.st_dc_sdid,
+        dut.u_lsu_top.u_lsu_sq.gen_sq_entry[0].x_ct_lsu_sq_entry.st_dc_sq_data_vld,
+        dut.u_lsu_top.u_lsu_sq.gen_sq_entry[0].x_ct_lsu_sq_entry.st_dc_iid,
+        dut.idu_lsu_st_sdiq_entry, dut.idu_lsu_st_iid, dut.idu_lsu_st_sel,
+        dut.u_lsu_top.st_dc_inst_vld, dut.u_lsu_top.st_dc_iid,
+        dut.u_lsu_top.sq_st_dc_full, dut.u_lsu_top.lsu_idu_has_in_sq);
+    end
+  end
+
+  // 【临时诊断 2026-10-14】IDU 派了一条 **sdiq_entry=0** 的 store(=AG 会把它存成
+  //   `st_ag_sdid_oh=0000` ⇒ DC 建表 ⇒ 孤儿表项, 数据永远补不回来)。`+PROBE_ZSD`
+  integer zsd_lines = 0;
+  integer zsd_since_flush = 0;      // 距上次 rtu_yy_xx_flush 多少拍
+  always @(posedge clk) begin
+    if (rst) zsd_since_flush <= 0;
+    else if (dut.rtu_yy_xx_flush) zsd_since_flush <= 0;
+    else if (zsd_since_flush < 100000) zsd_since_flush <= zsd_since_flush + 1;
+  end
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_ZSD") && zsd_lines < 30
+        && dut.idu_lsu_st_sel && dut.idu_lsu_st_sdiq_entry == 4'b0000) begin
+      zsd_lines = zsd_lines + 1;
+      $display("  [ZSD] T%0d IDU 派了 sdiq_entry=0 的 store! iid=%0d | ag_stall=%b ag_inst_vld=%b ag_sdid=%b ag_iid=%0d | dc_inst_vld=%b dc_iid=%0d dc_sdid=%b | has_in_sq=%b | 距上次flush=%0d 拍 flush_now=%b chgflw=%b | sdiq_vld=%b%b%b%b sqfull=%b",
+        cycles, dut.idu_lsu_st_iid,
+        dut.u_lsu_top.u_lsu_st_ag.st_ag_stall_vld, dut.u_lsu_top.u_lsu_st_ag.st_ag_inst_vld,
+        dut.u_lsu_top.u_lsu_st_ag.st_ag_sdid_oh, dut.u_lsu_top.u_lsu_st_ag.st_ag_iid,
+        dut.u_lsu_top.st_dc_inst_vld, dut.u_lsu_top.st_dc_iid, dut.u_lsu_top.st_dc_sdid_oh,
+        dut.u_lsu_top.lsu_idu_has_in_sq,
+        zsd_since_flush, dut.rtu_yy_xx_flush, dut.iu_chgflw_vld,
+        dut.u_ct_idu_top.x_ct_idu_is_sdiq.u_ct_idu_is_sdiq_entry_3.vld,
+        dut.u_ct_idu_top.x_ct_idu_is_sdiq.u_ct_idu_is_sdiq_entry_2.vld,
+        dut.u_ct_idu_top.x_ct_idu_is_sdiq.u_ct_idu_is_sdiq_entry_1.vld,
+        dut.u_ct_idu_top.x_ct_idu_is_sdiq.u_ct_idu_is_sdiq_entry_0.vld,
+        dut.u_lsu_top.sq_st_dc_full);
+    end
+  end
+
+  // 【临时诊断 2026-10-14】判决性实验: **从 T2700 起强行打开**误预测冻结闸门
+  //   (最后一次退休在 T2695), 看机器能否自愈。
+  //   若照样卡死 ⇒ 闸门不是这个 hang 的成因(只是旁观者)。`+FORCE_OPEN`
+  //   ⚠️ 不能从 0 拍就强开: 闸门早期本来在干活, 那样第 14 条退休就崩(实测)。
+  always @(posedge clk) begin
+    if (!rst && cycles >= 2700 && $test$plusargs("FORCE_OPEN")) force dut.idu_hold = 1'b0;
+  end
+
+  // 【临时诊断 2026-10-14】孤儿产生的**那一拍**: `ctrl_sdiq_create0_en=1` 但分配器
+  //   返回 `0000`(满 或 vld 向量带 X)。同时看守卫 `ctrl_is_dis_stall` 为什么没拦住。
+  //   `+PROBE_ALLOC`
+  integer al_lines = 0;
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_ALLOC") && al_lines < 30
+        && dut.u_ct_idu_top.ctrl_lsiq_create0_en
+        && dut.u_ct_idu_top.x_ct_idu_is_dp.ctrl_is_sdiq_create0_entry == 4'b0000) begin
+      al_lines = al_lines + 1;
+      $display("  [ALLOC] T%0d ** 建 LSIQ 表项但 SDIQ 字段=0 ** | lsiq0_en=%b sdiq0_en=%b | pre_lsiq0_en=%b pre_sdiq0_en=%b | is_dis_lsiq0=%b is_dis_sdiq0=%b | dis_stall=%b iq_full=%b | 距上次flush=%0d",
+        cycles,
+        dut.u_ct_idu_top.ctrl_lsiq_create0_en, dut.u_ct_idu_top.ctrl_sdiq_create0_en,
+        dut.u_ct_idu_top.x_ct_idu_is_ctrl.ctrl_ir_pre_dis_lsiq_create0_en,
+        dut.u_ct_idu_top.x_ct_idu_is_ctrl.ctrl_ir_pre_dis_sdiq_create0_en,
+        dut.u_ct_idu_top.x_ct_idu_is_ctrl.is_dis_lsiq_create0_en,
+        dut.u_ct_idu_top.x_ct_idu_is_ctrl.is_dis_sdiq_create0_en,
+        dut.u_ct_idu_top.x_ct_idu_is_ctrl.ctrl_is_dis_stall,
+        dut.u_ct_idu_top.x_ct_idu_is_ctrl.ctrl_is_iq_full,
+        zsd_since_flush);
+    end
   end
 
   // [SQD3] 逐表项: pop_req 为什么是 0 (data_vld / no_restart / in_wmb_ce)
@@ -1523,6 +1635,207 @@ module tb_a910_difftest;
     end
   end
 
+  // -------------------------------------------------------------------------
+  // 【诊断 2026-10-15】CoreMark 30 迭代死锁取证 —— 两个探针
+  //
+  // 背景: `coremark`(30 迭代) 在 **T10,979,529 / 退休 9,429,555 条** 处**确定性死锁**:
+  //   两棵不同的树 (38c56e3 / 98f5502)、15M 与 25M 两种预算下签名**逐位相同**
+  //   (ROB 占 11, ICache PC=0x1cd4, 最后探针同为 T10979529), 多给的 10M 拍里
+  //   退休数**一个都没涨** ⇒ 硬死锁, 不是"跑得慢"。
+  //   而 `coremark_i1`(1 迭代, 31 万条) 的**同一段报告代码**跑得好好的 ⇒ **是累积效应**。
+  //
+  //   这两个探针专答两个问题:
+  //     [POOL] 什么在随运行时间**单调缩水**? → preg 池余量 / ROB 占用 的稀疏趋势
+  //            (记忆里记着"自由池单调缩水, 长用例迟早耗尽", 这是冲着它去的)
+  //     [HEAD] 死锁那一刻, ROB **队头是哪条**、它在等什么?
+  //
+  //   用法: +PROBE_POOL +PROBE_HEAD +PROBE_FLG +PROBE_LSQ \
+  //         +STL_LO=10975000 +STL_HI=10985000
+  //
+  // ⚠️ [POOL] 是稀疏的(每 10 万拍一行, 全跑程 ~250 行), 本来就该整程开着 ——
+  //    趋势比卡点那一刻的瞬态更能说明问题。
+  // -------------------------------------------------------------------------
+
+  // -------------------------------------------------------------------------
+  // [PERF] 周期去哪了 —— `+PROBE_PERF`
+  //
+  // 【为什么加】A910 跑 CoreMark 只有 IPC 0.859 (`9,440,680 条 / 10,992,343 拍`),
+  //   对比 5 级顺序核 0.825 —— **只快 3.9%**。而 ROB 占用采样显示均值只有 **9.6/64**
+  //   (从没超过 22) ⇒ 乱序窗口实际只有 ~10 条, 后端一直饿着。
+  //   所以问题不是"乱序没用", 是**前端供不上**。这组计数器就是拆"供不上"的账。
+  //
+  // 口径:
+  //   mispred  —— `mispred_hit` 脉冲数 (退休拍真的误预测了一次)
+  //   flush    —— `flush_trig` 脉冲数 (四类源合计)
+  //   rob_sum/max/zero —— ROB 占用逐拍累加 (采样法会混叠, 这里是真值)
+  //   fe_idle  —— IDU 三条交付车道**全空**的拍数 (前端没货)
+  //   fe_idle_nf —— 其中"不在冲刷冻结窗里"的拍数 ⇒ **真正的供给饥饿**
+  // -------------------------------------------------------------------------
+  integer perf_mispred = 0, perf_flush = 0, perf_rob_sum = 0, perf_rob_max = 0;
+  integer perf_rob_zero = 0, perf_fe_idle = 0, perf_fe_idle_nf = 0, perf_cyc = 0;
+  // 派遣/退休的宽度直方图 —— 3 发射到底发几条? `disp_vld` 是**前缀有效**
+  // (`RTU.v:525` `disp_acc[1] = disp_acc[0] & disp1_vld`), 所以按位求和 = 条数。
+  integer perf_disp_sum = 0, perf_disp1 = 0, perf_disp2 = 0, perf_disp3 = 0;
+  integer perf_ret1 = 0, perf_ret2 = 0, perf_ret3 = 0;
+  integer perf_n_disp = 0, perf_n_ret = 0;
+  // ---- 派遣被谁挡 ----
+  // `ct_idu_is_ctrl.sv:576` `ctrl_is_dis_stall = ctrl_is_rob_full || ctrl_is_iq_full`
+  // `:548`  `ctrl_is_iq_full_updt = aiq|biq|lsiq|sdiq|mult|div`
+  // ⇒ **任意一个队列满就堵死整个派遣口**。只在"确有指令等着派"时计数。
+  integer perf_blk_wait = 0, perf_blk_rob = 0, perf_blk_aiq = 0, perf_blk_biq = 0;
+  integer perf_blk_lsiq = 0, perf_blk_sdiq = 0, perf_blk_mult = 0, perf_blk_div = 0;
+  // ---- AIQ 深挖: "满" 是深度不够还是排空到顶? ----
+  //   满(cnt==3, 4 项)的那些拍里:
+  //     有就绪项 ⇒ 后面的项本该能发, 是**深度**卡住 ⇒ 加宽有用
+  //     无就绪项 ⇒ 队头等操作数, 排空已到顶 ⇒ 加宽没用
+  integer perf_aiq_occ_sum = 0, perf_aiq_issue = 0, perf_aiq_full = 0;
+  integer perf_aiq_full_ready = 0, perf_aiq_full_noready = 0, perf_aiq_issue_full = 0;
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_PERF")) begin
+      perf_cyc = perf_cyc + 1;
+      if (dut.u_rtu.u_commit.mispred_hit) perf_mispred = perf_mispred + 1;
+      if (dut.u_rtu.u_commit.flush_trig)  perf_flush    = perf_flush + 1;
+      perf_rob_sum = perf_rob_sum + dut.u_rtu.u_rob.occ;
+      if (dut.u_rtu.u_rob.occ > perf_rob_max) perf_rob_max = dut.u_rtu.u_rob.occ;
+      if (dut.u_rtu.u_rob.occ == 0) perf_rob_zero = perf_rob_zero + 1;
+      if (!(dut.idu_inst0_vld | dut.idu_inst1_vld | dut.idu_inst2_vld)) begin
+        perf_fe_idle = perf_fe_idle + 1;
+        if (!dut.u_rtu.u_flush.fsm_busy) perf_fe_idle_nf = perf_fe_idle_nf + 1;
+      end
+      perf_n_disp = dut.u_rtu.u_preg.disp_vld[0] + dut.u_rtu.u_preg.disp_vld[1]
+                  + dut.u_rtu.u_preg.disp_vld[2];
+      perf_disp_sum = perf_disp_sum + perf_n_disp;
+      if      (perf_n_disp == 1) perf_disp1 = perf_disp1 + 1;
+      else if (perf_n_disp == 2) perf_disp2 = perf_disp2 + 1;
+      else if (perf_n_disp == 3) perf_disp3 = perf_disp3 + 1;
+      perf_n_ret = dut.dbg_commit_vld0 + dut.dbg_commit_vld1 + dut.dbg_commit_vld2;
+      if      (perf_n_ret == 1) perf_ret1 = perf_ret1 + 1;
+      else if (perf_n_ret == 2) perf_ret2 = perf_ret2 + 1;
+      else if (perf_n_ret == 3) perf_ret3 = perf_ret3 + 1;
+      // 有指令等着派的那一拍, 看看是谁挡的
+      if (dut.u_ct_idu_top.x_ct_idu_is_ctrl.is_dis_inst0_vld) begin
+        perf_blk_wait = perf_blk_wait + 1;
+        if (dut.rtu_idu_rob_full) perf_blk_rob = perf_blk_rob + 1;
+        if (dut.u_ct_idu_top.x_ct_idu_is_ctrl.ctrl_is_aiq_full_updt)  perf_blk_aiq  = perf_blk_aiq  + 1;
+        if (dut.u_ct_idu_top.x_ct_idu_is_ctrl.ctrl_is_biq_full_updt)  perf_blk_biq  = perf_blk_biq  + 1;
+        if (dut.u_ct_idu_top.x_ct_idu_is_ctrl.ctrl_is_lsiq_full_updt) perf_blk_lsiq = perf_blk_lsiq + 1;
+        if (dut.u_ct_idu_top.x_ct_idu_is_ctrl.ctrl_is_sdiq_full_updt) perf_blk_sdiq = perf_blk_sdiq + 1;
+        if (dut.u_ct_idu_top.x_ct_idu_is_ctrl.ctrl_is_mult_full_updt) perf_blk_mult = perf_blk_mult + 1;
+        if (dut.u_ct_idu_top.x_ct_idu_is_ctrl.ctrl_is_div_full_updt)  perf_blk_div  = perf_blk_div  + 1;
+      end
+      // ---- AIQ 深挖 ----
+      perf_aiq_occ_sum = perf_aiq_occ_sum + dut.u_ct_idu_top.x_ct_idu_is_aiq.aiq_entry_cnt;
+      if (dut.u_ct_idu_top.x_ct_idu_is_aiq.aiq_xx_issue_en) perf_aiq_issue = perf_aiq_issue + 1;
+      if (dut.u_ct_idu_top.x_ct_idu_is_aiq.aiq_entry_cnt >= 3'd3) begin
+        perf_aiq_full = perf_aiq_full + 1;
+        if (|dut.u_ct_idu_top.x_ct_idu_is_aiq.aiq_entry_ready) perf_aiq_full_ready   = perf_aiq_full_ready   + 1;
+        else                                                    perf_aiq_full_noready = perf_aiq_full_noready + 1;
+        if (dut.u_ct_idu_top.x_ct_idu_is_aiq.aiq_xx_issue_en)   perf_aiq_issue_full  = perf_aiq_issue_full  + 1;
+      end
+    end
+  end
+  final begin
+    if ($test$plusargs("PROBE_PERF")) begin
+      $display("");
+      $display("==================== [PERF] 周期分解 ====================");
+      $display("  统计拍数          : %0d", perf_cyc);
+      $display("  退休              : %0d  (IPC = %0.3f)",
+               retired, perf_cyc ? retired * 1.0 / perf_cyc : 0.0);
+      $display("  误预测 (mispred)  : %0d 次  ⇒ 每 %0.1f 拍一次",
+               perf_mispred, perf_mispred ? perf_cyc * 1.0 / perf_mispred : 0.0);
+      $display("  冲刷 (flush_trig) : %0d 次", perf_flush);
+      $display("  ROB 占用          : 均值 %0.1f / 64, 峰值 %0d, 空 %0d 拍 (%.1f%%)",
+               perf_cyc ? perf_rob_sum * 1.0 / perf_cyc : 0.0, perf_rob_max,
+               perf_rob_zero, perf_cyc ? perf_rob_zero * 100.0 / perf_cyc : 0.0);
+      $display("  前端无货          : %0d 拍 (%.1f%%)  其中非冲刷冻结窗 %0d 拍 (%.1f%%)",
+               perf_fe_idle, perf_cyc ? perf_fe_idle * 100.0 / perf_cyc : 0.0,
+               perf_fe_idle_nf, perf_fe_idle_nf && perf_cyc ? perf_fe_idle_nf * 100.0 / perf_cyc : 0.0);
+      $display("  派遣总数          : %0d  (%.3f 条/拍)", perf_disp_sum,
+               perf_cyc ? perf_disp_sum * 1.0 / perf_cyc : 0.0);
+      $display("    每拍派遣条数分布 : 1 条 %0d 拍 (%.1f%%) | 2 条 %0d 拍 (%.1f%%) | 3 条 %0d 拍 (%.1f%%)",
+               perf_disp1, perf_cyc ? perf_disp1 * 100.0 / perf_cyc : 0.0,
+               perf_disp2, perf_cyc ? perf_disp2 * 100.0 / perf_cyc : 0.0,
+               perf_disp3, perf_cyc ? perf_disp3 * 100.0 / perf_cyc : 0.0);
+      $display("    每拍退休条数分布 : 1 条 %0d 拍 (%.1f%%) | 2 条 %0d 拍 (%.1f%%) | 3 条 %0d 拍 (%.1f%%)",
+               perf_ret1, perf_cyc ? perf_ret1 * 100.0 / perf_cyc : 0.0,
+               perf_ret2, perf_cyc ? perf_ret2 * 100.0 / perf_cyc : 0.0,
+               perf_ret3, perf_cyc ? perf_ret3 * 100.0 / perf_cyc : 0.0);
+      $display("  ---- 有指令等着派时, 谁在挡 (共 %0d 拍) ----", perf_blk_wait);
+      $display("    ROB 满   : %8d 拍 (%5.1f%%)", perf_blk_rob,
+               perf_blk_wait ? perf_blk_rob  * 100.0 / perf_blk_wait : 0.0);
+      $display("    AIQ 满   : %8d 拍 (%5.1f%%)", perf_blk_aiq,
+               perf_blk_wait ? perf_blk_aiq  * 100.0 / perf_blk_wait : 0.0);
+      $display("    BIQ 满   : %8d 拍 (%5.1f%%)", perf_blk_biq,
+               perf_blk_wait ? perf_blk_biq  * 100.0 / perf_blk_wait : 0.0);
+      $display("    LSIQ 满  : %8d 拍 (%5.1f%%)", perf_blk_lsiq,
+               perf_blk_wait ? perf_blk_lsiq * 100.0 / perf_blk_wait : 0.0);
+      $display("    SDIQ 满  : %8d 拍 (%5.1f%%)", perf_blk_sdiq,
+               perf_blk_wait ? perf_blk_sdiq * 100.0 / perf_blk_wait : 0.0);
+      $display("    MUL 满   : %8d 拍 (%5.1f%%)", perf_blk_mult,
+               perf_blk_wait ? perf_blk_mult * 100.0 / perf_blk_wait : 0.0);
+      $display("    DIV 满   : %8d 拍 (%5.1f%%)", perf_blk_div,
+               perf_blk_wait ? perf_blk_div  * 100.0 / perf_blk_wait : 0.0);
+      $display("  ---- AIQ 深挖 (4 项): 满 = 深度不够 还是 排空到顶? ----");
+      $display("    AIQ 占用均值   : %0.2f / 4", perf_cyc ? perf_aiq_occ_sum * 1.0 / perf_cyc : 0.0);
+      $display("    AIQ 发射率     : %0d 次 (%.3f 次/拍)", perf_aiq_issue,
+               perf_cyc ? perf_aiq_issue * 1.0 / perf_cyc : 0.0);
+      $display("    AIQ 满(cnt>=3) : %0d 拍 (%.1f%%)", perf_aiq_full,
+               perf_cyc ? perf_aiq_full * 100.0 / perf_cyc : 0.0);
+      $display("      其中有就绪项 : %0d 拍 (%.1f%% of 满)  ⇒ 加宽有用",
+               perf_aiq_full_ready, perf_aiq_full ? perf_aiq_full_ready * 100.0 / perf_aiq_full : 0.0);
+      $display("      其中无就绪项 : %0d 拍 (%.1f%% of 满)  ⇒ 排空到顶, 加宽没用",
+               perf_aiq_full_noready, perf_aiq_full ? perf_aiq_full_noready * 100.0 / perf_aiq_full : 0.0);
+      $display("      满着仍在发射 : %0d 拍 (%.1f%% of 满)",
+               perf_aiq_issue_full, perf_aiq_full ? perf_aiq_issue_full * 100.0 / perf_aiq_full : 0.0);
+      $display("========================================================");
+    end
+  end
+
+  // [POOL] preg 池余量 / ROB 占用 / 退休数 的趋势
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_POOL") && (cycles % 100000) == 0)
+      $display("  [POOL] T%0d free_cnt=%0d rob_occ=%0d retired=%0d",
+               cycles, dut.u_rtu.u_preg.free_cnt, dut.u_rtu.u_rob.occ, retired);
+  end
+
+  // [HEAD] ROB 队头表项 (位域同 RTU_define.vh: RTU_E_PC 120:89 / VLD 123 /
+  //        CMPLT 122 / FLAGS 12:6 / DST_PREG 26:20 / OLD_PREG 19:13)
+  integer hd_lo = 10900000, hd_hi = 11100000;
+  initial begin
+    void'($value$plusargs("HD_LO=%d", hd_lo));
+    void'($value$plusargs("HD_HI=%d", hd_hi));
+  end
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_HEAD") && cycles >= hd_lo && cycles <= hd_hi
+        && (cycles % 200) == 0)
+      $display("  [HEAD] T%0d rptr=%0d iid=%0d pc=%08x vld=%b cmplt=%b flags=%b dst_preg=%0d old_preg=%0d occ=%0d free=%0d",
+               cycles,
+               dut.u_rtu.u_rob.rptr,
+               {dut.u_rtu.u_rob.rptr_msb, dut.u_rtu.u_rob.rptr},
+               dut.u_rtu.u_rob.rob_q[dut.u_rtu.u_rob.rptr][120:89],
+               dut.u_rtu.u_rob.rob_q[dut.u_rtu.u_rob.rptr][123],
+               dut.u_rtu.u_rob.rob_q[dut.u_rtu.u_rob.rptr][122],
+               dut.u_rtu.u_rob.rob_q[dut.u_rtu.u_rob.rptr][12:6],
+               dut.u_rtu.u_rob.rob_q[dut.u_rtu.u_rob.rptr][26:20],
+               dut.u_rtu.u_rob.rob_q[dut.u_rtu.u_rob.rptr][19:13],
+               dut.u_rtu.u_rob.occ, dut.u_rtu.u_preg.free_cnt);
+  end
+
+  // [FSRC] **这次 flush 是哪来的** —— 回答"为什么会来这次冲刷"
+  //   `RTU_commit.v:302`  `flush_trig = trap_hit|int_take|mret_hit|replay_hit|mispred_hit`
+  //   `RTU_commit.v:306`  `flush_src  = replay_hit ? RTU_FS_REPLAY : RTU_FS_MISPRED`
+  //   src 编码 (RTU_define.vh:157-161): 0=EXPT 1=INT 2=MRET 3=MISPRED 4=REPLAY
+  //   ⚠️ 4=REPLAY 的注释是 "store 投机失败 ⇒ 冲掉它和更年轻的, 从它的 PC 重取"
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_FSRC") && cycles >= stl_lo && cycles <= stl_hi)
+      $display("  [FSRC] T%0d trig=%b src=%0d pc=%08x | lsu_replay vld=%b iid=%0d | beu_redir=%b | fsm=%0d busy=%b",
+               cycles, dut.u_rtu.u_flush.flush_trig, dut.u_rtu.u_flush.flush_src,
+               dut.u_rtu.u_flush.flush_pc,
+               dut.u_rtu.u_commit.lsu_replay_vld, dut.u_rtu.u_commit.lsu_replay_iid,
+               dut.u_rtu.u_flush.beu_redirect_vld,
+               dut.u_rtu.u_flush.st_q, dut.u_rtu.u_flush.fsm_busy);
+  end
+
   // 【临时诊断】RTU 冲刷闸 `lsu_rtu_all_commit_data_vld` 的"谁在挡"逐拍表 —— `+PROBE_FLG`
   //   2026-10-15 加, 追"补了冲刷闸之后新出现的卡死": 闸门是 0 时, 是哪个 SQ 表项
   //   已 cmit 却没有 store data (还在等 SDIQ); 顺带把 RTU 冲刷 FSM 停在
@@ -2256,7 +2569,10 @@ module tb_a910_difftest;
     rst = 1;
     repeat (20) @(posedge clk);
     rst = 0;
-    trace_on = 1;
+    // ⚠️ 2026-10-15: 原来是无条件 `trace_on = 1`, 而文件头注释写的是
+    //    "A910_DT_ARGS=+TRACE 打全部退休流" ⇒ `trace_en` 成了死代码, 退休流**一直**在打
+    //    (实测 405K 拍刷了 547K 行)。千万拍级的 CoreMark 跑分必须先关掉它。
+    trace_on = trace_en;
 
     while (!halted && !bad && cycles < max_cycles) @(posedge clk);
     repeat (2) @(posedge clk);        // 让 halt/bad 那两个 always 块先跑完

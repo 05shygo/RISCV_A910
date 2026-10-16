@@ -80,6 +80,13 @@ module RTU_flush (
     wire wait_st = (st_q == `RTU_FSM_WAIT);   // (`wait` 是关键字, 不能当标识符)
     wire f1   = (st_q == `RTU_FSM_F1);
 
+    // ⚠️ 必须先声明 —— `f1_go` 在下面的 always 块里用 (先用后声明 VCS 会报
+    //    "Identifier has not been declared", 见 `lsu_ld_ag.sv` 里同款坑的注)。
+    //    语义见下面 F1 那段长注: `lsu_all_commit_data_vld` **名实相反**,
+    //    1 = "有已退休 store 缺数据" = 挡。
+    wire blocked = lsu_all_commit_data_vld;      // 1 = 有已退休 store 缺数据
+    wire f1_go   = f1 & ~blocked;                // F1 且闸门放行 ⇒ 这一拍真的冲
+
     always @(posedge cpu_clk or posedge cpu_rst) begin
         if (cpu_rst) begin
             st_q <= `RTU_FSM_IDLE;
@@ -137,28 +144,66 @@ module RTU_flush (
             //    那样 WAIT 期间 fsm_busy=0, 队头那条会**每拍退休一次**。
             // -----------------------------------------------------------------
             case (st_q)
-                `RTU_FSM_IDLE: st_q <= flush_trig
-                                            ? (lsu_all_commit_data_vld ? `RTU_FSM_F1
-                                                                       : `RTU_FSM_WAIT)
-                                            : `RTU_FSM_IDLE;
-                `RTU_FSM_WAIT: st_q <= lsu_all_commit_data_vld ? `RTU_FSM_F1
-                                                               : `RTU_FSM_WAIT;
+                `RTU_FSM_IDLE: st_q <= flush_trig ? `RTU_FSM_F1 : `RTU_FSM_IDLE;
+                `RTU_FSM_F1  : st_q <= f1_go ? `RTU_FSM_IDLE : `RTU_FSM_F1;
                 default      : st_q <= `RTU_FSM_IDLE;
             endcase
             if (flush_trig) pc_q <= flush_pc;   // 目标留下来 (F1 期间读)
         end
     end
 
+    // ---------------------------------------------------------------------
+    // 🔴 2026-10-15: **F1 被闸门挡住就不发冲刷脉冲, 停在 F1 等**
+    //
+    // 【要治的竞态】给 LSU 的提交广播是**寄存器**输出 (`RTU.v` 的 `cmt_q`,
+    //   与 C910 `ct_rtu_rob_rt.v` 同构, C910 自注 "for timing consideration"),
+    //   所以 SQ 感知到"某条 store 提交了"**比 RTU 真正退休它晚一拍**。于是:
+    //       决策拍 T  : SQ 还不知道那条 store 提交了 ⇒ 闸门读"就绪" ⇒ 进 F1
+    //       T+1 (F1)  : 提交广播恰好到达 ⇒ `sq_cmit_data_not_vld` 冒出来
+    //                   **与冲刷同拍** ⇒ 它的 SDIQ 数据源被冲掉
+    //   ⇒ SQ 表项成**孤儿**(已 cmit 不会被冲掉, 数据却永远不来) ⇒ 闸门此后恒
+    //     "未就绪" ⇒ 整核死锁。
+    //   实测指纹 (CoreMark 30 迭代, 两棵不同的树逐位相同):
+    //       T10979521  trig=1 src=3(MISPRED), all=0 ⇒ 进 F1
+    //       T10979522  F1; 同拍 sq_cmitnodvld=000100 冒出来
+    //       ⇒ SQ 表项 2 孤儿, ROB 占 11 / 退休 9,429,555 条冻住
+    //
+    // 【为什么这样闸】(C910 的结构: 它清 SDIQ 的那根 `rtu_yy_xx_flush =
+    //   retire_flush_be`, 本身就只在 `retire_flush_pipeline_empty` 成立时才拉)
+    //   * 闸门在 **F1 这一拍**求值 —— 这正是提交广播落地的拍, 信息是全的;
+    //   * 被挡时**不发任何冲刷脉冲, 且停在 F1**。停住很关键: `fsm_busy` 保持 1
+    //     ⇒ 判退继续冻着、派遣继续冻着; 而且 `A910_cpu.sv:983` 的冻结窗放行条件是
+    //     `mispred_hold_q & hold_pulse_seen_q & ~rtu_flush_busy` —— 若脉冲被闸掉
+    //     却又退出 F1, `pulse_seen` 永不置 ⇒ `mispred_hold_q` 永不放开 ⇒ 换一种
+    //     方式死锁。停在 F1 让两者自洽: 脉冲发出 → pulse_seen 置 → 下一拍 FSM 回
+    //     IDLE → busy 落 → 冻结窗放开。
+    //   * `amt` 只在退休那拍写, 等待期间不退休 ⇒ 恢复映射表仍有效 (同 WAIT 态旧注)。
+    //
+    // 【代价】**只在被挡时才多等**。正常冲刷 (闸门放行) 依旧是 IDLE→F1→IDLE 两拍,
+    //   拍数、相位、与前端 `T116 重定向→T117 IFU 交货→T119 冲刷脉冲` 的 +3 对齐
+    //   **全都不变** —— 所以 `sw`/`sh` 那条"T+1 撞车丢 store"不会被碰。
+    //
+    // ⚠️ 试过又还原的方案 (别重蹈): 把 IDLE 的直接进 F1 删掉、一律 IDLE→WAIT→F1。
+    //   那会给**每一次**冲刷都加一拍, 前端的 +3 对齐被推成 +4 ⇒ `sw`/`sh` 立刻
+    //   回归 FAIL (丢一条 store)。见 `A910_cpu.sv:989-996` 的固定拍数说明。
+    //
+    // ⚠️ **极性**: `lsu_all_commit_data_vld` 名实相反 —— 本仓 LSU 给的是
+    //   `|sq_entry_cmit_data_not_vld`, 即 **1 = "有已退休 store 缺数据" = 挡**。
+    //   ⇒ 放行条件是 `~` 它。上方 IDLE 分支不再用这根信号做分支判断 (原版把它当
+    //   "1 = 可以冲" 用, 那是反的; 现在统一由 F1 的闸门裁决)。若哪天 LSU 侧把极性
+    //   改回名实一致, 这里的一个 `~` 必须同步删掉。
+    // ---------------------------------------------------------------------
     assign fsm_busy = ~idle;
     assign flushing = flush_trig | ~idle;
 
     // T+1 这一拍: 后端冲刷 + 重命名恢复 **同时** 发生 (原来是 F1/F2 两拍)。
-    assign backend_flush = f1;
-    assign expt_clr      = f1;
+    // ⚠️ 全部挂 `f1_go` 而不是 `f1` —— 被挡的那几拍一个都不许发。
+    assign backend_flush = f1_go;
+    assign expt_clr      = f1_go;
 
-    assign flush_lvl       = f1;
-    assign ren_flush       = f1;
-    assign ren_recover_vld = f1;
+    assign flush_lvl       = f1_go;
+    assign ren_flush       = f1_go;
+    assign ren_recover_vld = f1_go;
     assign ren_recover_map = amt_flat;
 
     assign beu_mask = flushing;
