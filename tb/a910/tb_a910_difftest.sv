@@ -302,17 +302,40 @@ module tb_a910_difftest;
   //   那个 SDIQ 表项还在不在(vld/has_in_sq/rdy)、LSU 回的 has_in_sq 是什么。
   //   `+PROBE_SQSD` (窗固定 2686..2700, 悬挂期)
   always @(posedge clk) begin
-    if (!rst && $test$plusargs("PROBE_SQSD") && cycles >= 2686 && cycles <= 2700) begin
-      $display("  [SQSD] T%0d e0 sdid=%b data_vld=%b vld=%b cmit=%b no_rst=%b | lsu_has_in_sq=%b | p5_sdid=%b st_sdiq=%b | p5_vld=%b issue_en=%b | sd0 vld=%b has=%b rdy=%b | sd1 vld=%b has=%b rdy=%b | sd2 vld=%b has=%b rdy=%b | sd3 vld=%b has=%b rdy=%b",
+    // 2026-10-16: 窗口改成走 STL_LO/STL_HI, 并把 6 个 SQ 表项全打出来
+    //   (这次卡的是表项 2, 老探针只打表项 0 ⇒ 看不到)。
+    if (!rst && $test$plusargs("PROBE_SQSD")
+        && cycles >= stl_lo && cycles <= stl_hi && (cycles % 10) == 0) begin
+      $display("  [SQSD] T%0d | sq: vld=%b cmit=%b not_dvld=%b",
         cycles,
+        dut.u_lsu_top.u_lsu_sq.sq_entry_vld,
+        dut.u_lsu_top.u_lsu_sq.sq_entry_cmit,
+        dut.u_lsu_top.u_lsu_sq.sq_entry_cmit_data_not_vld);
+      $display("         e0 sdid=%b dvld=%b vld=%b cmit=%b | e1 sdid=%b dvld=%b vld=%b cmit=%b | e2 sdid=%b dvld=%b vld=%b cmit=%b",
         dut.u_lsu_top.u_lsu_sq.gen_sq_entry[0].x_ct_lsu_sq_entry.sq_entry_sdid,
         dut.u_lsu_top.u_lsu_sq.gen_sq_entry[0].x_ct_lsu_sq_entry.sq_entry_data_vld,
-        dut.u_lsu_top.u_lsu_sq.sq_entry_vld[0],
-        dut.u_lsu_top.u_lsu_sq.sq_entry_cmit[0],
-        dut.u_lsu_top.u_lsu_sq.gen_sq_entry[0].x_ct_lsu_sq_entry.sq_entry_no_restart,
+        dut.u_lsu_top.u_lsu_sq.sq_entry_vld[0], dut.u_lsu_top.u_lsu_sq.sq_entry_cmit[0],
+        dut.u_lsu_top.u_lsu_sq.gen_sq_entry[1].x_ct_lsu_sq_entry.sq_entry_sdid,
+        dut.u_lsu_top.u_lsu_sq.gen_sq_entry[1].x_ct_lsu_sq_entry.sq_entry_data_vld,
+        dut.u_lsu_top.u_lsu_sq.sq_entry_vld[1], dut.u_lsu_top.u_lsu_sq.sq_entry_cmit[1],
+        dut.u_lsu_top.u_lsu_sq.gen_sq_entry[2].x_ct_lsu_sq_entry.sq_entry_sdid,
+        dut.u_lsu_top.u_lsu_sq.gen_sq_entry[2].x_ct_lsu_sq_entry.sq_entry_data_vld,
+        dut.u_lsu_top.u_lsu_sq.sq_entry_vld[2], dut.u_lsu_top.u_lsu_sq.sq_entry_cmit[2]);
+      $display("         e3 sdid=%b dvld=%b vld=%b cmit=%b | e4 sdid=%b dvld=%b vld=%b cmit=%b | e5 sdid=%b dvld=%b vld=%b cmit=%b",
+        dut.u_lsu_top.u_lsu_sq.gen_sq_entry[3].x_ct_lsu_sq_entry.sq_entry_sdid,
+        dut.u_lsu_top.u_lsu_sq.gen_sq_entry[3].x_ct_lsu_sq_entry.sq_entry_data_vld,
+        dut.u_lsu_top.u_lsu_sq.sq_entry_vld[3], dut.u_lsu_top.u_lsu_sq.sq_entry_cmit[3],
+        dut.u_lsu_top.u_lsu_sq.gen_sq_entry[4].x_ct_lsu_sq_entry.sq_entry_sdid,
+        dut.u_lsu_top.u_lsu_sq.gen_sq_entry[4].x_ct_lsu_sq_entry.sq_entry_data_vld,
+        dut.u_lsu_top.u_lsu_sq.sq_entry_vld[4], dut.u_lsu_top.u_lsu_sq.sq_entry_cmit[4],
+        dut.u_lsu_top.u_lsu_sq.gen_sq_entry[5].x_ct_lsu_sq_entry.sq_entry_sdid,
+        dut.u_lsu_top.u_lsu_sq.gen_sq_entry[5].x_ct_lsu_sq_entry.sq_entry_data_vld,
+        dut.u_lsu_top.u_lsu_sq.sq_entry_vld[5], dut.u_lsu_top.u_lsu_sq.sq_entry_cmit[5]);
+      $display("         lsu_has_in_sq=%b bcast: sel=%b st_sdiq=%b p5_sdiq=%b p5_vld=%b issue_en=%b | sd0 v=%b has=%b rdy=%b | sd1 v=%b has=%b rdy=%b | sd2 v=%b has=%b rdy=%b | sd3 v=%b has=%b rdy=%b",
         dut.u_lsu_top.lsu_idu_has_in_sq,
-        dut.idu_lsu_rf_pipe5_sdiq_entry,
-        dut.idu_lsu_st_sdiq_entry,
+        dut.u_lsu_top.idu_lsu_sdiq_sel,
+        dut.u_lsu_top.idu_lsu_st_sdiq_entry,
+        dut.u_lsu_top.idu_lsu_rf_pipe5_sdiq_entry,
         dut.u_ct_idu_top.x_ct_idu_rf_ctrl.rf_pipe5_inst_vld,
         dut.u_ct_idu_top.sdiq_xx_issue_en,
         dut.u_ct_idu_top.x_ct_idu_is_sdiq.u_ct_idu_is_sdiq_entry_0.vld,
@@ -328,6 +351,126 @@ module tb_a910_difftest;
         dut.u_ct_idu_top.x_ct_idu_is_sdiq.u_ct_idu_is_sdiq_entry_3.has_in_sq,
         dut.u_ct_idu_top.x_ct_idu_is_sdiq.u_ct_idu_is_sdiq_entry_3.x_rdy);
     end
+  end
+
+  // 【临时诊断 2026-10-16】sdid 流水 + 冲刷: 看建表那一刻绑的 SDIQ 号是哪来的
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_SDP") && cycles >= stl_lo && cycles <= stl_hi)
+      $display("  [SDP] T%0d flush=%b | idu: sel=%b iid=%0d sdiq=%b | ag: vld=%b iid=%0d sdid=%b | dc: vld=%b iid=%0d sdid=%b | sd vld=%b has=%b",
+        cycles, dut.rtu_yy_xx_flush,
+        dut.idu_lsu_st_sel, dut.idu_lsu_st_iid, dut.idu_lsu_st_sdiq_entry,
+        dut.u_lsu_top.u_lsu_st_ag.st_ag_inst_vld, dut.u_lsu_top.u_lsu_st_ag.st_ag_iid,
+        dut.u_lsu_top.u_lsu_st_ag.st_ag_sdid_oh,
+        dut.u_lsu_top.st_dc_inst_vld, dut.u_lsu_top.st_dc_iid, dut.u_lsu_top.st_dc_sdid_oh,
+        dut.u_ct_idu_top.x_ct_idu_is_sdiq.sdiq_entry_vld,
+        {dut.u_ct_idu_top.x_ct_idu_is_sdiq.u_ct_idu_is_sdiq_entry_3.has_in_sq,
+         dut.u_ct_idu_top.x_ct_idu_is_sdiq.u_ct_idu_is_sdiq_entry_2.has_in_sq,
+         dut.u_ct_idu_top.x_ct_idu_is_sdiq.u_ct_idu_is_sdiq_entry_1.has_in_sq,
+         dut.u_ct_idu_top.x_ct_idu_is_sdiq.u_ct_idu_is_sdiq_entry_0.has_in_sq});
+  end
+
+  // 【临时诊断 2026-10-16】边界(跨界)store 的 SQ 建表握手逐拍 —— `+PROBE_BD`
+  //   盯: st_dc 的 boundary/secd/create/sdid + LSU 回给 IDU 的 has_in_sq 脉冲 + SDIQ 状态。
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_BD") && cycles >= stl_lo && cycles <= stl_hi)
+      $display("  [BD] T%0d | st_dc vld=%b iid=%0d addr=%08x bnd=%b secd=%b first=%b create=%b sdio=%b sqdvld=%b full=%b | pulse=%b | sdiq v=%b has=%b issue=%b | sq vld=%b cmit=%b notdvld=%b",
+        cycles,
+        dut.u_lsu_top.st_dc_inst_vld, dut.u_lsu_top.st_dc_iid, dut.u_lsu_top.st_dc_addr0,
+        dut.u_lsu_top.st_dc_boundary, dut.u_lsu_top.st_dc_secd,
+        dut.u_lsu_top.st_dc_boundary_first, dut.u_lsu_top.st_dc_sq_create_vld,
+        dut.u_lsu_top.st_dc_sdid_oh, dut.u_lsu_top.st_dc_sq_data_vld,
+        dut.u_lsu_top.sq_st_dc_full,
+        dut.u_lsu_top.lsu_idu_has_in_sq,
+        dut.u_ct_idu_top.x_ct_idu_is_sdiq.sdiq_entry_vld,
+        {dut.u_ct_idu_top.x_ct_idu_is_sdiq.u_ct_idu_is_sdiq_entry_3.has_in_sq,
+         dut.u_ct_idu_top.x_ct_idu_is_sdiq.u_ct_idu_is_sdiq_entry_2.has_in_sq,
+         dut.u_ct_idu_top.x_ct_idu_is_sdiq.u_ct_idu_is_sdiq_entry_1.has_in_sq,
+         dut.u_ct_idu_top.x_ct_idu_is_sdiq.u_ct_idu_is_sdiq_entry_0.has_in_sq},
+        dut.u_ct_idu_top.sdiq_xx_issue_en,
+        dut.u_lsu_top.u_lsu_sq.sq_entry_vld,
+        dut.u_lsu_top.u_lsu_sq.sq_entry_cmit,
+        dut.u_lsu_top.u_lsu_sq.sq_entry_cmit_data_not_vld);
+  end
+
+  // 【临时诊断 2026-10-16】挂死**起点**的时间线: SDIQ 表项(vld/has_in_sq)/SQ 表项
+  //   (vld/cmit/data_vld/sdid)/LSU 回给 IDU 的 has_in_sq 脉冲/冲刷, 任何一项变化就打一行。
+  //   `+PROBE_ONSET` (窗走 STL_LO/STL_HI)
+  reg [3:0] on_sdv_q = 4'hx, on_sdh_q = 4'hx, on_sqv_q = 6'hx, on_sqc_q = 6'hx, on_sqd_q = 6'hx;
+  reg       on_pls_q = 1'bx, on_fls_q = 1'bx, on_init = 0;
+  wire [3:0] on_sdv = dut.u_ct_idu_top.x_ct_idu_is_sdiq.sdiq_entry_vld;
+  wire [3:0] on_sdh = {dut.u_ct_idu_top.x_ct_idu_is_sdiq.u_ct_idu_is_sdiq_entry_3.has_in_sq,
+                       dut.u_ct_idu_top.x_ct_idu_is_sdiq.u_ct_idu_is_sdiq_entry_2.has_in_sq,
+                       dut.u_ct_idu_top.x_ct_idu_is_sdiq.u_ct_idu_is_sdiq_entry_1.has_in_sq,
+                       dut.u_ct_idu_top.x_ct_idu_is_sdiq.u_ct_idu_is_sdiq_entry_0.has_in_sq};
+  wire [3:0] on_pls = dut.u_lsu_top.lsu_idu_has_in_sq;
+  wire [5:0] on_sqv = dut.u_lsu_top.u_lsu_sq.sq_entry_vld;
+  wire [5:0] on_sqc = dut.u_lsu_top.u_lsu_sq.sq_entry_cmit;
+  wire [5:0] on_sqd = ~dut.u_lsu_top.u_lsu_sq.sq_entry_cmit_data_not_vld | ~on_sqc;  // dvld 的近似: 未提交的当作有
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_ONSET") && cycles >= stl_lo && cycles <= stl_hi) begin
+      if (!on_init || on_sdv !== on_sdv_q || on_sdh !== on_sdh_q || on_pls !== on_pls_q
+          || on_sqv !== on_sqv_q || on_sqc !== on_sqc_q || on_fls_q !== dut.rtu_yy_xx_flush) begin
+        $display("  [ONSET] T%0d flush=%b fsm=%b | sdiq v=%b has=%b | pulse=%b | sq vld=%b cmit=%b notdvld=%b | e0 sdid=%b dvld=%b iid=%0d | e1 sdid=%b dvld=%b iid=%0d | e2 sdid=%b dvld=%b iid=%0d",
+          cycles, dut.rtu_yy_xx_flush, dut.u_rtu.u_flush.st_q,
+          on_sdv, on_sdh, on_pls, on_sqv, on_sqc,
+          dut.u_lsu_top.u_lsu_sq.sq_entry_cmit_data_not_vld,
+          dut.u_lsu_top.u_lsu_sq.gen_sq_entry[0].x_ct_lsu_sq_entry.sq_entry_sdid,
+          dut.u_lsu_top.u_lsu_sq.gen_sq_entry[0].x_ct_lsu_sq_entry.sq_entry_data_vld,
+          dut.u_lsu_top.u_lsu_sq.sq_entry_iid[0],
+          dut.u_lsu_top.u_lsu_sq.gen_sq_entry[1].x_ct_lsu_sq_entry.sq_entry_sdid,
+          dut.u_lsu_top.u_lsu_sq.gen_sq_entry[1].x_ct_lsu_sq_entry.sq_entry_data_vld,
+          dut.u_lsu_top.u_lsu_sq.sq_entry_iid[1],
+          dut.u_lsu_top.u_lsu_sq.gen_sq_entry[2].x_ct_lsu_sq_entry.sq_entry_sdid,
+          dut.u_lsu_top.u_lsu_sq.gen_sq_entry[2].x_ct_lsu_sq_entry.sq_entry_data_vld,
+          dut.u_lsu_top.u_lsu_sq.sq_entry_iid[2]);
+        $display("          e3 sdid=%b dvld=%b iid=%0d | e4 sdid=%b dvld=%b iid=%0d | e5 sdid=%b dvld=%b iid=%0d | st_dc: vld=%b sdio=%b create=%b sqfull=%b",
+          dut.u_lsu_top.u_lsu_sq.gen_sq_entry[3].x_ct_lsu_sq_entry.sq_entry_sdid,
+          dut.u_lsu_top.u_lsu_sq.gen_sq_entry[3].x_ct_lsu_sq_entry.sq_entry_data_vld,
+          dut.u_lsu_top.u_lsu_sq.sq_entry_iid[3],
+          dut.u_lsu_top.u_lsu_sq.gen_sq_entry[4].x_ct_lsu_sq_entry.sq_entry_sdid,
+          dut.u_lsu_top.u_lsu_sq.gen_sq_entry[4].x_ct_lsu_sq_entry.sq_entry_data_vld,
+          dut.u_lsu_top.u_lsu_sq.sq_entry_iid[4],
+          dut.u_lsu_top.u_lsu_sq.gen_sq_entry[5].x_ct_lsu_sq_entry.sq_entry_sdid,
+          dut.u_lsu_top.u_lsu_sq.gen_sq_entry[5].x_ct_lsu_sq_entry.sq_entry_data_vld,
+          dut.u_lsu_top.u_lsu_sq.sq_entry_iid[5],
+          dut.u_lsu_top.st_dc_inst_vld, dut.idu_lsu_st_sdiq_entry,
+          dut.u_lsu_top.st_dc_sq_create_vld, dut.u_lsu_top.sq_st_dc_full);
+        on_sdv_q <= on_sdv; on_sdh_q <= on_sdh; on_pls_q <= on_pls;
+        on_sqv_q <= on_sqv; on_sqc_q <= on_sqc; on_fls_q <= dut.rtu_yy_xx_flush;
+        on_init <= 1'b1;
+      end
+    end
+  end
+
+  // 【临时诊断 2026-10-16】LSIQ 二发(双派发)现场 —— `+PROBE_LSIQ` (窗走 STL_LO/STL_HI)
+  //   目标: 同一笔 store 为什么被 pipe4 派发两次。盯 LSIQ 的 issued-entry / ready / vld /
+  //   unalign_2nd / 每个表项的 frz(发过一次就置 1, 只能被 lsu_frz_clr / unalign_2nd_set /
+  //   imme_wakeup 清) + LSU 回的 secd/pop/imme_wakeup + st_da 的 secd 生成条件。
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_LSIQ") && cycles >= stl_lo && cycles <= stl_hi)
+      $display("  [LSIQ] T%0d | p4_is=%b p4en=%b iid=%0d | rdy=%b vld=%b sto=%b un2=%b | frz=%b(0..7) | secd=%b popvld=%b popent=%b immwk=%b | stda secd_vld=%b bnd_first=%b rst=%b",
+        cycles,
+        dut.u_ct_idu_top.x_ct_idu_is_lsiq.lsiq_dp_pipe4_issue_entry,
+        dut.u_ct_idu_top.lsiq_xx_pipe4_issue_en,
+        dut.idu_lsu_st_iid,
+        dut.u_ct_idu_top.x_ct_idu_is_lsiq.lsiq_entry_ready,
+        dut.u_ct_idu_top.x_ct_idu_is_lsiq.lsiq_entry_vld,
+        dut.u_ct_idu_top.x_ct_idu_is_lsiq.lsiq_entry_store,
+        dut.u_ct_idu_top.x_ct_idu_is_lsiq.unalign_2nd,
+        {dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry7.frz,
+         dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry6.frz,
+         dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry5.frz,
+         dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry4.frz,
+         dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry3.frz,
+         dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry2.frz,
+         dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry1.frz,
+         dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry0.frz},
+        dut.lsu_idu_secd, dut.u_ct_idu_top.lsu_idu_lsiq_pop_vld,
+        dut.u_ct_idu_top.lsu_idu_lsiq_pop_entry,
+        dut.u_ct_idu_top.lsu_idu_imme_wakeup,
+        dut.u_lsu_top.u_lsu_st_da.st_da_idu_secd_vld,
+        dut.u_lsu_top.u_lsu_st_da.st_da_boundary_first,
+        dut.u_lsu_top.u_lsu_st_da.st_da_restart_vld);
   end
 
   // 【临时诊断 2026-10-14】SQ 表项 0 **建表那一拍**抓到了什么 —— 定位
@@ -861,7 +1004,8 @@ module tb_a910_difftest;
   //   ⇒ 队列里的等待位永远不会被清 ⇒ 这两条 load 永不出结果 ⇒ LQ 满、ROB 队头不完。
   reg [7:0] wkq_prev = 8'hff;
   always @(posedge clk) begin
-    if (!rst && dut.u_lsu_top.u_lsu_lfb.lfb_wakeup_queue !== wkq_prev) begin
+    if (!rst && $test$plusargs("PROBE_WKQ")
+        && dut.u_lsu_top.u_lsu_lfb.lfb_wakeup_queue !== wkq_prev) begin
       $display("  [WKQ] T%0d wkq %b -> %b | pop_ff=%b set=%b setvec=%b wakeup=%b | lfb_vld=%b",
         cycles, wkq_prev, dut.u_lsu_top.u_lsu_lfb.lfb_wakeup_queue,
         dut.u_lsu_top.u_lsu_lfb.lfb_pop_depd_ff,
@@ -876,7 +1020,19 @@ module tb_a910_difftest;
   // 【临时诊断】WMB 表项 + CE merge 目标快照 (2026-10-15, coremark_i1 #75039)
   //   症状: 约 T94128 那笔写 0xfc1c 的 `sw` 既没进 dcache([WDC] 无)也没进内存([SLVW] 无),
   //         数据凭空消失; 之后 dcache 里 0xfc1c 一直是上一代的 0x13a3, 直到 #75039 失配。
-  integer wmbe_lo = 150560, wmbe_hi = 150640;
+  // 【2026-10-16 快复现现场】SQ 的提交/数据判据 (三选一: 闸门洞 / 清除判据错 / 未退休)
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_SQC") && cycles >= stl_lo && cycles <= stl_hi)
+      $display("  [SQC] T%0d vld=%b cmit=%b cmit_not_dvld=%b has_cmit=%b flush=%b",
+               cycles,
+               dut.u_lsu_top.u_lsu_sq.sq_entry_vld,
+               dut.u_lsu_top.u_lsu_sq.sq_entry_cmit,
+               dut.u_lsu_top.u_lsu_sq.sq_entry_cmit_data_not_vld,
+               dut.u_lsu_top.u_lsu_sq.sq_has_cmit,
+               dut.rtu_yy_xx_flush);
+  end
+
+  integer wmbe_lo = 7370, wmbe_hi = 7520;   // 2026-10-16 改到 -O3 快复现的现场
   always @(posedge clk) begin
     if (!rst && cycles >= wmbe_lo && cycles <= wmbe_hi) begin
       $display("  [CEM] T%0d vld=%b addr=%08x merge=%b mptr=%b stall=%b mnotvld=%b mreq=%b mstall=%b ahit=%b | sqpop=%08x bv=%04x",
@@ -925,6 +1081,419 @@ module tb_a910_difftest;
     end
   end
 
+  // ===========================================================================
+  // 【临时诊断 2026-10-16】区域探针 —— `+PROBE_RGN`
+  //   盯 dcache **set 20** = 地址 [0xfa80, 0xfaa0) 这一整条 32B 线 (2KB/32set ⇒
+  //   index = addr[9:5]), 把这行"从进 dcache 到离场"的全链路逐笔打出来:
+  //     1) 三个阵列 (st_dirty / ld_tag / st_tag) 在 set 20 的**内容变化** + 写口来源
+  //     2) 三阵列/数据阵列**落在 set 20 的每一笔写** (带 lfb/vb/ag/wmb 谁选中)
+  //     3) WMB 表项里地址落在该区的建表/merge/写出
+  //     4) AXI 上落在该区的 AW/W (= 真正上内存的那几笔)
+  //   为什么不按拍窗: 探针打的是"当拍内容", 固定拍窗会把常态读成异常 (踩过)。
+  //   这里全部按**地址/set** 触发, 全跑程不设窗。
+  //   阵列布局 (2KB, 2-way, 32B 线, INDEX_WIDTH=5):
+  //     dirty[4:0] = {replace_way, way1{dirty,vld}, way0{dirty,vld}}  ← store 命中判据看这个
+  //     ld_tag[45:0]= {way1{tag[21:0],vld}, way0{tag[21:0],vld}}      ← load  命中判据看这个
+  //     st_tag[43:0]= {way1 tag[21:0], way0 tag[21:0]}
+  //   0xfa80 ⇒ set 20, tag = addr[31:10] = 0x3e
+  // ===========================================================================
+  localparam [4:0]  RGN_SET = 5'd20;
+
+  wire [4:0]  rgn_dirty = dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_st_dirty_array
+                            .x_ct_spsram_32x5.mem_q[RGN_SET];
+  wire [45:0] rgn_ldtag = dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_ld_tag_array
+                            .x_ct_spsram_32x46.mem_q[RGN_SET];
+  wire [43:0] rgn_sttag = dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_st_tag_array
+                            .x_ct_spsram_32x44.mem_q[RGN_SET];
+
+  reg [4:0]  rgn_dirty_q = 5'h1f;
+  reg [45:0] rgn_ldtag_q = 46'h0;
+  reg [43:0] rgn_sttag_q = 44'h0;
+  reg        rgn_init = 0;
+
+  // ---- 1) 三个阵列在 set 20 的内容变化 ----
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_RGN")) begin
+      if (rgn_init) begin
+        if (rgn_dirty !== rgn_dirty_q)
+          $display("  [R20-DIR] T%0d %b -> %b  (way0{%b,%b} way1{%b,%b} rway=%b)",
+                   cycles, rgn_dirty_q, rgn_dirty,
+                   rgn_dirty[1], rgn_dirty[0], rgn_dirty[3], rgn_dirty[2], rgn_dirty[4]);
+        if (rgn_ldtag !== rgn_ldtag_q)
+          $display("  [R20-LDT] T%0d -> %b  (way0{tag=%06x,v=%b} way1{tag=%06x,v=%b})",
+                   cycles, rgn_ldtag,
+                   rgn_ldtag[21:0], rgn_ldtag[22], rgn_ldtag[44:23], rgn_ldtag[45]);
+        if (rgn_sttag !== rgn_sttag_q)
+          $display("  [R20-STT] T%0d -> %b  (way0 tag=%06x way1 tag=%06x)",
+                   cycles, rgn_sttag, rgn_sttag[21:0], rgn_sttag[43:22]);
+      end
+      rgn_dirty_q <= rgn_dirty;
+      rgn_ldtag_q <= rgn_ldtag;
+      rgn_sttag_q <= rgn_sttag;
+      rgn_init    <= 1'b1;
+    end
+  end
+
+  // ---- 1b) 同样盯 set 21 (= 地址 [0xfaa0, 0xfac0) 那条线) ----
+  wire [4:0]  rgn21_dirty = dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_st_dirty_array
+                              .x_ct_spsram_32x5.mem_q[21];
+  wire [45:0] rgn21_ldtag = dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_ld_tag_array
+                              .x_ct_spsram_32x46.mem_q[21];
+  reg [4:0]  rgn21_dirty_q = 5'h1f;
+  reg [45:0] rgn21_ldtag_q = 46'h0;
+  reg        rgn21_init = 0;
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_RGN")) begin
+      if (rgn21_init && rgn21_dirty !== rgn21_dirty_q)
+        $display("  [R21-DIR] T%0d %b -> %b  (way0{%b,%b} way1{%b,%b} rway=%b)",
+                 cycles, rgn21_dirty_q, rgn21_dirty,
+                 rgn21_dirty[1], rgn21_dirty[0], rgn21_dirty[3], rgn21_dirty[2], rgn21_dirty[4]);
+      if (rgn21_init && rgn21_ldtag !== rgn21_ldtag_q)
+        $display("  [R21-LDT] T%0d -> %b  (way0{tag=%06x,v=%b} way1{tag=%06x,v=%b})",
+                 cycles, rgn21_ldtag,
+                 rgn21_ldtag[21:0], rgn21_ldtag[22], rgn21_ldtag[44:23], rgn21_ldtag[45]);
+      rgn21_dirty_q <= rgn21_dirty;
+      rgn21_ldtag_q <= rgn21_ldtag;
+      rgn21_init    <= 1'b1;
+    end
+  end
+
+  // ---- 1c) load 通路: 落在 [0xfa80,0xfac0) 的每一笔 load 在 ld_dc 的判定 + ld_da 的数据 ----
+  //   ld_dc: 命中与否 / 走 SQ 旁路还是 WMB 旁路 / 选哪一路 (rot_sel)
+  //   ld_da: 最终交给流水线的 32 位数据 (ld_da_wb_data)
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_RGN")
+        && dut.u_lsu_top.ld_dc_da_inst_vld
+        && dut.u_lsu_top.ld_dc_addr0 >= 32'h0000_fa80
+        && dut.u_lsu_top.ld_dc_addr0 <  32'h0000_fac0)
+      $display("  [R20-LDC] T%0d iid=%0d addr=%08x dc_hit=%b lo=%b hi=%b | fwd_sq=%b fwd_wmb=%b | rot=%02x tagdout=%b",
+               cycles, dut.u_lsu_top.ld_dc_iid, dut.u_lsu_top.ld_dc_addr0,
+               dut.u_lsu_top.ld_dc_dcache_hit,
+               dut.u_lsu_top.ld_dc_hit_low_region, dut.u_lsu_top.ld_dc_hit_high_region,
+               dut.u_lsu_top.ld_dc_fwd_sq_vld, dut.u_lsu_top.ld_dc_fwd_wmb_vld,
+               dut.u_lsu_top.ld_dc_da_data_rot_sel, dut.u_lsu_top.dcache_lsu_ld_tag_dout);
+    if (!rst && $test$plusargs("PROBE_RGN")
+        && dut.u_lsu_top.ld_da_inst_vld
+        && dut.u_lsu_top.ld_da_addr0 >= 32'h0000_fa80
+        && dut.u_lsu_top.ld_da_addr0 <  32'h0000_fac0)
+      $display("  [R20-LDA] T%0d iid=%0d addr=%08x wb_data=%08x wb_req=%b banks=%08x%08x%08x%08x%08x%08x%08x%08x",
+               cycles, dut.u_lsu_top.ld_da_iid, dut.u_lsu_top.ld_da_addr0,
+               dut.u_lsu_top.ld_da_wb_data, dut.u_lsu_top.ld_da_wb_data_req,
+               dut.u_lsu_top.u_dcache_top.dcache_lsu_ld_data_bank7_dout,
+               dut.u_lsu_top.u_dcache_top.dcache_lsu_ld_data_bank6_dout,
+               dut.u_lsu_top.u_dcache_top.dcache_lsu_ld_data_bank5_dout,
+               dut.u_lsu_top.u_dcache_top.dcache_lsu_ld_data_bank4_dout,
+               dut.u_lsu_top.u_dcache_top.dcache_lsu_ld_data_bank3_dout,
+               dut.u_lsu_top.u_dcache_top.dcache_lsu_ld_data_bank2_dout,
+               dut.u_lsu_top.u_dcache_top.dcache_lsu_ld_data_bank1_dout,
+               dut.u_lsu_top.u_dcache_top.dcache_lsu_ld_data_bank0_dout);
+  end
+
+  // ---- 1d) 数据阵列里这两条线的**实际内容** (way0; 变了才打) ----
+  //   低位 128b = line 的 byte[15:0], 高位 128b = byte[31:16]; 打印顺序 = byte31..byte0。
+  //   用来看 "那半个字到底有没有被写进 dcache、写成了什么"。
+  // dcache 数据阵列里 set20/set21 的 way0 整线 (idx = {set,way} = 40 / 42)
+  reg  [255:0] rgn20_dc;  reg [255:0] rgn21_dc;  reg [255:0] rgn20_dc1;
+  reg  [255:0] rgn20_dm;  reg [255:0] rgn21_dm;
+  reg  [255:0] rgn20_gm;  reg [255:0] rgn21_gm;
+  task automatic rgn_sample;
+    rgn20_dc = {
+      dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_ld_data_bank7_array.x_ct_spsram_64x32.mem_q[40],
+      dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_ld_data_bank6_array.x_ct_spsram_64x32.mem_q[40],
+      dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_ld_data_bank5_array.x_ct_spsram_64x32.mem_q[40],
+      dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_ld_data_bank4_array.x_ct_spsram_64x32.mem_q[40],
+      dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_ld_data_bank3_array.x_ct_spsram_64x32.mem_q[40],
+      dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_ld_data_bank2_array.x_ct_spsram_64x32.mem_q[40],
+      dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_ld_data_bank1_array.x_ct_spsram_64x32.mem_q[40],
+      dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_ld_data_bank0_array.x_ct_spsram_64x32.mem_q[40]};
+    rgn21_dc = {
+      dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_ld_data_bank7_array.x_ct_spsram_64x32.mem_q[42],
+      dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_ld_data_bank6_array.x_ct_spsram_64x32.mem_q[42],
+      dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_ld_data_bank5_array.x_ct_spsram_64x32.mem_q[42],
+      dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_ld_data_bank4_array.x_ct_spsram_64x32.mem_q[42],
+      dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_ld_data_bank3_array.x_ct_spsram_64x32.mem_q[42],
+      dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_ld_data_bank2_array.x_ct_spsram_64x32.mem_q[42],
+      dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_ld_data_bank1_array.x_ct_spsram_64x32.mem_q[42],
+      dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_ld_data_bank0_array.x_ct_spsram_64x32.mem_q[42]};
+  // DUT 从机内存 / 黄金模型内存里的同两条线 (byte31..byte0)
+  // way1 也读出来 (索引 41 / 43) —— 用来判 "是不是读错了路"
+    rgn20_dc1 = {
+      dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_ld_data_bank7_array.x_ct_spsram_64x32.mem_q[41],
+      dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_ld_data_bank6_array.x_ct_spsram_64x32.mem_q[41],
+      dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_ld_data_bank5_array.x_ct_spsram_64x32.mem_q[41],
+      dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_ld_data_bank4_array.x_ct_spsram_64x32.mem_q[41],
+      dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_ld_data_bank3_array.x_ct_spsram_64x32.mem_q[41],
+      dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_ld_data_bank2_array.x_ct_spsram_64x32.mem_q[41],
+      dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_ld_data_bank1_array.x_ct_spsram_64x32.mem_q[41],
+      dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_ld_data_bank0_array.x_ct_spsram_64x32.mem_q[41]};
+    rgn20_dm = {u_mem.mem[12'hfa9], u_mem.mem[12'hfa8]};
+    rgn21_dm = {u_mem.mem[12'hfab], u_mem.mem[12'hfaa]};
+    rgn20_gm = {gm_read_mem(32'h0000_fa9c), gm_read_mem(32'h0000_fa98),
+                           gm_read_mem(32'h0000_fa94), gm_read_mem(32'h0000_fa90),
+                           gm_read_mem(32'h0000_fa8c), gm_read_mem(32'h0000_fa88),
+                           gm_read_mem(32'h0000_fa84), gm_read_mem(32'h0000_fa80)};
+    rgn21_gm = {gm_read_mem(32'h0000_fabc), gm_read_mem(32'h0000_fab8),
+                           gm_read_mem(32'h0000_fab4), gm_read_mem(32'h0000_fab0),
+                           gm_read_mem(32'h0000_faac), gm_read_mem(32'h0000_faa8),
+                           gm_read_mem(32'h0000_faa4), gm_read_mem(32'h0000_faa0)};
+  endtask
+  reg [255:0] rgn20_dc_q = '0,  rgn21_dc_q = '0;
+  reg [255:0] rgn20_dc1_q = '0;
+  reg [255:0] rgn20_dm_q = '0,  rgn21_dm_q = '0;
+  reg        rgn_line_init = 0;
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_RGN")) begin
+      rgn_sample;
+      if (rgn_line_init) begin
+        if (rgn20_dc !== rgn20_dc_q)
+          $display("  [R20-DC]  T%0d dcache = %064x  (GM=%064x)", cycles, rgn20_dc, rgn20_gm);
+        if (rgn21_dc !== rgn21_dc_q)
+          $display("  [R21-DC]  T%0d dcache = %064x  (GM=%064x)", cycles, rgn21_dc, rgn21_gm);
+        if (rgn20_dc1 !== rgn20_dc1_q)
+          $display("  [R20-DC1] T%0d dcache set20 WAY1 = %064x", cycles, rgn20_dc1);
+        if (rgn20_dm !== rgn20_dm_q)
+          $display("  [R20-DRAM] T%0d DUTmem = %064x  (GM=%064x)  %s", cycles, rgn20_dm, rgn20_gm,
+                   (rgn20_dm === rgn20_gm) ? "" : "<<< DUT/GM 内存分家");
+        if (rgn21_dm !== rgn21_dm_q)
+          $display("  [R21-DRAM] T%0d DUTmem = %064x  (GM=%064x)  %s", cycles, rgn21_dm, rgn21_gm,
+                   (rgn21_dm === rgn21_gm) ? "" : "<<< DUT/GM 内存分家");
+      end
+      rgn20_dc_q <= rgn20_dc;  rgn21_dc_q <= rgn21_dc;  rgn20_dc1_q <= rgn20_dc1;
+      rgn20_dm_q <= rgn20_dm;  rgn21_dm_q <= rgn21_dm;
+      rgn_line_init <= 1'b1;
+    end
+  end
+
+  // ---- 2) 落在 set 20 的每一笔阵列写 (带来源) ----
+  wire [3:0] rgn_src_st = {dut.u_lsu_top.u_dcache_arb.dcache_arb_lfb_st_sel,
+                           dut.u_lsu_top.u_dcache_arb.dcache_arb_vb_st_sel,
+                           dut.u_lsu_top.u_dcache_arb.dcache_arb_ag_st_sel,
+                           dut.u_lsu_top.u_dcache_arb.dcache_arb_wmb_st_sel};
+  wire [3:0] rgn_src_ld = {dut.u_lsu_top.u_dcache_arb.dcache_arb_lfb_ld_sel,
+                           dut.u_lsu_top.u_dcache_arb.dcache_arb_vb_ld_sel,
+                           dut.u_lsu_top.u_dcache_arb.dcache_arb_wmb_ld_sel,
+                           dut.u_lsu_top.u_dcache_arb.dcache_arb_ag_ld_sel};
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_RGN")) begin
+      // dirty 阵列 (set 20 = line 0xfa80, set 21 = line 0xfaa0)
+      if (!dut.u_lsu_top.u_dcache_arb.lsu_dcache_st_dirty_gwen_b
+          && !dut.u_lsu_top.u_dcache_arb.lsu_dcache_st_dirty_sel_b
+          && (dut.u_lsu_top.u_dcache_arb.lsu_dcache_st_dirty_idx == 5'd20
+              || dut.u_lsu_top.u_dcache_arb.lsu_dcache_st_dirty_idx == 5'd21))
+        $display("  [R20-WD] T%0d set=%0d dirty-wr din=%b wen_b=%b src[L,V,A,W]=%b  vb_gwen=%b",
+                 cycles, dut.u_lsu_top.u_dcache_arb.lsu_dcache_st_dirty_idx,
+                 dut.u_lsu_top.u_dcache_arb.lsu_dcache_st_dirty_din,
+                 dut.u_lsu_top.u_dcache_arb.lsu_dcache_st_dirty_wen_b, rgn_src_st,
+                 dut.u_lsu_top.u_dcache_arb.vb_dirty_gwen);
+      // ld tag 阵列
+      if (!dut.u_lsu_top.u_dcache_arb.lsu_dcache_ld_tag_gwen_b
+          && !dut.u_lsu_top.u_dcache_arb.lsu_dcache_ld_tag_sel_b
+          && (dut.u_lsu_top.u_dcache_arb.lsu_dcache_ld_tag_idx == 5'd20
+              || dut.u_lsu_top.u_dcache_arb.lsu_dcache_ld_tag_idx == 5'd21))
+        $display("  [R20-WLT] T%0d set=%0d ldtag-wr din=%b wen_b=%b src[L,V,W,A]=%b",
+                 cycles, dut.u_lsu_top.u_dcache_arb.lsu_dcache_ld_tag_idx,
+                 dut.u_lsu_top.u_dcache_arb.lsu_dcache_ld_tag_din,
+                 dut.u_lsu_top.u_dcache_arb.lsu_dcache_ld_tag_wen_b, rgn_src_ld);
+      // st tag 阵列
+      if (!dut.u_lsu_top.u_dcache_arb.lsu_dcache_st_tag_gwen_b
+          && !dut.u_lsu_top.u_dcache_arb.lsu_dcache_st_tag_sel_b
+          && (dut.u_lsu_top.u_dcache_arb.lsu_dcache_st_tag_idx == 5'd20
+              || dut.u_lsu_top.u_dcache_arb.lsu_dcache_st_tag_idx == 5'd21))
+        $display("  [R20-WST] T%0d set=%0d sttag-wr din=%b wen_b=%b src[L,V,A]=%b",
+                 cycles, dut.u_lsu_top.u_dcache_arb.lsu_dcache_st_tag_idx,
+                 dut.u_lsu_top.u_dcache_arb.lsu_dcache_st_tag_din,
+                 dut.u_lsu_top.u_dcache_arb.lsu_dcache_st_tag_wen_b, rgn_src_st[3:1]);
+      // 数据阵列 (low/high 的 idx = {set[4:0], way})
+      if ((dut.u_lsu_top.u_dcache_arb.lsu_dcache_ld_data_low_idx[5:1]  == 5'd20
+           || dut.u_lsu_top.u_dcache_arb.lsu_dcache_ld_data_low_idx[5:1]  == 5'd21
+           || dut.u_lsu_top.u_dcache_arb.lsu_dcache_ld_data_high_idx[5:1] == 5'd20
+           || dut.u_lsu_top.u_dcache_arb.lsu_dcache_ld_data_high_idx[5:1] == 5'd21)
+          && !dut.u_lsu_top.u_dcache_arb.lsu_dcache_ld_data_gwen_b[0]
+          && !dut.u_lsu_top.u_dcache_arb.lsu_dcache_ld_data_sel_b[0])
+        $display("  [R20-DAT] T%0d low<-%032x high<-%032x lowidx=%0d highidx=%0d wen_b=%08x sel_b=%02x src[L,V,W,A]=%b",
+                 cycles,
+                 dut.u_lsu_top.u_dcache_arb.lsu_dcache_ld_data_low_din,
+                 dut.u_lsu_top.u_dcache_arb.lsu_dcache_ld_data_high_din,
+                 dut.u_lsu_top.u_dcache_arb.lsu_dcache_ld_data_low_idx,
+                 dut.u_lsu_top.u_dcache_arb.lsu_dcache_ld_data_high_idx,
+                 dut.u_lsu_top.u_dcache_arb.lsu_dcache_ld_data_wen_b,
+                 dut.u_lsu_top.u_dcache_arb.lsu_dcache_ld_data_sel_b, rgn_src_ld);
+      // WMB 表项: 地址落在该区、且正在要求写出 —— dc_req/biu_req 谁抬 = 它打算写哪儿
+      //   (write_dcache_req 抬 ⇒ 表项记着"行在 dcache"; write_biu_req 抬 ⇒ 直写内存)
+      //   ⚠️ 逐项手写: generate 实例 (gen_wmb_entry[j].x_lsu_wmb_entry.*) 不能用变量索引。
+      if (dut.u_lsu_top.u_lsu_wmb.wmb_entry_vld[0]
+          && dut.u_lsu_top.u_lsu_wmb.wmb_entry_addr[0] >= 32'h0000_fa80
+          && dut.u_lsu_top.u_lsu_wmb.wmb_entry_addr[0] <  32'h0000_fac0
+          && dut.u_lsu_top.u_lsu_wmb.wmb_entry_write_req[0])
+        $display("  [R20-WMB] T%0d e0 addr=%08x data=%032x bv=%04x way=%b dc_req=%b biu_req=%b dcp=%b",
+                 cycles, dut.u_lsu_top.u_lsu_wmb.wmb_entry_addr[0],
+                 dut.u_lsu_top.u_lsu_wmb.wmb_entry_data[0],
+                 dut.u_lsu_top.u_lsu_wmb.wmb_entry_bytes_vld[0],
+                 dut.u_lsu_top.u_lsu_wmb.wmb_entry_dcache_way[0],
+                 dut.u_lsu_top.u_lsu_wmb.wmb_entry_write_dcache_req[0],
+                 dut.u_lsu_top.u_lsu_wmb.wmb_entry_write_biu_req[0],
+                 dut.u_lsu_top.u_lsu_wmb.wmb_dcache_req_ptr[0]);
+      if (dut.u_lsu_top.u_lsu_wmb.wmb_entry_vld[1]
+          && dut.u_lsu_top.u_lsu_wmb.wmb_entry_addr[1] >= 32'h0000_fa80
+          && dut.u_lsu_top.u_lsu_wmb.wmb_entry_addr[1] <  32'h0000_fac0
+          && dut.u_lsu_top.u_lsu_wmb.wmb_entry_write_req[1])
+        $display("  [R20-WMB] T%0d e1 addr=%08x data=%032x bv=%04x way=%b dc_req=%b biu_req=%b dcp=%b",
+                 cycles, dut.u_lsu_top.u_lsu_wmb.wmb_entry_addr[1],
+                 dut.u_lsu_top.u_lsu_wmb.wmb_entry_data[1],
+                 dut.u_lsu_top.u_lsu_wmb.wmb_entry_bytes_vld[1],
+                 dut.u_lsu_top.u_lsu_wmb.wmb_entry_dcache_way[1],
+                 dut.u_lsu_top.u_lsu_wmb.wmb_entry_write_dcache_req[1],
+                 dut.u_lsu_top.u_lsu_wmb.wmb_entry_write_biu_req[1],
+                 dut.u_lsu_top.u_lsu_wmb.wmb_dcache_req_ptr[1]);
+      if (dut.u_lsu_top.u_lsu_wmb.wmb_entry_vld[2]
+          && dut.u_lsu_top.u_lsu_wmb.wmb_entry_addr[2] >= 32'h0000_fa80
+          && dut.u_lsu_top.u_lsu_wmb.wmb_entry_addr[2] <  32'h0000_fac0
+          && dut.u_lsu_top.u_lsu_wmb.wmb_entry_write_req[2])
+        $display("  [R20-WMB] T%0d e2 addr=%08x data=%032x bv=%04x way=%b dc_req=%b biu_req=%b dcp=%b",
+                 cycles, dut.u_lsu_top.u_lsu_wmb.wmb_entry_addr[2],
+                 dut.u_lsu_top.u_lsu_wmb.wmb_entry_data[2],
+                 dut.u_lsu_top.u_lsu_wmb.wmb_entry_bytes_vld[2],
+                 dut.u_lsu_top.u_lsu_wmb.wmb_entry_dcache_way[2],
+                 dut.u_lsu_top.u_lsu_wmb.wmb_entry_write_dcache_req[2],
+                 dut.u_lsu_top.u_lsu_wmb.wmb_entry_write_biu_req[2],
+                 dut.u_lsu_top.u_lsu_wmb.wmb_dcache_req_ptr[2]);
+      if (dut.u_lsu_top.u_lsu_wmb.wmb_entry_vld[3]
+          && dut.u_lsu_top.u_lsu_wmb.wmb_entry_addr[3] >= 32'h0000_fa80
+          && dut.u_lsu_top.u_lsu_wmb.wmb_entry_addr[3] <  32'h0000_fac0
+          && dut.u_lsu_top.u_lsu_wmb.wmb_entry_write_req[3])
+        $display("  [R20-WMB] T%0d e3 addr=%08x data=%032x bv=%04x way=%b dc_req=%b biu_req=%b dcp=%b",
+                 cycles, dut.u_lsu_top.u_lsu_wmb.wmb_entry_addr[3],
+                 dut.u_lsu_top.u_lsu_wmb.wmb_entry_data[3],
+                 dut.u_lsu_top.u_lsu_wmb.wmb_entry_bytes_vld[3],
+                 dut.u_lsu_top.u_lsu_wmb.wmb_entry_dcache_way[3],
+                 dut.u_lsu_top.u_lsu_wmb.wmb_entry_write_dcache_req[3],
+                 dut.u_lsu_top.u_lsu_wmb.wmb_entry_write_biu_req[3],
+                 dut.u_lsu_top.u_lsu_wmb.wmb_dcache_req_ptr[3]);
+    end
+  end
+
+  // ---- 2b) store 流水过 st_da 时对这条线的判定 (命中/未命中、选中哪一路) ----
+  //   store 的命中判据看的是 **dirty 阵列** 的 valid 位 (valid0=dirty[0], valid1=dirty[2]);
+  //   load 看的是 ld_tag 阵列。两者不一致就会 "store 判 miss 直写内存 / load 命中读旧值"。
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_RGN")
+        && dut.u_lsu_top.u_lsu_st_da.st_da_inst_vld
+        && dut.u_lsu_top.u_lsu_st_da.st_da_addr0 >= 32'h0000_fa80
+        && dut.u_lsu_top.u_lsu_st_da.st_da_addr0 <  32'h0000_fac0)
+      $display("  [R20-ST]  T%0d iid=%0d addr=%08x hit=%b v0=%b v1=%b t0=%b t1=%b way=%b darr=%b rway=%b rvld=%b rdtry=%b | rec_vld=%b rec_dtry=%b rec_way=%b lfbhit=%b",
+               cycles, dut.u_lsu_top.st_da_iid,
+               dut.u_lsu_top.u_lsu_st_da.st_da_addr0,
+               dut.u_lsu_top.u_lsu_st_da.st_da_dcache_hit,
+               dut.u_lsu_top.u_lsu_st_da.st_da_dcache_valid0,
+               dut.u_lsu_top.u_lsu_st_da.st_da_dcache_valid1,
+               dut.u_lsu_top.u_lsu_st_da.st_da_tag0_hit,
+               dut.u_lsu_top.u_lsu_st_da.st_da_tag1_hit,
+               dut.u_lsu_top.u_lsu_st_da.st_da_dcache_way,
+               dut.u_lsu_top.u_lsu_st_da.st_da_dcache_dirty_array,
+               dut.u_lsu_top.u_lsu_st_da.st_da_dcache_replace_way,
+               dut.u_lsu_top.u_lsu_st_da.st_da_dcache_replace_valid,
+               dut.u_lsu_top.u_lsu_st_da.st_da_dcache_replace_dirty,
+               dut.u_lsu_top.u_lsu_st_da.st_da_sq_dcache_valid,
+               dut.u_lsu_top.u_lsu_st_da.st_da_sq_dcache_dirty,
+               dut.u_lsu_top.u_lsu_st_da.st_da_sq_dcache_way,
+               dut.u_lsu_top.lfb_st_da_hit_idx);
+  end
+
+  // ---- 1e) 该区里每一笔 load 最终交付的数据 (ld_da 的写回口) ----
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_RGN")
+        && dut.u_lsu_top.ld_da_wb_data_req
+        && dut.u_lsu_top.ld_da_addr0 >= 32'h0000_fa80
+        && dut.u_lsu_top.ld_da_addr0 <  32'h0000_fac0)
+      $display("  [R20-LDB] T%0d iid=%0d addr=%08x wb_data=%08x (半字=%04x) cb_merge=%b fwd_sq=%b fwd_wmb=%b hit=%b",
+               cycles, dut.u_lsu_top.ld_da_iid, dut.u_lsu_top.ld_da_addr0,
+               dut.u_lsu_top.ld_da_wb_data, dut.u_lsu_top.ld_da_wb_data[15:0],
+               dut.u_lsu_top.u_lsu_ld_da.ld_da_merge_from_cb,
+               dut.u_lsu_top.ld_dc_fwd_sq_vld, dut.u_lsu_top.ld_dc_fwd_wmb_vld,
+               dut.u_lsu_top.ld_dc_dcache_hit);
+  end
+
+  // ---- 1g) ld_da 这一拍的阵列回读口 (哪个 way 的 idx + 八个 bank 的原值) ----
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_RGN") && dut.u_lsu_top.ld_da_wb_data_req
+        && dut.u_lsu_top.ld_da_addr0 >= 32'h0000_fa80
+        && dut.u_lsu_top.ld_da_addr0 <  32'h0000_fac0)
+      $display("  [R20-RAW] T%0d lowidx=%0d highidx=%0d banks=%08x%08x%08x%08x%08x%08x%08x%08x",
+               cycles,
+               dut.u_lsu_top.u_dcache_arb.lsu_dcache_ld_data_low_idx,
+               dut.u_lsu_top.u_dcache_arb.lsu_dcache_ld_data_high_idx,
+               dut.u_lsu_top.u_dcache_top.dcache_lsu_ld_data_bank7_dout,
+               dut.u_lsu_top.u_dcache_top.dcache_lsu_ld_data_bank6_dout,
+               dut.u_lsu_top.u_dcache_top.dcache_lsu_ld_data_bank5_dout,
+               dut.u_lsu_top.u_dcache_top.dcache_lsu_ld_data_bank4_dout,
+               dut.u_lsu_top.u_dcache_top.dcache_lsu_ld_data_bank3_dout,
+               dut.u_lsu_top.u_dcache_top.dcache_lsu_ld_data_bank2_dout,
+               dut.u_lsu_top.u_dcache_top.dcache_lsu_ld_data_bank1_dout,
+               dut.u_lsu_top.u_dcache_top.dcache_lsu_ld_data_bank0_dout);
+  end
+
+  // ---- 1f) 缓存缓冲 (ct_lsu_cache_buffer): ld_da 可能拿它里面的**上一次**数据 ----
+  reg cb_vld_q = 0;
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_RGN")) begin
+      if (dut.u_lsu_top.u_ct_lsu_cache_buffer.cb_vld !== cb_vld_q)
+        $display("  [R20-CB]  T%0d cb_vld %b -> %b | addr_tto4=%07x data=%032x",
+                 cycles, cb_vld_q, dut.u_lsu_top.u_ct_lsu_cache_buffer.cb_vld,
+                 dut.u_lsu_top.u_ct_lsu_cache_buffer.cb_addr_tto4,
+                 dut.u_lsu_top.u_ct_lsu_cache_buffer.cb_data);
+      cb_vld_q <= dut.u_lsu_top.u_ct_lsu_cache_buffer.cb_vld;
+    end
+  end
+
+  // ---- 2c) SQ 表项的 dcache 记录位 + info_vld (整区, 变化即打) ----
+  //   info_vld=0 时 `sq_entry_dcache_update_vld` 被闸掉 ⇒ 建表那一拍正好来一次回填的话,
+  //   这一拍的信息更新会被吞掉, 表项永远停在 "miss"。这里就是要看这个窗口。
+  reg [7:0] sq_watch_q [0:5];
+  reg       sq_watch_init = 0;
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_RGN")) begin
+      for (int i = 0; i < 6; i++) begin
+        if (dut.u_lsu_top.u_lsu_sq.sq_entry_addr0[i] >= 32'h0000_fa80
+            && dut.u_lsu_top.u_lsu_sq.sq_entry_addr0[i] <  32'h0000_fac0) begin
+          if (sq_watch_init
+              && {dut.u_lsu_top.u_lsu_sq.sq_entry_vld[i],
+                  dut.u_lsu_top.u_lsu_sq.sq_entry_dcache_info_vld[i],
+                  dut.u_lsu_top.u_lsu_sq.sq_entry_dcache_valid[i],
+                  dut.u_lsu_top.u_lsu_sq.sq_entry_dcache_dirty[i],
+                  dut.u_lsu_top.u_lsu_sq.sq_entry_dcache_way[i], 3'b0} !== sq_watch_q[i])
+            $display("  [R20-SQE] T%0d e%0d iid=%0d addr=%08x vld=%b info_vld=%b dc_vld=%b dc_dirty=%b dc_way=%b",
+                     cycles, i, dut.u_lsu_top.u_lsu_sq.sq_entry_iid[i],
+                     dut.u_lsu_top.u_lsu_sq.sq_entry_addr0[i],
+                     dut.u_lsu_top.u_lsu_sq.sq_entry_vld[i],
+                     dut.u_lsu_top.u_lsu_sq.sq_entry_dcache_info_vld[i],
+                     dut.u_lsu_top.u_lsu_sq.sq_entry_dcache_valid[i],
+                     dut.u_lsu_top.u_lsu_sq.sq_entry_dcache_dirty[i],
+                     dut.u_lsu_top.u_lsu_sq.sq_entry_dcache_way[i]);
+          sq_watch_q[i] = {dut.u_lsu_top.u_lsu_sq.sq_entry_vld[i],
+                           dut.u_lsu_top.u_lsu_sq.sq_entry_dcache_info_vld[i],
+                           dut.u_lsu_top.u_lsu_sq.sq_entry_dcache_valid[i],
+                           dut.u_lsu_top.u_lsu_sq.sq_entry_dcache_dirty[i],
+                           dut.u_lsu_top.u_lsu_sq.sq_entry_dcache_way[i], 3'b0};
+        end
+      end
+      sq_watch_init <= 1'b1;
+    end
+  end
+
+  // ---- 3) AXI 上落在该区的 AW / W (全跑程) ----
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_RGN")) begin
+      if (biu_pad_awvalid && pad_biu_awready
+          && biu_pad_awaddr >= 32'h0000_fa80 && biu_pad_awaddr < 32'h0000_fac0)
+        $display("  [R20-AW]  T%0d addr=%08x len=%0d size=%0d", cycles,
+                 biu_pad_awaddr, biu_pad_awlen, biu_pad_awsize);
+      if (biu_pad_wvalid && pad_biu_wready
+          && u_mem.wr_addr >= 32'h0000_fa80 && u_mem.wr_addr < 32'h0000_fac0)
+        $display("  [R20-W]   T%0d wr_addr=%08x strb=%04x data=%032x", cycles,
+                 u_mem.wr_addr, biu_pad_wstrb, biu_pad_wdata);
+    end
+  end
+
   // 【临时诊断】DRAM 逐字看门狗 (2026-10-15, coremark_i1 #75039)
   //   盯字节区间 DWLO..DWHI (4 字节步进), DUT 从机内存 =/= 黄金模型内存 的**每一拍**
   //   都打一行。用来定位 "DUT 的 DRAM 到底从哪一拍、哪个地址开始跟模型分家"。
@@ -959,7 +1528,9 @@ module tb_a910_difftest;
   reg         memw_init = 0;
   integer     memw_i;
   always @(posedge clk) begin
-    if (!rst) begin
+    // ⚠️ 2026-10-16: 这块每拍扫 4 个 128b 块 + 16 次 gm_read_mem DPI ⇒ 整场跑分的
+    //   主要开销 (实测把 11M 拍的用例拖到小时级)。默认关, 回看时加 +PROBE_MEMW。
+    if (!rst && $test$plusargs("PROBE_MEMW")) begin
       for (memw_i = 0; memw_i < 4; memw_i = memw_i + 1) begin
         if (!memw_init || u_mem.mem[12'hf7f + memw_i] !== memw_prev[memw_i]) begin
           if (memw_init)
@@ -982,7 +1553,7 @@ module tb_a910_difftest;
   reg        gmw_init = 0;
   integer    gmw_i;
   always @(posedge clk) begin
-    if (!rst) begin
+    if (!rst && $test$plusargs("PROBE_GMMW")) begin   // 同上: 每拍 8 次 DPI, 默认关
       for (gmw_i = 0; gmw_i < 8; gmw_i = gmw_i + 1) begin
         if (gmw_init && gm_read_mem(32'h0000_f840 + 4 * gmw_i) !== gmw_prev[gmw_i])
           $display("  [GMMW] T%0d GM[%05x]=%08x", cycles, 32'h0000_f840 + 4 * gmw_i,
@@ -1002,7 +1573,7 @@ module tb_a910_difftest;
   end
   reg vb_vld_prev = 0;
   always @(posedge clk) begin
-    if (!rst) begin
+    if (!rst && $test$plusargs("PROBE_LEGACY")) begin   // DTW/VBP/VBW: 旧现场诊断, 默认关
       if (!dut.u_lsu_top.u_dcache_arb.lsu_dcache_st_dirty_gwen_b
           && !dut.u_lsu_top.u_dcache_arb.lsu_dcache_st_dirty_sel_b
           && dut.u_lsu_top.u_dcache_arb.lsu_dcache_st_dirty_idx == 5'd2)
@@ -1685,10 +2256,52 @@ module tb_a910_difftest;
   // ⇒ **任意一个队列满就堵死整个派遣口**。只在"确有指令等着派"时计数。
   integer perf_blk_wait = 0, perf_blk_rob = 0, perf_blk_aiq = 0, perf_blk_biq = 0;
   integer perf_blk_lsiq = 0, perf_blk_sdiq = 0, perf_blk_mult = 0, perf_blk_div = 0;
+  // ---- ⚠️ `dut.rtu_idu_rob_full` 不是"ROB 满" ----
+  //   `RTU.v:891` `rtu_disp_stall = rob_full | csr_inflight | flushing | mispred_pend`,
+  //   而 `rtu_idu_rob_full = rtu_disp_stall`（adapter:284）。四个条件混在一起会把
+  //   **冲刷/重定向的恢复窗**记成"ROB 容量不够"。这里拆开单独记。
+  //   顺带: `rob_full = (occ_q >= RTU_ROB_FULL_TH)`,`TH = DEPTH - RSV = 60`
+  //   （RTU_define.vh:97）—— 于是"真满"和"占用均值"不是一回事, 得分开看。
+  integer perf_blk_stall = 0, perf_blk_csr = 0, perf_blk_flushw = 0, perf_blk_mppend = 0;
+  // ---- 前端无货的分解: 是不是在等 i-cache 回填 ----
+  //   `rv32ifu2_top.v:518` `refill_req = ~q_hit & ~refill_busy & init_all & ~redirect`
+  //     ⇒ 每次 miss 恰好拉高**一拍**, 计数即 miss 次数。
+  //   `:508` `can_push = q_hit & init_all` ⇒ 行不在缓存里就推不进 IBUF (真挡)。
+  //   于是把"非冻结窗的无货"劈成两半:
+  //     取指地址 miss  ⇒ 缓存问题
+  //     取指地址命中  ⇒ 不是缓存问题 (IBUF/重定向/其它)
+  integer perf_ic_miss = 0, perf_ic_busy = 0, perf_ic_idle_miss = 0, perf_ic_idle_hit = 0;
+  // 再往下一层: "命中却没货" 的那些拍, 是不是正卡在重定向/重建 IBUF 的窗口里?
+  //   `rv32ifu2_top.v:321` `idu_flush = redirect`, `:318`
+  //   `redirect = rtu_chgflw_vld | rtu_flush | iu_red_vld`
+  //   —— 每次重定向都把 IBUF 清空 (ibuf.v 的 flush 分支), 要重新填才有货。
+  //   注意 `mispred_pend` 是多拍锁存 (RTU_flush.v:222), 而 `redirect` 是脉冲,
+  //   两者覆盖的窗口不同, 分开记。
+  integer perf_idle_red = 0, perf_idle_mpp = 0, perf_idle_oth = 0;
+  // ---- 误预测冻结窗拆解: 4.87 拍到底花在哪一段 ----
+  //   闸门就是 `A910_cpu.sv:968` 的 `mispred_hold_q` (它和 rtu_yy_xx_flush 一起
+  //   进 idu_hold, 决定 IDU 看不看得到 IFU 交来的指令)。窗口分四段:
+  //     ① 等冲刷脉冲   iu_chgflw_vld → rtu_yy_xx_flush
+  //     ② 冲刷机器跑完 + 开闸   → mispred_hold_q 落
+  //     ③ 重新取指     → 第一次 |push_mask (IBUF 被写)
+  //     ④ 进 IBUF 到交货 → 第一次 idu_inst0_vld
+  //   另外记一件最关键的事: **开闸那一拍 IBUF 里到底有没有货** ——
+  //     有 ⇒ 窗口完全由冲刷机器决定 (要减只能减冲刷)
+  //     没有 ⇒ 还要再加重新取指的时间
+  integer fz_n = 0, fz_s1 = 0, fz_s2 = 0, fz_s3 = 0, fz_s4 = 0, fz_tot = 0;
+  integer fz_gate_vs_ife = 0;      // 开闸时 IBUF 还没货的次数
+  integer fz_hist [17];
+  integer fz_st = 0, fz_cnt = 0, fz_ev = 0;
+  integer fz_in_f1 = 0, fz_blocked = 0;   // ① 里: 处于 F1 的拍数 / blocked 拍数
+  initial for (int k = 0; k <= 16; k++) fz_hist[k] = 0;
   // ---- AIQ 深挖: "满" 是深度不够还是排空到顶? ----
-  //   满(cnt==3, 4 项)的那些拍里:
+  //   满(cnt>=N-1, N = AIQ_ENTRY)的那些拍里:
   //     有就绪项 ⇒ 后面的项本该能发, 是**深度**卡住 ⇒ 加宽有用
   //     无就绪项 ⇒ 队头等操作数, 排空已到顶 ⇒ 加宽没用
+  //
+  // ⚠️ AIQ 深度从 RTL **实际信号**里量 ($bits 指到 aiq_entry_vld), 不走
+  //   `+define` —— 免得 TB 和 RTL 各拿一个数, 悄悄对不上还算出一张假表。
+  localparam int PERF_AIQ_N = $bits(dut.u_ct_idu_top.x_ct_idu_is_aiq.aiq_entry_vld);
   integer perf_aiq_occ_sum = 0, perf_aiq_issue = 0, perf_aiq_full = 0;
   integer perf_aiq_full_ready = 0, perf_aiq_full_noready = 0, perf_aiq_issue_full = 0;
   always @(posedge clk) begin
@@ -1699,9 +2312,55 @@ module tb_a910_difftest;
       perf_rob_sum = perf_rob_sum + dut.u_rtu.u_rob.occ;
       if (dut.u_rtu.u_rob.occ > perf_rob_max) perf_rob_max = dut.u_rtu.u_rob.occ;
       if (dut.u_rtu.u_rob.occ == 0) perf_rob_zero = perf_rob_zero + 1;
+      // ---- 冻结窗拆解的状态机 (与上面同拍, 在 perf 块里) ----
+      case (fz_st)
+        0: if (dut.iu_chgflw_vld) begin
+             fz_st = 1; fz_cnt = 0; fz_n = fz_n + 1;
+           end
+        1: begin fz_cnt = fz_cnt + 1; fz_ev = fz_ev + 1;
+             // ① 里有多少拍是在等 LSU 的"退休 store 数据到齐"(blocked)?
+             if (dut.u_rtu.u_flush.f1)       fz_in_f1  = fz_in_f1  + 1;
+             if (dut.u_rtu.u_flush.blocked)  fz_blocked = fz_blocked + 1;
+             if (dut.rtu_yy_xx_flush) begin fz_s1 = fz_s1 + fz_cnt; fz_st = 2; fz_cnt = 0; end
+           end
+        2: begin fz_cnt = fz_cnt + 1; fz_ev = fz_ev + 1;
+             if (!dut.mispred_hold_q) begin
+               fz_s2 = fz_s2 + fz_cnt;
+               if (!dut.idu_inst0_vld) fz_gate_vs_ife = fz_gate_vs_ife + 1;
+               fz_st = 3; fz_cnt = 0;
+             end
+           end
+        3: begin fz_cnt = fz_cnt + 1; fz_ev = fz_ev + 1;
+             if (|dut.u_rv32ifu2_top.push_mask) begin fz_s3 = fz_s3 + fz_cnt; fz_st = 4; fz_cnt = 0; end
+           end
+        4: begin fz_cnt = fz_cnt + 1; fz_ev = fz_ev + 1;
+             if (dut.idu_inst0_vld) begin
+               fz_s4 = fz_s4 + fz_cnt;
+               // fz_ev 在每段都累加了 ⇒ 这里就是四段之和 (本事件总窗口)
+               fz_tot = fz_tot + fz_ev;
+               if (fz_ev > 16) fz_hist[16] = fz_hist[16] + 1;
+               else            fz_hist[fz_ev] = fz_hist[fz_ev] + 1;
+               fz_ev = 0;
+               fz_st = 0;
+             end
+           end
+      endcase
+      if (dut.u_rv32ifu2_top.refill_req)  perf_ic_miss = perf_ic_miss + 1;
+      if (dut.u_rv32ifu2_top.refill_busy) perf_ic_busy = perf_ic_busy + 1;
       if (!(dut.idu_inst0_vld | dut.idu_inst1_vld | dut.idu_inst2_vld)) begin
         perf_fe_idle = perf_fe_idle + 1;
-        if (!dut.u_rtu.u_flush.fsm_busy) perf_fe_idle_nf = perf_fe_idle_nf + 1;
+        if (!dut.u_rtu.u_flush.fsm_busy) begin
+          perf_fe_idle_nf = perf_fe_idle_nf + 1;
+          // 这一拍取指地址在不在缓存里 (init_all 门控: 初始化扫描期间不算)
+          if (dut.u_rv32ifu2_top.init_all & ~dut.u_rv32ifu2_top.q_hit)
+            perf_ic_idle_miss = perf_ic_idle_miss + 1;
+          else begin
+            perf_ic_idle_hit  = perf_ic_idle_hit  + 1;
+            if (dut.u_rv32ifu2_top.redirect)      perf_idle_red = perf_idle_red + 1;
+            else if (dut.u_rtu.mispred_pend)      perf_idle_mpp = perf_idle_mpp + 1;
+            else                                  perf_idle_oth = perf_idle_oth + 1;
+          end
+        end
       end
       perf_n_disp = dut.u_rtu.u_preg.disp_vld[0] + dut.u_rtu.u_preg.disp_vld[1]
                   + dut.u_rtu.u_preg.disp_vld[2];
@@ -1716,7 +2375,11 @@ module tb_a910_difftest;
       // 有指令等着派的那一拍, 看看是谁挡的
       if (dut.u_ct_idu_top.x_ct_idu_is_ctrl.is_dis_inst0_vld) begin
         perf_blk_wait = perf_blk_wait + 1;
-        if (dut.rtu_idu_rob_full) perf_blk_rob = perf_blk_rob + 1;
+        if (dut.rtu_idu_rob_full) perf_blk_stall = perf_blk_stall + 1;   // 四项相或
+        if (dut.u_rtu.rob_full)     perf_blk_rob    = perf_blk_rob    + 1;
+        if (dut.u_rtu.csr_inflight) perf_blk_csr    = perf_blk_csr    + 1;
+        if (dut.u_rtu.flushing)     perf_blk_flushw = perf_blk_flushw + 1;
+        if (dut.u_rtu.mispred_pend) perf_blk_mppend = perf_blk_mppend + 1;
         if (dut.u_ct_idu_top.x_ct_idu_is_ctrl.ctrl_is_aiq_full_updt)  perf_blk_aiq  = perf_blk_aiq  + 1;
         if (dut.u_ct_idu_top.x_ct_idu_is_ctrl.ctrl_is_biq_full_updt)  perf_blk_biq  = perf_blk_biq  + 1;
         if (dut.u_ct_idu_top.x_ct_idu_is_ctrl.ctrl_is_lsiq_full_updt) perf_blk_lsiq = perf_blk_lsiq + 1;
@@ -1727,7 +2390,7 @@ module tb_a910_difftest;
       // ---- AIQ 深挖 ----
       perf_aiq_occ_sum = perf_aiq_occ_sum + dut.u_ct_idu_top.x_ct_idu_is_aiq.aiq_entry_cnt;
       if (dut.u_ct_idu_top.x_ct_idu_is_aiq.aiq_xx_issue_en) perf_aiq_issue = perf_aiq_issue + 1;
-      if (dut.u_ct_idu_top.x_ct_idu_is_aiq.aiq_entry_cnt >= 3'd3) begin
+      if (dut.u_ct_idu_top.x_ct_idu_is_aiq.aiq_entry_cnt >= (PERF_AIQ_N-1)) begin
         perf_aiq_full = perf_aiq_full + 1;
         if (|dut.u_ct_idu_top.x_ct_idu_is_aiq.aiq_entry_ready) perf_aiq_full_ready   = perf_aiq_full_ready   + 1;
         else                                                    perf_aiq_full_noready = perf_aiq_full_noready + 1;
@@ -1751,6 +2414,40 @@ module tb_a910_difftest;
       $display("  前端无货          : %0d 拍 (%.1f%%)  其中非冲刷冻结窗 %0d 拍 (%.1f%%)",
                perf_fe_idle, perf_cyc ? perf_fe_idle * 100.0 / perf_cyc : 0.0,
                perf_fe_idle_nf, perf_fe_idle_nf && perf_cyc ? perf_fe_idle_nf * 100.0 / perf_cyc : 0.0);
+      $display("  ---- 前端无货(非冻结窗)的成因 ----");
+      $display("    取指地址 miss  : %0d 拍 (%.1f%% of 非冻结窗)  ⇒ i-cache 问题",
+               perf_ic_idle_miss,
+               perf_fe_idle_nf ? perf_ic_idle_miss * 100.0 / perf_fe_idle_nf : 0.0);
+      $display("    取指地址命中   : %0d 拍 (%.1f%% of 非冻结窗)  ⇒ 不是缓存问题",
+               perf_ic_idle_hit,
+               perf_fe_idle_nf ? perf_ic_idle_hit * 100.0 / perf_fe_idle_nf : 0.0);
+      $display("      ├ 重定向当拍(IBUF 刚被清): %0d 拍", perf_idle_red);
+      $display("      ├ 未决重定向窗口        : %0d 拍", perf_idle_mpp);
+      $display("      └ 其它(真·供给不上)     : %0d 拍 (%.1f%% of 非冻结窗)",
+               perf_idle_oth,
+               perf_fe_idle_nf ? perf_idle_oth * 100.0 / perf_fe_idle_nf : 0.0);
+      $display("  ---- 误预测冻结窗拆解 (%0d 次) ----", fz_n);
+      if (fz_n > 0) begin
+        $display("    ① EX重定向→冲刷脉冲 : %0.2f 拍", fz_s1 * 1.0 / fz_n);
+        $display("       ├ 其中在 F1 等闸门   : %0.2f 拍/次", fz_in_f1 * 1.0 / fz_n);
+        $display("       └ 其中 blocked=1(LSU): %0.2f 拍/次", fz_blocked * 1.0 / fz_n);
+        $display("    ② 脉冲→开闸(冲刷跑完): %0.2f 拍", fz_s2 * 1.0 / fz_n);
+        $display("    ③ 开闸→IBUF 被写     : %0.2f 拍", fz_s3 * 1.0 / fz_n);
+        $display("    ④ 写入→交货          : %0.2f 拍", fz_s4 * 1.0 / fz_n);
+        $display("    合计                 : %0.2f 拍/次", fz_tot * 1.0 / fz_n);
+        $display("    ⚠️ 开闸时 IBUF 还没货 : %0d 次 (%.1f%%) ⇒ 这部分是重取慢, 其余是冲刷慢",
+                 fz_gate_vs_ife, fz_gate_vs_ife * 100.0 / fz_n);
+        $display("    窗口直方图 (拍:次数) :");
+        for (int k = 0; k <= 16; k = k + 1)
+          if (fz_hist[k] != 0)
+            $display("      %2d 拍 : %0d%s", k, fz_hist[k], (k == 16) ? "  (16+)" : "");
+      end
+      $display("  ---- i-cache 全局 ----");
+      $display("    miss 次数      : %0d 次  ⇒ 每 %0.1f 拍一次",
+               perf_ic_miss, perf_ic_miss ? perf_cyc * 1.0 / perf_ic_miss : 0.0);
+      $display("    回填在途       : %0d 拍 (%.1f%% of 全拍)  平均每次 miss %0.1f 拍",
+               perf_ic_busy, perf_cyc ? perf_ic_busy * 100.0 / perf_cyc : 0.0,
+               perf_ic_miss ? perf_ic_busy * 1.0 / perf_ic_miss : 0.0);
       $display("  派遣总数          : %0d  (%.3f 条/拍)", perf_disp_sum,
                perf_cyc ? perf_disp_sum * 1.0 / perf_cyc : 0.0);
       $display("    每拍派遣条数分布 : 1 条 %0d 拍 (%.1f%%) | 2 条 %0d 拍 (%.1f%%) | 3 条 %0d 拍 (%.1f%%)",
@@ -1762,8 +2459,17 @@ module tb_a910_difftest;
                perf_ret2, perf_cyc ? perf_ret2 * 100.0 / perf_cyc : 0.0,
                perf_ret3, perf_cyc ? perf_ret3 * 100.0 / perf_cyc : 0.0);
       $display("  ---- 有指令等着派时, 谁在挡 (共 %0d 拍) ----", perf_blk_wait);
-      $display("    ROB 满   : %8d 拍 (%5.1f%%)", perf_blk_rob,
-               perf_blk_wait ? perf_blk_rob  * 100.0 / perf_blk_wait : 0.0);
+      $display("    RTU 停   : %8d 拍 (%5.1f%%)   = rob_full|csr|冲刷窗|未决重定向",
+               perf_blk_stall,
+               perf_blk_wait ? perf_blk_stall * 100.0 / perf_blk_wait : 0.0);
+      $display("      ├ ROB 真满 (occ>=60): %8d 拍 (%5.1f%%)", perf_blk_rob,
+               perf_blk_wait ? perf_blk_rob    * 100.0 / perf_blk_wait : 0.0);
+      $display("      ├ CSR 在途          : %8d 拍 (%5.1f%%)", perf_blk_csr,
+               perf_blk_wait ? perf_blk_csr    * 100.0 / perf_blk_wait : 0.0);
+      $display("      ├ 冲刷恢复窗        : %8d 拍 (%5.1f%%)", perf_blk_flushw,
+               perf_blk_wait ? perf_blk_flushw * 100.0 / perf_blk_wait : 0.0);
+      $display("      └ 未决重定向        : %8d 拍 (%5.1f%%)", perf_blk_mppend,
+               perf_blk_wait ? perf_blk_mppend * 100.0 / perf_blk_wait : 0.0);
       $display("    AIQ 满   : %8d 拍 (%5.1f%%)", perf_blk_aiq,
                perf_blk_wait ? perf_blk_aiq  * 100.0 / perf_blk_wait : 0.0);
       $display("    BIQ 满   : %8d 拍 (%5.1f%%)", perf_blk_biq,
@@ -1776,11 +2482,12 @@ module tb_a910_difftest;
                perf_blk_wait ? perf_blk_mult * 100.0 / perf_blk_wait : 0.0);
       $display("    DIV 满   : %8d 拍 (%5.1f%%)", perf_blk_div,
                perf_blk_wait ? perf_blk_div  * 100.0 / perf_blk_wait : 0.0);
-      $display("  ---- AIQ 深挖 (4 项): 满 = 深度不够 还是 排空到顶? ----");
-      $display("    AIQ 占用均值   : %0.2f / 4", perf_cyc ? perf_aiq_occ_sum * 1.0 / perf_cyc : 0.0);
+      $display("  ---- AIQ 深挖 (%0d 项): 满 = 深度不够 还是 排空到顶? ----", PERF_AIQ_N);
+      $display("    AIQ 占用均值   : %0.2f / %0d",
+               perf_cyc ? perf_aiq_occ_sum * 1.0 / perf_cyc : 0.0, PERF_AIQ_N);
       $display("    AIQ 发射率     : %0d 次 (%.3f 次/拍)", perf_aiq_issue,
                perf_cyc ? perf_aiq_issue * 1.0 / perf_cyc : 0.0);
-      $display("    AIQ 满(cnt>=3) : %0d 拍 (%.1f%%)", perf_aiq_full,
+      $display("    AIQ 满(cnt>=N-1): %0d 拍 (%.1f%%)", perf_aiq_full,
                perf_cyc ? perf_aiq_full * 100.0 / perf_cyc : 0.0);
       $display("      其中有就绪项 : %0d 拍 (%.1f%% of 满)  ⇒ 加宽有用",
                perf_aiq_full_ready, perf_aiq_full ? perf_aiq_full_ready * 100.0 / perf_aiq_full : 0.0);

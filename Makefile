@@ -230,7 +230,7 @@ CROSS     ?= riscv32-unknown-elf-
 ASM_SRCS  := $(wildcard $(PWD)/asm/*.S)
 ASM_BINS  := $(patsubst $(PWD)/asm/%.S,$(PWD)/bin/%.bin,$(ASM_SRCS))
 
-.PHONY: all build run run-all verdi clean help coremark asm muldiv-unit rtu-unit rtu-lsu-unit rtu-adapter-unit rtu-expt-unit iu-alu-unit iu-beu-unit iu-md-unit rtu-subsys-elab biu-unit a910-elab a910-run a910-difftest a910-difftest-all a910-difftest-all_wave a910-difftest-wave verdi-difftest
+.PHONY: all build run run-all verdi clean help coremark asm muldiv-unit rtu-unit rtu-lsu-unit rtu-adapter-unit rtu-expt-unit iu-alu-unit iu-beu-unit iu-md-unit rtu-subsys-elab biu-unit a910-elab a910-run a910-difftest a910-difftest-all a910-difftest-all_wave a910-difftest-wave verdi-difftest aiq-equiv biq-equiv
 
 asm: $(ASM_BINS)
 
@@ -874,6 +874,68 @@ $(A910_DT_SIMV): $(A910_SRC) $(A910_DT_TB) $(DPIC) $(CSRC_GM)
 # ⚠️ npu_loop / npu_smoke: NPU 还在做 (2026-10-14: npu_loop 第 6 条退休就失配),
 #    先排除, 免得整套总表被两条在做中的用例染红。NPU 收尾后从这行删掉即可。
 A910_DT_SKIP ?= coremark start peri trap npu_loop npu_smoke
+
+# ---------------------------------------------------------------------------
+# AIQ 参数化等价自检 (2026-10-16): 新版 ct_idu_is_aiq (generate 通用版, AIQ_ENTRY
+#   参数化) 与**冻结的原版** tb/a910/ref/*_ref.sv 逐拍对拍。
+#
+# 【为什么单独一个台】ct_idu_is_aiq 原来是逐表项写死的 4 项, 被改写成 generate
+#   展开的任意 N 版。difftest 只能证明"这颗核跑对了", 证明不了"和改之前一模一样";
+#   而这个文件是**同事地盘上的**, 得拿得出逐拍等价的证据。
+#   台子开环喂同一串激励 (灌满/排空/随机/冲刷四段 + 随机写回), 逐拍比全部输出
+#   (issue_en / read_data / full_updt / 1_left_updt) 和全部内部状态
+#   (cnt / vld / ready / issue_en / 每个表项的 agevec), **第一处分歧就停并打印
+#   现场**, 退出码非 0。
+#
+#   make aiq-equiv
+#
+# ⚠️ 参考版是 tb/a910/ref/ 里**冻结的两份文件**, 不跟随 HEAD —— 详见那里的说明。
+# ⚠️ 独立 BUILD_DIR (别和 obj_a910*/ 共用)。
+# ---------------------------------------------------------------------------
+AIQ_EQ_BUILD := $(PWD)/obj_aiq_equiv
+AIQ_EQ_SIMV  := $(AIQ_EQ_BUILD)/simv
+AIQ_EQ_REF   := $(PWD)/tb/a910/ref/ct_idu_is_aiq_ref.sv $(PWD)/tb/a910/ref/ct_idu_is_aiq_entry_ref.sv
+AIQ_EQ_NEW   := $(PWD)/mySoC/idu_c910/rtl/ct_idu_is_aiq.sv $(PWD)/mySoC/idu_c910/rtl/ct_idu_is_aiq_entry.sv
+
+aiq-equiv: $(AIQ_EQ_SIMV)
+	@$(AIQ_EQ_SIMV) -no_save -exitstatus
+#   ⚠️ `-exitstatus` 不能省: 少了它 $fatal 也不影响 simv 退出码, 对拍红了 make 还
+#      是绿的 (2026-10-16 变异自检时抓到 —— 故意把 1_left 的判据改成 AIQ_ENTRY-2,
+#      台子报了 MISMATCH 但退出码仍是 0)。
+
+$(AIQ_EQ_SIMV): $(PWD)/tb/a910/tb_aiq_equiv.sv $(AIQ_EQ_REF) $(AIQ_EQ_NEW) \
+                $(PWD)/mySoC/idu_c910/rtl/ct_idu_dep_reg_entry.sv
+	@mkdir -p $(AIQ_EQ_BUILD)
+	$(VCS) $(VCS_FLAGS) -top tb_aiq_equiv -o $(AIQ_EQ_SIMV) -Mdir=$(AIQ_EQ_BUILD)/csrc \
+	  -l $(AIQ_EQ_BUILD)/compile.log \
+	  $(PWD)/tb/a910/tb_aiq_equiv.sv $(AIQ_EQ_REF) $(AIQ_EQ_NEW) \
+	  $(PWD)/mySoC/idu_c910/rtl/ct_idu_dep_reg_entry.sv
+
+# ---------------------------------------------------------------------------
+# BIQ 参数化等价自检 (2026-10-16): 与 aiq-equiv 同一套做法, 换成 BIQ。
+#   【为什么也要有】参照测量发现 C910 的 BIQ 满只占 0.0% (它 12 项), 而我们 4 项
+#   时 11.8%、AIQ 加宽后升到 17.0% —— 是唯一一项比参照设计差一个数量级的地方。
+#   台子把新版 ct_idu_is_biq(BIQ_ENTRY=4) 与**冻结的原版**逐拍对拍, 第一处分歧
+#   就停并打印现场, 退出码非 0。
+#   ⚠️ 参考版是 tb/a910/ref/ct_idu_is_biq{,_entry}_ref.sv, 不跟随 HEAD。
+#
+#   make biq-equiv
+# ---------------------------------------------------------------------------
+BIQ_EQ_BUILD := $(PWD)/obj_biq_equiv
+BIQ_EQ_SIMV  := $(BIQ_EQ_BUILD)/simv
+BIQ_EQ_REF   := $(PWD)/tb/a910/ref/ct_idu_is_biq_ref.sv $(PWD)/tb/a910/ref/ct_idu_is_biq_entry_ref.sv
+BIQ_EQ_NEW   := $(PWD)/mySoC/idu_c910/rtl/ct_idu_is_biq.sv $(PWD)/mySoC/idu_c910/rtl/ct_idu_is_biq_entry.sv
+
+biq-equiv: $(BIQ_EQ_SIMV)
+	@$(BIQ_EQ_SIMV) -no_save -exitstatus
+
+$(BIQ_EQ_SIMV): $(PWD)/tb/a910/tb_biq_equiv.sv $(BIQ_EQ_REF) $(BIQ_EQ_NEW) \
+                $(PWD)/mySoC/idu_c910/rtl/ct_idu_dep_reg_entry.sv
+	@mkdir -p $(BIQ_EQ_BUILD)
+	$(VCS) $(VCS_FLAGS) -top tb_biq_equiv -o $(BIQ_EQ_SIMV) -Mdir=$(BIQ_EQ_BUILD)/csrc \
+	  -l $(BIQ_EQ_BUILD)/compile.log \
+	  $(PWD)/tb/a910/tb_biq_equiv.sv $(BIQ_EQ_REF) $(BIQ_EQ_NEW) \
+	  $(PWD)/mySoC/idu_c910/rtl/ct_idu_dep_reg_entry.sv
 
 a910-difftest-all: $(A910_DT_SIMV)
 	@mkdir -p /tmp/a910_dt

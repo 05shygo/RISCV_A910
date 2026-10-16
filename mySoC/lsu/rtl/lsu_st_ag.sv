@@ -77,6 +77,26 @@ module ct_lsu_st_ag #(
     //   ⚠️ 原来是**整段注释掉**的 (连输出口一起悬空 → Z → `lsu_idu_imme_wakeup` 全 X),
     //   2026-10-15 先补了 restart_entry 那一段, 这一项 (取反) 是第二步。
     assign st_ag_stall_vld = st_ag_dcache_stall_req && !st_ag_stall_mask;
+
+    // ⚠️⚠️ 2026-10-16 补: **不能用 `st_ag_stall_vld`**, 原版是"mask 之前"的 restart 请求。
+    //   原版 ct_lsu_st_ag.v:1331-1346
+    //      st_ag_stall_restart = cross_page_str_imme_stall_req || st_ag_dcache_stall_req
+    //                            || st_ag_mmu_stall_req || st_ag_atomic_no_cmit_restart_req;
+    //      st_ag_dc_inst_vld   = st_ag_inst_vld && !st_ag_stall_restart;
+    //   本仓把 cross_page / mmu / atomic 三项连端口一起砍了 (本模块没有那几条通路),
+    //   所以这里只剩 dcache 一项 —— 但**同样不能取反 mask**。
+    //   为什么: mask=1 (RF 那条 store 比 AG 里那条**更老**) 时 AG 要"让更老的走", 具体是
+    //   两个动作**必须成对**: ①`st_ag_stall_vld=0` 把 AG 寄存器让给那条更老的 (手里更年轻
+    //   的那条就此**被挤掉、永远到不了 DC**); ②`st_ag_stall_restart_entry` 选 `st_ag_lsid`
+    //   (被挤掉那条) 发 wakeup, 让它回 LSIQ 重新发射。
+    //   本仓原来 ② 对了、① 的 DC 口却写成 `!st_ag_stall_vld` ⇒ mask=1 那拍**被挤掉的那条
+    //   照样往 DC 走**, 于是同一条 store **既在 DC 建了一张 SQ 表项、又被 wakeup 重新发射
+    //   再建一张** —— 双派发。SDIQ 表项只服务一份数据, 抢不上就成孤儿 (挂死)。
+    //   实测 (-O3 flags 版 iid=109@0xf75c): T260175 mask=1 ⇒ T260176 建 SQ#1 且同日
+    //   entry6 被 wakeup ⇒ T260179 又建 SQ#2, SDIQ entry3 已弹 ⇒ `notdvld` 恒 1 ⇒
+    //   RTU_flush 的 WAIT 出不去。改回"mask 之前"后两份 -O3 镜像都能跑到 ecall。
+    //   注: mask=0 那拍 `stall_vld == stall_restart`, 两种写法**逐拍等价** ⇒ 只动 mask=1 那条路。
+    assign st_ag_stall_restart = st_ag_dcache_stall_req;
    // assign st_ag_stall_restart = st_ag_dcache_stall_req && st_ag_stall_mask;
 
     always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
@@ -321,7 +341,8 @@ assign st_ag_expt = !st_ag_align;
     //==========================================================
     //        Generate to DC stage signal
     //==========================================================
-    assign st_ag_dc_inst_vld = st_ag_inst_vld && !st_ag_stall_vld;
+    // ⚠️ 用 `!st_ag_stall_restart` (mask 之前), 不是 `!st_ag_stall_vld` —— 见上面那段注释。
+    assign st_ag_dc_inst_vld = st_ag_inst_vld && !st_ag_stall_restart;
 
     assign st_ag_dc_addr0[31:0] = dcache_arb_st_ag_borrow_addr_vld
         ? dcache_arb_st_ag_addr[31:0]

@@ -235,6 +235,7 @@ module ct_lsu_sq_entry #(
     logic                  sq_entry_same_addr_newest_clr;
     logic                  sq_entry_sdid_hit;
     logic                  sq_entry_settle_data_hit;
+    logic                  sq_entry_dcache_miss_up_vld;
     logic                  sq_entry_st_da_info_set;
     logic                  sq_entry_st_dc_bv_do_hit;
     logic                  sq_entry_st_dc_create_age_vec;
@@ -486,13 +487,34 @@ module ct_lsu_sq_entry #(
         .origin_dcache_dirty    (sq_entry_dcache_dirty             ),
         .origin_dcache_valid    (sq_entry_dcache_valid             ),
         .origin_dcache_way      (sq_entry_dcache_way               ),
+        .compare_dcwp_miss_up_vld(sq_entry_dcache_miss_up_vld      ),
         .update_dcache_dirty    (sq_entry_update_dcache_dirty      ),
         .update_dcache_valid    (sq_entry_update_dcache_valid      ),
         .update_dcache_way      (sq_entry_update_dcache_way        )
     );
 
-    assign sq_entry_dcache_update_vld = sq_entry_dcache_update_vld_unmask &&
-                                        sq_entry_vld && sq_entry_dcache_info_vld;
+    // ⚠️ 2026-10-16 修 (coremark_i1 -O3 第 47452 条退休失配的真凶):
+    //    原来这里只有 `&& sq_entry_dcache_info_vld` 一道闸。而 `sq_entry_dcache_info_vld`
+    //    要到 `st_da_info_set` 的**下一拍**才为 1 ⇒ 建表/首次采信息那一拍, 本次更新被吞掉。
+    //    正好落在这个窗口上的现场 (T56987, 逐拍实测):
+    //      T56986  空行在 LFB 手里回填 set21: dirty-wr wen_b=01100 din=10101 (way0 valid<-1)
+    //      T56987  store iid=119 addr=0xfaa0 在 st_da, 读到的还是**回填前**的阵列
+    //              (dirty 阵列 read-first) ⇒ 判 miss, 记下 dc_vld=0
+    //              —— 而这一拍 info_vld=0 ⇒ 回填这份更新被闸掉, 表项**永远停在 miss**
+    //      T57006  WMB 表项按 dc_vld=0 走 BIU 直写内存 (T57008 落 0x27)
+    //      同时   dcache 里那条线是回填来的**旧值 0x0016**, 之后再没人改它
+    //      ⇒ 后续 load 命中 dcache 读到 0x0016 (黄金模型 0x0027) = 丢写。
+    //    治法: 建表那一拍 (`st_da_info_set`) 若 dcache 写口正在把**本行**回填进来
+    //    (`sq_entry_dcache_miss_up_vld`, 已比过 tag+set+way), 那份信息比 st_da 的回读新,
+    //    必须让它落地。其余情况照旧以 st_da 为准 —— **不能**无条件放宽成 `|| st_da_info_set`,
+    //    因为建表拍 `origin_dcache_valid/way` 还是上一个住户的残值, 会把错路号写进表项。
+    //   ⚠️ 括号不能省: Verilog 里 `|` 的优先级**高于** `&&` (按位运算符整体优先于逻辑与),
+    //      写成 `a && b | c && d` 会被解析成 `a && (b|c) && d` —— 把 `st_da_info_set`
+    //      变成了**所有**更新的前提 ⇒ store 离开 st_da 之后就再也学不到回填了
+    //      (实测: 加了省括号版之后 0xfa8c 那笔反而被判 miss 走内存, dcache 留在旧值)。
+    assign sq_entry_dcache_update_vld = sq_entry_vld &&
+                                        (  (sq_entry_dcache_update_vld_unmask && sq_entry_dcache_info_vld)
+                                         | (sq_entry_dcache_miss_up_vld && sq_entry_st_da_info_set) );
 
     //==========================================================
     //                  Maintain Age Vector

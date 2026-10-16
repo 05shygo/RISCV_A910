@@ -1,4 +1,14 @@
-module ct_idu_is_biq_entry (
+// 队列深度: 编译期可用 `+define+BIQ_ENTRY=N` 覆盖, 默认 8 (C910 原版 12 项, 见
+//   ct_idu_is_biq.sv 文件头)。⚠️ 必须是 ANSI 参数口 (#( ... )): 下面的
+//   x_*_agevec 端口位宽要用到 BIQ_ENTRY, 而函数体里声明的 parameter 在 VCS 看来
+//   "还没声明" (Error-[IND], AIQ 那边踩过)。父模块会显式传参下来。
+module ct_idu_is_biq_entry #(
+`ifdef BIQ_ENTRY
+  parameter int BIQ_ENTRY = `BIQ_ENTRY
+`else
+  parameter int BIQ_ENTRY = 8
+`endif
+) (
     input  logic         cpurst_b,
     input  logic         ctrl_biq_rf_pop_vld,
     input  logic         forever_cpuclk,
@@ -11,13 +21,16 @@ module ct_idu_is_biq_entry (
     input  logic [5:0]   lsu_idu_wb_pipe3_wb_preg_dupx,
     input  logic         lsu_idu_wb_pipe3_wb_preg_vld_dupx,
     input  logic         rtu_yy_xx_flush,
-    input  logic [2:0]   x_create_agevec,
+    // 2026-10-16 参数化 (BIQ_ENTRY 项深): 年龄向量改用 **BIQ_ENTRY 位自屏蔽**
+    //   约定 (位 i ↔ 表项 i, 自己那一位恒 0) —— 与 ct_idu_is_aiq_entry 一致,
+    //   两种约定在 N=4 时逐位等价。好处: older_ready = |(agevec & ready) 一步到位。
+    input  logic [BIQ_ENTRY-1:0] x_create_agevec,
     input  logic [151:0] x_create_data,
     input  logic         x_create_en,
     input  logic         x_pop_cur_entry,
-    input  logic [2:0]   x_pop_other_entry,
+    input  logic [BIQ_ENTRY-1:0] x_pop_other_entry,  // 自己那一位 don't care (agevec 自屏蔽)
     output logic         x_rdy,
-    output logic [2:0]   x_agevec,
+    output logic [BIQ_ENTRY-1:0] x_agevec,
     output logic [151:0] x_read_data,
     output logic         x_vld
 );
@@ -41,7 +54,7 @@ parameter BIQ_OPCODE            = 31;
     //                    Internal Signals
     //==========================================================
     logic         vld;
-    logic [2:0]   agevec;
+    logic [BIQ_ENTRY-1:0] agevec;
     logic [31:0]  opcode;
     logic [6:0]   iid;
     logic         src0_vld;
@@ -98,17 +111,17 @@ parameter BIQ_OPCODE            = 31;
     //==========================================================
     //                       Age Vector
     //==========================================================
-    assign x_agevec[2:0] = agevec[2:0];
+    assign x_agevec[BIQ_ENTRY-1:0] = agevec[BIQ_ENTRY-1:0];
 
     always_ff @(posedge entry_clk or negedge cpurst_b) begin
         if (!cpurst_b)
-            agevec[2:0] <= 3'b0;
+            agevec[BIQ_ENTRY-1:0] <= {BIQ_ENTRY{1'b0}};
         else if (x_create_en)
-            agevec[2:0] <= x_create_agevec[2:0];
+            agevec[BIQ_ENTRY-1:0] <= x_create_agevec[BIQ_ENTRY-1:0];
         else if (ctrl_biq_rf_pop_vld)
-            agevec[2:0] <= agevec[2:0] & ~x_pop_other_entry[2:0];
+            agevec[BIQ_ENTRY-1:0] <= agevec[BIQ_ENTRY-1:0] & ~x_pop_other_entry[BIQ_ENTRY-1:0];
         else
-            agevec[2:0] <= agevec[2:0];
+            agevec[BIQ_ENTRY-1:0] <= agevec[BIQ_ENTRY-1:0];
     end
 
     //==========================================================

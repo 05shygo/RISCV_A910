@@ -28,6 +28,9 @@ module lsu_dcache_info_update #(
 
     output logic        compare_dcwp_hit_idx,
     output logic        compare_dcwp_update_vld,
+    // 【2026-10-16 新增】只暴露 "本拍 dcache 写口正在把**本地址这一行**回填进来" 这一支
+    //   (miss 路径)。给 SQ 表项在 `st_da_info_set` 那一拍用 —— 见 lsu_sq_entry.sv 的长注。
+    output logic        compare_dcwp_miss_up_vld,
     output logic        update_dcache_dirty,
     output logic        update_dcache_valid,
     output logic        update_dcache_way
@@ -45,7 +48,6 @@ module lsu_dcache_info_update #(
     logic        compare_dcwp_miss_dirty;
     logic [1:0]  compare_dcwp_miss_dirty_din;
     logic        compare_dcwp_miss_up_pre;
-    logic        compare_dcwp_miss_up_vld;
     logic        compare_dcwp_miss_up_way0;
     logic        compare_dcwp_miss_up_way0_sel;
     logic        compare_dcwp_miss_up_way1;
@@ -132,8 +134,9 @@ module lsu_dcache_info_update #(
         ? dcache_dirty_din[3:2]
         : dcache_dirty_din[1:0];
 
+    // 「本行的线**正被回填进 dcache**」—— 出口给 SQ 表项的建表拍用 (见输出端口注释)。
     assign compare_dcwp_miss_up_vld = compare_dcwp_miss_up_way0
-        || compare_dcwp_miss_up_way1;
+                                      || compare_dcwp_miss_up_way1;
 
     assign compare_dcwp_miss_dirty = compare_dcwp_miss_dirty_din[1];
     assign compare_dcwp_miss_valid = compare_dcwp_miss_dirty_din[0];

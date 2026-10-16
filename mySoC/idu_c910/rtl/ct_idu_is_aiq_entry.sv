@@ -1,4 +1,14 @@
-module ct_idu_is_aiq_entry (
+// 队列深度: 编译期可用 `+define+AIQ_ENTRY=N` 覆盖, 默认 8 (C910 原版每 bank 8 项)。
+// ⚠️ 必须是 **ANSI 参数口** (#( ... )): 下面的 x_*_agevec 端口位宽要用到 AIQ_ENTRY,
+//   而函数体里声明的 parameter 在 VCS 看来"还没声明" (Error-[IND])。
+// 父模块 ct_idu_is_aiq 会显式传参下来, 这里的默认值只在被单独例化时才起作用。
+module ct_idu_is_aiq_entry #(
+`ifdef AIQ_ENTRY
+  parameter int AIQ_ENTRY = `AIQ_ENTRY
+`else
+  parameter int AIQ_ENTRY = 8
+`endif
+) (
     input  logic         cpurst_b,
     input  logic         ctrl_aiq0_rf_pop_vld,
     input  logic         forever_cpuclk,
@@ -11,13 +21,22 @@ module ct_idu_is_aiq_entry (
     input  logic [5:0]   lsu_idu_wb_pipe3_wb_preg_dupx,
     input  logic         lsu_idu_wb_pipe3_wb_preg_vld_dupx,
     input  logic         rtu_yy_xx_flush,
-    input  logic [2:0]   x_create_agevec,
+    //----------------------------------------------------------------------
+    // 2026-10-16 参数化 (AIQ_ENTRY 项深): 年龄向量 agevec 的编码换成
+    //   **AIQ_ENTRY 位自屏蔽**约定 —— 位 i 对应表项 i, 且自己那一位恒 0。
+    //   原版是 N-1 位紧凑约定 ("除自己外, 按表项序号降序"), 4 项时正好 3 位,
+    //   所以写死成 [2:0]; 泛化到任意 N 要么每项反复切片, 要么像这里自屏蔽。
+    //   两种约定在 N=4 时逐位等价: 原版 entry i 的第 j 位 ↔ 本版"除 i 外第 j 个"。
+    //   好处: older_ready = |(agevec & ready) 一步到位 —— 自己那一位是 0,
+    //   不会把自己算成自己的年长项。
+    //----------------------------------------------------------------------
+    input  logic [AIQ_ENTRY-1:0] x_create_agevec,
     input  logic [94:0]  x_create_data,      // 64 → 96 (2026-10-08: 加 PC 字段)
     input  logic         x_create_en,
     input  logic         x_pop_cur_entry,
-    input  logic [2:0]   x_pop_other_entry,
+    input  logic [AIQ_ENTRY-1:0] x_pop_other_entry,  // 自己那一位 don't care (agevec 自屏蔽)
     output logic         x_rdy,
-    output logic [2:0]   x_agevec,
+    output logic [AIQ_ENTRY-1:0] x_agevec,
     output logic [94:0]  x_read_data,   // 64 → 96
     output logic         x_vld
 );
@@ -41,7 +60,7 @@ parameter AIQ_OPCODE            = 31;
     //                    Internal Signals
     //==========================================================
     logic         vld;
-    logic [2:0]   agevec;
+    logic [AIQ_ENTRY-1:0] agevec;
     logic [31:0]  opcode;
     logic [31:0]  pc;         // 2026-10-08 新增: AUIPC 要用
     logic [6:0]   iid;
@@ -92,17 +111,17 @@ parameter AIQ_OPCODE            = 31;
     //==========================================================
     //                       Age Vector
     //==========================================================
-    assign x_agevec[2:0] = agevec[2:0];
+    assign x_agevec[AIQ_ENTRY-1:0] = agevec[AIQ_ENTRY-1:0];
 
     always_ff @(posedge entry_clk or negedge cpurst_b) begin
         if (!cpurst_b)
-            agevec[2:0] <= 3'b0;
+            agevec[AIQ_ENTRY-1:0] <= {AIQ_ENTRY{1'b0}};
         else if (x_create_en)
-            agevec[2:0] <= x_create_agevec[2:0];
+            agevec[AIQ_ENTRY-1:0] <= x_create_agevec[AIQ_ENTRY-1:0];
         else if (ctrl_aiq0_rf_pop_vld)
-            agevec[2:0] <= agevec[2:0] & ~x_pop_other_entry[2:0];
+            agevec[AIQ_ENTRY-1:0] <= agevec[AIQ_ENTRY-1:0] & ~x_pop_other_entry[AIQ_ENTRY-1:0];
         else
-            agevec[2:0] <= agevec[2:0];
+            agevec[AIQ_ENTRY-1:0] <= agevec[AIQ_ENTRY-1:0];
     end
 
     //==========================================================

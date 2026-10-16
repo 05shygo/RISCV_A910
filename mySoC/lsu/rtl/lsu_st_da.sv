@@ -100,6 +100,12 @@ logic [LSIQ_ENTRY-1:0] st_da_lsid;
 logic         st_da_dcwp_dc_hit_idx;
 logic [4:0]   st_da_dcwp_dc_dirty_din;
 logic [4:0]   st_da_dcwp_dc_dirty_wen;
+logic [ST_TAG_ARRAY_WIDTH-1:0] st_da_dcwp_dc_tag;   // 【2026-10-16 新增】写口那一拍的 tag 数据
+logic [1:0]                    st_da_dcwp_dc_tag_wen; // 同上: 按路低有效
+logic         st_da_dcwp_valid0;
+logic         st_da_dcwp_valid1;
+logic         st_da_dcwp_tag0_hit;
+logic         st_da_dcwp_tag1_hit;
 
 logic         st_da_dcache_info_vld;
 logic         st_da_dcache_valid0;
@@ -201,6 +207,9 @@ always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
     st_da_dcwp_dc_hit_idx <= st_dc_dcwp_hit_idx;
     st_da_dcwp_dc_dirty_din <= dcache_dirty_din;
     st_da_dcwp_dc_dirty_wen <= dcache_dirty_wen;
+    // 同上: 把"写口那一拍"的 tag 数据/写使能一起带下来 (与上面几根严格同拍)
+    st_da_dcwp_dc_tag <= dcache_tag_din;
+    st_da_dcwp_dc_tag_wen <= dcache_tag_wen;
   end
 end
 //==========================================================
@@ -211,8 +220,36 @@ assign st_da_dcache_info_vld = st_da_inst_vld || st_da_borrow_vld;
 assign st_da_dcache_valid0 = st_da_dcache_dirty_array[0] && st_da_dcache_info_vld;
 assign st_da_dcache_valid1 = st_da_dcache_dirty_array[2] && st_da_dcache_info_vld;
 
-assign st_da_hit_way0 = st_da_dcache_valid0 && st_da_tag0_hit;
-assign st_da_hit_way1 = st_da_dcache_valid1 && st_da_tag1_hit;
+// ⚠️ 2026-10-16 修 (coremark_i1 -O3 store 丢写的真凶):
+//    tag/dirty 阵列是**单口同步 SRAM**, 本级的回读其实是"上一拍地址"的内容 —— 而 AG 级
+//    在**再上一拍**就把 index 送进去了 (ag_dcache_arb_st_dirty_idx = st_ag_addr[9:5])。
+//    ⇒ 只要 LFB 的回填**正好落在 store 还在 st_dc 的那一拍**, 本次回读拿到的就是回填**之前**
+//    的阵列 (read-first): 判 miss。原本已有的 `st_dc_dcwp_hit_idx` 旁路只把 dirty 位补了
+//    一刀, **命中判据本身没补** ⇒ 表项记下 dc_vld=0 ⇒ 这笔 store 被判"线不在 dcache"直写
+//    内存, 而回填已经把**旧值**铺进了 dcache ⇒ 之后的 load 命中读旧值 = 丢写。
+//    实测 (T56986/56987, 逐拍):
+//      T56986  store iid=119 addr=0xfaa0 在 st_dc; 同拍 LFB 回填 set21 (way0 valid<-1)
+//      T56987  st_da 回读到回填前的阵列 ⇒ hit=0; 而 dcache 里那条线**已经有效**了
+//      T57006  WMB 表项按 dc_vld=0 走 BIU 直写内存
+//      T57441  后续 load 命中 dcache 读到回填来的旧值 0x0016 (黄金模型 0x0027)
+//    治法: 命中判据也吃这刀旁路 —— 写口那一拍若把**本行**写进 dcache (tag 比过、valid 位由
+//    写口的 din/wen 给出), 就当命中。加的这一支是**纯增量**: 阵列回读命中时行为不变。
+assign st_da_dcwp_valid0 = st_da_dcwp_dc_dirty_wen[0] && st_da_dcwp_dc_dirty_din[0];
+assign st_da_dcwp_valid1 = st_da_dcwp_dc_dirty_wen[2] && st_da_dcwp_dc_dirty_din[2];
+
+assign st_da_dcwp_tag0_hit = st_da_dcwp_dc_hit_idx
+                             && st_da_dcwp_dc_tag_wen[0]
+                             && (st_da_addr0[31:TAG_LSB] == st_da_dcwp_dc_tag[TAG_WIDTH-1:0]);
+assign st_da_dcwp_tag1_hit = st_da_dcwp_dc_hit_idx
+                             && st_da_dcwp_dc_tag_wen[1]
+                             && (st_da_addr0[31:TAG_LSB] == st_da_dcwp_dc_tag[ST_TAG_ARRAY_WIDTH-1:TAG_WIDTH]);
+
+assign st_da_hit_way0 = st_da_dcache_info_vld
+                        && (  st_da_dcache_valid0 && st_da_tag0_hit
+                            || st_da_dcwp_valid0 && st_da_dcwp_tag0_hit);
+assign st_da_hit_way1 = st_da_dcache_info_vld
+                        && (  st_da_dcache_valid1 && st_da_tag1_hit
+                            || st_da_dcwp_valid1 && st_da_dcwp_tag1_hit);
 
 assign st_da_dcache_hit = st_da_hit_way0 || st_da_hit_way1;
 assign st_da_dcache_miss = !st_da_dcache_hit;

@@ -1,3 +1,38 @@
+//=============================================================================
+// ct_idu_is_aiq —— ALU 发射队列 (Issue Queue for ALU, 单发射口)
+//
+// 2026-10-16 参数化: 新增 AIQ_ENTRY (深度), 编译期可用 `+define+AIQ_ENTRY=N`
+//   覆盖, 默认 8。
+//
+// 【为什么参数化】移植时把发射队列砍小了 —— C910 原版 AIQ 是"两 bank × 8 项",
+//   本树只剩一份 4 项 (注释里还留着 entry 0~7 的痕迹, 只有 aiq_entry_vld 被砍成
+//   [3:0])。2026-10-16 的诊断: AIQ 满占了"有指令等着派"的 39.8%, 而满的那些拍里
+//   68.2% **队里确实有就绪项发不出去** ⇒ 深度是瓶颈, 不是 ALU 端口排空到顶。
+//   做成参数才能在同一份 RTL 下扫 4/8/16 三档, 而不是维护三份源码。
+//
+// 【结构】原版逐表项写死 (entry0..entry3 各写一遍, 连 create 优先级编码都是手写的
+//   casez), 这里换成 generate 循环, 任意 N 自动展开。语义逐条对齐原版, 两处刻意
+//   的改动:
+//
+//   1) 年龄向量 (agevec) 用 **AIQ_ENTRY 位自屏蔽**约定 (位 i ↔ 表项 i, 自己那一位
+//      恒 0), 而不是原版的 N-1 位紧凑约定。原版 entry i 的 agevec 是"除自己外按
+//      序号降序"的 N-1 位, 泛化要反复切片; 自屏蔽约定下
+//          older_ready[i] = |(agevec[i] & ready)   // 自己那一位是 0, 不会自锁
+//      一步到位。两种约定在 N=4 时逐位等价。
+//
+//   2) full / 1_left 判据改写成"下一拍占用 R = cnt + create - pop"再和
+//      AIQ_ENTRY / AIQ_ENTRY-1 比较, 不再枚举项。原版 N=4 的六个枚举项与
+//      R==4 / R==3 **逐项等价** (可达输入空间下; 见下一条)。
+//      注意 create1_en ⟹ create0_en 恒成立 (ct_idu_ir_ctrl.sv:456
+//      `al_2_aiq_inst` 蕴含 `al_1_aiq_inst`), 且两者同被 ctrl_is_dis_stall 闸住
+//      ⇒ "create1 独占"这一支不可达, 原版那组枚举项里唯一的歧义分支也就不可达。
+//
+// 另外 `aiq_entry_create_sel` 在原版是**死代码** (赋值了但没有任何读者), 已删。
+//
+// 【时序提醒】issue 数据通路选择器在 N=16 时是 16 级优先级链 (原版注释说明要选
+//   "最老的就绪项")。这里保持原语义不变; 若 16 档 Fmax 掉下来, 因为 issue_en
+//   结构上就是 one-hot, 可以直接改成 one-hot 或-归约 (扁平成 1 级 LUT + OR 树)。
+//=============================================================================
 module ct_idu_is_aiq (
   //----------------------------------------------------------------------------
   // Outputs
@@ -38,443 +73,205 @@ parameter AIQ_SRC1_VLD          = 33;
 parameter AIQ_SRC0_VLD          = 32;
 parameter AIQ_OPCODE            = 31;
 
+//----------------------------------------------------------------------------
+// 队列深度: 编译期可用 `+define+AIQ_ENTRY=N` 覆盖, 默认 8 (C910 原版每 bank 8 项)。
+//   N=4 时与参数化之前的树逐拍等价 (回归口径 `make a910-difftest-all` 46 PASS)。
+//   注意: ctrl 侧 ctrl_aiq_create0_sel/create1_sel 是 2 位 (最多 3 条派遣车道),
+//   与本参数无关 —— 那是"派哪条车道去 AIQ", 不是"进哪个表项"。
+//----------------------------------------------------------------------------
+`ifdef AIQ_ENTRY
+  parameter int AIQ_ENTRY = `AIQ_ENTRY;
+`else
+  parameter int AIQ_ENTRY = 8;
+`endif
+
+localparam int AIQ_CNT_W = $clog2(AIQ_ENTRY + 1);   // 计数位宽: 4→3, 8→4, 16→5
+
     //----------------------------------------------------------------------------
     // Internal signals
     //----------------------------------------------------------------------------
-    logic [2:0]  aiq_entry_cnt;
-    logic [2:0]  aiq_entry_cnt_create;
-    logic        aiq_entry_cnt_updt_vld;
-    logic [2:0]  aiq_entry_cnt_updt_val;
-    logic        aiq_entry_cnt_create_2;
-    logic        aiq_entry_cnt_create_1;
-    logic        aiq_entry_cnt_create_0;
-    logic        aiq_entry_cnt_pop_1;
-    logic        aiq_entry_cnt_pop_0;
+    logic [AIQ_CNT_W-1:0] aiq_entry_cnt;
+    logic [AIQ_CNT_W+1:0] aiq_entry_cnt_next;      // 多两位: 下一拍占用 (cnt+2-pop 不溢出)
+    logic [1:0]           aiq_entry_cnt_create;
+    logic                 aiq_entry_cnt_updt_vld;
 
-    logic [3:0]  aiq_entry_vld;
-    logic        aiq_entry0_vld;
-    logic        aiq_entry1_vld;
-    logic        aiq_entry2_vld;
-    logic        aiq_entry3_vld;
+    logic [AIQ_ENTRY-1:0] aiq_entry_vld;
+    logic [AIQ_ENTRY-1:0] aiq_entry_create0_in;
+    logic [AIQ_ENTRY-1:0] aiq_entry_create1_in;
+    logic [AIQ_ENTRY-1:0] aiq_entry_create_en;
 
-    logic [3:0]  aiq_entry_create0_in;
-    logic [7:0]  aiq_entry_create1_in;
-    logic [3:0]  aiq_entry_create_en;
-    logic        aiq_entry0_create_en;
-    logic        aiq_entry1_create_en;
-    logic        aiq_entry2_create_en;
-    logic        aiq_entry3_create_en;
+    // 建表时"其他表项"的快照 (N 位, 含自己那一位, create 时按自屏蔽约定清零)
+    logic [AIQ_ENTRY-1:0] aiq_entry_create0_agevec;
+    logic [AIQ_ENTRY-1:0] aiq_entry_create1_agevec;
 
-    logic [3:0]  aiq_entry_create0_agevec;
-    logic [3:0]  aiq_entry_create1_agevec;
-    logic [7:0]  aiq_entry_create_sel;
-
-    logic [2:0]  aiq_entry0_create_agevec;
-    logic [2:0]  aiq_entry1_create_agevec;
-    logic [2:0]  aiq_entry2_create_agevec;
-    logic [2:0]  aiq_entry3_create_agevec;
-
-    logic [AIQ_WIDTH-1:0] aiq_entry0_create_data;
-    logic [AIQ_WIDTH-1:0] aiq_entry1_create_data;
-    logic [AIQ_WIDTH-1:0] aiq_entry2_create_data;
-    logic [AIQ_WIDTH-1:0] aiq_entry3_create_data;
-
-    logic [2:0]  aiq_entry0_pop_other_entry;
-    logic [2:0]  aiq_entry1_pop_other_entry;
-    logic [2:0]  aiq_entry2_pop_other_entry;
-    logic [2:0]  aiq_entry3_pop_other_entry;
-    logic        aiq_entry0_pop_cur_entry;
-    logic        aiq_entry1_pop_cur_entry;
-    logic        aiq_entry2_pop_cur_entry;
-    logic        aiq_entry3_pop_cur_entry;
-
-    logic [3:0]  aiq_older_entry_ready;
-    logic [3:0]  aiq_entry_issue_en;
-    logic [AIQ_WIDTH-1:0] aiq_entry_read_data;
-
-    logic [3:0]  aiq_entry_ready;
-    logic [2:0]  aiq_entry0_agevec;
-    logic [2:0]  aiq_entry1_agevec;
-    logic [2:0]  aiq_entry2_agevec;
-    logic [2:0]  aiq_entry3_agevec;
-    logic [AIQ_WIDTH-1:0] aiq_entry0_read_data;
-    logic [AIQ_WIDTH-1:0] aiq_entry1_read_data;
-    logic [AIQ_WIDTH-1:0] aiq_entry2_read_data;
-    logic [AIQ_WIDTH-1:0] aiq_entry3_read_data;
+    logic [AIQ_ENTRY-1:0] aiq_entry_ready;
+    logic [AIQ_ENTRY-1:0] aiq_older_entry_ready;
+    logic [AIQ_ENTRY-1:0] aiq_entry_issue_en;
+    logic [AIQ_WIDTH-1:0] aiq_entry_read_data [AIQ_ENTRY];
+    logic [AIQ_WIDTH-1:0] aiq_entry_read_data_sel;
 
 //--------------------aiq entry counter--------------------
 //if create, add entry counter
-assign aiq_entry_cnt_create[2:0]   = {2'b0,ctrl_aiq_create0_en}
-                                      + {2'b0,ctrl_aiq_create1_en};
-//update valid and value
+assign aiq_entry_cnt_create[1:0]   = {1'b0,ctrl_aiq_create0_en}
+                                      + {1'b0,ctrl_aiq_create1_en};
+//update valid and value (与原版一致: create1 必然伴随 create0, 故只判 create0)
 assign aiq_entry_cnt_updt_vld      = ctrl_aiq_create0_en
                                       || aiq_xx_issue_en;
-assign aiq_entry_cnt_updt_val[2:0] = aiq_entry_cnt[2:0]
-                                      + aiq_entry_cnt_create[2:0]
-                                      - {2'b0,aiq_xx_issue_en};
+// 下一拍占用: cnt + create - pop。判满/判"只剩一个坑"都用它比 (见文件头第 2 条)。
+assign aiq_entry_cnt_next[AIQ_CNT_W+1:0] = {2'b0,aiq_entry_cnt}
+                                      + {{AIQ_CNT_W{1'b0}},aiq_entry_cnt_create}
+                                      - {{(AIQ_CNT_W+1){1'b0}},aiq_xx_issue_en};
 //implement entry counter
-always @(posedge forever_cpuclk or negedge cpurst_b)
+always_ff @(posedge forever_cpuclk or negedge cpurst_b)
 begin
   if(!cpurst_b)
-    aiq_entry_cnt[2:0] <= 3'b0;
+    aiq_entry_cnt[AIQ_CNT_W-1:0] <= {AIQ_CNT_W{1'b0}};
   //after flush fe/is, the rf may wrongly pop before rtu_yy_xx_flush
   //need flush also when rtu_yy_xx_flush
   else if(rtu_yy_xx_flush)
-    aiq_entry_cnt[2:0] <= 3'b0;
+    aiq_entry_cnt[AIQ_CNT_W-1:0] <= {AIQ_CNT_W{1'b0}};
   else if(aiq_entry_cnt_updt_vld)
-    aiq_entry_cnt[2:0] <= aiq_entry_cnt_updt_val[2:0];
+    aiq_entry_cnt[AIQ_CNT_W-1:0] <= aiq_entry_cnt_next[AIQ_CNT_W-1:0];
   else
-    aiq_entry_cnt[2:0] <= aiq_entry_cnt[2:0];
+    aiq_entry_cnt[AIQ_CNT_W-1:0] <= aiq_entry_cnt[AIQ_CNT_W-1:0];
 end
 
 //--------------------aiq entry full-----------------------
-assign aiq_entry_cnt_create_2 =  ctrl_aiq_create1_en;
-assign aiq_entry_cnt_create_1 =  ctrl_aiq_create0_en && !ctrl_aiq_create1_en;
-assign aiq_entry_cnt_create_0 = !ctrl_aiq_create0_en;
-
-assign aiq_entry_cnt_pop_1    =  aiq_xx_issue_en;
-assign aiq_entry_cnt_pop_0    = !aiq_xx_issue_en;
-
-assign aiq_ctrl_full_updt     = (aiq_entry_cnt[2:0] == 3'd2)
-                                 && aiq_entry_cnt_create_2
-                                 && aiq_entry_cnt_pop_0
-                              || (aiq_entry_cnt[2:0] == 3'd3)
-                                 && aiq_entry_cnt_create_1
-                                 && aiq_entry_cnt_pop_0
-                              || (aiq_entry_cnt[2:0] == 3'd4)
-                                 && aiq_entry_cnt_create_0
-                                 && aiq_entry_cnt_pop_0;
-
-assign aiq_ctrl_1_left_updt   = (aiq_entry_cnt[2:0] == 3'd1)
-                                 && aiq_entry_cnt_create_2
-                                 && aiq_entry_cnt_pop_0
-                              || (aiq_entry_cnt[2:0] == 3'd2)
-                                 && aiq_entry_cnt_create_1
-                                 && aiq_entry_cnt_pop_0
-                              || (aiq_entry_cnt[2:0] == 3'd2)
-                                 && aiq_entry_cnt_create_2
-                                 && aiq_entry_cnt_pop_1
-                              || (aiq_entry_cnt[2:0] == 3'd3)
-                                 && aiq_entry_cnt_create_0
-                                 && aiq_entry_cnt_pop_0
-                              || (aiq_entry_cnt[2:0] == 3'd3)
-                                 && aiq_entry_cnt_create_1
-                                 && aiq_entry_cnt_pop_1
-                              || (aiq_entry_cnt[2:0] == 3'd4)
-                                 && aiq_entry_cnt_create_0
-                                 && aiq_entry_cnt_pop_1;
+// 满: 下一拍占用就顶到 AIQ_ENTRY 且本拍**没有**项出去 (再派必溢出);
+// 只剩一个: 下一拍占用顶到 AIQ_ENTRY-1 (两条派遣车道塞不下第二个)。
+// ctrl 侧 (ct_idu_is_ctrl.sv:524) 用这两个信号:
+//   派 create0 && full      ⇒ 堵
+//   派 create1 && 1_left    ⇒ 堵
+//
+// ⚠️ full 上那个 `&& !issue` 不能省: 原版三个枚举项全是 pop_0 起头的
+//   (本拍有项发走就腾出坑来, 下一拍照样能派)。少了它会在
+//   cnt=3&create=2&issue=1 这类拍上多堵一下 —— tb_aiq_equiv 第 13 拍抓到过。
+//   而 1_left 的六个枚举项里 pop_0/pop_1 都有, 就是纯粹的 R==AIQ_ENTRY-1。
+assign aiq_ctrl_full_updt   = (aiq_entry_cnt_next == AIQ_ENTRY) && !aiq_xx_issue_en;
+assign aiq_ctrl_1_left_updt = (aiq_entry_cnt_next == (AIQ_ENTRY-1));
 
 //issue queue entry create control
-assign aiq_entry_vld[0]         = aiq_entry0_vld;
-assign aiq_entry_vld[1]         = aiq_entry1_vld;
-assign aiq_entry_vld[2]         = aiq_entry2_vld;
-assign aiq_entry_vld[3]         = aiq_entry3_vld;
-
-
-//create0 priority is from entry 0 to 7
-// &CombBeg; @178
-always @(*)
-begin
-  casez ({aiq_entry0_vld, aiq_entry1_vld, aiq_entry2_vld, aiq_entry3_vld})
-    4'b0???: aiq_entry_create0_in = 4'b0001; // entry0 空闲，选 0
-    4'b10??: aiq_entry_create0_in = 4'b0010; // 0 忙，1 空闲，选 1
-    4'b110?: aiq_entry_create0_in = 4'b0100; // 0/1 忙，2 空闲，选 2
-    4'b1110: aiq_entry_create0_in = 4'b1000; // 0/1/2 忙，3 空闲，选 3
-    default: aiq_entry_create0_in = 4'b0000; // 全忙
-  endcase
-// &CombEnd; @197
-end
-always @(*)
-begin
-  casez ({aiq_entry3_vld, aiq_entry2_vld, aiq_entry1_vld, aiq_entry0_vld})
-    4'b0???: aiq_entry_create1_in = 4'b1000; // entry3 空闲，选 3
-    4'b10??: aiq_entry_create1_in = 4'b0100; // 3 忙，2 空闲，选 2
-    4'b110?: aiq_entry_create1_in = 4'b0010; // 3/2 忙，1 空闲，选 1
-    4'b1110: aiq_entry_create1_in = 4'b0001; // 3/2/1 忙，0 空闲，选 0
-    default: aiq_entry_create1_in = 4'b0000; // 全忙
-  endcase
-// &CombEnd; @219
-end
-
-assign aiq_entry_create_en[3:0] =
-       {4{ctrl_aiq_create0_en}} & aiq_entry_create0_in[3:0]
-     | {4{ctrl_aiq_create1_en}} & aiq_entry_create1_in[3:0];
-
-assign aiq_entry0_create_en     = aiq_entry_create_en[0];
-assign aiq_entry1_create_en     = aiq_entry_create_en[1];
-assign aiq_entry2_create_en     = aiq_entry_create_en[2];
-assign aiq_entry3_create_en     = aiq_entry_create_en[3];
+//create0 priority is from entry 0 to AIQ_ENTRY-1 (低位优先)
+//create1 priority is from entry AIQ_ENTRY-1 to 0 (高位优先)
+//aiq_entry_vld is driven by each entry instance's x_vld
 
 //aiq create entry should consider pop signal and create0
-assign aiq_entry_create0_agevec[3:0] = aiq_entry_vld[3:0]
-                                        & ~({4{aiq_xx_issue_en}}
-                                           & aiq_entry_issue_en[3:0]);
+// 建表时刻"队列里还有谁"的快照: 先扣掉本拍发射走的项, 再算 create1 时要多算上
+// 同拍 create0 刚放进去的那一项 (它相对 create1 的项更老)。
+assign aiq_entry_create0_agevec[AIQ_ENTRY-1:0] = aiq_entry_vld[AIQ_ENTRY-1:0]
+                                        & ~({AIQ_ENTRY{aiq_xx_issue_en}}
+                                           & aiq_entry_issue_en[AIQ_ENTRY-1:0]);
 
-assign aiq_entry_create1_agevec[3:0] = aiq_entry_vld[3:0]
-                                        & ~({4{aiq_xx_issue_en}}
-                                           & aiq_entry_issue_en[3:0])
-                                        | aiq_entry_create0_in[3:0];
-
-//create 0/1 select:
-//entry 0~3 use ~aiq_entry_create0_in for better timing
-//entry 4~7 use aiq_entry_create1_in for better timing
-//aiq_entry_create0/1_in cannot be both 1,
-//if both 0, do not create
-assign aiq_entry_create_sel[7:4] = {4{ctrl_aiq_create1_en}}
-                                     & aiq_entry_create1_in[7:4];
-assign aiq_entry_create_sel[3:0] = ~({4{ctrl_aiq_create0_en}}
-                                      & aiq_entry_create0_in[3:0]);
-
-//----------------entry0 flop create signals----------------
-// &CombBeg; @297
-always @(*)
-begin
-  if(aiq_entry_create0_in[0]) begin
-    aiq_entry0_create_agevec[2:0] = aiq_entry_create0_agevec[3:1];
-    aiq_entry0_create_data[AIQ_WIDTH-1:0] = 
-       dp_aiq_create0_data[AIQ_WIDTH-1:0];
-  end
-  else begin
-    aiq_entry0_create_agevec[2:0] = aiq_entry_create1_agevec[3:1];
-    aiq_entry0_create_data[AIQ_WIDTH-1:0] = 
-       dp_aiq_create1_data[AIQ_WIDTH-1:0];
-  end
-// &CombEnd; @310
-end
-
-//----------------entry1 flop create signals----------------
-// &CombBeg; @313
-always @(*)
-begin
-  if(aiq_entry_create0_in[1]) begin
-    aiq_entry1_create_agevec[2:0] = {aiq_entry_create0_agevec[3:2],
-                                      aiq_entry_create0_agevec[0]};
-    aiq_entry1_create_data[AIQ_WIDTH-1:0] =
-       dp_aiq_create0_data[AIQ_WIDTH-1:0];
-  end
-  else begin
-    aiq_entry1_create_agevec[2:0] = {aiq_entry_create1_agevec[3:2],
-                                      aiq_entry_create1_agevec[0]};
-    aiq_entry1_create_data[AIQ_WIDTH-1:0] =
-       dp_aiq_create1_data[AIQ_WIDTH-1:0];
-  end
-// &CombEnd; @328
-end
-
-//----------------entry2 flop create signals----------------
-// &CombBeg; @331
-always @(*)
-begin
-  if(aiq_entry_create0_in[2]) begin
-    aiq_entry2_create_agevec[2:0] = {aiq_entry_create0_agevec[3],
-                                      aiq_entry_create0_agevec[1:0]};
-    aiq_entry2_create_data[AIQ_WIDTH-1:0] =
-       dp_aiq_create0_data[AIQ_WIDTH-1:0];
-  end
-  else begin
-    aiq_entry2_create_agevec[2:0] = {aiq_entry_create1_agevec[3],
-                                      aiq_entry_create1_agevec[1:0]};
-    aiq_entry2_create_data[AIQ_WIDTH-1:0] =
-       dp_aiq_create1_data[AIQ_WIDTH-1:0];
-  end
-// &CombEnd; @346
-end
-
-//----------------entry3 flop create signals----------------
-// &CombBeg; @349
-always @(*)
-begin
-  if(aiq_entry_create0_in[3]) begin
-    aiq_entry3_create_agevec[2:0] = aiq_entry_create0_agevec[2:0];
-    aiq_entry3_create_data[AIQ_WIDTH-1:0] =
-       dp_aiq_create0_data[AIQ_WIDTH-1:0];
-  end
-  else begin
-    aiq_entry3_create_agevec[2:0] = aiq_entry_create1_agevec[2:0];
-    aiq_entry3_create_data[AIQ_WIDTH-1:0] =
-       dp_aiq_create1_data[AIQ_WIDTH-1:0];
-  end
-// &CombEnd; @364
-end
-
-//-------------------entry pop enable signals---------------
-//pop when rf launch pass
-assign {aiq_entry0_pop_other_entry[2:0],
-        aiq_entry0_pop_cur_entry}        = aiq_entry_issue_en[3:0];
-assign {aiq_entry1_pop_other_entry[2:1],
-        aiq_entry1_pop_cur_entry,
-        aiq_entry1_pop_other_entry[0]}   = aiq_entry_issue_en[3:0];
-assign {aiq_entry2_pop_other_entry[2],
-        aiq_entry2_pop_cur_entry,
-        aiq_entry2_pop_other_entry[1:0]} = aiq_entry_issue_en[3:0];
-assign {aiq_entry3_pop_cur_entry,
-        aiq_entry3_pop_other_entry[2:0]} = aiq_entry_issue_en[3:0];
+assign aiq_entry_create1_agevec[AIQ_ENTRY-1:0] = aiq_entry_vld[AIQ_ENTRY-1:0]
+                                        & ~({AIQ_ENTRY{aiq_xx_issue_en}}
+                                           & aiq_entry_issue_en[AIQ_ENTRY-1:0])
+                                        | aiq_entry_create0_in[AIQ_ENTRY-1:0];
 
 //------------------entry issue enable signals--------------
-//first find older ready entry
-assign aiq_older_entry_ready[0] = |(aiq_entry0_agevec[2:0]
-                                     & aiq_entry_ready[3:1]);
-assign aiq_older_entry_ready[1] = |(aiq_entry1_agevec[2:0]
-                                     & {aiq_entry_ready[3:2],
-                                        aiq_entry_ready[0]});
-assign aiq_older_entry_ready[2] = |(aiq_entry2_agevec[2:0]
-                                     & {aiq_entry_ready[3],
-                                        aiq_entry_ready[1:0]});
-assign aiq_older_entry_ready[3] = |(aiq_entry3_agevec[2:0]
-                                     & aiq_entry_ready[2:0]);
-//not ready if older ready exists
-assign aiq_entry_issue_en[3:0]  = aiq_entry_ready[3:0]
-                                   & ~aiq_older_entry_ready[3:0];
-//rename for entries
-assign aiq_xx_issue_en = |aiq_entry_issue_en[3:0];
+//first find older ready entry, then not ready if older ready exists
+assign aiq_xx_issue_en = |aiq_entry_issue_en[AIQ_ENTRY-1:0];
+
 //-----------------issue data path selection----------------
 //issue data path will select oldest ready entry in issue queue
-//if no instruction valid, the data path will always select bypass 
+//if no instruction valid, the data path will always select bypass
 //data path
-// &CombBeg; @527
-always @(*)
+always_comb
 begin
-  case (aiq_entry_issue_en[3:0])
-    4'h1  : aiq_entry_read_data[AIQ_WIDTH-1:0] =
-               aiq_entry0_read_data[AIQ_WIDTH-1:0];
-    4'h2  : aiq_entry_read_data[AIQ_WIDTH-1:0] =
-               aiq_entry1_read_data[AIQ_WIDTH-1:0];
-    4'h4  : aiq_entry_read_data[AIQ_WIDTH-1:0] =
-               aiq_entry2_read_data[AIQ_WIDTH-1:0];
-    4'h8  : aiq_entry_read_data[AIQ_WIDTH-1:0] =
-               aiq_entry3_read_data[AIQ_WIDTH-1:0];
-    default: aiq_entry_read_data[AIQ_WIDTH-1:0] =
-                                    {AIQ_WIDTH{1'bx}};
-  endcase
-// &CombEnd; @548
+  aiq_entry_read_data_sel[AIQ_WIDTH-1:0] = {AIQ_WIDTH{1'bx}};
+  for (int k = 0; k < AIQ_ENTRY; k++)
+    if (aiq_entry_issue_en[k])
+      aiq_entry_read_data_sel[AIQ_WIDTH-1:0] = aiq_entry_read_data[k][AIQ_WIDTH-1:0];
 end
-assign aiq_dp_issue_read_data[AIQ_WIDTH-1:0] = aiq_entry_read_data[AIQ_WIDTH-1:0];
+assign aiq_dp_issue_read_data[AIQ_WIDTH-1:0] = aiq_entry_read_data_sel[AIQ_WIDTH-1:0];
 
 //==========================================================
-//             ALU Issue Queue 0 Entry Instance
+//             ALU Issue Queue Entry Instances
 //==========================================================
-ct_idu_is_aiq_entry x_ct_idu_is_aiq_entry0 (
-    .cpurst_b                         (cpurst_b                         ),
-    .ctrl_aiq0_rf_pop_vld              (aiq_xx_issue_en             ),
-    .forever_cpuclk                   (forever_cpuclk                   ),
+genvar gi;
+generate
+for (gi = 0; gi < AIQ_ENTRY; gi = gi + 1) begin : g_aiq_entry
 
-    .iu_idu_ex2_pipe0_wb_preg_dupx    (iu_idu_ex2_pipe0_wb_preg_dupx    ),
-    .iu_idu_ex2_pipe0_wb_preg_vld_dupx(iu_idu_ex2_pipe0_wb_preg_vld_dupx),
+    // 只在本项作用域里可见的位掩码 (gi 是 genvar, 各自展开成常量)
+    localparam int AIQ_SELF_BIT = (1 << gi);            // 位 [gi]
+    localparam int AIQ_MASK_LO  = AIQ_SELF_BIT - 1;     // 位 [gi-1:0]  —— 比自己年轻的
+    localparam int AIQ_MASK_HI  = ~((AIQ_SELF_BIT << 1) - 1);  // 位 [N-1:gi+1] —— 比自己年长的
+    localparam logic [AIQ_ENTRY-1:0] AIQ_SELF_ONE = AIQ_SELF_BIT[AIQ_ENTRY-1:0];  // 只有位 [gi] 是 1
 
-    .iu_idu_ex2_pipe1_wb_preg_dupx    (iu_idu_ex2_pipe1_wb_preg_dupx    ),
-    .iu_idu_ex2_pipe1_wb_preg_vld_dupx(iu_idu_ex2_pipe1_wb_preg_vld_dupx),
+    logic [AIQ_ENTRY-1:0] entry_agevec;         // 本项存着的年龄向量
+    logic [AIQ_ENTRY-1:0] entry_create_agevec;  // 建表时灌进去的年龄向量
+    logic [AIQ_WIDTH-1:0] entry_create_data;
+    logic [AIQ_WIDTH-1:0] entry_read_data;
 
-    .iu_idu_ex2_pipe2_wb_preg_dupx    (iu_idu_ex2_pipe2_wb_preg_dupx    ),
-    .iu_idu_ex2_pipe2_wb_preg_vld_dupx(iu_idu_ex2_pipe2_wb_preg_vld_dupx),
+    //---- 建表优先级: create0 找序号最小的空项, create1 找序号最大的空项 ----
+    // "序号最小" ⇒ 比自己小的那些项**全忙** (人家先占了, 才轮到我); 掩码外的不约束
+    //   ⇒ 写成 &(vld | ~MASK)。原版 casez `4'b10??: 选1` 就是这个意思。
+    //   ⚠️ 别写成 ~|(vld & MASK) —— 那是"比我小的全空", 会一次给好几项发 create
+    //   (2026-10-16 踩过, 由 tb_aiq_equiv 第 4 拍抓到)。
+    assign aiq_entry_create0_in[gi] = ~aiq_entry_vld[gi]
+                                    & (&(aiq_entry_vld[AIQ_ENTRY-1:0]
+                                          | ~AIQ_MASK_LO[AIQ_ENTRY-1:0]));
+    assign aiq_entry_create1_in[gi] = ~aiq_entry_vld[gi]
+                                    & (&(aiq_entry_vld[AIQ_ENTRY-1:0]
+                                          | ~AIQ_MASK_HI[AIQ_ENTRY-1:0]));
 
-    .lsu_idu_wb_pipe3_wb_preg_dupx    (lsu_idu_wb_pipe3_wb_preg_dupx    ),
-    .lsu_idu_wb_pipe3_wb_preg_vld_dupx(lsu_idu_wb_pipe3_wb_preg_vld_dupx),
+    //aiq_entry_create0/1_in cannot be both 1 (除"只剩一个空项"那一拍, 而 ctrl 的
+    //1_left 判据已经把那一拍的 create1 闸掉了 —— 见文件头第 2 条)
+    assign aiq_entry_create_en[gi] = ({1{ctrl_aiq_create0_en}} & aiq_entry_create0_in[gi])
+                                   | ({1{ctrl_aiq_create1_en}} & aiq_entry_create1_in[gi]);
 
-    .rtu_yy_xx_flush                 (rtu_yy_xx_flush                 ),
+    //---- 本项被建表时, 灌进去的年龄向量与指令数据 ----
+    // 年龄向量按 create0_in 选 source, 再把自己那一位清 0 (自屏蔽约定)
+    assign entry_create_agevec[AIQ_ENTRY-1:0] =
+             (aiq_entry_create0_in[gi] ? aiq_entry_create0_agevec[AIQ_ENTRY-1:0]
+                                       : aiq_entry_create1_agevec[AIQ_ENTRY-1:0])
+           & ~AIQ_SELF_ONE[AIQ_ENTRY-1:0];
+    assign entry_create_data[AIQ_WIDTH-1:0] =
+             aiq_entry_create0_in[gi] ? dp_aiq_create0_data[AIQ_WIDTH-1:0]
+                                      : dp_aiq_create1_data[AIQ_WIDTH-1:0];
 
-    .x_create_agevec                  (aiq_entry0_create_agevec         ),
-    .x_create_data                    (aiq_entry0_create_data           ),
-    .x_create_en                      (aiq_entry0_create_en             ),
-    .x_pop_cur_entry                  (aiq_entry0_pop_cur_entry         ),
-    .x_pop_other_entry                (aiq_entry0_pop_other_entry       ),
+    //---- 发射仲裁: 就绪 且 没有更老的项就绪 ⇒ 本项发 ----
+    assign aiq_older_entry_ready[gi] = |(entry_agevec[AIQ_ENTRY-1:0]
+                                         & aiq_entry_ready[AIQ_ENTRY-1:0]);
+    assign aiq_entry_issue_en[gi]    = aiq_entry_ready[gi] & ~aiq_older_entry_ready[gi];
 
-    .x_rdy                            (aiq_entry_ready[0]               ),
-    .x_agevec                         (aiq_entry0_agevec                ),
-    .x_read_data                      (aiq_entry0_read_data             ),
-    .x_vld                            (aiq_entry0_vld                   )
-);
+    //==========================================================
+    //             ALU Issue Queue Entry Instance
+    //==========================================================
+    ct_idu_is_aiq_entry #(.AIQ_ENTRY(AIQ_ENTRY)) x_ct_idu_is_aiq_entry (
+        .cpurst_b                         (cpurst_b                         ),
+        .ctrl_aiq0_rf_pop_vld              (aiq_xx_issue_en             ),
+        .forever_cpuclk                   (forever_cpuclk                   ),
 
-ct_idu_is_aiq_entry x_ct_idu_is_aiq_entry1 (
-    .cpurst_b                         (cpurst_b                         ),
-    .ctrl_aiq0_rf_pop_vld              (aiq_xx_issue_en             ),
-    .forever_cpuclk                   (forever_cpuclk                   ),
+        .iu_idu_ex2_pipe0_wb_preg_dupx    (iu_idu_ex2_pipe0_wb_preg_dupx    ),
+        .iu_idu_ex2_pipe0_wb_preg_vld_dupx(iu_idu_ex2_pipe0_wb_preg_vld_dupx),
 
-    .iu_idu_ex2_pipe0_wb_preg_dupx    (iu_idu_ex2_pipe0_wb_preg_dupx    ),
-    .iu_idu_ex2_pipe0_wb_preg_vld_dupx(iu_idu_ex2_pipe0_wb_preg_vld_dupx),
+        .iu_idu_ex2_pipe1_wb_preg_dupx    (iu_idu_ex2_pipe1_wb_preg_dupx    ),
+        .iu_idu_ex2_pipe1_wb_preg_vld_dupx(iu_idu_ex2_pipe1_wb_preg_vld_dupx),
 
-    .iu_idu_ex2_pipe1_wb_preg_dupx    (iu_idu_ex2_pipe1_wb_preg_dupx    ),
-    .iu_idu_ex2_pipe1_wb_preg_vld_dupx(iu_idu_ex2_pipe1_wb_preg_vld_dupx),
+        .iu_idu_ex2_pipe2_wb_preg_dupx    (iu_idu_ex2_pipe2_wb_preg_dupx    ),
+        .iu_idu_ex2_pipe2_wb_preg_vld_dupx(iu_idu_ex2_pipe2_wb_preg_vld_dupx),
 
-    .iu_idu_ex2_pipe2_wb_preg_dupx    (iu_idu_ex2_pipe2_wb_preg_dupx    ),
-    .iu_idu_ex2_pipe2_wb_preg_vld_dupx(iu_idu_ex2_pipe2_wb_preg_vld_dupx),
+        .lsu_idu_wb_pipe3_wb_preg_dupx    (lsu_idu_wb_pipe3_wb_preg_dupx    ),
+        .lsu_idu_wb_pipe3_wb_preg_vld_dupx(lsu_idu_wb_pipe3_wb_preg_vld_dupx),
 
-    .lsu_idu_wb_pipe3_wb_preg_dupx    (lsu_idu_wb_pipe3_wb_preg_dupx    ),
-    .lsu_idu_wb_pipe3_wb_preg_vld_dupx(lsu_idu_wb_pipe3_wb_preg_vld_dupx),
+        .rtu_yy_xx_flush                 (rtu_yy_xx_flush                 ),
 
-    .rtu_yy_xx_flush                 (rtu_yy_xx_flush                 ),
+        .x_create_agevec                  (entry_create_agevec[AIQ_ENTRY-1:0]),
+        .x_create_data                    (entry_create_data[AIQ_WIDTH-1:0] ),
+        .x_create_en                      (aiq_entry_create_en[gi]          ),
+        .x_pop_cur_entry                  (aiq_entry_issue_en[gi]           ),
+        // 把自己那一位也连进去是无害的: 本项 agevec 的自屏蔽位恒 0, 清不动它
+        .x_pop_other_entry                (aiq_entry_issue_en[AIQ_ENTRY-1:0]),
 
-    .x_create_agevec                  (aiq_entry1_create_agevec         ),
-    .x_create_data                    (aiq_entry1_create_data           ),
-    .x_create_en                      (aiq_entry1_create_en             ),
-    .x_pop_cur_entry                  (aiq_entry1_pop_cur_entry         ),
-    .x_pop_other_entry                (aiq_entry1_pop_other_entry       ),
+        .x_rdy                            (aiq_entry_ready[gi]              ),
+        .x_agevec                         (entry_agevec[AIQ_ENTRY-1:0]       ),
+        .x_read_data                      (entry_read_data[AIQ_WIDTH-1:0]    ),
+        .x_vld                            (aiq_entry_vld[gi]                )
+    );
 
-    .x_rdy                            (aiq_entry_ready[1]               ),
-    .x_agevec                         (aiq_entry1_agevec                ),
-    .x_read_data                      (aiq_entry1_read_data             ),
-    .x_vld                            (aiq_entry1_vld                   )
-);
+    assign aiq_entry_read_data[gi] = entry_read_data;
 
-ct_idu_is_aiq_entry x_ct_idu_is_aiq_entry2 (
-    .cpurst_b                         (cpurst_b                         ),
-    .ctrl_aiq0_rf_pop_vld              (aiq_xx_issue_en             ),
-    .forever_cpuclk                   (forever_cpuclk                   ),
-
-    .iu_idu_ex2_pipe0_wb_preg_dupx    (iu_idu_ex2_pipe0_wb_preg_dupx    ),
-    .iu_idu_ex2_pipe0_wb_preg_vld_dupx(iu_idu_ex2_pipe0_wb_preg_vld_dupx),
-
-    .iu_idu_ex2_pipe1_wb_preg_dupx    (iu_idu_ex2_pipe1_wb_preg_dupx    ),
-    .iu_idu_ex2_pipe1_wb_preg_vld_dupx(iu_idu_ex2_pipe1_wb_preg_vld_dupx),
-
-    .iu_idu_ex2_pipe2_wb_preg_dupx    (iu_idu_ex2_pipe2_wb_preg_dupx    ),
-    .iu_idu_ex2_pipe2_wb_preg_vld_dupx(iu_idu_ex2_pipe2_wb_preg_vld_dupx),
-
-    .lsu_idu_wb_pipe3_wb_preg_dupx    (lsu_idu_wb_pipe3_wb_preg_dupx    ),
-    .lsu_idu_wb_pipe3_wb_preg_vld_dupx(lsu_idu_wb_pipe3_wb_preg_vld_dupx),
-
-    .rtu_yy_xx_flush                 (rtu_yy_xx_flush                 ),
-
-    .x_create_agevec                  (aiq_entry2_create_agevec         ),
-    .x_create_data                    (aiq_entry2_create_data           ),
-    .x_create_en                      (aiq_entry2_create_en             ),
-    .x_pop_cur_entry                  (aiq_entry2_pop_cur_entry         ),
-    .x_pop_other_entry                (aiq_entry2_pop_other_entry       ),
-
-    .x_rdy                            (aiq_entry_ready[2]               ),
-    .x_agevec                         (aiq_entry2_agevec                ),
-    .x_read_data                      (aiq_entry2_read_data             ),
-    .x_vld                            (aiq_entry2_vld                   )
-);
-
-ct_idu_is_aiq_entry x_ct_idu_is_aiq_entry3 (
-    .cpurst_b                         (cpurst_b                         ),
-    .ctrl_aiq0_rf_pop_vld              (aiq_xx_issue_en             ),
-    .forever_cpuclk                   (forever_cpuclk                   ),
-
-    .iu_idu_ex2_pipe0_wb_preg_dupx    (iu_idu_ex2_pipe0_wb_preg_dupx    ),
-    .iu_idu_ex2_pipe0_wb_preg_vld_dupx(iu_idu_ex2_pipe0_wb_preg_vld_dupx),
-
-    .iu_idu_ex2_pipe1_wb_preg_dupx    (iu_idu_ex2_pipe1_wb_preg_dupx    ),
-    .iu_idu_ex2_pipe1_wb_preg_vld_dupx(iu_idu_ex2_pipe1_wb_preg_vld_dupx),
-
-    .iu_idu_ex2_pipe2_wb_preg_dupx    (iu_idu_ex2_pipe2_wb_preg_dupx    ),
-    .iu_idu_ex2_pipe2_wb_preg_vld_dupx(iu_idu_ex2_pipe2_wb_preg_vld_dupx),
-
-    .lsu_idu_wb_pipe3_wb_preg_dupx    (lsu_idu_wb_pipe3_wb_preg_dupx    ),
-    .lsu_idu_wb_pipe3_wb_preg_vld_dupx(lsu_idu_wb_pipe3_wb_preg_vld_dupx),
-
-    .rtu_yy_xx_flush                 (rtu_yy_xx_flush                 ),
-
-    .x_create_agevec                  (aiq_entry3_create_agevec         ),
-    .x_create_data                    (aiq_entry3_create_data           ),
-    .x_create_en                      (aiq_entry3_create_en             ),
-    .x_pop_cur_entry                  (aiq_entry3_pop_cur_entry         ),
-    .x_pop_other_entry                (aiq_entry3_pop_other_entry       ),
-
-    .x_rdy                            (aiq_entry_ready[3]               ),
-    .x_agevec                         (aiq_entry3_agevec                ),
-    .x_read_data                      (aiq_entry3_read_data             ),
-    .x_vld                            (aiq_entry3_vld                   )
-);
-// &ModuleEnd; @630
+end
+endgenerate
+// &ModuleEnd;
 endmodule
