@@ -22,11 +22,12 @@ module ct_lsu_sq #(
     input  logic         ld_da_sq_fwd_multi_vld,
     input  logic         ld_da_sq_global_discard_vld,
     input  logic [31:0]  ld_dc_addr0,
-    input  logic [7:0]   ld_dc_addr1_11to4,
+    // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): input  logic [7:0]   ld_dc_addr1_11to4,
     input  logic [15:0]  ld_dc_bytes_vld,
-    input  logic [15:0]  ld_dc_bytes_vld1,
-    input  logic         ld_dc_chk_ld_addr1_vld,
-    input  logic         ld_dc_chk_ld_bypass_vld,
+    // 2026-10-15 停用: 只服务非对齐第二半的 RAW 检查
+    //input  logic [15:0]  ld_dc_bytes_vld1,
+    //input  logic         ld_dc_chk_ld_addr1_vld,
+    // 2026-10-15 停用: bypass 通路在本仓没实现 (ld_dc_chk_ld_bypass_vld 无人使用), 整条摘掉: input  logic         ld_dc_chk_ld_bypass_vld,
     input  logic         ld_dc_chk_ld_inst_vld,
     input  logic [IID_WIDTH-1:0] ld_dc_iid,
     input  logic         rb_sq_pop_hit_idx,
@@ -43,21 +44,22 @@ module ct_lsu_sq #(
     input  logic [3:0]   idu_lsu_rf_pipe5_sdiq_entry,
     input  logic [IID_WIDTH-1:0] st_da_iid,
     input  logic         st_da_inst_vld,
-    input  logic         st_da_secd,
+    // 2026-10-15 停用: 非对齐拆分通路整条摘掉 (secd/boundary)
+    //input  logic         st_da_secd,
     input  logic         st_da_sq_dcache_dirty,
     input  logic         st_da_sq_dcache_valid,
     input  logic         st_da_sq_dcache_way,
     input  logic         st_da_sq_no_restart,
     input  logic [31:0]  st_dc_addr0,
-    input  logic         st_dc_boundary,
-    input  logic         st_dc_boundary_first,
+    //input  logic         st_dc_boundary,
+    //input  logic         st_dc_boundary_first,
     input  logic [15:0]  st_dc_bytes_vld,
     input  logic [IID_WIDTH-1:0] st_dc_iid,
     input  logic         st_dc_old,
     input  logic [7:0]   st_dc_rot_sel_rev,
     input  logic [3:0]   st_dc_sdid,
   //  input  logic         st_dc_sdid_hit,
-    input  logic         st_dc_secd,
+    //input  logic         st_dc_secd,
     input  logic         st_dc_sq_create_vld,
     input  logic         st_dc_sq_data_vld,
     input  logic [31:0]  wmb_ce_addr,
@@ -68,8 +70,8 @@ module ct_lsu_sq #(
     output logic [LSIQ_ENTRY-1:0] sq_data_depd_wakeup,
     output logic [LSIQ_ENTRY-1:0] sq_global_depd_wakeup,
     output logic [31:0]  sq_ld_da_fwd_data,
-    output logic         sq_ld_dc_addr1_dep_discard,
-    output logic         sq_ld_dc_cancel_acc_req,
+    // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): output logic         sq_ld_dc_addr1_dep_discard,
+    // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): output logic         sq_ld_dc_cancel_acc_req,
     output logic         sq_ld_dc_data_discard_req,
     output logic [SQ_ENTRY-1:0] sq_ld_dc_fwd_id,
     output logic         sq_ld_dc_fwd_multi,
@@ -127,20 +129,20 @@ module ct_lsu_sq #(
     logic                sq_data_discard_has_newest;
     logic [SQ_ENTRY-1:0] sq_data_discard_newest_id;
     logic                sq_data_discard_req;
-    logic                sq_data_discard_req_short;
+    // 2026-10-15 停用: 死亡声明 (无驱动无负载, 与本次非对齐摘除无关的既有残留): logic                sq_data_discard_req_short;
     logic [127:0]         sq_data_ori;
     logic [31:0]         sq_data_settle;
     logic                sq_empty_less2;
-    logic [SQ_ENTRY-1:0] sq_entry_addr1_dep_discard;
+    // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): logic [SQ_ENTRY-1:0] sq_entry_addr1_dep_discard;
     logic [SQ_ENTRY-1:0] sq_entry_age_vec_surplus1_ptr;
     logic [SQ_ENTRY-1:0] sq_entry_age_vec_zero_ptr;
-    logic [SQ_ENTRY-1:0] sq_entry_cancel_acc_req;
+    // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): logic [SQ_ENTRY-1:0] sq_entry_cancel_acc_req;
     logic [SQ_ENTRY-1:0] sq_entry_cmit;
    // logic [SQ_ENTRY-1:0] sq_entry_cmit_data_vld;
     logic [SQ_ENTRY-1:0] sq_entry_create_vld;
     logic [SQ_ENTRY-1:0] sq_entry_data_discard_grnt;
     logic [SQ_ENTRY-1:0] sq_entry_data_discard_req;
-    logic [SQ_ENTRY-1:0] sq_entry_data_discard_req_short;
+    // 2026-10-15 停用: 死亡声明 (无驱动无负载, 与本次非对齐摘除无关的既有残留): logic [SQ_ENTRY-1:0] sq_entry_data_discard_req_short;
     logic [SQ_ENTRY-1:0] sq_entry_dcache_dirty;
     logic [SQ_ENTRY-1:0] sq_entry_dcache_info_vld;
     logic [SQ_ENTRY-1:0] sq_entry_dcache_valid;
@@ -148,7 +150,7 @@ module ct_lsu_sq #(
     logic [SQ_ENTRY-1:0] sq_entry_depd;
     logic [SQ_ENTRY-1:0] sq_entry_depd_set;
     logic [SQ_ENTRY-1:0] sq_entry_discard_req;
-    logic [SQ_ENTRY-1:0] sq_entry_fwd_bypass_req;
+    // 2026-10-15 停用: 死亡声明 (无驱动无负载, 与本次非对齐摘除无关的既有残留): logic [SQ_ENTRY-1:0] sq_entry_fwd_bypass_req;
     logic [SQ_ENTRY-1:0] sq_entry_fwd_multi_depd_set;
     logic [SQ_ENTRY-1:0] sq_entry_fwd_req;
     logic [SQ_ENTRY-1:0] sq_entry_inst_hit;
@@ -162,14 +164,14 @@ module ct_lsu_sq #(
     logic [SQ_ENTRY-1:0] sq_entry_vld;
     logic [SQ_ENTRY-1:0] sq_entry_wakeup_queue_set_id;
     logic                sq_full;
-    logic                sq_fwd_bypass_req;
+    // 2026-10-15 停用: 死亡声明 (无驱动无负载, 与本次非对齐摘除无关的既有残留): logic                sq_fwd_bypass_req;
     logic                sq_fwd_multi;
     logic                sq_fwd_req;
     logic [SQ_ENTRY-1:0] sq_fwd_req_id;
     logic                sq_has_cmit;
-    logic                sq_newest_fwd_bypass_req;
+    // 2026-10-15 停用: 死亡声明 (无驱动无负载, 与本次非对齐摘除无关的既有残留): logic                sq_newest_fwd_bypass_req;
     logic                sq_newest_fwd_req;
-    logic                sq_newest_fwd_req_data_vld_short;
+    // 2026-10-15 停用: 死亡声明 (无驱动无负载, 与本次非对齐摘除无关的既有残留): logic                sq_newest_fwd_req_data_vld_short;
     logic [SQ_ENTRY-1:0] sq_newest_fwd_req_id;
     logic                sq_pe_sel_age_vec_surplus1_entry_vld;
     logic                sq_pe_sel_age_vec_zero_entry_vld;
@@ -238,11 +240,11 @@ logic [SQ_ENTRY-1:0]sq_entry_cmit_data_not_vld;
                 .dcache_tag_wen                            (dcache_tag_wen),
                 .ld_da_lsid                                (ld_da_lsid),
                 .ld_dc_addr0                               (ld_dc_addr0),
-                .ld_dc_addr1_11to4                         (ld_dc_addr1_11to4),
+                // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): .ld_dc_addr1_11to4                         (ld_dc_addr1_11to4),
                 .ld_dc_bytes_vld                           (ld_dc_bytes_vld),
-                .ld_dc_bytes_vld1                          (ld_dc_bytes_vld1),
-                .ld_dc_chk_ld_addr1_vld                    (ld_dc_chk_ld_addr1_vld),
-                .ld_dc_chk_ld_bypass_vld                   (ld_dc_chk_ld_bypass_vld),
+                //.ld_dc_bytes_vld1                          (ld_dc_bytes_vld1),
+                //.ld_dc_chk_ld_addr1_vld                    (ld_dc_chk_ld_addr1_vld),
+                // 2026-10-15 停用: bypass 通路在本仓没实现 (ld_dc_chk_ld_bypass_vld 无人使用), 整条摘掉: .ld_dc_chk_ld_bypass_vld                   (ld_dc_chk_ld_bypass_vld),
                 .ld_dc_chk_ld_inst_vld                     (ld_dc_chk_ld_inst_vld),
                 .ld_dc_iid                                 (ld_dc_iid),
                 .rtu_yy_xx_commit0                         (rtu_yy_xx_commit0),
@@ -269,28 +271,28 @@ logic [SQ_ENTRY-1:0]sq_entry_cmit_data_not_vld;
                 .sq_pop_ptr_x                              (sq_pop_ptr[i]),
                 .st_da_iid                                 (st_da_iid),
                 .st_da_inst_vld                            (st_da_inst_vld),
-                .st_da_secd                                (st_da_secd),
+                //.st_da_secd                                (st_da_secd),
                 .st_da_sq_dcache_dirty                     (st_da_sq_dcache_dirty),
                 .st_da_sq_dcache_valid                     (st_da_sq_dcache_valid),
                 .st_da_sq_dcache_way                       (st_da_sq_dcache_way),
                 .st_da_sq_no_restart                       (st_da_sq_no_restart),
                 .st_dc_addr0                               (st_dc_addr0),
-                .st_dc_boundary                            (st_dc_boundary),
-                .st_dc_boundary_first                      (st_dc_boundary_first),
+                //.st_dc_boundary                            (st_dc_boundary),
+                //.st_dc_boundary_first                      (st_dc_boundary_first),
                 .st_dc_bytes_vld                           (st_dc_bytes_vld),
                 .st_dc_iid                                 (st_dc_iid),
                 .st_dc_rot_sel_rev                         (st_dc_rot_sel_rev),
                 .st_dc_sdid                                (st_dc_sdid),
             //    .st_dc_sdid_hit                            (st_dc_sdid_hit),
-                .st_dc_secd                                (st_dc_secd),
+                //.st_dc_secd                                (st_dc_secd),
                 .st_dc_sq_data_vld                         (st_dc_sq_data_vld),
                 .wmb_sq_pop_grnt                           (wmb_sq_pop_grnt),
                 .sq_entry_addr0_v                          (sq_entry_addr0[i]),
-                .sq_entry_addr1_dep_discard_x              (sq_entry_addr1_dep_discard[i]),
+                // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): .sq_entry_addr1_dep_discard_x              (sq_entry_addr1_dep_discard[i]),
                 .sq_entry_age_vec_surplus1_ptr_x           (sq_entry_age_vec_surplus1_ptr[i]),
                 .sq_entry_age_vec_zero_ptr_x               (sq_entry_age_vec_zero_ptr[i]),
                 .sq_entry_bytes_vld_v                      (sq_entry_bytes_vld[i]),
-                .sq_entry_cancel_acc_req_x                 (sq_entry_cancel_acc_req[i]),
+                // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): .sq_entry_cancel_acc_req_x                 (sq_entry_cancel_acc_req[i]),
                // .sq_entry_cmit_data_vld_x                  (sq_entry_cmit_data_vld[i]),
                 .sq_entry_cmit_data_not_vld(sq_entry_cmit_data_not_vld[i]),
                 .sq_entry_cmit_x                           (sq_entry_cmit[i]),
@@ -351,7 +353,8 @@ logic [SQ_ENTRY-1:0]sq_entry_cmit_data_not_vld;
     // 口径: 表项内部 `sq_entry_cmit_data_vld = !(vld && (cmit|cmit_set) && !data_vld)`,
     // 无效表项恒 1 ⇒ 这里的 &-reduce 恰好是"没有任何已退休表项缺数据"。
     // -----------------------------------------------------------------------
-    assign lsu_rtu_all_commit_st_data_vld = |sq_entry_cmit_data_not_vld[SQ_ENTRY-1:0];
+    assign lsu_rtu_all_commit_st_data_vld = ~|sq_entry_cmit_data_not_vld[SQ_ENTRY-1:0];
+    // 原 (错): assign lsu_rtu_all_commit_st_data_vld = |sq_entry_cmit_data_not_vld[SQ_ENTRY-1:0];
     assign sq_empty_less2 = &(sq_entry_vld[SQ_ENTRY-1:0] | sq_create_ptr[SQ_ENTRY-1:0]);
     assign sq_st_dc_inst_hit = |sq_entry_inst_hit[SQ_ENTRY-1:0];
     assign sq_st_dc_full = sq_full || (!st_dc_old && sq_empty_less2 && !sq_has_cmit);
@@ -387,8 +390,8 @@ logic [SQ_ENTRY-1:0]sq_entry_cmit_data_not_vld;
     // SQ to LD DC depd/discard
     //==========================================================
     assign sq_ld_dc_other_discard_req = |sq_entry_discard_req;
-    assign sq_ld_dc_addr1_dep_discard = |sq_entry_addr1_dep_discard;
-    assign sq_ld_dc_cancel_acc_req = |sq_entry_cancel_acc_req;
+    // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): assign sq_ld_dc_addr1_dep_discard = |sq_entry_addr1_dep_discard;
+    // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): assign sq_ld_dc_cancel_acc_req = |sq_entry_cancel_acc_req;
 
     assign sq_data_discard_req = |sq_entry_data_discard_req;
     assign sq_fwd_req = |sq_entry_fwd_req;

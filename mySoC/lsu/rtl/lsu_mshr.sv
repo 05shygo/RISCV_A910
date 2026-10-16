@@ -44,7 +44,8 @@ module lsu_mshr #(
     // ld_da stage
     //==========================================================
     input  logic [31:0]  ld_da_addr,
-    input  logic         ld_da_boundary_after_mask,
+    // 2026-10-15 停用: 只服务非对齐拆分 (见 lsu_mshr_entry.sv)
+    //input  logic         ld_da_boundary_after_mask,
     input  logic [15:0]  ld_da_bytes_vld,
     input  logic [31:0]  ld_da_data_ori,
     input  logic [7:0]   ld_da_data_rot_sel,
@@ -57,7 +58,7 @@ module lsu_mshr #(
     input  logic         ld_da_rb_create_vld,
     input  logic         ld_da_rb_data_vld,
     input  logic         ld_da_rb_discard_grnt,
-    input  logic         ld_da_rb_merge_vld,
+    //input  logic         ld_da_rb_merge_vld,
     input  logic         ld_da_sign_extend,
 
     //==========================================================
@@ -91,7 +92,7 @@ module lsu_mshr #(
     input  logic [31:0]  sq_pop_addr,
     input  logic [31:0]  st_da_addr,
     input  logic [15:0]  st_da_bytes_vld,
-    input  logic         st_da_dcache_hit,
+    // 2026-10-15 停用: mshr_entry 已不用 st_da_dcache_hit (死亡声明), 上游一并摘: input  logic         st_da_dcache_hit,
     input  logic [6:0]   st_da_iid,
     input  logic         st_da_old,
     input  logic         st_da_rb_cmit,
@@ -117,7 +118,7 @@ module lsu_mshr #(
     //==========================================================
     output logic         rb_ld_da_full,
     output logic         rb_ld_da_hit_idx,
-    output logic         rb_ld_da_merge_fail,
+    // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): output logic         rb_ld_da_merge_fail,
     output logic         rb_st_da_full,
     output logic         rb_st_da_hit_idx,
 
@@ -163,7 +164,7 @@ module lsu_mshr #(
 //==========================================================
 logic [RB_ENTRY-1:0] rb_biu_pe_req_ptr;
 
-logic                 rb_biu_req_create_lfb;
+// 2026-10-15 停用: 死亡声明 (无驱动无负载, 与本次非对齐摘除无关的既有残留): logic                 rb_biu_req_create_lfb;
 logic [RB_ENTRY-1:0] rb_biu_req_ptr;
 logic                 rb_biu_req_unmask;
 logic [RB_ENTRY-1:0] rb_create_ptr0;
@@ -177,7 +178,7 @@ logic [63:0]         rb_wb_data;
 //                 Internal wires
 //==========================================================
 logic [127:0] biu_lsu_r_data_mask;
-logic         rb_biu_pe_create_lfb;
+// 2026-10-15 停用: 死亡声明 (无驱动无负载, 与本次非对齐摘除无关的既有残留): logic         rb_biu_pe_create_lfb;
 logic         rb_biu_pe_req;
 logic [31:0]  rb_biu_pe_req_addr;
 logic         rb_biu_pe_req_permit;
@@ -258,7 +259,7 @@ lsu_mshr_entry u_mshr_entry (
     .cpurst_b                       (cpurst_b),
     .forever_cpuclk                 (forever_cpuclk),
     .ld_da_addr                     (ld_da_addr),
-    .ld_da_boundary_after_mask      (ld_da_boundary_after_mask),
+    //.ld_da_boundary_after_mask      (ld_da_boundary_after_mask),
     .ld_da_bytes_vld                (ld_da_bytes_vld),
     .ld_da_data_ori                 (ld_da_data_ori),
     .ld_da_data_rot_sel             (ld_da_data_rot_sel),
@@ -269,7 +270,7 @@ lsu_mshr_entry u_mshr_entry (
     .ld_da_rb_cmit                  (ld_da_rb_cmit),
     .ld_da_rb_data_vld              (ld_da_rb_data_vld),
     .ld_da_rb_discard_grnt          (ld_da_rb_discard_grnt),
-    .ld_da_rb_merge_vld             (ld_da_rb_merge_vld),
+    //.ld_da_rb_merge_vld             (ld_da_rb_merge_vld),
     .ld_da_sign_extend              (ld_da_sign_extend),
     .rb_biu_ar_id                   (rb_biu_ar_id),
     .rb_entry_biu_pe_req_grnt_x     (rb_entry_biu_pe_req_grnt[i]),
@@ -290,7 +291,7 @@ lsu_mshr_entry u_mshr_entry (
     .sq_pop_addr                    (sq_pop_addr),
     .st_da_addr                     (st_da_addr),
     .st_da_bytes_vld                (st_da_bytes_vld),
-    .st_da_dcache_hit               (st_da_dcache_hit),
+    // 2026-10-15 停用: mshr_entry 已不用 st_da_dcache_hit (死亡声明), 上游一并摘: .st_da_dcache_hit               (st_da_dcache_hit),
     .st_da_iid                      (st_da_iid),
     .st_da_rb_cmit                  (st_da_rb_cmit),
     .wmb_ce_addr                    (wmb_ce_addr),
@@ -369,7 +370,7 @@ assign rb_not_empty = |rb_entry_vld[RB_ENTRY-1:0];
 
 
 //------------------merge signal----------------------------
-assign rb_ld_da_merge_fail = |(rb_entry_merge_fail[RB_ENTRY-1:0]);
+// 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): assign rb_ld_da_merge_fail = |(rb_entry_merge_fail[RB_ENTRY-1:0]);
 
 //------------------create vld------------------------------
 assign rb_create_ld_success = ld_da_rb_create_vld

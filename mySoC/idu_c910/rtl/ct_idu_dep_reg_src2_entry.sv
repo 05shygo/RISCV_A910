@@ -72,15 +72,15 @@ module ct_idu_dep_reg_src2_entry (
     logic        alu1_issue_data_ready;
     logic        data_ready;
     logic        dep_clk;
-    logic        dep_clk_en;
+    // 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic        dep_clk_en;
     logic        div_data_ready;
-    logic        gateclk_entry_vld;
+    // 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic        gateclk_entry_vld;
     logic        load_data_ready;
     logic        load_issue_data_ready;
-    logic        lsu_match_update;
-    logic        mla_data_ready;
+    // 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic        lsu_match_update;
+    // 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic        mla_data_ready;
     logic        mla_issue_data_ready;
-    logic        mla_rdy_update;
+    // 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic        mla_rdy_update;
     logic        mult_data_ready;
     logic        pipe0_wb;
     logic        pipe1_wb;
@@ -93,17 +93,17 @@ module ct_idu_dep_reg_src2_entry (
     logic        wb_update;
     logic        write_back;
     logic        write_clk;
-    logic        write_clk_en;
+    // 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic        write_clk_en;
 
     // 解构 x_create_data 的内部信号
-    logic        x_create_lsu_match;
-    logic        x_create_mla_rdy;
+    // 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic        x_create_lsu_match;
+    // 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic        x_create_mla_rdy;
     logic [6:0]  x_create_preg;
     logic        x_create_rdy;
     logic        x_create_wb;
 
     // 解构 x_read_data 的内部信号
-    logic        x_read_lsu_match;
+    // 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic        x_read_lsu_match;
     logic        x_read_mla_rdy;
     logic [6:0]  x_read_preg;
     logic        x_read_rdy;

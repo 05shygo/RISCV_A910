@@ -19,7 +19,7 @@ module ct_idu_is_lsiq (
   input  logic         lsu_idu_lsiq_pop_vld,
   input  logic [7:0]   lsu_idu_rb_full,
   input  logic         lsu_idu_rb_not_full,
-  input  logic [7:0]   lsu_idu_secd,
+  // 2026-10-15 停用: input  logic [7:0]   lsu_idu_secd,
   input  logic [7:0]   lsu_idu_sq_full,
   input  logic         lsu_idu_sq_not_full,
   input  logic [7:0]   lsu_idu_imme_wakeup,
@@ -31,11 +31,11 @@ module ct_idu_is_lsiq (
   output logic         lsiq_rf_pipe3_issue_en,
   output logic         lsiq_rf_pipe4_issue_en,
   output logic [59:0]  lsiq_dp_pipe3_entry_read_data,
-  output logic         lsiq_pipe3_entry_unalign_2nd,
+  // 2026-10-15 停用: output logic         lsiq_pipe3_entry_unalign_2nd,
   output logic         lsiq_pipe3_entry_old,
   output logic [7:0]   lsiq_dp_pipe3_issue_entry,
   output logic [59:0]  lsiq_dp_pipe4_entry_read_data,
-  output logic         lsiq_pipe4_entry_unalign_2nd,
+  // 2026-10-15 停用: output logic         lsiq_pipe4_entry_unalign_2nd,
   output logic         lsiq_pipe4_entry_old,
   output logic [7:0]   lsiq_dp_pipe4_issue_entry
 );
@@ -122,7 +122,7 @@ parameter LSIQ_OPCODE            = 31;
   logic [7:0]  lsiq_pipe4_entry_ready;
 
   // unalign
-  logic [7:0]  unalign_2nd;
+  // 2026-10-15 停用: logic [7:0]  unalign_2nd;
 
   // pop
   logic [6:0]  lsiq_entry0_pop_other_entry;
@@ -167,14 +167,14 @@ parameter LSIQ_OPCODE            = 31;
   logic        lsiq_entry5_rb_full_set;
   logic        lsiq_entry6_rb_full_set;
   logic        lsiq_entry7_rb_full_set;
-  logic        lsiq_entry0_unalign_2nd_set;
-  logic        lsiq_entry1_unalign_2nd_set;
-  logic        lsiq_entry2_unalign_2nd_set;
-  logic        lsiq_entry3_unalign_2nd_set;
-  logic        lsiq_entry4_unalign_2nd_set;
-  logic        lsiq_entry5_unalign_2nd_set;
-  logic        lsiq_entry6_unalign_2nd_set;
-  logic        lsiq_entry7_unalign_2nd_set;
+  // 2026-10-15 停用: logic        lsiq_entry0_unalign_2nd_set;
+  // 2026-10-15 停用: logic        lsiq_entry1_unalign_2nd_set;
+  // 2026-10-15 停用: logic        lsiq_entry2_unalign_2nd_set;
+  // 2026-10-15 停用: logic        lsiq_entry3_unalign_2nd_set;
+  // 2026-10-15 停用: logic        lsiq_entry4_unalign_2nd_set;
+  // 2026-10-15 停用: logic        lsiq_entry5_unalign_2nd_set;
+  // 2026-10-15 停用: logic        lsiq_entry6_unalign_2nd_set;
+  // 2026-10-15 停用: logic        lsiq_entry7_unalign_2nd_set;
 
   // raw ready
   logic [7:0]  lsiq_entry_raw_rdy;
@@ -543,55 +543,55 @@ begin
     8'h01: begin
              lsiq_dp_pipe3_entry_read_data[LSIQ_WIDTH-1:0] =
                lsiq_entry0_read_data[LSIQ_WIDTH-1:0];
-             lsiq_pipe3_entry_unalign_2nd = unalign_2nd[0];
+             // 2026-10-15 停用: lsiq_pipe3_entry_unalign_2nd = unalign_2nd[0];
              lsiq_pipe3_entry_old         = lsiq_entry0_old;
            end
     8'h02: begin
              lsiq_dp_pipe3_entry_read_data[LSIQ_WIDTH-1:0] =
                lsiq_entry1_read_data[LSIQ_WIDTH-1:0];
-             lsiq_pipe3_entry_unalign_2nd = unalign_2nd[1];
+             // 2026-10-15 停用: lsiq_pipe3_entry_unalign_2nd = unalign_2nd[1];
              lsiq_pipe3_entry_old         = lsiq_entry1_old;
            end
     8'h04: begin
              lsiq_dp_pipe3_entry_read_data[LSIQ_WIDTH-1:0] =
                lsiq_entry2_read_data[LSIQ_WIDTH-1:0];
-             lsiq_pipe3_entry_unalign_2nd = unalign_2nd[2];
+             // 2026-10-15 停用: lsiq_pipe3_entry_unalign_2nd = unalign_2nd[2];
              lsiq_pipe3_entry_old         = lsiq_entry2_old;
            end
     8'h08: begin
              lsiq_dp_pipe3_entry_read_data[LSIQ_WIDTH-1:0] =
                lsiq_entry3_read_data[LSIQ_WIDTH-1:0];
-             lsiq_pipe3_entry_unalign_2nd = unalign_2nd[3];
+             // 2026-10-15 停用: lsiq_pipe3_entry_unalign_2nd = unalign_2nd[3];
              lsiq_pipe3_entry_old         = lsiq_entry3_old;
            end
     8'h10: begin
              lsiq_dp_pipe3_entry_read_data[LSIQ_WIDTH-1:0] =
                lsiq_entry4_read_data[LSIQ_WIDTH-1:0];
-             lsiq_pipe3_entry_unalign_2nd = unalign_2nd[4];
+             // 2026-10-15 停用: lsiq_pipe3_entry_unalign_2nd = unalign_2nd[4];
              lsiq_pipe3_entry_old         = lsiq_entry4_old;
            end
     8'h20: begin
              lsiq_dp_pipe3_entry_read_data[LSIQ_WIDTH-1:0] =
                lsiq_entry5_read_data[LSIQ_WIDTH-1:0];
-             lsiq_pipe3_entry_unalign_2nd = unalign_2nd[5];
+             // 2026-10-15 停用: lsiq_pipe3_entry_unalign_2nd = unalign_2nd[5];
              lsiq_pipe3_entry_old         = lsiq_entry5_old;
            end
     8'h40: begin
              lsiq_dp_pipe3_entry_read_data[LSIQ_WIDTH-1:0] =
                lsiq_entry6_read_data[LSIQ_WIDTH-1:0];
-             lsiq_pipe3_entry_unalign_2nd = unalign_2nd[6];
+             // 2026-10-15 停用: lsiq_pipe3_entry_unalign_2nd = unalign_2nd[6];
              lsiq_pipe3_entry_old         = lsiq_entry6_old;
            end
     8'h80: begin
              lsiq_dp_pipe3_entry_read_data[LSIQ_WIDTH-1:0] =
                lsiq_entry7_read_data[LSIQ_WIDTH-1:0];
-             lsiq_pipe3_entry_unalign_2nd = unalign_2nd[7];
+             // 2026-10-15 停用: lsiq_pipe3_entry_unalign_2nd = unalign_2nd[7];
              lsiq_pipe3_entry_old         = lsiq_entry7_old;
            end
     default: begin
              lsiq_dp_pipe3_entry_read_data[LSIQ_WIDTH-1:0] =
                                      {LSIQ_WIDTH{1'bx}};
-             lsiq_pipe3_entry_unalign_2nd = 1'bx;
+             // 2026-10-15 停用: lsiq_pipe3_entry_unalign_2nd = 1'bx;
              lsiq_pipe3_entry_old         = 1'bx;
            end
   endcase
@@ -603,55 +603,55 @@ begin
     8'h01: begin
              lsiq_dp_pipe4_entry_read_data[LSIQ_WIDTH-1:0] =
                lsiq_entry0_read_data[LSIQ_WIDTH-1:0];
-             lsiq_pipe4_entry_unalign_2nd = unalign_2nd[0];
+             // 2026-10-15 停用: lsiq_pipe4_entry_unalign_2nd = unalign_2nd[0];
              lsiq_pipe4_entry_old         = lsiq_entry0_old;
            end
     8'h02: begin
              lsiq_dp_pipe4_entry_read_data[LSIQ_WIDTH-1:0] =
                lsiq_entry1_read_data[LSIQ_WIDTH-1:0];
-             lsiq_pipe4_entry_unalign_2nd = unalign_2nd[1];
+             // 2026-10-15 停用: lsiq_pipe4_entry_unalign_2nd = unalign_2nd[1];
              lsiq_pipe4_entry_old         = lsiq_entry1_old;
            end
     8'h04: begin
              lsiq_dp_pipe4_entry_read_data[LSIQ_WIDTH-1:0] =
                lsiq_entry2_read_data[LSIQ_WIDTH-1:0];
-             lsiq_pipe4_entry_unalign_2nd = unalign_2nd[2];
+             // 2026-10-15 停用: lsiq_pipe4_entry_unalign_2nd = unalign_2nd[2];
              lsiq_pipe4_entry_old         = lsiq_entry2_old;
            end
     8'h08: begin
              lsiq_dp_pipe4_entry_read_data[LSIQ_WIDTH-1:0] =
                lsiq_entry3_read_data[LSIQ_WIDTH-1:0];
-             lsiq_pipe4_entry_unalign_2nd = unalign_2nd[3];
+             // 2026-10-15 停用: lsiq_pipe4_entry_unalign_2nd = unalign_2nd[3];
              lsiq_pipe4_entry_old         = lsiq_entry3_old;
            end
     8'h10: begin
              lsiq_dp_pipe4_entry_read_data[LSIQ_WIDTH-1:0] =
                lsiq_entry4_read_data[LSIQ_WIDTH-1:0];
-             lsiq_pipe4_entry_unalign_2nd = unalign_2nd[4];
+             // 2026-10-15 停用: lsiq_pipe4_entry_unalign_2nd = unalign_2nd[4];
              lsiq_pipe4_entry_old         = lsiq_entry4_old;
            end
     8'h20: begin
              lsiq_dp_pipe4_entry_read_data[LSIQ_WIDTH-1:0] =
                lsiq_entry5_read_data[LSIQ_WIDTH-1:0];
-             lsiq_pipe4_entry_unalign_2nd = unalign_2nd[5];
+             // 2026-10-15 停用: lsiq_pipe4_entry_unalign_2nd = unalign_2nd[5];
              lsiq_pipe4_entry_old         = lsiq_entry5_old;
            end
     8'h40: begin
              lsiq_dp_pipe4_entry_read_data[LSIQ_WIDTH-1:0] =
                lsiq_entry6_read_data[LSIQ_WIDTH-1:0];
-             lsiq_pipe4_entry_unalign_2nd = unalign_2nd[6];
+             // 2026-10-15 停用: lsiq_pipe4_entry_unalign_2nd = unalign_2nd[6];
              lsiq_pipe4_entry_old         = lsiq_entry6_old;
            end
     8'h80: begin
              lsiq_dp_pipe4_entry_read_data[LSIQ_WIDTH-1:0] =
                lsiq_entry7_read_data[LSIQ_WIDTH-1:0];
-             lsiq_pipe4_entry_unalign_2nd = unalign_2nd[7];
+             // 2026-10-15 停用: lsiq_pipe4_entry_unalign_2nd = unalign_2nd[7];
              lsiq_pipe4_entry_old         = lsiq_entry7_old;
            end
     default: begin
              lsiq_dp_pipe4_entry_read_data[LSIQ_WIDTH-1:0] =
                                      {LSIQ_WIDTH{1'bx}};
-             lsiq_pipe4_entry_unalign_2nd = 1'bx;
+             // 2026-10-15 停用: lsiq_pipe4_entry_unalign_2nd = 1'bx;
              lsiq_pipe4_entry_old         = 1'bx;
            end
   endcase
@@ -715,14 +715,14 @@ assign lsiq_entry5_rb_full_set           = lsu_idu_rb_full[5];
 assign lsiq_entry6_rb_full_set           = lsu_idu_rb_full[6];
 assign lsiq_entry7_rb_full_set           = lsu_idu_rb_full[7];
 
-assign lsiq_entry0_unalign_2nd_set       = lsu_idu_secd[0];
-assign lsiq_entry1_unalign_2nd_set       = lsu_idu_secd[1];
-assign lsiq_entry2_unalign_2nd_set       = lsu_idu_secd[2];
-assign lsiq_entry3_unalign_2nd_set       = lsu_idu_secd[3];
-assign lsiq_entry4_unalign_2nd_set       = lsu_idu_secd[4];
-assign lsiq_entry5_unalign_2nd_set       = lsu_idu_secd[5];
-assign lsiq_entry6_unalign_2nd_set       = lsu_idu_secd[6];
-assign lsiq_entry7_unalign_2nd_set       = lsu_idu_secd[7];
+// 2026-10-15 停用: assign lsiq_entry0_unalign_2nd_set       = lsu_idu_secd[0];
+// 2026-10-15 停用: assign lsiq_entry1_unalign_2nd_set       = lsu_idu_secd[1];
+// 2026-10-15 停用: assign lsiq_entry2_unalign_2nd_set       = lsu_idu_secd[2];
+// 2026-10-15 停用: assign lsiq_entry3_unalign_2nd_set       = lsu_idu_secd[3];
+// 2026-10-15 停用: assign lsiq_entry4_unalign_2nd_set       = lsu_idu_secd[4];
+// 2026-10-15 停用: assign lsiq_entry5_unalign_2nd_set       = lsu_idu_secd[5];
+// 2026-10-15 停用: assign lsiq_entry6_unalign_2nd_set       = lsu_idu_secd[6];
+// 2026-10-15 停用: assign lsiq_entry7_unalign_2nd_set       = lsu_idu_secd[7];
 
 
 
@@ -774,10 +774,10 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry0 (
   .x_rb_full_set                    (lsiq_entry0_rb_full_set          ),
   .x_rdy                            (lsiq_entry_ready[0]              ),
   .x_read_data                      (lsiq_entry0_read_data            ),
-  .unalign_2nd                      (unalign_2nd[0]                   ),
+  // 2026-10-15 停用: .unalign_2nd                      (unalign_2nd[0]                   ),
   .x_sq_full_set                    (lsiq_entry0_sq_full_set          ),
   .x_store                          (lsiq_entry_store[0]              ),
-  .x_unalign_2nd_set                (lsiq_entry0_unalign_2nd_set      ),
+  // 2026-10-15 停用: .x_unalign_2nd_set                (lsiq_entry0_unalign_2nd_set      ),
   .x_vld                            (lsiq_entry0_vld                  ),
   .old                              (lsiq_entry0_old                  )
 );
@@ -813,10 +813,10 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry1 (
   .x_rb_full_set                    (lsiq_entry1_rb_full_set          ),
   .x_rdy                            (lsiq_entry_ready[1]              ),
   .x_read_data                      (lsiq_entry1_read_data            ),
-  .unalign_2nd                      (unalign_2nd[1]                   ),
+  // 2026-10-15 停用: .unalign_2nd                      (unalign_2nd[1]                   ),
   .x_sq_full_set                    (lsiq_entry1_sq_full_set          ),
   .x_store                          (lsiq_entry_store[1]              ),
-  .x_unalign_2nd_set                (lsiq_entry1_unalign_2nd_set      ),
+  // 2026-10-15 停用: .x_unalign_2nd_set                (lsiq_entry1_unalign_2nd_set      ),
   .x_vld                            (lsiq_entry1_vld                  ),
   .old                              (lsiq_entry1_old                  )
 );
@@ -852,10 +852,10 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry2 (
   .x_rb_full_set                    (lsiq_entry2_rb_full_set          ),
   .x_rdy                            (lsiq_entry_ready[2]              ),
   .x_read_data                      (lsiq_entry2_read_data            ),
-  .unalign_2nd                      (unalign_2nd[2]                   ),
+  // 2026-10-15 停用: .unalign_2nd                      (unalign_2nd[2]                   ),
   .x_sq_full_set                    (lsiq_entry2_sq_full_set          ),
   .x_store                          (lsiq_entry_store[2]              ),
-  .x_unalign_2nd_set                (lsiq_entry2_unalign_2nd_set      ),
+  // 2026-10-15 停用: .x_unalign_2nd_set                (lsiq_entry2_unalign_2nd_set      ),
   .x_vld                            (lsiq_entry2_vld                  ),
   .old                              (lsiq_entry2_old                  )
 );
@@ -891,10 +891,10 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry3 (
   .x_rb_full_set                    (lsiq_entry3_rb_full_set          ),
   .x_rdy                            (lsiq_entry_ready[3]              ),
   .x_read_data                      (lsiq_entry3_read_data            ),
-  .unalign_2nd                      (unalign_2nd[3]                   ),
+  // 2026-10-15 停用: .unalign_2nd                      (unalign_2nd[3]                   ),
   .x_sq_full_set                    (lsiq_entry3_sq_full_set          ),
   .x_store                          (lsiq_entry_store[3]              ),
-  .x_unalign_2nd_set                (lsiq_entry3_unalign_2nd_set      ),
+  // 2026-10-15 停用: .x_unalign_2nd_set                (lsiq_entry3_unalign_2nd_set      ),
   .x_vld                            (lsiq_entry3_vld                  ),
   .old                              (lsiq_entry3_old                  )
 );
@@ -930,10 +930,10 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry4 (
   .x_rb_full_set                    (lsiq_entry4_rb_full_set          ),
   .x_rdy                            (lsiq_entry_ready[4]              ),
   .x_read_data                      (lsiq_entry4_read_data            ),
-  .unalign_2nd                      (unalign_2nd[4]                   ),
+  // 2026-10-15 停用: .unalign_2nd                      (unalign_2nd[4]                   ),
   .x_sq_full_set                    (lsiq_entry4_sq_full_set          ),
   .x_store                          (lsiq_entry_store[4]              ),
-  .x_unalign_2nd_set                (lsiq_entry4_unalign_2nd_set      ),
+  // 2026-10-15 停用: .x_unalign_2nd_set                (lsiq_entry4_unalign_2nd_set      ),
   .x_vld                            (lsiq_entry4_vld                  ),
   .old                              (lsiq_entry4_old                  )
 );
@@ -969,10 +969,10 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry5 (
   .x_rb_full_set                    (lsiq_entry5_rb_full_set          ),
   .x_rdy                            (lsiq_entry_ready[5]              ),
   .x_read_data                      (lsiq_entry5_read_data            ),
-  .unalign_2nd                      (unalign_2nd[5]                   ),
+  // 2026-10-15 停用: .unalign_2nd                      (unalign_2nd[5]                   ),
   .x_sq_full_set                    (lsiq_entry5_sq_full_set          ),
   .x_store                          (lsiq_entry_store[5]              ),
-  .x_unalign_2nd_set                (lsiq_entry5_unalign_2nd_set      ),
+  // 2026-10-15 停用: .x_unalign_2nd_set                (lsiq_entry5_unalign_2nd_set      ),
   .x_vld                            (lsiq_entry5_vld                  ),
   .old                              (lsiq_entry5_old                  )
 );
@@ -1008,10 +1008,10 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry6 (
   .x_rb_full_set                    (lsiq_entry6_rb_full_set          ),
   .x_rdy                            (lsiq_entry_ready[6]              ),
   .x_read_data                      (lsiq_entry6_read_data            ),
-  .unalign_2nd                      (unalign_2nd[6]                   ),
+  // 2026-10-15 停用: .unalign_2nd                      (unalign_2nd[6]                   ),
   .x_sq_full_set                    (lsiq_entry6_sq_full_set          ),
   .x_store                          (lsiq_entry_store[6]              ),
-  .x_unalign_2nd_set                (lsiq_entry6_unalign_2nd_set      ),
+  // 2026-10-15 停用: .x_unalign_2nd_set                (lsiq_entry6_unalign_2nd_set      ),
   .x_vld                            (lsiq_entry6_vld                  ),
   .old                              (lsiq_entry6_old                  )
 );
@@ -1047,10 +1047,10 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry7 (
   .x_rb_full_set                    (lsiq_entry7_rb_full_set          ),
   .x_rdy                            (lsiq_entry_ready[7]              ),
   .x_read_data                      (lsiq_entry7_read_data            ),
-  .unalign_2nd                      (unalign_2nd[7]                   ),
+  // 2026-10-15 停用: .unalign_2nd                      (unalign_2nd[7]                   ),
   .x_sq_full_set                    (lsiq_entry7_sq_full_set          ),
   .x_store                          (lsiq_entry_store[7]              ),
-  .x_unalign_2nd_set                (lsiq_entry7_unalign_2nd_set      ),
+  // 2026-10-15 停用: .x_unalign_2nd_set                (lsiq_entry7_unalign_2nd_set      ),
   .x_vld                            (lsiq_entry7_vld                  ),
   .old                              (lsiq_entry7_old                  )
 );

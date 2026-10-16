@@ -159,7 +159,7 @@ logic        is_inst2_vld;
 logic        is_dis_inst0_vld;
 logic        is_dis_inst1_vld;
 logic        is_dis_inst2_vld;
-logic        is_dis_inst3_vld;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic        is_dis_inst3_vld;
 logic        is_dis_pipedown2;
 
 logic        is_dis_aiq_create0_en;

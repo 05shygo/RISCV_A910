@@ -458,7 +458,7 @@ begin
   endcase
 end
 /*
-reg [5:0] inst0_rel_preg_q, inst1_rel_preg_q, inst2_rel_preg_q;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): reg [5:0] inst0_rel_preg_q, inst1_rel_preg_q, inst2_rel_preg_q;
 always @(posedge forever_cpuclk or negedge cpurst_b) begin
   if (!cpurst_b) begin
     inst0_rel_preg_q <= 6'd0;

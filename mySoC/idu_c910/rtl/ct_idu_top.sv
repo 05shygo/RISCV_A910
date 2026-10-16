@@ -76,7 +76,7 @@ module ct_idu_top(
   input  logic         lsu_idu_rb_not_full,
   input  logic [7:0]   lsu_idu_sq_full,
   input  logic         lsu_idu_sq_not_full,
-  input  logic [7:0]   lsu_idu_secd,
+  // 2026-10-15 停用: input  logic [7:0]   lsu_idu_secd,
   input  logic [7:0]   lsu_idu_imme_wakeup,
   input  logic         lsu_idu_lsiq_pop_vld,
   input  logic         lsu_idu_lsiq_pop0_vld,
@@ -130,10 +130,10 @@ module ct_idu_top(
   output logic [5:0]   idu_lsu_ld_preg,
   output logic [31:0]  idu_lsu_ld_src0,
   output logic [11:0]  idu_lsu_ld_offset,
-  output logic [12:0]  idu_lsu_ld_offset_plus,
+  // 2026-10-15 停用: output logic [12:0]  idu_lsu_ld_offset_plus,
   output logic         idu_lsu_ld_sign_extend,
   output logic [1:0]   idu_lsu_ld_inst_size,
-  output logic         idu_lsu_ld_unalign_2nd,
+  // 2026-10-15 停用: output logic         idu_lsu_ld_unalign_2nd,
   output logic [7:0]   idu_lsu_ld_lch_entry,
   output logic         idu_lsu_ld_oldest,
 
@@ -145,9 +145,9 @@ module ct_idu_top(
 //  output logic [5:0]   idu_lsu_st_preg,
   output logic [31:0]  idu_lsu_st_src0,
   output logic [11:0]  idu_lsu_st_offset,
-  output logic [12:0]  idu_lsu_st_offset_plus,
+  // 2026-10-15 停用: output logic [12:0]  idu_lsu_st_offset_plus,
   output logic [1:0]   idu_lsu_st_inst_size,
-  output logic         idu_lsu_st_unalign_2nd,
+  // 2026-10-15 停用: output logic         idu_lsu_st_unalign_2nd,
   output logic [7:0]   idu_lsu_st_lch_entry,
   output logic         idu_lsu_st_oldest,
   output logic [3:0]   idu_lsu_st_sdiq_entry,
@@ -353,15 +353,15 @@ logic [24:0]  dp_id_pipedown_inst2_chk;
 logic        ctrl_ir_stall;
 logic        ctrl_ir_pipedown;
 //logic        ctrl_ir_inst2_vld;
-logic        ctrl_ir_pre_dis_aiq0_create0_en;
-logic        ctrl_ir_pre_dis_aiq0_create1_en;
-logic        ctrl_ir_pre_dis_aiq1_create0_en;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic        ctrl_ir_pre_dis_aiq0_create0_en;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic        ctrl_ir_pre_dis_aiq0_create1_en;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic        ctrl_ir_pre_dis_aiq1_create0_en;
 logic        ctrl_ir_pre_dis_biq_create0_en;
 logic        ctrl_ir_pre_dis_biq_create1_en;
-logic        ctrl_ir_pre_dis_biq_create2_en;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic        ctrl_ir_pre_dis_biq_create2_en;
 logic        ctrl_ir_pre_dis_lsiq_create0_en;
 logic        ctrl_ir_pre_dis_lsiq_create1_en;
-logic        ctrl_ir_pre_dis_lsiq_create2_en;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic        ctrl_ir_pre_dis_lsiq_create2_en;
 logic        ctrl_ir_pre_dis_mult_create0_en;
 logic        ctrl_ir_pre_dis_div_create0_en;
 
@@ -423,20 +423,20 @@ logic        dp_rt_inst2_src0_vld;
 logic        dp_rt_inst2_src1_vld;
 logic        dp_rt_inst2_dst_vld;
 logic [5:0]  dp_rt_inst2_dst_preg;
-logic [5:0]  rt_dp_inst0_src0_preg;
-logic [5:0]  rt_dp_inst0_src1_preg;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [5:0]  rt_dp_inst0_src0_preg;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [5:0]  rt_dp_inst0_src1_preg;
 logic [6:0]  rt_dp_inst0_src0_data;
 logic [6:0]  rt_dp_inst0_src1_data;
 //logic [6:0]  rt_dp_inst0_src2_data;
 logic [5:0]  rt_dp_inst0_rel_preg;
-logic [5:0]  rt_dp_inst1_src0_preg;
-logic [5:0]  rt_dp_inst1_src1_preg;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [5:0]  rt_dp_inst1_src0_preg;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [5:0]  rt_dp_inst1_src1_preg;
 logic [6:0]  rt_dp_inst1_src0_data;
 logic [6:0]  rt_dp_inst1_src1_data;
 //logic [6:0]  rt_dp_inst1_src2_data;
 logic [5:0]  rt_dp_inst1_rel_preg;
-logic [5:0]  rt_dp_inst2_src0_preg;
-logic [5:0]  rt_dp_inst2_src1_preg;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [5:0]  rt_dp_inst2_src0_preg;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [5:0]  rt_dp_inst2_src1_preg;
 logic [6:0]  rt_dp_inst2_src0_data;
 logic [6:0]  rt_dp_inst2_src1_data;
 //logic [6:0]  rt_dp_inst2_src2_data;
@@ -461,30 +461,30 @@ logic [1:0]  ctrl_id_ifu_pipedown_sel;
 logic [1:0]  ctrl_id_inst_sel;
 logic        ctrl_aiq_create0_en;
 logic        ctrl_aiq_create1_en;
-logic [1:0]  ctrl_aiq_create0_sel;
-logic [1:0]  ctrl_aiq_create1_sel;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [1:0]  ctrl_aiq_create0_sel;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [1:0]  ctrl_aiq_create1_sel;
 logic        ctrl_mult_create0_en;
-logic [1:0]  ctrl_mult_create0_sel;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [1:0]  ctrl_mult_create0_sel;
 logic        ctrl_div_create0_en;
-logic [1:0]  ctrl_div_create0_sel;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [1:0]  ctrl_div_create0_sel;
 logic        ctrl_biq_create0_en;
 logic        ctrl_biq_create1_en;
-logic        ctrl_biq_create2_en;
-logic [1:0]  ctrl_biq_create0_sel;
-logic [1:0]  ctrl_biq_create1_sel;
-logic [1:0]  ctrl_biq_create2_sel;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic        ctrl_biq_create2_en;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [1:0]  ctrl_biq_create0_sel;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [1:0]  ctrl_biq_create1_sel;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [1:0]  ctrl_biq_create2_sel;
 logic        ctrl_lsiq_create0_en;
 logic        ctrl_lsiq_create1_en;
-logic        ctrl_lsiq_create2_en;
-logic [1:0]  ctrl_lsiq_create0_sel;
-logic [1:0]  ctrl_lsiq_create1_sel;
-logic [1:0]  ctrl_lsiq_create2_sel;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic        ctrl_lsiq_create2_en;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [1:0]  ctrl_lsiq_create0_sel;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [1:0]  ctrl_lsiq_create1_sel;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [1:0]  ctrl_lsiq_create2_sel;
 logic        ctrl_sdiq_create0_en;
 logic        ctrl_sdiq_create1_en;
-logic        ctrl_sdiq_create2_en;
-logic [1:0]  ctrl_sdiq_create0_sel;
-logic [1:0]  ctrl_sdiq_create1_sel;
-logic [1:0]  ctrl_sdiq_create2_sel;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic        ctrl_sdiq_create2_en;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [1:0]  ctrl_sdiq_create0_sel;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [1:0]  ctrl_sdiq_create1_sel;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [1:0]  ctrl_sdiq_create2_sel;
 
 // IS Stage create data signals
 logic [94:0]  dp_aiq_create0_data;   // 64 → 96 (2026-10-08 加 PC)
@@ -520,54 +520,54 @@ logic         ctrl_dp_dis_inst1_vld;
 logic         ctrl_dp_dis_inst2_vld;
 
 // AIQ (ALU Issue Queue) signals
-logic        ctrl_aiq_rf_pop_vld;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic        ctrl_aiq_rf_pop_vld;
 logic        aiq_ctrl_1_left_updt;
-logic        aiq_ctrl_empty;
-logic [6:0]  aiq_ctrl_entry_cnt;
-logic        rf_aiq_issue_en;
-logic [80:0] aiq_rf_issue_read_data;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic        aiq_ctrl_empty;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [6:0]  aiq_ctrl_entry_cnt;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic        rf_aiq_issue_en;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [80:0] aiq_rf_issue_read_data;
 
 // MULT Issue Queue signals
-logic        ctrl_mult_rf_pop_vld;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic        ctrl_mult_rf_pop_vld;
 logic        mult_ctrl_1_left_updt;
-logic        mult_ctrl_empty;
-logic [3:0]  mult_ctrl_entry_cnt;
-logic        rf_mult_issue_en;
-logic [70:0] mult_rf_issue_read_data;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic        mult_ctrl_empty;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [3:0]  mult_ctrl_entry_cnt;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic        rf_mult_issue_en;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [70:0] mult_rf_issue_read_data;
 
 // DIV Issue Queue signals
-logic        ctrl_div_rf_pop_vld;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic        ctrl_div_rf_pop_vld;
 logic        div_ctrl_1_left_updt;
-logic        div_ctrl_empty;
-logic [3:0]  div_ctrl_entry_cnt;
-logic        rf_div_issue_en;
-logic [71:0] div_rf_issue_read_data;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic        div_ctrl_empty;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [3:0]  div_ctrl_entry_cnt;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic        rf_div_issue_en;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [71:0] div_rf_issue_read_data;
 
 // BIQ (Branch Issue Queue) signals
-logic        ctrl_biq_rf_pop_vld;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic        ctrl_biq_rf_pop_vld;
 logic        biq_ctrl_1_left_updt;
-logic        biq_ctrl_empty;
-logic [2:0]  biq_ctrl_entry_cnt;
-logic        rf_biq_issue_en;
-logic [117:0] biq_rf_issue_read_data;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic        biq_ctrl_empty;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [2:0]  biq_ctrl_entry_cnt;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic        rf_biq_issue_en;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [117:0] biq_rf_issue_read_data;
 
 // LSIQ (Load Store Issue Queue) signals
-logic        ctrl_lsiq_rf_pop_vld;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic        ctrl_lsiq_rf_pop_vld;
 logic        lsiq_ctrl_1_left_updt;
-logic        lsiq_ctrl_empty;
-logic [3:0]  lsiq_ctrl_entry_cnt;
-logic        rf_lsiq_ld_issue_en;
-logic        rf_lsiq_st_issue_en;
-logic [104:0] lsiq_rf_ld_issue_read_data;
-logic [99:0] lsiq_rf_st_issue_read_data;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic        lsiq_ctrl_empty;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [3:0]  lsiq_ctrl_entry_cnt;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic        rf_lsiq_ld_issue_en;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic        rf_lsiq_st_issue_en;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [104:0] lsiq_rf_ld_issue_read_data;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [99:0] lsiq_rf_st_issue_read_data;
 
 // SDIQ (Store Data Issue Queue) signals
-logic        ctrl_sdiq_rf_pop_vld;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic        ctrl_sdiq_rf_pop_vld;
 logic        sdiq_ctrl_1_left_updt;
-logic        sdiq_ctrl_empty;
-logic [1:0]  sdiq_ctrl_entry_cnt;
-logic        rf_sdiq_issue_en;
-logic [38:0] sdiq_rf_issue_read_data;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic        sdiq_ctrl_empty;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [1:0]  sdiq_ctrl_entry_cnt;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic        rf_sdiq_issue_en;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [38:0] sdiq_rf_issue_read_data;
 
 // Physical Register File signals
 logic [5:0]  dp_prf_rf_pipe0_src0_preg;
@@ -1125,7 +1125,7 @@ ct_idu_is_lsiq x_ct_idu_is_lsiq (
   .lsu_idu_imme_wakeup(lsu_idu_imme_wakeup),
   .lsu_idu_rb_full                       (lsu_idu_rb_full),//in
   .lsu_idu_rb_not_full                   (lsu_idu_rb_not_full),//in
-  .lsu_idu_secd                          (lsu_idu_secd),//in
+  // 2026-10-15 停用: .lsu_idu_secd                          (lsu_idu_secd),//in
   .lsu_idu_sq_full                       (lsu_idu_sq_full),//in
   .lsu_idu_sq_not_full                   (lsu_idu_sq_not_full),//in
   .lsu_idu_wb_pipe3_wb_preg_dupx                              (lsu_idu_wb_pipe3_wb_preg_dupx),//in
@@ -1136,11 +1136,11 @@ ct_idu_is_lsiq x_ct_idu_is_lsiq (
   .lsiq_rf_pipe3_issue_en                (lsiq_xx_pipe3_issue_en),
   .lsiq_rf_pipe4_issue_en                (lsiq_xx_pipe4_issue_en),
   .lsiq_dp_pipe3_entry_read_data            (lsiq_dp_pipe3_entry_read_data),
-  .lsiq_pipe3_entry_unalign_2nd          (lsiq_pipe3_entry_unalign_2nd),
+  // 2026-10-15 停用: .lsiq_pipe3_entry_unalign_2nd          (lsiq_pipe3_entry_unalign_2nd),
   .lsiq_pipe3_entry_old                  (lsiq_pipe3_entry_old),
   .lsiq_dp_pipe3_issue_entry            (lsiq_dp_pipe3_issue_entry),
   .lsiq_dp_pipe4_entry_read_data            (lsiq_dp_pipe4_entry_read_data),
-  .lsiq_pipe4_entry_unalign_2nd          (lsiq_pipe4_entry_unalign_2nd),
+  // 2026-10-15 停用: .lsiq_pipe4_entry_unalign_2nd          (lsiq_pipe4_entry_unalign_2nd),
   .lsiq_pipe4_entry_old                  (lsiq_pipe4_entry_old),
   .lsiq_dp_pipe4_issue_entry            (lsiq_dp_pipe4_issue_entry)
 
@@ -1268,7 +1268,7 @@ ct_idu_rf_dp x_ct_idu_rf_dp (
   .lsiq_dp_pipe3_issue_entry             (lsiq_dp_pipe3_issue_entry),
   .lsiq_dp_pipe3_issue_read_data         (lsiq_dp_pipe3_entry_read_data),
   .lsiq_xx_pipe3_issue_en                              (lsiq_xx_pipe3_issue_en),
-  .lsiq_pipe3_entry_unalign_2nd          (lsiq_pipe3_entry_unalign_2nd),
+  // 2026-10-15 停用: .lsiq_pipe3_entry_unalign_2nd          (lsiq_pipe3_entry_unalign_2nd),
   .lsiq_pipe3_entry_old                  (lsiq_pipe3_entry_old),
   .prf_dp_rf_pipe3_src0_data                              (prf_dp_rf_pipe3_src0_data),
   .dp_prf_rf_pipe3_src0_preg                              (dp_prf_rf_pipe3_src0_preg),
@@ -1276,16 +1276,16 @@ ct_idu_rf_dp x_ct_idu_rf_dp (
   .idu_lsu_ld_preg                       (idu_lsu_ld_preg),//out
   .idu_lsu_ld_src0                       (idu_lsu_ld_src0),//out
   .idu_lsu_ld_offset                     (idu_lsu_ld_offset),//out
-  .idu_lsu_ld_offset_plus                (idu_lsu_ld_offset_plus),//out
+  // 2026-10-15 停用: .idu_lsu_ld_offset_plus                (idu_lsu_ld_offset_plus),//out
   .idu_lsu_ld_sign_extend                (idu_lsu_ld_sign_extend),//out
   .idu_lsu_ld_inst_size                  (idu_lsu_ld_inst_size),//out
-  .idu_lsu_ld_unalign_2nd                (idu_lsu_ld_unalign_2nd),//out
+  // 2026-10-15 停用: .idu_lsu_ld_unalign_2nd                (idu_lsu_ld_unalign_2nd),//out
   .idu_lsu_ld_lch_entry                  (idu_lsu_ld_lch_entry),//out
   .idu_lsu_ld_oldest                     (idu_lsu_ld_oldest),//out
   .lsiq_dp_pipe4_issue_entry             (lsiq_dp_pipe4_issue_entry),
   .lsiq_dp_pipe4_issue_read_data         (lsiq_dp_pipe4_entry_read_data),
   .lsiq_xx_pipe4_issue_en                              (lsiq_xx_pipe4_issue_en),
-  .lsiq_pipe4_entry_unalign_2nd          (lsiq_pipe4_entry_unalign_2nd),
+  // 2026-10-15 停用: .lsiq_pipe4_entry_unalign_2nd          (lsiq_pipe4_entry_unalign_2nd),
   .lsiq_pipe4_entry_old                  (lsiq_pipe4_entry_old),
   .prf_dp_rf_pipe4_src0_data                              (prf_dp_rf_pipe4_src0_data),
   .dp_prf_rf_pipe4_src0_preg                              (dp_prf_rf_pipe4_src0_preg),
@@ -1293,9 +1293,9 @@ ct_idu_rf_dp x_ct_idu_rf_dp (
  // .idu_lsu_st_preg                       (idu_lsu_st_preg),//out
   .idu_lsu_st_src0                       (idu_lsu_st_src0),//out
   .idu_lsu_st_offset                     (idu_lsu_st_offset),//out
-  .idu_lsu_st_offset_plus                (idu_lsu_st_offset_plus),//out
+  // 2026-10-15 停用: .idu_lsu_st_offset_plus                (idu_lsu_st_offset_plus),//out
   .idu_lsu_st_inst_size                  (idu_lsu_st_inst_size),//out
-  .idu_lsu_st_unalign_2nd                (idu_lsu_st_unalign_2nd),//out
+  // 2026-10-15 停用: .idu_lsu_st_unalign_2nd                (idu_lsu_st_unalign_2nd),//out
   .idu_lsu_st_lch_entry                  (idu_lsu_st_lch_entry),//out
   .idu_lsu_st_oldest                     (idu_lsu_st_oldest),//out
   .idu_lsu_st_sdiq_entry                 (idu_lsu_st_sdiq_entry),//out

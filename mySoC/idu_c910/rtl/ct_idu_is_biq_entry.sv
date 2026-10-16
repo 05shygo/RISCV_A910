@@ -56,7 +56,7 @@ parameter BIQ_OPCODE            = 31;
     // 位域 BIQ_CHK=151 起 25 位 —— 与 BIQ_PC=126 起的 65 位 pc 相邻不重叠。
     logic [24:0]  chk;
     
-    logic [6:0]   dst_data;        // 注：原代码中声明了但未使用，可能是 dst_preg 的笔误
+    // 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [6:0]   dst_data;        // 注：原代码中声明了但未使用，可能是 dst_preg 的笔误
     logic [6:0]   create_src0_data;
     logic [6:0]   create_src1_data;
     logic [6:0]   read_src0_data;
@@ -68,7 +68,7 @@ parameter BIQ_OPCODE            = 31;
 
     // 内部时钟（原代码中未生成，保持声明以匹配原逻辑）
     logic         entry_clk;
-    logic         create_preg_clk;
+    // 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic         create_preg_clk;
     logic         create_clk;
     // 2026-10-08 补: 同 ct_idu_is_aiq_entry —— 这三个是 C910 工厂版门控时钟单元的
     // 产物, 交付时被剥掉 ⇒ 表项冻结。父模块 ct_idu_is_biq 已连 forever_cpuclk。

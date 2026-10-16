@@ -75,7 +75,7 @@ logic         entry_alu_short;
 
 logic [6:0]   x_create_src0_data;
 logic [6:0]   x_create_src1_data;
-logic [6:0]   x_create_src2_data;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [6:0]   x_create_src2_data;
 logic [6:0]   x_read_src0_data;
 logic [6:0]   x_read_src1_data;
 //logic [6:0]   x_read_src2_data;

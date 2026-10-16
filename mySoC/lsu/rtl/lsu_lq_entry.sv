@@ -2,13 +2,14 @@ module ct_lsu_lq_entry (
     input  logic         cpurst_b,
     input  logic         forever_cpuclk,
     input  logic [31:0]  ld_dc_addr0,
-    input  logic [27:0]  ld_dc_addr1_to4,
+    // 2026-10-15 停用: addr1/bytes_vld1/secd/create1 都只服务非对齐的"第二半"表项
+    //input  logic [27:0]  ld_dc_addr1_to4,
     input  logic [15:0]  ld_dc_bytes_vld,
-    input  logic [15:0]  ld_dc_bytes_vld1,
+    //input  logic [15:0]  ld_dc_bytes_vld1,
     input  logic [6:0]   ld_dc_iid,
-    input  logic         ld_dc_secd,
+    //input  logic         ld_dc_secd,
     input  logic         lq_entry_create0_vld_x,
-    input  logic         lq_entry_create1_vld_x,
+    //input  logic         lq_entry_create1_vld_x,
     input  logic         rtu_yy_xx_commit0,
     input  logic [6:0]   rtu_yy_xx_commit0_iid,
     input  logic         rtu_yy_xx_commit1,
@@ -29,7 +30,7 @@ module ct_lsu_lq_entry (
 logic [27:0] lq_entry_addr0_tto4;
 logic [15:0] lq_entry_bytes_vld;
 logic [6:0]  lq_entry_iid;
-logic        lq_entry_secd;
+//logic        lq_entry_secd;     // 2026-10-15 停用: 只有非对齐第二半才是 1, 现在恒 0
 logic        lq_entry_vld;
 
 // 内部组合信号
@@ -37,12 +38,12 @@ logic        lq_entry_cmit_hit0;
 logic        lq_entry_cmit_hit1;
 logic        lq_entry_cmit_hit2;
 logic        lq_entry_cmit_vld;
-logic        lq_entry_create0_dp_vld;
+// 2026-10-15 停用: 死亡声明 (无驱动无负载, 与本次非对齐摘除无关的既有残留): logic        lq_entry_create0_dp_vld;
 logic        lq_entry_create0_vld;
-logic        lq_entry_create1_dp_vld;
-logic        lq_entry_create1_vld;
+//logic        lq_entry_create1_dp_vld;   // 2026-10-15 停用
+//logic        lq_entry_create1_vld;      // 2026-10-15 停用
 logic [39:0] lq_entry_from_ld_dc_addr0;
-logic [39:0] lq_entry_from_ld_dc_addr1;
+//logic [39:0] lq_entry_from_ld_dc_addr1; // 2026-10-15 停用
 logic [39:0] lq_entry_from_st_dc_addr0;
 logic        lq_entry_iid_newer_than_st_dc;
 logic        lq_entry_inst_hit;
@@ -65,7 +66,7 @@ begin
     lq_entry_vld  <=  1'b0;
   else if(lq_entry_pop_vld  ||  rtu_yy_xx_flush)
     lq_entry_vld  <=  1'b0;
-  else if(lq_entry_create0_vld || lq_entry_create1_vld)
+  else if(lq_entry_create0_vld)   // 2026-10-15 停用: || lq_entry_create1_vld
     lq_entry_vld  <=  1'b1;
 end
 
@@ -79,22 +80,23 @@ begin
     lq_entry_addr0_tto4[27:0]  <=  {28{1'b0}};
     lq_entry_bytes_vld[15:0]  <=  16'b0;
     lq_entry_iid[6:0]         <=  7'b0;
-    lq_entry_secd             <=  1'b0;
+    //lq_entry_secd             <=  1'b0;
   end
   else if(lq_entry_create0_vld)
   begin
     lq_entry_addr0_tto4[27:0] <=  lq_entry_from_ld_dc_addr0[31:4];
     lq_entry_bytes_vld[15:0]  <=  ld_dc_bytes_vld[15:0];
     lq_entry_iid[6:0]         <=  ld_dc_iid[6:0];
-    lq_entry_secd             <=  ld_dc_secd;
+    //lq_entry_secd             <=  ld_dc_secd;
   end
-  else if(lq_entry_create1_vld)
-  begin
-    lq_entry_addr0_tto4[27:0] <=  lq_entry_from_ld_dc_addr1[31:4];
-    lq_entry_bytes_vld[15:0]  <=  ld_dc_bytes_vld1[15:0];
-    lq_entry_iid[6:0]         <=  ld_dc_iid[6:0];
-    lq_entry_secd             <=  1'b1;
-  end
+  // 2026-10-15 停用: 非对齐"第二半"的 lq 表项 (地址取 addr1 / 掩码取 bytes_vld1)
+  //else if(lq_entry_create1_vld)
+  //begin
+  //  lq_entry_addr0_tto4[27:0] <=  lq_entry_from_ld_dc_addr1[31:4];
+  //  lq_entry_bytes_vld[15:0]  <=  ld_dc_bytes_vld1[15:0];
+  //  lq_entry_iid[6:0]         <=  ld_dc_iid[6:0];
+  //  lq_entry_secd             <=  1'b1;
+  //end
 end
 
 //==========================================================
@@ -121,8 +123,9 @@ assign lq_entry_pop_vld   = lq_entry_cmit_vld;
 //                 lq iid check
 //==========================================================
 //check iid to judge whether to create lq
+// 2026-10-15 停用: 原式还有 `&& (lq_entry_secd == ld_dc_secd)`, 两侧恒 0 恒等
 assign lq_entry_inst_hit  = lq_entry_vld
-                            &&  (lq_entry_secd  ==  ld_dc_secd)
+                            //&&  (lq_entry_secd  ==  ld_dc_secd)
                             &&  (lq_entry_iid[6:0] ==  ld_dc_iid[6:0]);
 
 //==========================================================
@@ -159,7 +162,8 @@ assign lq_entry_newer_than_st_dc  = lq_entry_vld
 //    (从 from_ld_dc_addr0[31:4] 装) 全是 X ⇒ lq_entry_raw_spec_fail 比对出 X。
 //    addr1 用 ld_dc_addr1_to4 (== addr1[31:4]) 顶上。
 assign lq_entry_from_ld_dc_addr0[31:0] = ld_dc_addr0[31:0];
-assign lq_entry_from_ld_dc_addr1[31:4] = ld_dc_addr1_to4[27:0];
+// 2026-10-15 停用: addr1 已摘 (只有 create1 那条路用它)
+//assign lq_entry_from_ld_dc_addr1[31:4] = ld_dc_addr1_to4[27:0];
 assign lq_entry_from_st_dc_addr0[31:0] = st_dc_addr0[31:0];
 assign lq_entry_raw_addr_tto4_hit   = lq_entry_addr0_tto4[27:0]
                                       ==  lq_entry_from_st_dc_addr0[31:4];
@@ -181,7 +185,8 @@ assign lq_entry_raw_spec_fail     = lq_entry_raw_spec_fail1;
 //==========================================================
 //------------------input-----------------------------------
 assign lq_entry_create0_vld         = lq_entry_create0_vld_x;
-assign lq_entry_create1_vld         = lq_entry_create1_vld_x;
+// 2026-10-15 停用: create1 通路已摘
+//assign lq_entry_create1_vld         = lq_entry_create1_vld_x;
 //------------------output----------------------------------
 assign lq_entry_vld_x               = lq_entry_vld;
 assign lq_entry_inst_hit_x          = lq_entry_inst_hit;

@@ -98,9 +98,9 @@ logic             ctrl_ir_inst2_biq_vld;
 logic             ctrl_ir_inst2_lsiq;
 logic             ctrl_ir_inst2_lsiq_vld;
 logic             ctrl_ir_inst2_sdiq;
-logic             ctrl_ir_inst3_biq;
-logic             ctrl_ir_inst3_lsiq;
-logic             ctrl_ir_inst3_sdiq;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic             ctrl_ir_inst3_biq;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic             ctrl_ir_inst3_lsiq;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic             ctrl_ir_inst3_sdiq;
 logic             ctrl_ir_pipedown_stall;
 logic             ctrl_ir_pre_dis_3_biq_inst;
 logic             ctrl_ir_pre_dis_3_lsiq_inst;
@@ -128,7 +128,7 @@ logic [12:0]      ir_pipedown_inst1_ctrl_info;
 logic             ir_pipedown_inst1_vld;
 logic [12:0]      ir_pipedown_inst2_ctrl_info;
 logic             ir_pipedown_inst2_vld;
-logic [12:0]      ir_pipedown_inst3_ctrl_info;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [12:0]      ir_pipedown_inst3_ctrl_info;
 
 // 新增缺失的内部信号声明
 logic             ctrl_ir_inst0_aiq;
@@ -153,7 +153,7 @@ logic             ctrl_ir_pre_dis_al_2_mult_inst;
 logic             ctrl_ir_pre_dis_al_1_div_inst;
 logic             ctrl_ir_pre_dis_al_2_div_inst;
 
-logic [1:0]       ctrl_ir_pre_dis_aiq0_create1_sel;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [1:0]       ctrl_ir_pre_dis_aiq0_create1_sel;
 //logic             ctrl_ir_pre_dis_mult_create0_en;
 //logic [1:0]       ctrl_ir_pre_dis_mult_create0_sel;
 //logic [1:0]       ctrl_ir_pre_dis_mult_create1_sel;

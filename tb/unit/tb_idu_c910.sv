@@ -63,6 +63,11 @@ module tb_idu_c910;
   wire [31:0] iu_idu_ex2_pipe1_wb_preg_data;
   wire [63:0] iu_idu_ex2_pipe1_wb_preg_expand;
   wire       iu_idu_ex2_pipe1_wb_preg_vld;
+  wire [ 5:0] iu_idu_ex2_pipe2_wb_preg_dupx;
+  wire       iu_idu_ex2_pipe2_wb_preg_vld_dupx;
+  wire [31:0] iu_idu_ex2_pipe2_wb_preg_data;
+  wire [63:0] iu_idu_ex2_pipe2_wb_preg_expand;
+  wire       iu_idu_ex2_pipe2_wb_preg_vld;
   wire [ 5:0] lsu_idu_wb_pipe3_wb_preg_dupx;
   wire       lsu_idu_wb_pipe3_wb_preg_vld_dupx;
   wire [31:0] lsu_idu_wb_pipe3_wb_preg_data;
@@ -71,13 +76,11 @@ module tb_idu_c910;
   wire [ 7:0] lsu_idu_lq_full;
   wire [ 7:0] lsu_idu_rb_full;
   wire [ 7:0] lsu_idu_sq_full;
-  wire [ 7:0] lsu_idu_secd;
   wire [ 7:0] lsu_idu_imme_wakeup;
   wire       lsu_idu_lsiq_pop_vld;
   wire       lsu_idu_lsiq_pop0_vld;
   wire       lsu_idu_lsiq_pop1_vld;
   wire [ 7:0] lsu_idu_lsiq_pop_entry;
- // wire       lsu_sdiq_has_in_sq_vld;
   wire [ 3:0] lsu_sdiq_has_in_sq_sdiq;
   wire [ 5:0] rtu_preg_raddr1;
   wire [ 5:0] rtu_preg_raddr2;
@@ -115,20 +118,15 @@ module tb_idu_c910;
   wire [ 5:0] idu_lsu_ld_preg;
   wire [31:0] idu_lsu_ld_src0;
   wire [11:0] idu_lsu_ld_offset;
-  wire [12:0] idu_lsu_ld_offset_plus;
   wire       idu_lsu_ld_sign_extend;
   wire [ 1:0] idu_lsu_ld_inst_size;
-  wire       idu_lsu_ld_unalign_2nd;
   wire [ 7:0] idu_lsu_ld_lch_entry;
   wire       idu_lsu_ld_oldest;
   wire       idu_lsu_st_sel;
   wire [ 6:0] idu_lsu_st_iid;
-  //wire [ 5:0] idu_lsu_st_preg;
   wire [31:0] idu_lsu_st_src0;
   wire [11:0] idu_lsu_st_offset;
-  wire [12:0] idu_lsu_st_offset_plus;
   wire [ 1:0] idu_lsu_st_inst_size;
-  wire       idu_lsu_st_unalign_2nd;
   wire [ 7:0] idu_lsu_st_lch_entry;
   wire       idu_lsu_st_oldest;
   wire [ 3:0] idu_lsu_st_sdiq_entry;
@@ -214,6 +212,11 @@ module tb_idu_c910;
   assign iu_idu_ex2_pipe1_wb_preg_data    = 32'b0;
   assign iu_idu_ex2_pipe1_wb_preg_expand  = 64'b0;
   assign iu_idu_ex2_pipe1_wb_preg_vld     = 1'b0;
+  assign iu_idu_ex2_pipe2_wb_preg_dupx    = 6'b0;
+  assign iu_idu_ex2_pipe2_wb_preg_vld_dupx = 1'b0;
+  assign iu_idu_ex2_pipe2_wb_preg_data    = 32'b0;
+  assign iu_idu_ex2_pipe2_wb_preg_expand  = 64'b0;
+  assign iu_idu_ex2_pipe2_wb_preg_vld     = 1'b0;
   assign lsu_idu_wb_pipe3_wb_preg_dupx    = 6'b0;
   assign lsu_idu_wb_pipe3_wb_preg_vld_dupx = 1'b0;
   assign lsu_idu_wb_pipe3_wb_preg_data    = 32'b0;
@@ -222,13 +225,11 @@ module tb_idu_c910;
   assign lsu_idu_lq_full                  = 8'b0;
   assign lsu_idu_rb_full                  = 8'b0;
   assign lsu_idu_sq_full                  = 8'b0;
-  assign lsu_idu_secd                     = 8'b0;
   assign lsu_idu_imme_wakeup              = 8'b0;
   assign lsu_idu_lsiq_pop_vld             = 1'b0;
   assign lsu_idu_lsiq_pop0_vld            = 1'b0;
   assign lsu_idu_lsiq_pop1_vld            = 1'b0;
   assign lsu_idu_lsiq_pop_entry           = 8'b0;
-  //assign lsu_sdiq_has_in_sq_vld           = 1'b0;
   assign lsu_sdiq_has_in_sq_sdiq          = 4'b0;
   assign rtu_preg_raddr1                  = 6'b0;
   assign rtu_preg_raddr2                  = 6'b0;
@@ -271,6 +272,11 @@ module tb_idu_c910;
     .iu_idu_ex2_pipe1_wb_preg_data    (iu_idu_ex2_pipe1_wb_preg_data   ),
     .iu_idu_ex2_pipe1_wb_preg_expand  (iu_idu_ex2_pipe1_wb_preg_expand ),
     .iu_idu_ex2_pipe1_wb_preg_vld     (iu_idu_ex2_pipe1_wb_preg_vld    ),
+    .iu_idu_ex2_pipe2_wb_preg_dupx    (iu_idu_ex2_pipe2_wb_preg_dupx   ),
+    .iu_idu_ex2_pipe2_wb_preg_vld_dupx (iu_idu_ex2_pipe2_wb_preg_vld_dupx),
+    .iu_idu_ex2_pipe2_wb_preg_data    (iu_idu_ex2_pipe2_wb_preg_data   ),
+    .iu_idu_ex2_pipe2_wb_preg_expand  (iu_idu_ex2_pipe2_wb_preg_expand ),
+    .iu_idu_ex2_pipe2_wb_preg_vld     (iu_idu_ex2_pipe2_wb_preg_vld    ),
     .lsu_idu_wb_pipe3_wb_preg_dupx    (lsu_idu_wb_pipe3_wb_preg_dupx   ),
     .lsu_idu_wb_pipe3_wb_preg_vld_dupx (lsu_idu_wb_pipe3_wb_preg_vld_dupx),
     .lsu_idu_wb_pipe3_wb_preg_data    (lsu_idu_wb_pipe3_wb_preg_data   ),
@@ -279,13 +285,11 @@ module tb_idu_c910;
     .lsu_idu_lq_full                  (lsu_idu_lq_full                 ),
     .lsu_idu_rb_full                  (lsu_idu_rb_full                 ),
     .lsu_idu_sq_full                  (lsu_idu_sq_full                 ),
-    .lsu_idu_secd                     (lsu_idu_secd                    ),
     .lsu_idu_imme_wakeup              (lsu_idu_imme_wakeup             ),
     .lsu_idu_lsiq_pop_vld             (lsu_idu_lsiq_pop_vld            ),
     .lsu_idu_lsiq_pop0_vld            (lsu_idu_lsiq_pop0_vld           ),
     .lsu_idu_lsiq_pop1_vld            (lsu_idu_lsiq_pop1_vld           ),
     .lsu_idu_lsiq_pop_entry           (lsu_idu_lsiq_pop_entry          ),
-    //.lsu_sdiq_has_in_sq_vld           (lsu_sdiq_has_in_sq_vld          ),
     .lsu_sdiq_has_in_sq_sdiq          (lsu_sdiq_has_in_sq_sdiq         ),
     .rtu_preg_raddr1                  (rtu_preg_raddr1                 ),
     .rtu_preg_raddr2                  (rtu_preg_raddr2                 ),
@@ -336,20 +340,15 @@ module tb_idu_c910;
     .idu_lsu_ld_preg                  (idu_lsu_ld_preg                 ),
     .idu_lsu_ld_src0                  (idu_lsu_ld_src0                 ),
     .idu_lsu_ld_offset                (idu_lsu_ld_offset               ),
-    .idu_lsu_ld_offset_plus           (idu_lsu_ld_offset_plus          ),
     .idu_lsu_ld_sign_extend           (idu_lsu_ld_sign_extend          ),
     .idu_lsu_ld_inst_size             (idu_lsu_ld_inst_size            ),
-    .idu_lsu_ld_unalign_2nd           (idu_lsu_ld_unalign_2nd          ),
     .idu_lsu_ld_lch_entry             (idu_lsu_ld_lch_entry            ),
     .idu_lsu_ld_oldest                (idu_lsu_ld_oldest               ),
     .idu_lsu_st_sel                   (idu_lsu_st_sel                  ),
     .idu_lsu_st_iid                   (idu_lsu_st_iid                  ),
-   // .idu_lsu_st_preg                  (idu_lsu_st_preg                 ),
     .idu_lsu_st_src0                  (idu_lsu_st_src0                 ),
     .idu_lsu_st_offset                (idu_lsu_st_offset               ),
-    .idu_lsu_st_offset_plus           (idu_lsu_st_offset_plus          ),
     .idu_lsu_st_inst_size             (idu_lsu_st_inst_size            ),
-    .idu_lsu_st_unalign_2nd           (idu_lsu_st_unalign_2nd          ),
     .idu_lsu_st_lch_entry             (idu_lsu_st_lch_entry            ),
     .idu_lsu_st_oldest                (idu_lsu_st_oldest               ),
     .idu_lsu_st_sdiq_entry            (idu_lsu_st_sdiq_entry           ),
@@ -546,16 +545,10 @@ module tb_idu_c910;
     rtu_idu_alloc_preg0_vld = 1'b0;
     repeat (5) @(posedge clk);
 
-    // `idu_accept_num` 的合法取值只有 **0 / 2 / 3** (理由见 `ct_idu_id_ctrl.sv` 里
-    // `idu_ifu_inst2_ready` 的注释): 2 = pipedown2 模式 IDU 只吃 IFU 的 inst0/inst1;
-    // 0 = 停顿; 3 = 正常。**1 才是那个不该出现的编码。**
-    // ⚠️ 2026-10-11 更正: 这里原来写的是"2 是不可达编码" —— 那是**修之前**的行为
-    //    (`inst2_ready` 误用 `|` ⇒ 恒 1 ⇒ 只出 0/3), 而且引用的行号早已漂移。
-    //    顺带一提, 报 3 而实际只吃 2 会让 IFU **多弹一条 = 丢指令**, 不是无害的。
     if (^idu_accept_num === 1'bx)
       $display("TB-IDU: 注意 — idu_accept_num 含 X");
-    else if (idu_accept_num === 2'b01)
-      $display("TB-IDU: ❌ idu_accept_num = 1 —— 非法编码, 只允许 0/2/3 (见 ct_idu_id_ctrl.sv)");
+    else if (idu_accept_num === 2'b10)
+      $display("TB-IDU: 警告 — idu_accept_num = 2 是不可达编码 (见 ct_idu_top.sv:180)");
 
     if (n_disp < 2) begin
       $display("TB-IDU: FAIL — 只观测到 %0d 次派遣, 定向判据没跑到 (期望 >= 2)", n_disp);

@@ -33,7 +33,8 @@ module ct_lsu_st_da #(
   input  logic         rtu_yy_xx_flush,
   input  logic [31:0]  st_dc_addr0,
   input  logic         st_dc_borrow_vld,
-  input  logic         st_dc_boundary,
+  // 2026-10-15 停用: 非对齐拆分通路整条摘掉 (boundary/secd)
+  //input  logic         st_dc_boundary,
   input  logic [15:0]  st_dc_bytes_vld,
   input  logic [4:0]   st_dc_da_dcache_dirty_array,
   input  logic [ST_TAG_ARRAY_WIDTH-1:0] st_dc_da_dcache_tag_array,
@@ -47,7 +48,7 @@ module ct_lsu_st_da #(
   input  logic [LSIQ_ENTRY-1:0] st_dc_lsid,
   input  logic         st_dc_old,
   input  logic         st_dc_expt,
-  input  logic         st_dc_secd,
+  //input  logic         st_dc_secd,
   input  logic         st_dc_spec_fail,
 
   output logic         st_da_borrow_vld,
@@ -61,7 +62,7 @@ module ct_lsu_st_da #(
   output logic         st_da_idu_pop_vld,
   output logic [LSIQ_ENTRY-1:0] st_da_idu_pop_entry,
   output logic [LSIQ_ENTRY-1:0] st_da_idu_rb_full,
-  output logic [LSIQ_ENTRY-1:0] st_da_idu_secd,
+  //output logic [LSIQ_ENTRY-1:0] st_da_idu_secd,   // 2026-10-15 停用
   output logic [6:0]   st_da_iid,
   output logic         st_da_inst_vld,
   output logic         st_da_old,
@@ -69,7 +70,7 @@ module ct_lsu_st_da #(
   output logic         st_da_rb_create_dp_vld,
   output logic         st_da_rb_create_gateclk_en,
   output logic         st_da_rb_create_vld,
-  output logic         st_da_secd,
+  //output logic         st_da_secd,          // 2026-10-15 停用
   output logic         st_da_sq_dcache_dirty,
   output logic         st_da_sq_dcache_valid,
   output logic         st_da_sq_dcache_way,
@@ -79,7 +80,7 @@ module ct_lsu_st_da #(
   output logic [31:0]  st_da_wb_expt_addr,
   output logic         st_da_wb_spec_fail,
   output logic [31:0]  st_da_addr,
-  output logic         st_da_boundary,
+  //output logic         st_da_boundary,      // 2026-10-15 停用
   output logic [15:0]  st_da_bytes_vld,
   output logic         st_da_sq_no_restart
 );
@@ -120,9 +121,9 @@ logic         st_da_feedback_sel_tag;
 logic         st_da_rb_create_vld_unmask;
 logic         st_da_rb_full_vld;
 logic         st_da_restart_vld;
-logic         st_da_boundary_first;
+//logic         st_da_boundary_first;      // 2026-10-15 停用
 logic [LSIQ_ENTRY-1:0] st_da_mask_lsid;
-logic         st_da_idu_secd_vld;
+//logic         st_da_idu_secd_vld;        // 2026-10-15 停用
 logic         st_da_cmit_hit0;
 logic         st_da_cmit_hit1;
 logic         st_da_cmit_hit2;
@@ -169,22 +170,22 @@ logic st_da_expt;
 always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
   if (!cpurst_b) begin
     st_da_spec_fail <= 1'b0;
-    st_da_secd <= 1'b0;
+    //st_da_secd <= 1'b0;
     st_da_iid <= 7'b0;
     st_da_lsid <= {LSIQ_ENTRY{1'b0}};
     st_da_old <= 1'b0;
     st_da_expt<= 1'b0;
-    st_da_boundary <= 1'b0;
+    //st_da_boundary <= 1'b0;
     st_da_bytes_vld <= 16'b0;
   end
   else if(st_dc_inst_vld) begin
     st_da_spec_fail <= st_dc_spec_fail;
-    st_da_secd <= st_dc_secd;
+    //st_da_secd <= st_dc_secd;
     st_da_iid <= st_dc_iid;
     st_da_lsid <= st_dc_lsid;
     st_da_old <= st_dc_old;
     st_da_expt<= st_dc_expt;
-    st_da_boundary <= st_dc_boundary;
+    //st_da_boundary <= st_dc_boundary;
     st_da_bytes_vld <= st_dc_bytes_vld;
   end
 end
@@ -311,8 +312,9 @@ assign st_da_restart_vld = st_da_rb_full_vld;
 //==========================================================
 //        Generate to WB stage signal
 //==========================================================
-assign st_da_boundary_first = st_da_boundary && !st_da_secd;
-assign st_da_wb_cmplt_req = st_da_inst_vld && !st_da_restart_vld && !st_da_boundary_first;
+// 2026-10-15 停用: 非对齐第一半标记恒 0
+//assign st_da_boundary_first = st_da_boundary && !st_da_secd;
+assign st_da_wb_cmplt_req = st_da_inst_vld && !st_da_restart_vld;// && !st_da_boundary_first;
 assign st_da_wb_spec_fail = st_da_spec_fail;
 assign st_da_wb_expt_vld = st_da_expt;
 assign st_da_wb_expt_addr= st_da_addr0;
@@ -329,8 +331,9 @@ assign st_da_idu_rb_full[LSIQ_ENTRY-1:0] = {LSIQ_ENTRY{st_da_rb_full_vld}} & st_
 assign st_da_idu_pop_vld = st_da_wb_cmplt_req;
 assign st_da_idu_pop_entry[LSIQ_ENTRY-1:0] = {LSIQ_ENTRY{st_da_idu_pop_vld}} & st_da_mask_lsid[LSIQ_ENTRY-1:0];
 
-assign st_da_idu_secd_vld = st_da_inst_vld && st_da_boundary_first && !st_da_restart_vld && !st_da_expt;
-assign st_da_idu_secd[LSIQ_ENTRY-1:0] = {LSIQ_ENTRY{st_da_idu_secd_vld}} & st_da_mask_lsid[LSIQ_ENTRY-1:0];
+// 2026-10-15 停用: 非对齐第二半请求唤醒 IDU (boundary_first 恒 0)
+//assign st_da_idu_secd_vld = st_da_inst_vld && st_da_boundary_first && !st_da_restart_vld && !st_da_expt;
+//assign st_da_idu_secd[LSIQ_ENTRY-1:0] = {LSIQ_ENTRY{st_da_idu_secd_vld}} & st_da_mask_lsid[LSIQ_ENTRY-1:0];
 
 endmodule
 

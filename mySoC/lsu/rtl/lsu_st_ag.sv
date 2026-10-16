@@ -14,13 +14,15 @@ module ct_lsu_st_ag #(
     input  logic         dcache_arb_st_ag_borrow_addr_vld,
     input  logic         idu_lsu_st_sel,
     input  logic [1:0]   idu_lsu_st_inst_size,
-    input  logic         idu_lsu_st_unalign_2nd,
+    // 2026-10-15 停用: 非对齐拆分通路的"第二条"标记, 见下方 "非对齐硬件已停用" 一节
+    //input  logic         idu_lsu_st_unalign_2nd,
     input  logic [6:0]   idu_lsu_st_iid,
     input  logic [LSIQ_ENTRY-1:0]  idu_lsu_st_lch_entry,
     input  logic [SDIQ_ENTRY-1:0]  idu_lsu_st_sdiq_entry,
     input  logic         idu_lsu_st_oldest,
     input  logic [11:0]  idu_lsu_st_offset,
-    input  logic [12:0]  idu_lsu_st_offset_plus,
+    // 2026-10-15 停用: LSU 不再接收 IDU 的 offset_plus (只有非对齐拆分才用它)
+    //input  logic [12:0]  idu_lsu_st_offset_plus,
     input  logic [31:0]  idu_lsu_st_src0,
     input  logic         rtu_yy_xx_flush,
     input  logic         dcache_arb_ag_st_sel,
@@ -31,7 +33,8 @@ module ct_lsu_st_ag #(
     output logic         ag_dcache_arb_st_tag_gateclk_en,
     output logic [INDEX_WIDTH-1:0]   ag_dcache_arb_st_tag_idx,
     output logic         ag_dcache_arb_st_tag_req,
-    output logic         st_ag_boundary,
+    // 2026-10-15 停用: 非对齐拆分通路整条摘掉 (boundary/secd), 见下方说明块
+    //output logic         st_ag_boundary,
     output logic [31:0]  st_ag_dc_addr0,
     output logic [15:0]  st_ag_dc_bytes_vld,
     output logic         st_ag_dc_inst_vld,
@@ -42,7 +45,7 @@ module ct_lsu_st_ag #(
     output logic         st_ag_old,
     output logic         st_ag_expt,
     output logic [SDIQ_ENTRY-1:0]   st_ag_sdid_oh,
-    output logic         st_ag_secd,
+    //output logic         st_ag_secd,
     output logic [LSIQ_ENTRY-1:0]   st_ag_stall_restart_entry
 );
     localparam int INDEX_LSB = OFFSET_WIDTH;
@@ -92,13 +95,14 @@ module ct_lsu_st_ag #(
 
     logic [31:0] st_ag_base;
     logic [31:0] st_ag_offset;
-    logic [12:0] st_ag_offset_plus;
+    //logic [12:0] st_ag_offset_plus;   // 2026-10-15 停用: 非对齐 +16 偏移
     logic [1:0]  st_ag_inst_size;
 
     always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
         if (!cpurst_b) begin
             st_ag_inst_size[1:0]          <= 2'b0;
-            st_ag_secd                    <= 1'b0;
+            // 2026-10-15 停用: st_ag_secd 改由下方常量驱动
+            //st_ag_secd                    <= 1'b0;
             st_ag_iid[6:0]                <= 7'b0;
             st_ag_lsid[LSIQ_ENTRY-1:0]    <= {LSIQ_ENTRY{1'b0}};
             st_ag_sdid_oh[SDIQ_ENTRY-1:0] <= {SDIQ_ENTRY{1'b0}};
@@ -106,7 +110,8 @@ module ct_lsu_st_ag #(
         end
         else if (!st_ag_stall_vld && idu_lsu_st_sel) begin
             st_ag_inst_size[1:0]          <= idu_lsu_st_inst_size[1:0];
-            st_ag_secd                    <= idu_lsu_st_unalign_2nd;
+            // 2026-10-15 停用: 非对齐第二条标记
+            //st_ag_secd                    <= idu_lsu_st_unalign_2nd;
             st_ag_iid[6:0]                <= idu_lsu_st_iid[6:0];
             st_ag_lsid[LSIQ_ENTRY-1:0]    <= idu_lsu_st_lch_entry[LSIQ_ENTRY-1:0];
             st_ag_sdid_oh[SDIQ_ENTRY-1:0] <= idu_lsu_st_sdiq_entry[SDIQ_ENTRY-1:0];
@@ -119,12 +124,15 @@ module ct_lsu_st_ag #(
             st_ag_offset[31:0] <= {{20{idu_lsu_st_offset[11]}}, idu_lsu_st_offset[11:0]};
     end
 
+    // 2026-10-15 停用: offset_plus (非对齐拆分用的 +16 偏移) 连同它的输入口一起停用
+    /*
     always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
         if (!cpurst_b)
             st_ag_offset_plus[12:0] <= 13'h0;
         else if (!st_ag_stall_vld && idu_lsu_st_sel)
             st_ag_offset_plus[12:0] <= idu_lsu_st_offset_plus[12:0];
     end
+    */
 
     always_ff @(posedge forever_cpuclk) begin
         if (!st_ag_stall_vld && idu_lsu_st_sel)
@@ -135,19 +143,20 @@ module ct_lsu_st_ag #(
     //               Generate virtual address
     //==========================================================
     logic [31:0] st_ag_addr_ori;
-    logic [31:0] st_ag_addr_plus;
-    logic        st_ag_addr_plus_sel;
+    //logic [31:0] st_ag_addr_plus;      // 2026-10-15 停用: 非对齐 +16 地址
+    //logic        st_ag_addr_plus_sel;  // 2026-10-15 停用
     logic [31:0] st_ag_addr;
 
     assign st_ag_addr_ori[31:0] = st_ag_base[31:0] + st_ag_offset[31:0];
 
+    // 2026-10-15 停用: 非对齐拆分时第二条要用 +16 的地址, 对齐访问恒用 ori
+    /*
     assign st_ag_addr_plus[31:0] = st_ag_base[31:0] +
         {{19{st_ag_offset_plus[12]}}, st_ag_offset_plus[12:0]};
 
     assign st_ag_addr_plus_sel = st_ag_secd;
-
-    assign st_ag_addr[31:0] = st_ag_addr_plus_sel ? st_ag_addr_plus[31:0]
-                                                  : st_ag_addr_ori[31:0];
+    */
+    assign st_ag_addr[31:0] = st_ag_addr_ori[31:0];
 
 logic st_ag_align;
 always @(*)
@@ -170,11 +179,11 @@ assign st_ag_expt = !st_ag_align;
     logic [15:0] st_ag_le_bytes_vld_low_bits_full;
     logic [15:0] st_ag_le_bytes_vld_cross;
     logic [15:0] st_ag_le_bytes_vld_high_cross_bits;
-    logic [15:0] st_ag_bytes_vld_low_bits;
+    //logic [15:0] st_ag_bytes_vld_low_bits;   // 2026-10-15 停用: 只服务非对齐第二半
     logic [15:0] st_ag_bytes_vld_high_cross_bits;
     logic [15:0] st_ag_bytes_vld;
     logic [4:0]  st_ag_va_add_access_size;
-    logic        st_ag_boundary_unmask;
+    //logic        st_ag_boundary_unmask;   // 2026-10-15 停用: 非对齐跨行判定
 
     always_comb begin
         case (st_ag_inst_size[1:0])
@@ -188,11 +197,26 @@ assign st_ag_expt = !st_ag_align;
 
     assign st_ag_access_size[3:0] = st_ag_access_size_ori[3:0];
 
+    // st_ag_va_add_access_size 的 [3:0] 还要给下面 bytes_vld 查表用 ⇒ 保留;
+    // [4] (越过 32B 行的进位) 只服务 boundary, 见下方说明块。
     assign st_ag_va_add_access_size[4:0] = {1'b0, st_ag_addr_ori[3:0]} +
                                            {1'b0, st_ag_access_size[3:0]};
-    assign st_ag_boundary_unmask = st_ag_va_add_access_size[4];
+    //assign st_ag_boundary_unmask = st_ag_va_add_access_size[4];
 
-    assign st_ag_boundary = st_ag_boundary_unmask || st_ag_secd;
+    //assign st_ag_boundary = st_ag_boundary_unmask || st_ag_secd;
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // 2026-10-15 停用: 非对齐 (boundary / unalign) 硬件处理逻辑 —— 整条从流水线摘掉
+    //   前提: 现在跑的测试里**不会再出现非对齐访问** —— 非对齐一律由 st_ag_expt
+    //         (见上方 `assign st_ag_expt = !st_ag_align;`) 当异常上报。
+    //   已摘掉的输出 (端口 + 驱动一并注释, 不再往下传给 st_dc):
+    //     st_ag_boundary  —— 原 = st_ag_boundary_unmask || st_ag_secd   (上方已注释)
+    //     st_ag_secd      —— 原 = reg(idu_lsu_st_unalign_2nd)           (见上面的 always)
+    //   对齐情形下这两根本来就恒 0, 摘掉后功能等价。
+    //   ⚠️ 原逻辑按"只注释、不删除"原地保留, 便于回退。
+    // ═══════════════════════════════════════════════════════════════════════
+    //assign st_ag_boundary = 1'b0;
+    //assign st_ag_secd     = 1'b0;
 
     always_comb begin
         case (st_ag_addr_ori[3:0])
@@ -241,15 +265,20 @@ assign st_ag_expt = !st_ag_align;
     assign st_ag_le_bytes_vld_cross[15:0] =
         st_ag_le_bytes_vld_high_bits_full[15:0] & st_ag_le_bytes_vld_low_bits_full[15:0];
 
+    // 2026-10-15 停用: 非对齐下这里的两个 mux (按 boundary_unmask / secd 选那一半掩码)
+    //   全部塌成对齐那一支 —— 取 high_full & low_full 的交集, 即本次访问真正覆盖的字节。
     assign st_ag_le_bytes_vld_high_cross_bits[15:0] =
-        st_ag_boundary_unmask ? st_ag_le_bytes_vld_high_bits_full[15:0]
-                              : st_ag_le_bytes_vld_cross[15:0];
+        //st_ag_boundary_unmask ? st_ag_le_bytes_vld_high_bits_full[15:0]
+        //                      :
+                                  st_ag_le_bytes_vld_cross[15:0];
 
-    assign st_ag_bytes_vld_low_bits[15:0] = st_ag_le_bytes_vld_low_bits_full[15:0];
+    //assign st_ag_bytes_vld_low_bits[15:0] = st_ag_le_bytes_vld_low_bits_full[15:0];
     assign st_ag_bytes_vld_high_cross_bits[15:0] = st_ag_le_bytes_vld_high_cross_bits[15:0];
 
-    assign st_ag_bytes_vld[15:0] = st_ag_secd ? st_ag_bytes_vld_low_bits[15:0]
-                                              : st_ag_bytes_vld_high_cross_bits[15:0];
+    assign st_ag_bytes_vld[15:0] =
+        //st_ag_secd ? st_ag_bytes_vld_low_bits[15:0]
+        //           :
+                     st_ag_bytes_vld_high_cross_bits[15:0];
 
     //==========================================================
     //        vector mask

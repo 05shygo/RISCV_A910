@@ -194,7 +194,7 @@ module tb_a910_difftest;
                dut.u_lsu_top.st_ag_dc_addr0, dut.u_lsu_top.st_ag_old,
                dut.u_lsu_top.st_dc_inst_vld, dut.u_lsu_top.st_dc_iid,
                dut.u_lsu_top.st_da_inst_vld, dut.u_lsu_top.st_da_iid,
-               dut.u_lsu_top.st_wb_inst_vld, 0,
+               dut.u_lsu_top.u_lsu_st_wb.st_wb_inst_vld, 0,
                dut.u_lsu_top.sq_st_dc_full, dut.u_lsu_top.sq_st_dc_inst_hit);
   end
 
@@ -423,7 +423,7 @@ module tb_a910_difftest;
   // [SDQ] IDU 的 SDIQ (store data 发射队列): 有没有 entry 可以发 / 为什么发不出去
   always @(posedge clk) begin
     if (!rst && $test$plusargs("PROBE_SDQ") && cycles >= 2680 && cycles <= 2700)
-      $display("  [SDQ] T%0d vld=%b rdy=%b ready=%b older=%b issue_en=%b | sel=%b id=%b src0=%08x | SQe0.sdid=%0d hit=%b",
+      $display("  [SDQ] T%0d vld=%b rdy=%b ready=%b older=%b issue_en=%b | sel=%b id=%b src0=%08x | SQe0.sdid=%0d",
                cycles,
                dut.u_ct_idu_top.x_ct_idu_is_sdiq.sdiq_entry_vld,
                {dut.u_ct_idu_top.x_ct_idu_is_sdiq.sdiq_entry3_rdy,
@@ -435,8 +435,7 @@ module tb_a910_difftest;
                dut.u_ct_idu_top.x_ct_idu_is_sdiq.sdiq_entry_issue_en,
                dut.idu_lsu_sdiq_sel, dut.idu_lsu_rf_pipe5_sdiq_entry,
                dut.idu_lsu_rf_pipe5_src0,
-               dut.u_lsu_top.u_lsu_sq.gen_sq_entry[0].x_ct_lsu_sq_entry.sq_entry_sdid,
-               dut.u_lsu_top.u_lsu_sq.gen_sq_entry[0].x_ct_lsu_sq_entry.sq_entry_st_data_sdid_hit);
+               dut.u_lsu_top.u_lsu_sq.gen_sq_entry[0].x_ct_lsu_sq_entry.sq_entry_sdid);
   end
 
 
@@ -626,7 +625,7 @@ module tb_a910_difftest;
           dut.u_lsu_top.dcache_arb_st_dc_borrow_vld,
           dut.u_lsu_top.u_lsu_st_ag.st_ag_dc_addr0);
       // load 在 DA 级: 是命中 dcache 还是 discard 到 LFB
-      if (cycles >= 150500 && dut.u_lsu_top.ld_da_inst_vld)
+      if (cycles >= 150500 && dut.u_lsu_top.u_lsu_ld_da.ld_da_inst_vld)
         $display("  [LDL] T%0d ld_da addr=%08x idx=%02x hit=%b | disc_req=%b disc_grnt=%b lsid=%b | lfb_idxmask=%b aevld=%b",
           cycles,
           dut.u_lsu_top.u_lsu_ld_da.ld_da_addr,
@@ -738,7 +737,7 @@ module tb_a910_difftest;
         dut.u_lsu_top.u_lsu_mshr.gen_mshr_entry[3].u_mshr_entry.rb_entry_dest_vld,
         dut.u_lsu_top.rb_ld_wb_data_req, dut.u_lsu_top.rb_ld_wb_cmplt_req,
         dut.u_lsu_top.rb_ld_wb_data_iid, dut.u_lsu_top.rb_ld_wb_data,
-        dut.u_lsu_top.ld_da_inst_vld, dut.u_lsu_top.ld_da_iid,
+        dut.u_lsu_top.u_lsu_ld_da.ld_da_inst_vld, dut.u_lsu_top.ld_da_iid,
         dut.u_lsu_top.u_lsu_ld_da.ld_da_addr,
         dut.u_lsu_top.ld_da_rb_create_vld, dut.u_lsu_top.ld_da_hit_idx_discard_req,
         dut.u_lsu_top.u_lsu_ld_da.ld_da_rb_data_vld);
@@ -1363,9 +1362,9 @@ module tb_a910_difftest;
                dut.u_rtu.u_commit.sq_stall, dut.u_rtu.u_commit.sq_rdy0,
                dut.u_rtu.u_commit.sq_rdy1, dut.u_rtu.u_commit.sq_rdy2,
                dut.u_rtu.u_commit.int_pending);
-      $display("        LSU: ld_da_vld=%b lsid=%0d secd=%b wb_cmplt_req=%b | ld_wb_inst_vld=%b pipe3_wb_preg_vld=%b | LFB: r_vld=%b r_id=%b id_hit=%b data_vld=%b create_vld=%b entry_id=%0d r_last=%b arready=%b",
+      // 2026-10-15: 去掉 secd 探针 (ld_da_secd 已随非对齐硬件摘除)
+      $display("        LSU: ld_da_vld=%b lsid=%0d wb_cmplt_req=%b | ld_wb_inst_vld=%b pipe3_wb_preg_vld=%b | LFB: r_vld=%b r_id=%b id_hit=%b data_vld=%b create_vld=%b entry_id=%0d r_last=%b arready=%b",
                dut.u_lsu_top.u_lsu_ld_da.ld_da_inst_vld, dut.u_lsu_top.u_lsu_ld_da.ld_da_lsid,
-               dut.u_lsu_top.u_lsu_ld_da.ld_da_secd,
                dut.u_lsu_top.ld_da_wb_cmplt_req, dut.u_lsu_top.ld_wb_inst_vld,
                dut.lsu_rtu_wb_pipe3_wb_preg_vld,
                dut.u_lsu_top.u_lsu_lfb.biu_lsu_r_vld, dut.u_lsu_top.u_lsu_lfb.biu_lsu_r_id,
@@ -1398,7 +1397,7 @@ module tb_a910_difftest;
                dut.idu_lsu_ld_lch_entry, dut.idu_lsu_st_lch_entry);
       $display("       LSU ld: ag_vld=%b ag_iid=%0d ag_lsid=%b | da_vld=%b da_iid=%0d | lfb_wkq=%b lfb_hit_idx=%b create=%b vld=%b",
                dut.u_lsu_top.u_lsu_ld_ag.ld_ag_inst_vld, dut.u_lsu_top.ld_ag_iid, dut.u_lsu_top.ld_ag_lsid,
-               dut.u_lsu_top.ld_da_inst_vld, dut.u_lsu_top.ld_da_iid,
+               dut.u_lsu_top.u_lsu_ld_da.ld_da_inst_vld, dut.u_lsu_top.ld_da_iid,
                dut.u_lsu_top.u_lsu_lfb.lfb_wakeup_queue, dut.u_lsu_top.u_lsu_lfb.lfb_ld_da_hit_idx,
                dut.u_lsu_top.u_lsu_lfb.lfb_data_create_vld, dut.u_lsu_top.u_lsu_lfb.lfb_data_entry_vld);
     end
@@ -1424,7 +1423,7 @@ module tb_a910_difftest;
                dut.idu_lsu_ld_sel, dut.idu_lsu_ld_iid,
                dut.u_lsu_top.u_lsu_ld_ag.ld_ag_inst_vld, dut.u_lsu_top.ld_ag_iid,
                dut.u_lsu_top.ld_ag_lsid,
-               dut.u_lsu_top.ld_da_inst_vld, dut.u_lsu_top.ld_da_iid);
+               dut.u_lsu_top.u_lsu_ld_da.ld_da_inst_vld, dut.u_lsu_top.ld_da_iid);
   end
 
   // 【临时诊断】LSIQ 全部 8 个表项逐拍 dump —— `+PROBE_LSIQ8`
@@ -1475,7 +1474,7 @@ module tb_a910_difftest;
                dut.u_lsu_top.u_lsu_ld_ag.ld_ag_stall_restart_entry);
       $display("       LSU: ld_ag v=%b iid=%0d lsid=%b | ld_da v=%b iid=%0d lsid=%b | lq_vld=%b rb_vld=%b | ld_lch=%b st_lch=%b | st_ag v=%b iid=%0d",
                dut.u_lsu_top.u_lsu_ld_ag.ld_ag_inst_vld, dut.u_lsu_top.ld_ag_iid, dut.u_lsu_top.ld_ag_lsid,
-               dut.u_lsu_top.ld_da_inst_vld, dut.u_lsu_top.ld_da_iid, dut.u_lsu_top.ld_da_lsid,
+               dut.u_lsu_top.u_lsu_ld_da.ld_da_inst_vld, dut.u_lsu_top.ld_da_iid, dut.u_lsu_top.ld_da_lsid,
                dut.u_lsu_top.u_lsu_lq.lq_entry_vld, dut.u_lsu_top.u_lsu_lfb.lfb_addr_entry_vld,
                dut.idu_lsu_ld_lch_entry, dut.idu_lsu_st_lch_entry,
                dut.u_lsu_top.st_ag_inst_vld, dut.u_lsu_top.st_ag_iid);
@@ -1683,9 +1682,8 @@ module tb_a910_difftest;
                dut.u_lsu_top.lsu_dcache_ld_data_gwen_b,
                dut.u_lsu_top.lsu_dcache_ld_data_sel_b);
       if (dut.u_lsu_top.u_lsu_ld_da.ld_da_inst_vld)
-        $display("  [LDC] T%0d iid=%0d addr=%08x secd=%b hit=%b way=%b fwd=%b expt=%b | data_vld=%b cmplt_req=%b data_req=%b | disc_lfb=%b rb_create=%b",                 cycles, dut.u_lsu_top.u_lsu_ld_da.ld_da_iid,
+        $display("  [LDC] T%0d iid=%0d addr=%08x hit=%b way=%b fwd=%b expt=%b | data_vld=%b cmplt_req=%b data_req=%b | disc_lfb=%b rb_create=%b",                 cycles, dut.u_lsu_top.u_lsu_ld_da.ld_da_iid,
                  dut.u_lsu_top.u_lsu_ld_da.ld_da_addr,
-                 dut.u_lsu_top.u_lsu_ld_da.ld_da_secd,
                  dut.u_lsu_top.u_lsu_ld_da.ld_da_dcache_hit,
                  dut.u_lsu_top.u_lsu_ld_da.ld_da_settle_way,
                  dut.u_lsu_top.u_lsu_ld_da.ld_da_fwd_vld,
@@ -1696,12 +1694,10 @@ module tb_a910_difftest;
                  dut.u_lsu_top.u_lsu_ld_da.ld_da_discard_from_lfb_req,
                  dut.u_lsu_top.u_lsu_ld_da.ld_da_rb_create_vld);
       if (dut.u_lsu_top.u_lsu_ld_da.ld_da_inst_vld)
-        $display("  [LDA] T%0d iid=%0d preg=%0d addr=%08x | cb_vld=%b cb_data=%08x | rb_vld=%b | rot=%0d | d256lo=%032x d256hi=%032x | wb_req=%b wb_data=%08x",
+        $display("  [LDA] T%0d iid=%0d preg=%0d addr=%08x | rb_vld=%b | rot=%0d | d256lo=%032x d256hi=%032x | wb_req=%b wb_data=%08x",
                  cycles, dut.u_lsu_top.u_lsu_ld_da.ld_da_iid,
                  dut.u_lsu_top.u_lsu_ld_da.ld_da_preg,
                  dut.u_lsu_top.u_lsu_ld_da.ld_da_addr,
-                 dut.u_lsu_top.u_lsu_ld_da.ld_da_cb_data_vld,
-                 dut.u_lsu_top.u_lsu_ld_da.ld_da_cb_data,
                  dut.u_lsu_top.u_lsu_ld_da.ld_da_rb_data_vld,
                  dut.u_lsu_top.u_lsu_ld_da.ld_da_data_rot_sel,
                  dut.u_lsu_top.u_lsu_ld_da.ld_da_data256[127:0],
@@ -2198,11 +2194,10 @@ module tb_a910_difftest;
                  dut.u_lsu_top.u_lsu_ld_ag.ld_ag_stall_vld,
                  dut.u_lsu_top.u_lsu_ld_ag.ld_ag_stall_ori,
                  dut.u_lsu_top.u_lsu_ld_ag.ld_ag_dc_inst_vld);
-        $display("  [LSU] T%0d ld_sel=%b ld_iid=%0d | dc2da=%b da_vld=%b secd=%b da_wb_req=%b | wb_pre=%b wb_vld=%b wb_iid=%0d",
+        $display("  [LSU] T%0d ld_sel=%b ld_iid=%0d | dc2da=%b da_vld=%b da_wb_req=%b | wb_pre=%b wb_vld=%b wb_iid=%0d",
                  cycles, dut.idu_lsu_ld_sel, dut.idu_lsu_ld_iid,
                  dut.u_lsu_top.u_lsu_ld_da.ld_dc_da_inst_vld,
                  dut.u_lsu_top.u_lsu_ld_da.ld_da_inst_vld,
-                 dut.u_lsu_top.u_lsu_ld_da.ld_da_secd,
                  dut.u_lsu_top.ld_da_wb_cmplt_req,
                  dut.u_lsu_top.u_lsu_ld_wb.ld_wb_pre_inst_vld,
                  dut.u_lsu_top.ld_wb_inst_vld, dut.u_lsu_top.rb_ld_wb_iid);

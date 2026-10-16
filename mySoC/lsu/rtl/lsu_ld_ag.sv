@@ -24,14 +24,16 @@ module lsu_ld_ag #(
   //==========================================================
   input  logic                         idu_lsu_ld_sel,
   input  logic [1:0]                   idu_lsu_ld_inst_size,
-  input  logic                         idu_lsu_ld_unalign_2nd,
+  // 2026-10-15 停用: 非对齐拆分通路的"第二条"标记, 见文件下方 "非对齐硬件已停用" 一节
+  //input  logic                         idu_lsu_ld_unalign_2nd,
   input  logic                         idu_lsu_ld_sign_extend,
   input  logic [6:0]                   idu_lsu_ld_iid,
   input  logic [LSIQ_ENTRY-1:0]        idu_lsu_ld_lch_entry,
   input  logic                         idu_lsu_ld_oldest,
   input  logic [5:0]                   idu_lsu_ld_preg,
   input  logic [11:0]                  idu_lsu_ld_offset,
-  input  logic [12:0]                  idu_lsu_ld_offset_plus,
+  // 2026-10-15 停用: LSU 不再接收 IDU 的 offset_plus (只有非对齐拆分才用它)
+  //input  logic [12:0]                  idu_lsu_ld_offset_plus,
   input  logic [31:0]                  idu_lsu_ld_src,
 
   //==========================================================
@@ -39,14 +41,15 @@ module lsu_ld_ag #(
   //==========================================================
   input  logic                         rtu_yy_xx_flush,
 
-  input  logic                         rtu_yy_xx_commit0,
-  input  logic [6:0]                   rtu_yy_xx_commit0_iid,
+  // 2026-10-15 停用: 只喂下面的 ld_ag_cmit 块, 而那块已被注释 ⇒ 这 6 个口无消费者
+  //input  logic                         rtu_yy_xx_commit0,
+  //input  logic [6:0]                   rtu_yy_xx_commit0_iid,
 
-  input  logic                         rtu_yy_xx_commit1,
-  input  logic [6:0]                   rtu_yy_xx_commit1_iid,
+  //input  logic                         rtu_yy_xx_commit1,
+  //input  logic [6:0]                   rtu_yy_xx_commit1_iid,
 
-  input  logic                         rtu_yy_xx_commit2,
-  input  logic [6:0]                   rtu_yy_xx_commit2_iid,
+  //input  logic                         rtu_yy_xx_commit2,
+  //input  logic [6:0]                   rtu_yy_xx_commit2_iid,
 
   //==========================================================
   // DCache Arb -> LSU
@@ -69,15 +72,16 @@ module lsu_ld_ag #(
   //==========================================================
   output logic                         ld_ag_dc_inst_vld,
   output logic [1:0]                   ld_ag_inst_size,
-  output logic                         ld_ag_secd,
+  // 2026-10-15 停用: 非对齐拆分通路整条摘掉 (boundary/secd/acclr_en), 见下方说明块
+  //output logic                         ld_ag_secd,
   output logic                         ld_ag_sign_extend,
   output logic [6:0]                   ld_ag_iid,
   output logic [LSIQ_ENTRY-1:0]        ld_ag_lsid,
   output logic                         ld_ag_old,
   output logic [5:0]                   ld_ag_preg,
-  output logic                         ld_ag_boundary,
-  output logic                         ld_ag_acclr_en,
-  output logic                         ld_ag_dc_fwd_bypass_en,
+  //output logic                         ld_ag_boundary,
+  //output logic                         ld_ag_acclr_en,
+  // 2026-10-15 停用: bypass 通路在本仓没实现 (ld_dc_chk_ld_bypass_vld 无人使用), 整条摘掉: output logic                         ld_ag_dc_fwd_bypass_en,
   output logic                         ld_ag_expt,
   //==========================================================
   // LSU_LD_AG -> DCACHE
@@ -90,9 +94,10 @@ module lsu_ld_ag #(
   output logic [DATA_INDEX_WIDTH-1:0]   ag_dcache_arb_ld_data_low_idx,
   output logic [DATA_INDEX_WIDTH-1:0]   ag_dcache_arb_ld_data_high_idx,
 
-  output logic [15:0]                   ld_ag_bytes_vld1,
+  // 2026-10-15 停用: 只服务非对齐拆分, 不再往下传
+  //output logic [15:0]                   ld_ag_bytes_vld1,
   output logic [15:0]                   ld_ag_bytes_vld,
-  output logic [27:0]                   ld_ag_addr1_to4,
+ // output logic [27:0]                   ld_ag_addr1_to4,
   output logic [31:0]                   ld_ag_dc_addr0,
   output logic                          ld_ag_raw_new,
   // 2026-10-15 恢复: AG 级"发射落空"要把 LSIQ 表项的 frz 打掉 (见下面的 assign)
@@ -106,7 +111,7 @@ logic                         ld_ag_inst_vld;
 //logic                         ld_rf_inst_vld;
 //logic                         ld_ag_ld_inst;
 logic                         ld_ag_clk;
-logic                         ld_ag_addr_plus_sel;
+//logic                         ld_ag_addr_plus_sel;   // 2026-10-15 停用: 非对齐地址选择
 
 // ---------------------------------------------------------------------------
 // 本地时钟驱动（2026-10-08 补）
@@ -132,12 +137,11 @@ logic [31:0]                  ld_ag_base;
 logic [31:0]                  ld_ag_addr_ori;
 //logic [63:0]                  ld_ag_va_ori;
 logic [31:0]                  ld_ag_addr;
-logic [31:0]                  ld_ag_addr_plus;
+//logic [31:0]                  ld_ag_addr_plus;      // 2026-10-15 停用: 非对齐 +16 地址
+//logic [31:0]                  ld_ag_offset_plus;    // 2026-10-15 停用: 非对齐 +16 偏移
 
-logic [31:0]                  ld_ag_offset_plus;
-
-logic [4:0]                   ld_ag_va_add_access_size;
-
+//logic [4:0]                   ld_ag_va_add_access_size;
+logic [3:0]                   ld_ag_va_add_access_size;
 logic [3:0]                   ld_ag_access_size_ori;
 logic [3:0]                   ld_ag_access_size;
 
@@ -145,10 +149,10 @@ logic [3:0]                   ld_ag_access_size;
 //==========================================================
 // Boundary / Unalign
 //==========================================================
-logic                         ld_ag_boundary_unmask;
+//logic                         ld_ag_boundary_unmask;   // 2026-10-15 停用: 非对齐跨行判定
 //logic                         ld_ag_ld_inst;
 
-logic                         ld_ag_va_plus_sel;
+//logic                         ld_ag_va_plus_sel;       // 2026-10-15 停用: 非对齐地址选择
 
 logic                         ld_ag_dcache_stall_unmask;
 logic                         ld_ag_stall_ori;
@@ -166,10 +170,10 @@ logic [15:0]                  ld_ag_le_bytes_vld_low_bits_full;
 logic [15:0]                  ld_ag_le_bytes_vld_cross;
 logic [15:0]                  ld_ag_le_bytes_vld_low_cross_bits;
 
-logic [15:0]                  ld_ag_le_bytes_vld_high_bits;
+//logic [15:0]                  ld_ag_le_bytes_vld_high_bits;   // 2026-10-15 停用: 只喂 bytes_vld1
 
 logic [15:0]                  ld_ag_bytes_vld_low_cross_bits;
-logic [15:0]                  ld_ag_bytes_vld_high_bits;
+//logic [15:0]                  ld_ag_bytes_vld_high_bits;      // 2026-10-15 停用: 只喂 bytes_vld1
 
 
 //==========================================================
@@ -189,10 +193,11 @@ logic                         ag_dcache_arb_ld_req;
 //==========================================================
 // Commit
 //==========================================================
-logic                         ld_ag_cmit_hit0;
-logic                         ld_ag_cmit_hit1;
-logic                         ld_ag_cmit_hit2;
-logic                         ld_ag_cmit;
+// 2026-10-15 停用: 这套 commit 比较的 assign 已注释, 声明一并摘掉
+//logic                         ld_ag_cmit_hit0;
+//logic                         ld_ag_cmit_hit1;
+//logic                         ld_ag_cmit_hit2;
+//logic                         ld_ag_cmit;
 
 
 //==========================================================
@@ -222,7 +227,7 @@ begin
   if (!cpurst_b)
   begin
     ld_ag_inst_size[1:0]        <=  2'b0;
-    ld_ag_secd                  <=  1'b0;
+   // ld_ag_secd                  <=  1'b0;
     ld_ag_sign_extend           <=  1'b0;
     ld_ag_iid[6:0]              <=  7'b0;
     ld_ag_lsid[LSIQ_ENTRY-1:0]  <=  {LSIQ_ENTRY{1'b0}};
@@ -232,7 +237,7 @@ begin
   else if(!ld_ag_stall_vld  &&  idu_lsu_ld_sel)
   begin
     ld_ag_inst_size[1:0]        <=  idu_lsu_ld_inst_size[1:0];
-    ld_ag_secd                  <=  idu_lsu_ld_unalign_2nd;
+   // ld_ag_secd                  <=  idu_lsu_ld_unalign_2nd;
     ld_ag_sign_extend           <=  idu_lsu_ld_sign_extend;
     ld_ag_iid[6:0]              <=  idu_lsu_ld_iid[6:0];
     ld_ag_lsid[LSIQ_ENTRY-1:0]  <=  idu_lsu_ld_lch_entry[LSIQ_ENTRY-1:0];
@@ -253,6 +258,7 @@ end
 //| offset_plus |
 //+-------------+
 //use this imm as offset when the ld/st inst need split and !secd
+/*
 always @(posedge ld_ag_clk or negedge cpurst_b)
 begin
   if (!cpurst_b)
@@ -260,7 +266,7 @@ begin
   else if (!ld_ag_stall_vld &&  idu_lsu_ld_sel)
     ld_ag_offset_plus[12:0]  <=  idu_lsu_ld_offset_plus[12:0];
 end
-
+*/
 //+------+
 //| base |
 //+------+
@@ -275,26 +281,48 @@ end
 //               Generate  address
 //==========================================================
 assign ld_ag_addr_ori[31:0] = ld_ag_base[31:0] + ld_ag_offset[31:0];
-
+/*
 assign ld_ag_addr_plus[31:0]          = ld_ag_base[31:0]
                                       + {{19{ld_ag_offset_plus[12]}},ld_ag_offset_plus[12:0]};
-
-assign ld_ag_addr1_to4[27:0] = ld_ag_addr_ori[31:4];
+*/
+// 2026-10-15 停用: addr1 (非对齐拆分里"低地址那半"的地址)。对齐访问下它与 addr0 同值,
+//   而它的消费者 (lq_entry 的 create1 分支 / ld_dc 的 raw_addr1 比较 / cache_buffer)
+//   全部由 ld_dc_acclr_en 或 cb_ld_dc_addr_hit 门控 ⇒ acclr_en 恒 0 时这条通路已死。
+//   恒 0 顶住, 避免输出悬空 (Z) 静默传播成 X。
+//assign ld_ag_addr1_to4[27:0] = ld_ag_addr_ori[31:4];
+//assign ld_ag_addr1_to4[27:0] = 28'b0;
 //assign ld_ag_offset_plus[31:0]     = ld_ag_offset[31:0] + 32'h10;
 //if misalign without page, then select ori va
+/*
 assign ld_ag_addr_plus_sel            = ld_ag_boundary_unmask
                                       &&  !ld_ag_secd;
-
-assign ld_ag_addr[31:0]               = ld_ag_addr_plus_sel
-                                      ? ld_ag_addr_plus[31:0]
-                                      : ld_ag_addr_ori[31:0]; 
+*/
+assign ld_ag_addr[31:0]               =// ld_ag_addr_plus_sel
+                                     // ? ld_ag_addr_plus[31:0]
+                                        ld_ag_addr_ori[31:0]; 
 
 //---------------boundary---------------
-assign ld_ag_va_add_access_size[4:0]  = {1'b0,ld_ag_addr_ori[3:0]} + {1'b0,ld_ag_access_size[3:0]};
-assign ld_ag_boundary_unmask  = ld_ag_va_add_access_size[4];
+assign ld_ag_va_add_access_size[3:0]  = ld_ag_addr_ori[3:0] + ld_ag_access_size[3:0];
+//assign ld_ag_boundary_unmask  = ld_ag_va_add_access_size[4];
 
-assign ld_ag_boundary = (ld_ag_boundary_unmask
-                            ||  ld_ag_secd);
+//assign ld_ag_boundary = (ld_ag_boundary_unmask
+//                            ||  ld_ag_secd);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 2026-10-15 停用: 非对齐 (boundary / unalign) 硬件处理逻辑 —— **整条从流水线摘掉**
+//   前提: 现在跑的测试里**不会再出现非对齐访问** —— 非对齐一律由 ld_ag_expt
+//         (见下方 `assign ld_ag_expt = !ld_ag_align;`) 当异常上报, 不进数据通路。
+//   已摘掉的输出 (端口 + 驱动一并注释, 不再往下传给 ld_dc):
+//     ld_ag_boundary      —— 原 = ld_ag_boundary_unmask || ld_ag_secd
+//     ld_ag_secd          —— 原 = reg(idu_lsu_ld_unalign_2nd)   ("第二条"标记)
+//     ld_ag_acclr_en      —— 原 = ld_ag_boundary & !ld_ag_secd
+//     ld_ag_bytes_vld1    —— 原 = le_bytes_vld_high_bits       (只服务拆分)
+//     ld_ag_addr1_to4     —— 原 = ld_ag_addr_ori[31:4]         (只服务拆分)
+//   对齐情形下这五根本来就分别是 0/0/0/(死)/(死), 摘掉后功能等价。
+//   ⚠️ 原逻辑全部按"只注释、不删除"原地保留, 便于回退。
+// ═══════════════════════════════════════════════════════════════════════════
+//assign ld_ag_boundary = 1'b0;
+//assign ld_ag_secd     = 1'b0;
 
 //----------------generate unalign--------------------------
 //-----------unalign--------------------
@@ -342,7 +370,9 @@ end
 assign ld_ag_access_size[3:0] = ld_ag_access_size_ori[3:0]; 
 
 
-assign ld_ag_acclr_en         = ld_ag_boundary & !ld_ag_secd;
+//assign ld_ag_acclr_en         = ld_ag_boundary & !ld_ag_secd;
+// 2026-10-15 停用: 非对齐才需要"加速"清 dcache 行 (acclr), 整根摘掉 (见上方说明块)
+//assign ld_ag_acclr_en         = 1'b0;
 
 //----------------generate bytes_vld------------------------
 //-----------in le/bev2-----------------
@@ -400,32 +430,37 @@ end
 assign ld_ag_le_bytes_vld_cross[15:0]       = ld_ag_le_bytes_vld_high_bits_full[15:0]
                                                 & ld_ag_le_bytes_vld_low_bits_full[15:0];
 
-assign ld_ag_le_bytes_vld_low_cross_bits[15:0]  = ld_ag_boundary_unmask
-                                                  ? ld_ag_le_bytes_vld_low_bits_full[15:0]
-                                                  : ld_ag_le_bytes_vld_cross[15:0]; 
+assign ld_ag_le_bytes_vld_low_cross_bits[15:0]  = //ld_ag_boundary_unmask
+                                                  //? ld_ag_le_bytes_vld_low_bits_full[15:0]
+                                                   ld_ag_le_bytes_vld_cross[15:0]; 
 
-assign ld_ag_le_bytes_vld_high_bits[15:0]   = ld_ag_le_bytes_vld_high_bits_full[15:0];
+// 2026-10-15 停用: 下面两根只喂 bytes_vld1 (已摘), 一并注释
+//assign ld_ag_le_bytes_vld_high_bits[15:0]   = ld_ag_le_bytes_vld_high_bits_full[15:0];
 //-----------select bytes_vld-----------
 assign ld_ag_bytes_vld_low_cross_bits[15:0] = ld_ag_le_bytes_vld_low_cross_bits[15:0];
 
-assign ld_ag_bytes_vld_high_bits[15:0]  = ld_ag_le_bytes_vld_high_bits[15:0];
+//assign ld_ag_bytes_vld_high_bits[15:0]  = ld_ag_le_bytes_vld_high_bits[15:0];
 
-//used for 
+//used for
 //1.lq create
 //2.da data_merge when acclr_en
 //bytes_vld1 is the bytes_vld of lower addr when there is a first(bigger) boundary ld inst
-assign ld_ag_bytes_vld1[15:0] =  ld_ag_bytes_vld_high_bits[15:0];
+// 2026-10-15 停用: bytes_vld1 只服务非对齐拆分。消费者 (lq_entry create1 / sq_entry
+//   depd_hit4 / ld_da 的 cb_bypass) 全部被 acclr_en 或 cb_* 门控 ⇒ 已死。恒 0 顶住。
+//assign ld_ag_bytes_vld1[15:0] =  ld_ag_bytes_vld_high_bits[15:0];
+//assign ld_ag_bytes_vld1[15:0] =  16'b0;
 
-assign ld_ag_bytes_vld[15:0]  =  ld_ag_secd
-                                 ? ld_ag_bytes_vld_high_bits[15:0]
-                                 : ld_ag_bytes_vld_low_cross_bits[15:0];
+assign ld_ag_bytes_vld[15:0]  =  //ld_ag_secd
+                                 //? ld_ag_bytes_vld_high_bits[15:0]
+                                  ld_ag_bytes_vld_low_cross_bits[15:0];
 
-assign ld_ag_dc_fwd_bypass_en = !ld_ag_boundary;
-
+//assign ld_ag_dc_fwd_bypass_en = !ld_ag_boundary;
+// 2026-10-15 停用: bypass 通路在本仓没实现 (ld_dc_chk_ld_bypass_vld 无人使用), 整条摘掉: assign ld_ag_dc_fwd_bypass_en = 1'b1;
 
 //==========================================================
 //        Generage commit signal
 //==========================================================
+/*
 assign ld_ag_cmit_hit0  = {rtu_yy_xx_commit0,rtu_yy_xx_commit0_iid[6:0]}
                           ==  {1'b1,ld_ag_iid[6:0]};
 assign ld_ag_cmit_hit1  = {rtu_yy_xx_commit1,rtu_yy_xx_commit1_iid[6:0]}
@@ -437,6 +472,7 @@ assign ld_ag_cmit_hit2  = {rtu_yy_xx_commit2,rtu_yy_xx_commit2_iid[6:0]}
 assign ld_ag_cmit       = ld_ag_cmit_hit0
                           ||  ld_ag_cmit_hit1
                           ||  ld_ag_cmit_hit2;
+                          */
 //==========================================================
 //        Generage dcache request information
 //==========================================================
@@ -453,25 +489,29 @@ assign ag_dcache_arb_ld_tag_idx         = ld_ag_addr[INDEX_MSB:INDEX_LSB];
 // &CombBeg; @1064
 always @(*)
 begin
-casez({ld_ag_boundary,ld_ag_secd,ld_ag_addr_ori[3:2],ld_ag_va_add_access_size[3:2]})
-  {1'b0,1'b?,2'b00,2'b00}:bank_en_low_ori[3:0] = 4'b0001;
-  {1'b0,1'b?,2'b00,2'b01}:bank_en_low_ori[3:0] = 4'b0011;
-  {1'b0,1'b?,2'b00,2'b10}:bank_en_low_ori[3:0] = 4'b0111;
-  {1'b0,1'b?,2'b00,2'b11}:bank_en_low_ori[3:0] = 4'b1111;
-  {1'b0,1'b?,2'b01,2'b01}:bank_en_low_ori[3:0] = 4'b0010;
-  {1'b0,1'b?,2'b01,2'b10}:bank_en_low_ori[3:0] = 4'b0110;
-  {1'b0,1'b?,2'b01,2'b11}:bank_en_low_ori[3:0] = 4'b1110;
-  {1'b0,1'b?,2'b10,2'b10}:bank_en_low_ori[3:0] = 4'b0100;
-  {1'b0,1'b?,2'b10,2'b11}:bank_en_low_ori[3:0] = 4'b1100;
-  {1'b0,1'b?,2'b11,2'b11}:bank_en_low_ori[3:0] = 4'b1000;
-  {1'b1,1'b0,2'b??,2'b00}:bank_en_low_ori[3:0] = 4'b0001;
-  {1'b1,1'b0,2'b??,2'b01}:bank_en_low_ori[3:0] = 4'b0011;
-  {1'b1,1'b0,2'b??,2'b10}:bank_en_low_ori[3:0] = 4'b0111;
-  {1'b1,1'b0,2'b??,2'b11}:bank_en_low_ori[3:0] = 4'b1111;
-  {1'b1,1'b1,2'b00,2'b??}:bank_en_low_ori[3:0] = 4'b1111;
-  {1'b1,1'b1,2'b01,2'b??}:bank_en_low_ori[3:0] = 4'b1110;
-  {1'b1,1'b1,2'b10,2'b??}:bank_en_low_ori[3:0] = 4'b1100;
-  {1'b1,1'b1,2'b11,2'b??}:bank_en_low_ori[3:0] = 4'b1000;
+// 2026-10-15 停用非对齐: 原来 casez 的键多两位 `{boundary, secd}`; 对齐访问恒为 {0,?},
+//   留下的就是下面这 10 条 (addr_ori[3:2] 是起始 bank, va_add_access_size[3:2] 是结束 bank),
+//   后半 8 条 (boundary=1) 只服务拆分, 一并摘掉。
+casez({ld_ag_addr_ori[3:2],ld_ag_va_add_access_size[3:2]})
+  {2'b00,2'b00}:bank_en_low_ori[3:0] = 4'b0001;
+  {2'b00,2'b01}:bank_en_low_ori[3:0] = 4'b0011;
+  {2'b00,2'b10}:bank_en_low_ori[3:0] = 4'b0111;
+  {2'b00,2'b11}:bank_en_low_ori[3:0] = 4'b1111;
+  {2'b01,2'b01}:bank_en_low_ori[3:0] = 4'b0010;
+  {2'b01,2'b10}:bank_en_low_ori[3:0] = 4'b0110;
+  {2'b01,2'b11}:bank_en_low_ori[3:0] = 4'b1110;
+  {2'b10,2'b10}:bank_en_low_ori[3:0] = 4'b0100;
+  {2'b10,2'b11}:bank_en_low_ori[3:0] = 4'b1100;
+  {2'b11,2'b11}:bank_en_low_ori[3:0] = 4'b1000;
+  // 原 (boundary, secd): {1'b1,1'b0,...} / {1'b1,1'b1,...} 共 8 条, 只服务非对齐拆分
+  //  {1'b1,1'b0,2'b??,2'b00}:bank_en_low_ori[3:0] = 4'b0001;
+  //  {1'b1,1'b0,2'b??,2'b01}:bank_en_low_ori[3:0] = 4'b0011;
+  //  {1'b1,1'b0,2'b??,2'b10}:bank_en_low_ori[3:0] = 4'b0111;
+  //  {1'b1,1'b0,2'b??,2'b11}:bank_en_low_ori[3:0] = 4'b1111;
+  //  {1'b1,1'b1,2'b00,2'b??}:bank_en_low_ori[3:0] = 4'b1111;
+  //  {1'b1,1'b1,2'b01,2'b??}:bank_en_low_ori[3:0] = 4'b1110;
+  //  {1'b1,1'b1,2'b10,2'b??}:bank_en_low_ori[3:0] = 4'b1100;
+  //  {1'b1,1'b1,2'b11,2'b??}:bank_en_low_ori[3:0] = 4'b1000;
   default:bank_en_low_ori[3:0]  = 4'b0;
 endcase
 // &CombEnd; @1086

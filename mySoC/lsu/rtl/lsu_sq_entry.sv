@@ -25,11 +25,12 @@ module ct_lsu_sq_entry #(
     //==========================================================
     input  logic [LSIQ_ENTRY-1:0] ld_da_lsid,
     input  logic [31:0]           ld_dc_addr0,
-    input  logic [7:0]            ld_dc_addr1_11to4,
+    // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): input  logic [7:0]            ld_dc_addr1_11to4,   // 注: 实际接的是 ld_dc_addr0[11:4] (lsu_top:661), 与"addr1"无关
     input  logic [15:0]           ld_dc_bytes_vld,
-    input  logic [15:0]           ld_dc_bytes_vld1,
-    input  logic                  ld_dc_chk_ld_addr1_vld,
-    input  logic                  ld_dc_chk_ld_bypass_vld,
+    // 2026-10-15 停用: 只服务非对齐"第二半"的 RAW 检查 (depd_hit4 / hit8)
+    //input  logic [15:0]           ld_dc_bytes_vld1,
+    //input  logic                  ld_dc_chk_ld_addr1_vld,
+    // 2026-10-15 停用: bypass 通路在本仓没实现 (ld_dc_chk_ld_bypass_vld 无人使用), 整条摘掉: input  logic                  ld_dc_chk_ld_bypass_vld,
     input  logic                  ld_dc_chk_ld_inst_vld,
     input  logic [IID_WIDTH-1:0]  ld_dc_iid,
 
@@ -76,7 +77,8 @@ module ct_lsu_sq_entry #(
     //==========================================================
     input  logic [IID_WIDTH-1:0]  st_da_iid,
     input  logic                  st_da_inst_vld,
-    input  logic                  st_da_secd,
+    // 2026-10-15 停用: 非对齐拆分通路整条摘掉 (secd/boundary)
+    //input  logic                  st_da_secd,
     input  logic                  st_da_sq_dcache_dirty,
     input  logic                  st_da_sq_dcache_valid,
     input  logic                  st_da_sq_dcache_way,
@@ -86,14 +88,14 @@ module ct_lsu_sq_entry #(
     // ST DC
     //==========================================================
     input  logic [31:0]           st_dc_addr0,
-    input  logic                  st_dc_boundary,
-    input  logic                  st_dc_boundary_first,
+    //input  logic                  st_dc_boundary,
+    //input  logic                  st_dc_boundary_first,
     input  logic [15:0]           st_dc_bytes_vld,
     input  logic [IID_WIDTH-1:0]  st_dc_iid,
     input  logic [7:0]            st_dc_rot_sel_rev,
     input  logic [3:0]            st_dc_sdid,
  //   input  logic                  st_dc_sdid_hit,
-    input  logic                  st_dc_secd,
+    //input  logic                  st_dc_secd,
     input  logic                  st_dc_sq_data_vld,
 
     //==========================================================
@@ -105,11 +107,11 @@ module ct_lsu_sq_entry #(
     // SQ entry output
     //==========================================================
     output logic [31:0]           sq_entry_addr0_v,
-    output logic                  sq_entry_addr1_dep_discard_x,
+    // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): output logic                  sq_entry_addr1_dep_discard_x,
     output logic                  sq_entry_age_vec_surplus1_ptr_x,
     output logic                  sq_entry_age_vec_zero_ptr_x,
     output logic [15:0]           sq_entry_bytes_vld_v,
-    output logic                  sq_entry_cancel_acc_req_x,
+    // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): output logic                  sq_entry_cancel_acc_req_x,
     output logic                  sq_entry_cmit_data_not_vld,
    // output logic                  sq_entry_cmit_data_vld_x,
     output logic                  sq_entry_cmit_x,
@@ -142,13 +144,14 @@ module ct_lsu_sq_entry #(
     logic [31:0]           sq_entry_addr0;
     logic [SQ_ENTRY-1:0]   sq_entry_age_vec;
     logic [SQ_ENTRY-1:0]   sq_entry_age_vec_1;
-    logic                  sq_entry_bond_first_only;
-    logic                  sq_entry_boundary;
+    // 2026-10-15 停用: 非对齐拆分相关 (第一半标记 / 跨界标记)
+    //logic                  sq_entry_bond_first_only;
+    //logic                  sq_entry_boundary;
     logic [15:0]           sq_entry_bytes_vld;
     logic                  sq_entry_cmit;
-    logic                  sq_entry_cmit0_iid_hit;
-    logic                  sq_entry_cmit1_iid_hit;
-    logic                  sq_entry_cmit2_iid_hit;
+    // 2026-10-15 停用: 死亡声明 (无驱动无负载, 与本次非对齐摘除无关的既有残留): logic                  sq_entry_cmit0_iid_hit;
+    // 2026-10-15 停用: 死亡声明 (无驱动无负载, 与本次非对齐摘除无关的既有残留): logic                  sq_entry_cmit1_iid_hit;
+    // 2026-10-15 停用: 死亡声明 (无驱动无负载, 与本次非对齐摘除无关的既有残留): logic                  sq_entry_cmit2_iid_hit;
     logic [31:0]           sq_entry_data;
     logic                  sq_entry_data_set_ff;
     logic                  sq_entry_data_vld;
@@ -163,16 +166,16 @@ module ct_lsu_sq_entry #(
     logic [7:0]            sq_entry_rot_sel;
     logic                  sq_entry_same_addr_newest;
     logic [3:0]            sq_entry_sdid;
-    logic                  sq_entry_secd;
-    logic                  sq_entry_st_data_sdid_hit;
+    //logic                  sq_entry_secd;   // 2026-10-15 停用: 非对齐第二半标记
+    // 2026-10-15 停用: 死亡声明 (无驱动无负载, 与本次非对齐摘除无关的既有残留): logic                  sq_entry_st_data_sdid_hit;
     logic                  sq_entry_vld;
     logic [LSIQ_ENTRY-1:0] sq_entry_wakeup_queue;
 
     //==========================================================
     //                 Internal wires
     //==========================================================
-    logic                  sq_bond_secd_create_vld;
-    logic                  sq_entry_addr1_dep_discard;
+    //logic                  sq_bond_secd_create_vld;   // 2026-10-15 停用
+    // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): logic                  sq_entry_addr1_dep_discard;
     logic                  sq_entry_addr_11to4_hit_st_dc;
     logic [SQ_ENTRY-1:0]   sq_entry_age_vec_create;
     logic                  sq_entry_age_vec_less2;
@@ -180,9 +183,9 @@ module ct_lsu_sq_entry #(
     logic                  sq_entry_age_vec_surplus1_ptr;
     logic                  sq_entry_age_vec_zero;
     logic                  sq_entry_age_vec_zero_ptr;
-    logic                  sq_entry_and_ld_dc_bytes_vld1_hit;
+    //logic                  sq_entry_and_ld_dc_bytes_vld1_hit;   // 2026-10-15 停用
     logic                  sq_entry_and_ld_dc_bytes_vld_hit;
-    logic                  sq_entry_cancel_acc_req;
+    // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): logic                  sq_entry_cancel_acc_req;
     logic                  sq_entry_cmit0_iid_pre_hit;
     logic                  sq_entry_cmit1_iid_pre_hit;
     logic                  sq_entry_cmit2_iid_pre_hit;
@@ -197,30 +200,30 @@ module ct_lsu_sq_entry #(
     logic                  sq_entry_data_depd_wakeup_vld;
     logic                  sq_entry_data_discard_grnt;
     logic                  sq_entry_data_discard_req;
-    logic                  sq_entry_data_discard_req_short;
+    // 2026-10-15 停用: 死亡声明 (无驱动无负载, 与本次非对齐摘除无关的既有残留): logic                  sq_entry_data_discard_req_short;
     logic                  sq_entry_data_set;
     logic                  sq_entry_data_vld_now;
     logic                  sq_entry_dcache_update_vld;
     logic                  sq_entry_dcache_update_vld_unmask;
     logic                  sq_entry_depd_addr0_11to4_hit;
-    logic                  sq_entry_depd_addr1_11to4_hit;
-    logic                  sq_entry_depd_addr1_tto4_hit;
+    //logic                  sq_entry_depd_addr1_11to4_hit;   // 2026-10-15 停用
+    //logic                  sq_entry_depd_addr1_tto4_hit;    // 2026-10-15 停用
     logic                  sq_entry_depd_addr_tto12_hit;
     logic                  sq_entry_depd_addr_tto4_hit;
-    logic                  sq_entry_depd_bv1_do_hit;
+    //logic                  sq_entry_depd_bv1_do_hit;   // 2026-10-15 停用
     logic                  sq_entry_depd_exact_hit;
     logic                  sq_entry_depd_hit1;
-    logic                  sq_entry_depd_hit4;
+    //logic                  sq_entry_depd_hit4;   // 2026-10-15 停用
     logic                  sq_entry_depd_hit6;
     logic                  sq_entry_depd_hit7;
-    logic                  sq_entry_depd_hit8;
+    //logic                  sq_entry_depd_hit8;   // 2026-10-15 停用
     logic                  sq_entry_depd_part_hit;
     logic                  sq_entry_depd_set;
     logic                  sq_entry_depd_whole_hit;
     logic                  sq_entry_discard_req;
     logic                  sq_entry_flush_pop_vld;
     logic [31:0]           sq_entry_from_ld_dc_addr0;
-    logic                  sq_entry_fwd_bypass_req;
+    // 2026-10-15 停用: 死亡声明 (无驱动无负载, 与本次非对齐摘除无关的既有残留): logic                  sq_entry_fwd_bypass_req;
     logic                  sq_entry_fwd_multi_depd_set;
     logic                  sq_entry_fwd_req;
     logic                  sq_entry_iid_newer_than_st_dc;
@@ -278,8 +281,8 @@ module ct_lsu_sq_entry #(
         if (!cpurst_b) begin
             sq_entry_iid[IID_WIDTH-1:0]  <= {IID_WIDTH{1'b0}};
             sq_entry_sdid[3:0]           <= 4'b0;
-            sq_entry_boundary            <= 1'b0;
-            sq_entry_secd                <= 1'b0;
+            //sq_entry_boundary            <= 1'b0;
+            //sq_entry_secd                <= 1'b0;
             sq_entry_addr0[31:0]         <= 32'b0;
             sq_entry_bytes_vld[15:0]     <= 16'b0;
             sq_entry_rot_sel[7:0]        <= 8'b0;
@@ -287,8 +290,8 @@ module ct_lsu_sq_entry #(
         else if (sq_entry_create_vld) begin
             sq_entry_iid[IID_WIDTH-1:0]  <= st_dc_iid[IID_WIDTH-1:0];
             sq_entry_sdid[3:0]           <= st_dc_sdid[3:0];
-            sq_entry_boundary            <= st_dc_boundary;
-            sq_entry_secd                <= st_dc_secd;
+            //sq_entry_boundary            <= st_dc_boundary;
+            //sq_entry_secd                <= st_dc_secd;
             sq_entry_addr0[31:0]         <= st_dc_addr0[31:0];
             sq_entry_bytes_vld[15:0]     <= st_dc_bytes_vld[15:0];
             sq_entry_rot_sel[7:0]        <= st_dc_rot_sel_rev[7:0];
@@ -405,6 +408,8 @@ module ct_lsu_sq_entry #(
             sq_entry_st_data_sdid_hit <= sq_entry_sdid_hit;
     end
 */
+    // 2026-10-15 停用: 非对齐"第一半"标记 (原本也只有已摘的 depd_hit4 会读它)
+    /*
     always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
         if (!cpurst_b)
             sq_entry_bond_first_only <= 1'b0;
@@ -413,6 +418,7 @@ module ct_lsu_sq_entry #(
         else if (sq_bond_secd_create_vld)
             sq_entry_bond_first_only <= 1'b0;
     end
+    */
 
     //==========================================================
     //      Generate cmit/st_da info/update signal
@@ -437,14 +443,16 @@ module ct_lsu_sq_entry #(
 
    // assign sq_entry_cmit_data_vld = !sq_entry_cmit_data_not_vld;
 
+    // 2026-10-15 停用: 原式还有 `&& (st_da_secd == sq_entry_secd)`, 两侧恒 0 恒等
     assign sq_entry_st_da_info_set = sq_entry_vld && st_da_inst_vld &&
                                      !sq_entry_no_restart &&
-                                     (st_da_secd == sq_entry_secd) &&
+                                     //(st_da_secd == sq_entry_secd) &&
                                      (st_da_iid[IID_WIDTH-1:0] == sq_entry_iid[IID_WIDTH-1:0]);
 
-    assign sq_bond_secd_create_vld = sq_entry_vld && sq_create_success &&
-                                     (sq_entry_iid[IID_WIDTH-1:0] == st_dc_iid[IID_WIDTH-1:0]) &&
-                                     st_dc_secd;
+    // 2026-10-15 停用: 非对齐"第二半"表项创建 (st_dc_secd 恒 0)
+    //assign sq_bond_secd_create_vld = sq_entry_vld && sq_create_success &&
+    //                                 (sq_entry_iid[IID_WIDTH-1:0] == st_dc_iid[IID_WIDTH-1:0]) &&
+    //                                 st_dc_secd;
 
     assign sq_entry_sdid_hit = sq_entry_sdid[3:0] == sd_rf_ex1_sdid[3:0];
 
@@ -465,8 +473,9 @@ module ct_lsu_sq_entry #(
                                             sq_entry_addr_11to4_hit_st_dc &&
                                             sq_entry_st_dc_bv_do_hit;
 
+    // 2026-10-15 停用: 原式还有 `&& (sq_entry_secd == st_dc_secd)`, 两侧恒 0 恒等
     assign sq_entry_inst_hit = sq_entry_vld && !sq_entry_no_restart &&
-                               (sq_entry_secd == st_dc_secd) &&
+                               //(sq_entry_secd == st_dc_secd) &&
                                (sq_entry_iid[IID_WIDTH-1:0] == st_dc_iid[IID_WIDTH-1:0]);
 
     //==========================================================
@@ -553,24 +562,25 @@ module ct_lsu_sq_entry #(
     assign sq_entry_depd_addr_tto12_hit  = (sq_entry_addr0[31:12] ==
                                             sq_entry_from_ld_dc_addr0[31:12]);
     assign sq_entry_depd_addr0_11to4_hit = sq_entry_addr0[11:4] == sq_entry_from_ld_dc_addr0[11:4];
-    assign sq_entry_depd_addr1_11to4_hit = sq_entry_addr0[11:4] == ld_dc_addr1_11to4[7:0];
+    // 2026-10-15 停用: addr1 那一路 (只有非对齐第二半用)
+    //assign sq_entry_depd_addr1_11to4_hit = sq_entry_addr0[11:4] == ld_dc_addr1_11to4[7:0];
 
     assign sq_entry_depd_addr_tto4_hit = sq_entry_depd_addr_tto12_hit &&
                                          sq_entry_depd_addr0_11to4_hit;
 
-    assign sq_entry_depd_addr1_tto4_hit = sq_entry_depd_addr_tto12_hit &&
-                                          sq_entry_depd_addr1_11to4_hit;
+    //assign sq_entry_depd_addr1_tto4_hit = sq_entry_depd_addr_tto12_hit &&
+    //                                      sq_entry_depd_addr1_11to4_hit;
 
     assign sq_entry_and_ld_dc_bytes_vld_hit     = |(sq_entry_bytes_vld[15:0] & ld_dc_bytes_vld[15:0]);
     assign sq_entry_not_and_ld_dc_bytes_vld_hit = |((~sq_entry_bytes_vld[15:0]) & ld_dc_bytes_vld[15:0]);
-    assign sq_entry_and_ld_dc_bytes_vld1_hit    = |(sq_entry_bytes_vld[15:0] & ld_dc_bytes_vld1[15:0]);
+    //assign sq_entry_and_ld_dc_bytes_vld1_hit    = |(sq_entry_bytes_vld[15:0] & ld_dc_bytes_vld1[15:0]);
 
     assign sq_entry_depd_whole_hit = sq_entry_and_ld_dc_bytes_vld_hit &&
                                      !sq_entry_not_and_ld_dc_bytes_vld_hit;
     assign sq_entry_depd_part_hit  = sq_entry_and_ld_dc_bytes_vld_hit &&
                                      sq_entry_not_and_ld_dc_bytes_vld_hit;
     assign sq_entry_depd_exact_hit = (sq_entry_bytes_vld[15:0] == ld_dc_bytes_vld[15:0]);
-    assign sq_entry_depd_bv1_do_hit = sq_entry_and_ld_dc_bytes_vld1_hit;
+    //assign sq_entry_depd_bv1_do_hit = sq_entry_and_ld_dc_bytes_vld1_hit;
 
     assign sq_entry_data_vld_now = sq_entry_data_vld || sq_entry_data_set;
 
@@ -580,10 +590,11 @@ module ct_lsu_sq_entry #(
                                 sq_entry_depd_addr_tto4_hit && sq_entry_depd_part_hit;
 
     // 跟 load 的第二半请求有数据交集
-    assign sq_entry_depd_hit4 = sq_entry_vld  &&
-                                ld_dc_chk_ld_addr1_vld && sq_entry_older_than_ld_dc &&
-                                sq_entry_bond_first_only && sq_entry_depd_addr1_tto4_hit &&
-                                sq_entry_depd_bv1_do_hit;
+    // 2026-10-15 停用: 非对齐"第二半"的 RAW 检查 (命中后要 discard 已建的表项)
+    //assign sq_entry_depd_hit4 = sq_entry_vld  &&
+    //                            ld_dc_chk_ld_addr1_vld && sq_entry_older_than_ld_dc &&
+    //                            sq_entry_bond_first_only && sq_entry_depd_addr1_tto4_hit &&
+    //                            sq_entry_depd_bv1_do_hit;
 
     // 数据完全覆盖，但是数据还没到来
     assign sq_entry_depd_hit6 = sq_entry_vld  &&
@@ -600,19 +611,22 @@ module ct_lsu_sq_entry #(
 
 
     // 跟 load 的第二半请求有数据交集，不能 cb 加速
-    assign sq_entry_depd_hit8 = sq_entry_vld  &&
-                                sq_entry_older_than_ld_dc && sq_entry_depd_addr1_tto4_hit &&
-                                sq_entry_depd_bv1_do_hit;
+    // 2026-10-15 停用: 同上 (非对齐第二半)
+    //assign sq_entry_depd_hit8 = sq_entry_vld  &&
+    //                            sq_entry_older_than_ld_dc && sq_entry_depd_addr1_tto4_hit &&
+    //                            sq_entry_depd_bv1_do_hit;
 
-    assign sq_entry_discard_req = sq_entry_depd_hit1 || sq_entry_depd_hit4;
+    assign sq_entry_discard_req = sq_entry_depd_hit1;   // 2026-10-15 停用: || sq_entry_depd_hit4
 
-    assign sq_entry_addr1_dep_discard = sq_entry_depd_hit4;
+    // 2026-10-15 停用: 恒 0 (原来只有 hit4 会置它)。端口保留, 避免牵动 sq.sv/lsu_top
+    // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): assign sq_entry_addr1_dep_discard = 1'b0;   // 原: sq_entry_depd_hit4
 
     assign sq_entry_data_discard_req = sq_entry_depd_hit6;
 
     assign sq_entry_fwd_req = sq_entry_depd_hit7;
 
-    assign sq_entry_cancel_acc_req = sq_entry_depd_hit8;
+    // 2026-10-15 停用: 恒 0 (原来只有 hit8 会置它)。端口保留, 避免牵动 sq.sv/lsu_top
+    // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): assign sq_entry_cancel_acc_req = 1'b0;   // 原: sq_entry_depd_hit8
 
     assign sq_entry_depd_set = sq_entry_discard_req || sq_entry_fwd_multi_depd_set;
 
@@ -663,9 +677,9 @@ module ct_lsu_sq_entry #(
     assign sq_entry_st_dc_create_age_vec_x  = sq_entry_st_dc_create_age_vec;
     assign sq_entry_settle_data_hit_x       = sq_entry_settle_data_hit;
     assign sq_entry_st_dc_same_addr_newer_x = sq_entry_st_dc_same_addr_newer;
-    assign sq_entry_addr1_dep_discard_x     = sq_entry_addr1_dep_discard;
+    // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): assign sq_entry_addr1_dep_discard_x     = sq_entry_addr1_dep_discard;
     assign sq_entry_data_discard_req_x      = sq_entry_data_discard_req;
     assign sq_entry_fwd_req_x               = sq_entry_fwd_req;
-    assign sq_entry_cancel_acc_req_x        = sq_entry_cancel_acc_req;
+    // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): assign sq_entry_cancel_acc_req_x        = sq_entry_cancel_acc_req;
 
 endmodule

@@ -1,0 +1,567 @@
+✅ Verdi/FSDB 已启用: /mnt/tools/synopsys/verdi/V-2023.12-SP2
+make: Warning: File `/x2025/GPrj1/IC2/RISCV_A910/obj_a910_dt/simv' has modification time 584 s in the future
+Info: [VCS_SAVE_RESTORE_INFO] ASLR (Address Space Layout Randomization) is detected on the machine. To enable $save functionality, ASLR will be switched off and simv re-executed.
+Please use '-no_save' simv switch to avoid re-execution or '-suppress=ASLR_DETECTED_INFO' to suppress this message.
+Chronologic VCS simulator copyright 1991-2023
+Contains Synopsys proprietary information.
+Compiler version V-2023.12-SP2_Full64; Runtime version V-2023.12-SP2_Full64;  Oct 15 21:36 2026
+[IFU2-TOP] GHR_W=8 chk: GHR[7:0] ras[11:8] BTBHIT=12 PREDTK=13 FPRED=14
+[IFU2-ICACHE] BYTES=1024 LINE=16 WAYS=2 SETS=32 SET_BITS=5 TAG_BITS=23 ROW_W=24
+[IFU2-SPRAM] ADDR_W=5 DATA_W=24 (契约: 同步读 + 写穿透 + 无 rd_en + 无复位)
+[IFU2-SPRAM] ADDR_W=5 DATA_W=24 (契约: 同步读 + 写穿透 + 无 rd_en + 无复位)
+[IFU2-SPRAM] ADDR_W=5 DATA_W=128 (契约: 同步读 + 写穿透 + 无 rd_en + 无复位)
+[IFU2-SPRAM] ADDR_W=5 DATA_W=128 (契约: 同步读 + 写穿透 + 无 rd_en + 无复位)
+[1;34mPeripheral name: MONITOR	base: 0x80000000	addr len: 0x00000008	
+[0m[1;34mPeripheral name: Digit	base: 0xfffff000	addr len: 0x00000004	
+[0m[1;34mPeripheral name: TIMER	base: 0xfffff040	addr len: 0x00000010	
+[0m
+==================================================
+  A910_cpu difftest 台   TEST=lb  (MAX_CYCLES=200000)
+==================================================
+  [WKQ] T21 wkq 11111111 -> 00000000 | pop_ff=0 set=0 setvec=00000000 wakeup=00000000 | lfb_vld=0
+  [VBP] T102 VB create: vld=1 aw_req=0 w_req=0 borrow_ld=0 borrow_st=0
+  [WKQ] T106 wkq 00000000 -> 00000010 | pop_ff=0 set=0 setvec=00000010 wakeup=00000000 | lfb_vld=1
+  [LFBW] T107 low_idx=0 low_din=0000000000000000000000000ff000ff high_din=00000000000000000000000000000000 wen_b=00000000 sel_b=00
+  [WKQ] T108 wkq 00000010 -> 00000000 | pop_ff=1 set=0 setvec=00000010 wakeup=00000000 | lfb_vld=0
+      T110 退休 011 条
+        slot0 pc=00000000 ena=0 x0<=00000000
+        slot1 pc=00000004 ena=1 x1<=00002000
+      T112 退休 001 条
+        slot0 pc=00000008 ena=1 x1<=00002000
+      T117 退休 111 条
+        slot0 pc=0000000c ena=1 x14<=ffffffff
+        slot1 pc=00000010 ena=1 x7<=ffffffff
+        slot2 pc=00000014 ena=1 x3<=00000002
+      T122 退休 111 条
+        slot0 pc=00000018 ena=0 x0<=00000000
+        slot1 pc=0000001c ena=1 x1<=00002000
+        slot2 pc=00000020 ena=1 x1<=00002000
+      T130 退休 111 条
+        slot0 pc=00000024 ena=1 x14<=00000000
+        slot1 pc=00000028 ena=1 x7<=00000000
+        slot2 pc=0000002c ena=1 x3<=00000003
+      T132 退休 111 条
+        slot0 pc=00000030 ena=0 x0<=00000000
+        slot1 pc=00000034 ena=1 x1<=00002000
+        slot2 pc=00000038 ena=1 x1<=00002000
+      T133 退休 111 条
+        slot0 pc=0000003c ena=1 x14<=fffffff0
+        slot1 pc=00000040 ena=1 x7<=fffffff0
+        slot2 pc=00000044 ena=1 x3<=00000004
+      T134 退休 111 条
+        slot0 pc=00000048 ena=0 x0<=00000000
+        slot1 pc=0000004c ena=1 x1<=00002000
+        slot2 pc=00000050 ena=1 x1<=00002000
+      T137 退休 111 条
+        slot0 pc=00000054 ena=1 x14<=0000000f
+        slot1 pc=00000058 ena=1 x7<=0000000f
+        slot2 pc=0000005c ena=1 x3<=00000005
+      T139 退休 111 条
+        slot0 pc=00000060 ena=0 x0<=00000000
+        slot1 pc=00000064 ena=1 x1<=00002000
+        slot2 pc=00000068 ena=1 x1<=00002003
+      T143 退休 111 条
+        slot0 pc=0000006c ena=1 x14<=ffffffff
+        slot1 pc=00000070 ena=1 x7<=ffffffff
+        slot2 pc=00000074 ena=1 x3<=00000006
+      T145 退休 111 条
+        slot0 pc=00000078 ena=0 x0<=00000000
+        slot1 pc=0000007c ena=1 x1<=00002000
+        slot2 pc=00000080 ena=1 x1<=00002003
+      T149 退休 111 条
+        slot0 pc=00000084 ena=1 x14<=00000000
+        slot1 pc=00000088 ena=1 x7<=00000000
+        slot2 pc=0000008c ena=1 x3<=00000007
+      T151 退休 111 条
+        slot0 pc=00000090 ena=0 x0<=00000000
+        slot1 pc=00000094 ena=1 x1<=00002000
+        slot2 pc=00000098 ena=1 x1<=00002003
+      T155 退休 111 条
+        slot0 pc=0000009c ena=1 x14<=fffffff0
+        slot1 pc=000000a0 ena=1 x7<=fffffff0
+        slot2 pc=000000a4 ena=1 x3<=00000008
+      T157 退休 111 条
+        slot0 pc=000000a8 ena=0 x0<=00000000
+        slot1 pc=000000ac ena=1 x1<=00002000
+        slot2 pc=000000b0 ena=1 x1<=00002003
+      T161 退休 111 条
+        slot0 pc=000000b4 ena=1 x14<=0000000f
+        slot1 pc=000000b8 ena=1 x7<=0000000f
+        slot2 pc=000000bc ena=1 x3<=00000009
+      T163 退休 111 条
+        slot0 pc=000000c0 ena=0 x0<=00000000
+        slot1 pc=000000c4 ena=1 x1<=000020c4
+        slot2 pc=000000c8 ena=1 x1<=00002000
+      T164 退休 001 条
+        slot0 pc=000000cc ena=1 x1<=00001fe0
+      T169 退休 111 条
+        slot0 pc=000000d0 ena=1 x5<=ffffffff
+        slot1 pc=000000d4 ena=1 x7<=ffffffff
+        slot2 pc=000000d8 ena=1 x3<=0000000a
+      T171 退休 111 条
+        slot0 pc=000000dc ena=0 x0<=00000000
+        slot1 pc=000000e0 ena=1 x1<=000020e0
+        slot2 pc=000000e4 ena=1 x1<=00002000
+      T172 退休 001 条
+        slot0 pc=000000e8 ena=1 x1<=00001ffa
+      T177 退休 111 条
+        slot0 pc=000000ec ena=1 x5<=00000000
+        slot1 pc=000000f0 ena=1 x7<=00000000
+        slot2 pc=000000f4 ena=1 x3<=0000000b
+      T179 退休 111 条
+        slot0 pc=000000f8 ena=0 x0<=00000000
+        slot1 pc=000000fc ena=1 x3<=0000000c
+        slot2 pc=00000100 ena=1 x4<=00000000
+      T180 退休 011 条
+        slot0 pc=00000104 ena=1 x1<=00002000
+        slot1 pc=00000108 ena=1 x1<=00002001
+      T184 退休 001 条
+        slot0 pc=0000010c ena=1 x14<=fffffff0
+      T186 退休 011 条
+        slot0 pc=00000110 ena=1 x6<=fffffff0
+        slot1 pc=00000114 ena=1 x7<=fffffff0
+      T188 退休 111 条
+        slot0 pc=00000118 ena=0 x0<=00000000
+        slot1 pc=0000011c ena=1 x4<=00000001
+        slot2 pc=00000120 ena=1 x5<=00000002
+      T189 退休 001 条
+        slot0 pc=00000124 ena=0 x0<=00000000
+  [LFPE] T150530 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150530 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150530 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150531 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150531 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150531 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150532 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150532 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150532 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150533 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150533 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150533 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150534 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150534 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150534 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150535 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150535 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150535 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150536 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150536 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150536 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150537 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150537 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150537 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150538 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150538 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150538 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150539 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150539 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150539 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150540 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150540 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150540 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150541 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150541 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150541 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150542 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150542 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150542 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150543 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150543 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150543 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150544 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150544 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150544 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150545 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150545 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150545 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150546 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150546 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150546 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150547 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150547 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150547 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150548 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150548 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150548 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150549 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150549 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150549 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150550 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150550 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150550 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150551 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150551 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150551 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150552 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150552 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150552 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150553 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150553 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150553 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150554 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150554 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150554 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150555 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150555 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150555 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150556 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150556 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150556 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150557 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150557 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150557 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150558 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150558 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150558 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150559 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150559 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150559 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150560 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150560 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150560 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [CEM] T150560 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [LFPE] T150561 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150561 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150561 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [CEM] T150561 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [LFPE] T150562 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150562 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150562 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [CEM] T150562 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [LFPE] T150563 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150563 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150563 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [CEM] T150563 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [LFPE] T150564 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150564 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150564 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [CEM] T150564 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [LFPE] T150565 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150565 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150565 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [CEM] T150565 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [LFPE] T150566 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150566 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150566 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [CEM] T150566 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [LFPE] T150567 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150567 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150567 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [CEM] T150567 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [LFPE] T150568 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150568 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150568 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [CEM] T150568 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [LFPE] T150569 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150569 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150569 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [CEM] T150569 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [LFPE] T150570 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150570 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150570 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [CEM] T150570 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [LFPE] T150571 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150571 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150571 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [CEM] T150571 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [LFPE] T150572 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150572 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150572 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [CEM] T150572 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [LFPE] T150573 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150573 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150573 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [CEM] T150573 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [LFPE] T150574 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150574 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150574 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [CEM] T150574 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [LFPE] T150575 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150575 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150575 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [CEM] T150575 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [LFPE] T150576 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150576 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150576 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [CEM] T150576 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [LFPE] T150577 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150577 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150577 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [CEM] T150577 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [LFPE] T150578 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150578 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150578 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [CEM] T150578 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [LFPE] T150579 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150579 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150579 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [CEM] T150579 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [LFPE] T150580 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150580 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150580 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [CEM] T150580 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [LFPE] T150581 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150581 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150581 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [CEM] T150581 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [LFPE] T150582 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150582 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150582 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [CEM] T150582 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [LFPE] T150583 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150583 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150583 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [CEM] T150583 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [LFPE] T150584 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150584 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150584 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [CEM] T150584 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [LFPE] T150585 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150585 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150585 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [CEM] T150585 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [LFPE] T150586 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150586 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150586 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [CEM] T150586 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [LFPE] T150587 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150587 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150587 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [CEM] T150587 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [LFPE] T150588 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150588 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150588 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [CEM] T150588 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [LFPE] T150589 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150589 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150589 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [CEM] T150589 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [LFPE] T150590 rcl_done=001 dcache_hit=000 refill_way=000 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150590 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=001 addr_vld=000 addr_depd=001 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150590 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [CEM] T150590 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150591 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150592 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150593 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150594 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150595 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150596 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150597 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150598 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150599 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150600 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150601 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150602 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150603 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150604 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150605 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150606 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150607 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150608 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150609 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150610 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150611 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150612 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150613 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150614 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150615 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150616 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150617 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150618 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150619 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150620 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150621 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150622 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150623 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150624 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150625 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150626 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150627 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150628 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150629 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150630 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150631 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150632 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150633 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150634 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150635 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150636 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150637 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150638 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150639 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+  [CEM] T150640 vld=0 addr=00000000 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=00000000 bv=0000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=xxxxxxxx ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0 | e3 v=0 a=xxxxxxxx ws=0 wreq=0 dptr=0 ahit=0
+
+==================================================
+  === A910 DIFFTEST: FAIL (超时) ===
+  TEST=lb  200000 拍内没跑到收尾的 ecall
+  累计退休 74 条, IFU 初始化=1, ROB 占用=5, ICache PC=00000124
+==================================================
+Fatal: "/x2025/GPrj1/IC2/RISCV_A910/tb/a910/tb_a910_difftest.sv", 2333: tb_a910_difftest: at time 2000015000 ps
+a910 difftest: timeout
+$finish called from file "/x2025/GPrj1/IC2/RISCV_A910/tb/a910/tb_a910_difftest.sv", line 2333.
+$finish at simulation time           2000015000
+           V C S   S i m u l a t i o n   R e p o r t 
+Time: 2000015000 ps
+make: *** [a910-difftest] Error 3

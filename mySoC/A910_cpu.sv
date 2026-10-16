@@ -128,10 +128,10 @@ module A910_cpu
   logic [  5:0] idu_lsu_ld_preg;
   logic [ 31:0] idu_lsu_ld_src;
   logic [ 11:0] idu_lsu_ld_offset;
-  logic [ 12:0] idu_lsu_ld_offset_plus;
+  // 2026-10-15 停用: logic [ 12:0] idu_lsu_ld_offset_plus;
   logic         idu_lsu_ld_sign_extend;
   logic [  1:0] idu_lsu_ld_inst_size;
-  logic         idu_lsu_ld_unalign_2nd;
+  // 2026-10-15 停用: logic         idu_lsu_ld_unalign_2nd;
   logic [  7:0] idu_lsu_ld_lch_entry;
   logic         idu_lsu_ld_oldest;
 
@@ -139,9 +139,9 @@ module A910_cpu
   logic [  6:0] idu_lsu_st_iid;
   logic [ 31:0] idu_lsu_st_src0;
   logic [ 11:0] idu_lsu_st_offset;
-  logic [ 12:0] idu_lsu_st_offset_plus;
+  // 2026-10-15 停用: logic [ 12:0] idu_lsu_st_offset_plus;
   logic [  1:0] idu_lsu_st_inst_size;
-  logic         idu_lsu_st_unalign_2nd;
+  // 2026-10-15 停用: logic         idu_lsu_st_unalign_2nd;
   logic [  7:0] idu_lsu_st_lch_entry;
   logic         idu_lsu_st_oldest;
   logic [  3:0] idu_lsu_st_sdiq_entry;
@@ -156,7 +156,7 @@ module A910_cpu
   logic         lsu_idu_rb_not_full;
   logic [  7:0] lsu_idu_sq_full;
   logic         lsu_idu_sq_not_full;
-  logic [  7:0] lsu_idu_secd;
+  // 2026-10-15 停用: logic [  7:0] lsu_idu_secd;
   logic [  7:0] lsu_idu_imme_wakeup;
   logic         lsu_idu_lsiq_pop_vld;
   logic         lsu_idu_lsiq_pop0_vld;
@@ -1164,7 +1164,7 @@ module A910_cpu
   .lsu_idu_rb_not_full            (lsu_idu_rb_not_full),
   .lsu_idu_sq_full                (lsu_idu_sq_full),
   .lsu_idu_sq_not_full            (lsu_idu_sq_not_full),
-  .lsu_idu_secd                   (lsu_idu_secd),
+  // 2026-10-15 停用: .lsu_idu_secd                   (lsu_idu_secd),
   .lsu_idu_imme_wakeup            (lsu_idu_imme_wakeup),
   .lsu_idu_lsiq_pop_vld           (lsu_idu_lsiq_pop_vld),
   .lsu_idu_lsiq_pop0_vld          (lsu_idu_lsiq_pop0_vld),
@@ -1221,10 +1221,10 @@ module A910_cpu
   .idu_lsu_ld_preg                (idu_lsu_ld_preg),
   .idu_lsu_ld_src0                (idu_lsu_ld_src),
   .idu_lsu_ld_offset              (idu_lsu_ld_offset),
-  .idu_lsu_ld_offset_plus         (idu_lsu_ld_offset_plus),
+  // 2026-10-15 停用: .idu_lsu_ld_offset_plus         (idu_lsu_ld_offset_plus),
   .idu_lsu_ld_sign_extend         (idu_lsu_ld_sign_extend),
   .idu_lsu_ld_inst_size           (idu_lsu_ld_inst_size),
-  .idu_lsu_ld_unalign_2nd         (idu_lsu_ld_unalign_2nd),
+  // 2026-10-15 停用: .idu_lsu_ld_unalign_2nd         (idu_lsu_ld_unalign_2nd),
   .idu_lsu_ld_lch_entry           (idu_lsu_ld_lch_entry),
   .idu_lsu_ld_oldest              (idu_lsu_ld_oldest),
 
@@ -1236,9 +1236,9 @@ module A910_cpu
  // .idu_lsu_st_preg                (),
   .idu_lsu_st_src0                (idu_lsu_st_src0),
   .idu_lsu_st_offset              (idu_lsu_st_offset),
-  .idu_lsu_st_offset_plus         (idu_lsu_st_offset_plus),
+  // 2026-10-15 停用: .idu_lsu_st_offset_plus         (idu_lsu_st_offset_plus),
   .idu_lsu_st_inst_size           (idu_lsu_st_inst_size),
-  .idu_lsu_st_unalign_2nd         (idu_lsu_st_unalign_2nd),
+  // 2026-10-15 停用: .idu_lsu_st_unalign_2nd         (idu_lsu_st_unalign_2nd),
   .idu_lsu_st_lch_entry           (idu_lsu_st_lch_entry),
   .idu_lsu_st_oldest              (idu_lsu_st_oldest),
   .idu_lsu_st_sdiq_entry          (idu_lsu_st_sdiq_entry),
@@ -1353,26 +1353,27 @@ module A910_cpu
     // IDU to LSU - Load interface
     .idu_lsu_ld_sel                 (idu_lsu_ld_sel),
     .idu_lsu_ld_inst_size           (idu_lsu_ld_inst_size),
-    .idu_lsu_ld_unalign_2nd         (idu_lsu_ld_unalign_2nd),
+    // 2026-10-15 停用: lsu_top 已不再接收非对齐相关端口 (见 lsu_top.sv)
+    //.idu_lsu_ld_unalign_2nd         (idu_lsu_ld_unalign_2nd),
     .idu_lsu_ld_sign_extend         (idu_lsu_ld_sign_extend),
     .idu_lsu_ld_iid                 (idu_lsu_ld_iid),
     .idu_lsu_ld_lch_entry           (idu_lsu_ld_lch_entry),
     .idu_lsu_ld_oldest              (idu_lsu_ld_oldest),
     .idu_lsu_ld_preg                (idu_lsu_ld_preg),
     .idu_lsu_ld_offset              (idu_lsu_ld_offset),
-    .idu_lsu_ld_offset_plus         (idu_lsu_ld_offset_plus),
+    //.idu_lsu_ld_offset_plus         (idu_lsu_ld_offset_plus),
     .idu_lsu_ld_src                 (idu_lsu_ld_src),
 
     // IDU to LSU - Store interface
     .idu_lsu_st_sel                 (idu_lsu_st_sel),
     .idu_lsu_st_inst_size           (idu_lsu_st_inst_size),
-    .idu_lsu_st_unalign_2nd         (idu_lsu_st_unalign_2nd),
+    //.idu_lsu_st_unalign_2nd         (idu_lsu_st_unalign_2nd),
     .idu_lsu_st_iid                 (idu_lsu_st_iid),
     .idu_lsu_st_lch_entry           (idu_lsu_st_lch_entry),
     .idu_lsu_st_sdiq_entry          (idu_lsu_st_sdiq_entry),
     .idu_lsu_st_oldest              (idu_lsu_st_oldest),
     .idu_lsu_st_offset              (idu_lsu_st_offset),
-    .idu_lsu_st_offset_plus         (idu_lsu_st_offset_plus),
+    //.idu_lsu_st_offset_plus         (idu_lsu_st_offset_plus),
     .idu_lsu_st_src0                (idu_lsu_st_src0),
 
     .idu_lsu_rf_pipe5_src0          (idu_lsu_rf_pipe5_src0),
@@ -1477,7 +1478,7 @@ module A910_cpu
     .lsu_idu_lsiq_pop0_vld          (lsu_idu_lsiq_pop0_vld),
     .lsu_idu_lsiq_pop1_vld          (lsu_idu_lsiq_pop1_vld),
     .lsu_idu_pop_entry              (lsu_idu_lsiq_pop_entry),
-    .lsu_idu_secd                   (lsu_idu_secd),
+    // 2026-10-15 停用: .lsu_idu_secd                   (lsu_idu_secd),
 
     .lsu_idu_lq_full                (lsu_idu_lq_full),
     .lsu_idu_lq_not_full            (lsu_idu_lq_not_full),
