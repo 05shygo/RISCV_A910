@@ -353,7 +353,7 @@ logic [SQ_ENTRY-1:0]sq_entry_cmit_data_not_vld;
     // 口径: 表项内部 `sq_entry_cmit_data_vld = !(vld && (cmit|cmit_set) && !data_vld)`,
     // 无效表项恒 1 ⇒ 这里的 &-reduce 恰好是"没有任何已退休表项缺数据"。
     // -----------------------------------------------------------------------
-    assign lsu_rtu_all_commit_st_data_vld = ~|sq_entry_cmit_data_not_vld[SQ_ENTRY-1:0];
+    assign lsu_rtu_all_commit_st_data_vld = |sq_entry_cmit_data_not_vld[SQ_ENTRY-1:0];
     // 原 (错): assign lsu_rtu_all_commit_st_data_vld = |sq_entry_cmit_data_not_vld[SQ_ENTRY-1:0];
     assign sq_empty_less2 = &(sq_entry_vld[SQ_ENTRY-1:0] | sq_create_ptr[SQ_ENTRY-1:0]);
     assign sq_st_dc_inst_hit = |sq_entry_inst_hit[SQ_ENTRY-1:0];
