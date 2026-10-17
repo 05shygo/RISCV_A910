@@ -5,6 +5,7 @@ module ct_lsu_st_wb (
 
   // From ST_DA stage
   input  logic [6:0]   st_da_iid,
+  input  logic         st_da_vec,
   input  logic         st_da_wb_cmplt_req,
   input  logic         st_da_wb_expt_vld,
   input  logic [31:0]  st_da_wb_expt_addr,
@@ -16,7 +17,8 @@ module ct_lsu_st_wb (
   output logic         lsu_rtu_wb_pipe4_expt_vld,
   output logic [31:0]  lsu_rtu_wb_pipe4_expt_addr,
   output logic [6:0]   lsu_rtu_wb_pipe4_iid,
-  output logic         lsu_rtu_wb_pipe4_spec_fail
+  output logic         lsu_rtu_wb_pipe4_spec_fail,
+  output logic         lsu_rtu_wb_pipe4_vec
 );
 
 //==========================================================
@@ -26,6 +28,7 @@ logic [6:0]   st_wb_iid;
 logic         st_wb_spec_fail;
 logic         st_wb_flush;
 logic         st_wb_inst_vld;
+logic         st_wb_vec;
 
 //==========================================================
 //                 Pipeline control signals
@@ -46,14 +49,22 @@ assign st_wb_pre_iid[6:0]   = st_da_iid[6:0];
 //                 Pipeline Register
 //==========================================================
 always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
-  if (!cpurst_b)
+  if (!cpurst_b) begin
     st_wb_inst_vld <= 1'b0;
-  else if(rtu_yy_xx_flush)
+    st_wb_vec      <= 1'b0;
+  end
+  else if(rtu_yy_xx_flush) begin
     st_wb_inst_vld <= 1'b0;
-  else if(st_wb_pre_inst_vld)
+    st_wb_vec      <= 1'b0;
+  end
+  else if(st_wb_pre_inst_vld) begin
     st_wb_inst_vld <= 1'b1;
-  else
+    st_wb_vec      <= st_da_vec;
+  end
+  else begin
     st_wb_inst_vld <= 1'b0;
+    st_wb_vec      <= 1'b0;
+  end
 end
 logic st_wb_expt_vld;
 // 2026-10-08 修: 原来只声明了 st_wb_expt_vld, 下面 always_ff 里用到的
@@ -82,6 +93,8 @@ end
 //==========================================================
 assign lsu_rtu_wb_pipe4_cmplt      = st_wb_inst_vld;
 assign lsu_rtu_wb_pipe4_iid[6:0]   = st_wb_iid[6:0];
+assign lsu_rtu_wb_pipe4_vec          = st_wb_vec & st_wb_inst_vld;
+
 assign lsu_rtu_wb_pipe4_spec_fail  = st_wb_spec_fail;
 assign lsu_rtu_wb_pipe4_flush      = st_wb_flush;
 assign lsu_rtu_wb_pipe4_expt_vld   = st_wb_expt_vld;

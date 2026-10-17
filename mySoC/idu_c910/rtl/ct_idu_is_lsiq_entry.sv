@@ -14,10 +14,13 @@ module ct_idu_is_lsiq_entry (
   input  logic         lsu_idu_imme_wakeup,
   input  logic [5:0]   lsu_idu_wb_pipe3_wb_preg_dupx,
   input  logic         lsu_idu_wb_pipe3_wb_preg_vld_dupx,
+  // 第 5 路唤醒: RVV vset 写回 (S3)
+  input  logic [5:0]   rvv_idu_vset_wb_preg_dupx,
+  input  logic         rvv_idu_vset_wb_preg_vld_dupx,
   input  logic         rtu_yy_xx_flush,
   input  logic [6:0]   x_create_agevec,
   input  logic [6:0]   x_create_agevec_all,
-  input  logic [59:0]  x_create_data,
+  input  logic [60:0]  x_create_data,
   input  logic         x_create_en,
   input  logic         x_issue_en,
   output logic         x_load,
@@ -28,7 +31,14 @@ module ct_idu_is_lsiq_entry (
   output logic         x_raw_rdy,
   input  logic         x_rb_full_set,
   output logic         x_rdy,
-  output logic [59:0]  x_read_data,
+  output logic [60:0]  x_read_data,
+  // 2026-10-17 S7: LSIQ anchor (vector L/S)
+  input  logic         x_vec_beat_rdy,     // fill 引擎: 当前 beat 可发射
+  input  logic         x_vec_upd_en,       // fill 引擎: 写下一个 beat
+  input  logic [105:0] x_vec_upd_data,     // VEC_BEAT_WIDTH
+  input  logic         x_vec_beat_done,    // LSU DA: 本 beat 完成但非最后 beat
+  output logic [105:0] x_read_vec_beat,    // 给 IDU 顶层发射 mux
+  output logic         x_read_vec,
   // 2026-10-15 停用: 非对齐"第二半"标记 —— 喂它的 lsu_idu_secd 恒 0, 整条链摘掉
   //output logic         unalign_2nd,
   input  logic         x_sq_full_set,
@@ -44,7 +54,8 @@ module ct_idu_is_lsiq_entry (
 //----------------------------------------------------------
 //                    LSIQ Parameters
 //----------------------------------------------------------
-parameter LSIQ_WIDTH             = 60;
+parameter LSIQ_WIDTH             = 61;      // S7: 60→61 (LSIQ_VEC)
+parameter LSIQ_VEC               = 60;      // S7: anchor 标记 (最高位, 老位号不动)
 parameter LSIQ_IID               = 59;
 parameter LSIQ_SDIQ_ENTRY        = 52;
 parameter LSIQ_STORE             = 48;
@@ -54,6 +65,15 @@ parameter LSIQ_DST_PREG          = 39;
 parameter LSIQ_DST_VLD           = 33;
 parameter LSIQ_SRC0_VLD          = 32;
 parameter LSIQ_OPCODE            = 31;
+
+// VEC beat 字段 (整包 106 bit)
+parameter VEC_BEAT_WIDTH         = 106;
+parameter VEC_BEAT_OPCODE        = 105;     // [105:74] 合成 opcode: LBU/LHU/LW / SB/SH/SW
+parameter VEC_BEAT_ADDR          = 73;      // [73:42] 完整元素地址 (offset 恒 0)
+parameter VEC_BEAT_SDIQ          = 41;      // [41:38] store 的 SDIQ 表项
+parameter VEC_BEAT_UOPIDX        = 37;      // [37:33] uop_idx (load 同时作文档 preg)
+parameter VEC_BEAT_LAST          = 32;      // 本 anchor 的最后一个 beat
+parameter VEC_BEAT_SDATA         = 31;      // [31:0]  store beat 的 32 位数据
 
 //==========================================================
 //                  Internal Signal Declarations
@@ -72,6 +92,14 @@ logic        src1_vld;
 logic        dst_vld;
 logic        load;
 logic        store;
+// S7: anchor beat
+logic        vec;
+logic [31:0] beat_opcode;
+logic [31:0] beat_addr;
+logic [3:0]  beat_sdiq;
+logic [4:0]  beat_uop_idx;
+logic        beat_last;
+logic [31:0] beat_sdata;
 logic        lq_full;
 logic        lq_full_wakeup;
 logic        sq_full;
@@ -119,6 +147,9 @@ begin
     frz <= 1'b0;
   else if(x_issue_en)
     frz <= 1'b1;
+  // S7: anchor 的一个非最后 beat 完成 ⇒ 解冻, 等下一个 beat (fill 引擎会拉 ready)
+  else if(x_vec_beat_done)
+    frz <= 1'b0;
   // 2026-10-15 停用: 去掉 x_unalign_2nd_set (非对齐第二半的解锁, 恒 0)
   else if(lsu_frz_clr /*| x_unalign_2nd_set*/ | lsu_idu_imme_wakeup)
     frz <= 1'b0;
@@ -170,6 +201,9 @@ begin
     dst_preg[5:0]      <= 6'b0;
   else if(x_create_en)
     dst_preg[5:0]      <= x_create_data[LSIQ_DST_PREG:LSIQ_DST_PREG-5];
+  // S7: anchor 的 load 写回目标 = beat 的 uop_idx (高位补 0)
+  else if(x_vec_upd_en && vec)
+    dst_preg[5:0]      <= {1'b0, beat_uop_idx[4:0]};
   else
     dst_preg[5:0]      <= dst_preg[5:0];
 end
@@ -180,9 +214,58 @@ begin
     sdiq_entry[3:0]   <= 4'b0;
   else if(x_create_en)
     sdiq_entry[3:0]   <= x_create_data[LSIQ_SDIQ_ENTRY:LSIQ_SDIQ_ENTRY-3];
+  // S7: store beat 的 SDIQ 表项
+  else if(x_vec_upd_en && vec)
+    sdiq_entry[3:0]   <= beat_sdiq[3:0];
   else
     sdiq_entry[3:0]   <= sdiq_entry[3:0];
 end
+
+// S7: anchor beat 寄存器 (opcode/addr/sdiq/uop_idx/last/sd_data)
+always @(posedge forever_cpuclk or negedge cpurst_b)
+begin
+  if(!cpurst_b) begin
+    beat_opcode[31:0]  <= 32'b0;
+    beat_addr[31:0]    <= 32'b0;
+    beat_sdiq[3:0]     <= 4'b0;
+    beat_uop_idx[4:0]  <= 5'b0;
+    beat_last          <= 1'b0;
+    beat_sdata[31:0]   <= 32'b0;
+  end
+  else if(x_create_en) begin
+    beat_opcode[31:0]  <= 32'b0;
+    beat_addr[31:0]    <= 32'b0;
+    beat_sdiq[3:0]     <= 4'b0;
+    beat_uop_idx[4:0]  <= 5'b0;
+    beat_last          <= 1'b0;
+    beat_sdata[31:0]   <= 32'b0;
+  end
+  else if(x_vec_upd_en) begin
+    beat_opcode[31:0]  <= x_vec_upd_data[VEC_BEAT_OPCODE -: 32];
+    beat_addr[31:0]    <= x_vec_upd_data[VEC_BEAT_ADDR   -: 32];
+    beat_sdiq[3:0]     <= x_vec_upd_data[VEC_BEAT_SDIQ   -: 4];
+    beat_uop_idx[4:0]  <= x_vec_upd_data[VEC_BEAT_UOPIDX -: 5];
+    beat_last          <= x_vec_upd_data[VEC_BEAT_LAST];
+    beat_sdata[31:0]   <= x_vec_upd_data[VEC_BEAT_SDATA  -: 32];
+  end
+  else begin
+    beat_opcode[31:0]  <= beat_opcode[31:0];
+    beat_addr[31:0]    <= beat_addr[31:0];
+    beat_sdiq[3:0]     <= beat_sdiq[3:0];
+    beat_uop_idx[4:0]  <= beat_uop_idx[4:0];
+    beat_last          <= beat_last;
+    beat_sdata[31:0]   <= beat_sdata[31:0];
+  end
+end
+
+// 合成 opcode 也要进 entry 的 opcode 寄存器 (pipe3/4 解码复用)
+assign x_read_vec_beat[VEC_BEAT_OPCODE -: 32] = beat_opcode[31:0];
+assign x_read_vec_beat[VEC_BEAT_ADDR   -: 32] = beat_addr[31:0];
+assign x_read_vec_beat[VEC_BEAT_SDIQ   -: 4]  = beat_sdiq[3:0];
+assign x_read_vec_beat[VEC_BEAT_UOPIDX -: 5]  = beat_uop_idx[4:0];
+assign x_read_vec_beat[VEC_BEAT_LAST]         = beat_last;
+assign x_read_vec_beat[VEC_BEAT_SDATA  -: 32] = beat_sdata[31:0];
+assign x_read_vec = vec;
 
 always @(posedge forever_cpuclk or negedge cpurst_b)
 begin
@@ -193,6 +276,7 @@ begin
     dst_vld            <= 1'b0;
     load               <= 1'b0;
     store              <= 1'b0;
+    vec                <= 1'b0;
   end
   else if(x_create_en) begin
     opcode[31:0]       <= x_create_data[LSIQ_OPCODE:LSIQ_OPCODE-31];
@@ -201,6 +285,18 @@ begin
     dst_vld            <= x_create_data[LSIQ_DST_VLD];
     load               <= x_create_data[LSIQ_LOAD];
     store              <= x_create_data[LSIQ_STORE];
+    vec                <= x_create_data[LSIQ_VEC];
+  end
+  else if(x_vec_upd_en && vec) begin
+    // S7: beat update 只改"每个 beat 不同的字段"; iid/load/store/vec 不动
+    opcode[31:0]       <= beat_opcode[31:0];
+    iid[6:0]           <= iid[6:0];
+    src0_vld           <= src0_vld;
+    src1_vld           <= src1_vld;
+    dst_vld            <= dst_vld;
+    load               <= load;
+    store              <= store;
+    vec                <= vec;
   end
   else begin
     opcode[31:0]       <= opcode[31:0];
@@ -210,6 +306,7 @@ begin
     dst_vld            <= dst_vld;
     load               <= load;
     store              <= store;
+    vec                <= vec;
   end
 end
 
@@ -222,6 +319,7 @@ assign x_read_data[LSIQ_DST_PREG:LSIQ_DST_PREG-5]      = dst_preg[5:0];
 assign x_read_data[LSIQ_LOAD]                          = load;
 assign x_read_data[LSIQ_STORE]                         = store;
 assign x_read_data[LSIQ_SDIQ_ENTRY:LSIQ_SDIQ_ENTRY-3] = sdiq_entry[3:0];
+assign x_read_data[LSIQ_VEC]                           = vec;
 
 assign x_load                                          = load;
 assign x_store                                         = store;
@@ -335,6 +433,8 @@ end
         // 写端口：LSU pipe3 wb
         .lsu_idu_wb_pipe3_wb_preg_dupx    (lsu_idu_wb_pipe3_wb_preg_dupx    ),
         .lsu_idu_wb_pipe3_wb_preg_vld_dupx(lsu_idu_wb_pipe3_wb_preg_vld_dupx),
+        .rvv_idu_vset_wb_preg_dupx        (rvv_idu_vset_wb_preg_dupx        ),
+        .rvv_idu_vset_wb_preg_vld_dupx    (rvv_idu_vset_wb_preg_vld_dupx    ),
 
         // flush
         .rtu_yy_xx_flush                 (rtu_yy_xx_flush                 ),
@@ -356,7 +456,8 @@ end
 //without older entry ready mask
 // &Force ("output", "x_raw_rdy"); @718
 
-assign src0_rdy_for_issue = read_src0_data[0];
+// S7: anchor 不用 PRF 的基址 ready, 改用 fill 引擎的 vec_beat_rdy
+assign src0_rdy_for_issue = vec ? x_vec_beat_rdy : read_src0_data[0];
 
 
 assign x_raw_rdy = vld && !frz

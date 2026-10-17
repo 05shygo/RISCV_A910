@@ -44,6 +44,9 @@ module ct_lsu_sq_entry #(
     input  logic         rtu_yy_xx_commit2,
     input  logic [6:0]   rtu_yy_xx_commit2_iid,
     input  logic                  rtu_yy_xx_flush,
+    // 2026-10-17 S7: 向量 store 的提交电平 (保持到 anchor 排空)
+    input  logic                  vec_st_cmit_vld,
+    input  logic [6:0]            vec_st_cmit_iid,
 
     //==========================================================
     // SD
@@ -77,6 +80,8 @@ module ct_lsu_sq_entry #(
     //==========================================================
     input  logic [IID_WIDTH-1:0]  st_da_iid,
     input  logic                  st_da_inst_vld,
+    input  logic                  st_da_vec,
+    input  logic [4:0]            st_da_uop_idx,
     // 2026-10-15 停用: 非对齐拆分通路整条摘掉 (secd/boundary)
     //input  logic                  st_da_secd,
     input  logic                  st_da_sq_dcache_dirty,
@@ -92,6 +97,8 @@ module ct_lsu_sq_entry #(
     //input  logic                  st_dc_boundary_first,
     input  logic [15:0]           st_dc_bytes_vld,
     input  logic [IID_WIDTH-1:0]  st_dc_iid,
+    input  logic                  st_dc_vec,
+    input  logic [4:0]            st_dc_uop_idx,
     input  logic [7:0]            st_dc_rot_sel_rev,
     input  logic [3:0]            st_dc_sdid,
  //   input  logic                  st_dc_sdid_hit,
@@ -129,6 +136,7 @@ module ct_lsu_sq_entry #(
     output logic                  sq_entry_fwd_req_x,
     output logic [IID_WIDTH-1:0]  sq_entry_iid_v,
     output logic                  sq_entry_inst_hit_x,
+    output logic [4:0]            sq_entry_uop_idx_x,
     output logic                  sq_entry_pop_req_x,
     output logic [7:0]            sq_entry_rot_sel_v,
     output logic                  sq_entry_same_addr_newest_x,
@@ -239,6 +247,9 @@ module ct_lsu_sq_entry #(
     logic                  sq_entry_sdid_hit;
     logic                  sq_entry_settle_data_hit;
     logic                  sq_entry_st_da_info_set;
+    // 2026-10-17 S7
+    logic                  sq_entry_vec;
+    logic [4:0]            sq_entry_uop_idx;
     logic                  sq_entry_st_dc_bv_do_hit;
     logic                  sq_entry_st_dc_create_age_vec;
     logic                  sq_entry_st_dc_same_addr_newer;
@@ -289,6 +300,8 @@ module ct_lsu_sq_entry #(
         end
         else if (sq_entry_create_vld) begin
             sq_entry_iid[IID_WIDTH-1:0]  <= st_dc_iid[IID_WIDTH-1:0];
+            sq_entry_vec                 <= st_dc_vec;
+            sq_entry_uop_idx[4:0]        <= st_dc_uop_idx[4:0];
             sq_entry_sdid[3:0]           <= st_dc_sdid[3:0];
             //sq_entry_boundary            <= st_dc_boundary;
             //sq_entry_secd                <= st_dc_secd;
@@ -434,7 +447,11 @@ module ct_lsu_sq_entry #(
     assign sq_entry_cmit_hit1 = rtu_yy_xx_commit1 && sq_entry_cmit1_iid_pre_hit;
     assign sq_entry_cmit_hit2 = rtu_yy_xx_commit2 && sq_entry_cmit2_iid_pre_hit;
 
-    assign sq_entry_cmit_set = (sq_entry_cmit_hit0 || sq_entry_cmit_hit1 || sq_entry_cmit_hit2)
+    // 2026-10-17 S7: 向量 store 的 beat 表项靠 fill 引擎的**电平**置提交标志
+    assign sq_entry_vec_cmit_hit = vec_st_cmit_vld && sq_entry_vld &&
+                                   (vec_st_cmit_iid[6:0] == sq_entry_iid[IID_WIDTH-1:0]);
+    assign sq_entry_cmit_set = (sq_entry_cmit_hit0 || sq_entry_cmit_hit1 ||
+                                sq_entry_cmit_hit2 || sq_entry_vec_cmit_hit)
                                && sq_entry_vld;
 
     assign sq_entry_cmit_data_not_vld = sq_entry_vld &&
@@ -447,7 +464,9 @@ module ct_lsu_sq_entry #(
     assign sq_entry_st_da_info_set = sq_entry_vld && st_da_inst_vld &&
                                      !sq_entry_no_restart &&
                                      //(st_da_secd == sq_entry_secd) &&
-                                     (st_da_iid[IID_WIDTH-1:0] == sq_entry_iid[IID_WIDTH-1:0]);
+                                     (st_da_iid[IID_WIDTH-1:0] == sq_entry_iid[IID_WIDTH-1:0]) &&
+                                     (!st_da_vec ||
+                                      (sq_entry_uop_idx[4:0] == st_da_uop_idx[4:0]));
 
     // 2026-10-15 停用: 非对齐"第二半"表项创建 (st_dc_secd 恒 0)
     //assign sq_bond_secd_create_vld = sq_entry_vld && sq_create_success &&
@@ -476,7 +495,9 @@ module ct_lsu_sq_entry #(
     // 2026-10-15 停用: 原式还有 `&& (sq_entry_secd == st_dc_secd)`, 两侧恒 0 恒等
     assign sq_entry_inst_hit = sq_entry_vld && !sq_entry_no_restart &&
                                //(sq_entry_secd == st_dc_secd) &&
-                               (sq_entry_iid[IID_WIDTH-1:0] == st_dc_iid[IID_WIDTH-1:0]);
+                               (sq_entry_iid[IID_WIDTH-1:0] == st_dc_iid[IID_WIDTH-1:0]) &&
+                               (!st_dc_vec ||
+                                (sq_entry_uop_idx[4:0] == st_dc_uop_idx[4:0]));
 
     //==========================================================
     //            Compare dcache write port(dcwp)
@@ -653,6 +674,7 @@ module ct_lsu_sq_entry #(
 
     assign sq_entry_vld_x               = sq_entry_vld;
     assign sq_entry_inst_hit_x          = sq_entry_inst_hit;
+    assign sq_entry_uop_idx_x[4:0]      = sq_entry_uop_idx[4:0];
     assign sq_entry_iid_v[IID_WIDTH-1:0]= sq_entry_iid[IID_WIDTH-1:0];
     assign sq_entry_same_addr_newest_x  = sq_entry_same_addr_newest;
     assign sq_entry_addr0_v[31:0]       = sq_entry_addr0[31:0];

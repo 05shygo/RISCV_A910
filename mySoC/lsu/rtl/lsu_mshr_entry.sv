@@ -25,6 +25,9 @@ module lsu_mshr_entry #(
     input  logic [7:0]   ld_da_data_rot_sel,
     input  logic [INDEX_WIDTH-1:0] ld_da_idx,
     input  logic [6:0]   ld_da_iid,
+    // 2026-10-17 S7: 向量 beat
+    input  logic         ld_da_vec,
+    input  logic [4:0]   ld_da_uop_idx,
     input  logic [1:0]   ld_da_inst_size,
     input  logic [5:0]   ld_da_preg,
     input  logic         ld_da_rb_cmit,
@@ -97,6 +100,8 @@ logic [63:0] rb_entry_data;
 logic        rb_entry_depd;
 logic        rb_entry_dest_vld;
 logic [6:0]  rb_entry_iid;
+logic        rb_entry_vec;          // S7: 该 MSHR 表项属于向量 beat
+logic [4:0]  rb_entry_uop_idx;
 logic [1:0]  rb_entry_inst_size;
 logic [3:0]  rb_entry_next_state;
 logic [5:0]  rb_entry_preg;
@@ -209,6 +214,8 @@ begin
     rb_entry_addr[31:0]  <=  {32{1'b0}};
     rb_entry_bytes_vld[15:0]  <=  16'b0;
     rb_entry_iid[6:0]         <=  7'b0;
+    rb_entry_vec              <=  1'b0;
+    rb_entry_uop_idx[4:0]     <=  5'b0;
     rb_entry_sign_extend      <=  1'b0;
     rb_entry_boundary         <=  1'b0;
     rb_entry_preg[5:0]        <=  7'b0;
@@ -221,6 +228,8 @@ begin
     rb_entry_addr[31:0]  <=  ld_da_addr[31:0];
     rb_entry_bytes_vld[15:0]  <=  ld_da_bytes_vld[15:0];
     rb_entry_iid[6:0]         <=  ld_da_iid[6:0];
+    rb_entry_vec              <=  ld_da_vec;
+    rb_entry_uop_idx[4:0]     <=  ld_da_uop_idx[4:0];
     rb_entry_sign_extend      <=  ld_da_sign_extend;
     //rb_entry_boundary         <=  ld_da_boundary_after_mask;   // 2026-10-15 停用 (恒 0)
     rb_entry_preg[5:0]        <=  ld_da_preg[5:0];
@@ -232,6 +241,8 @@ begin
     rb_entry_addr[31:0]  <=  ld_da_addr[31:0];
     rb_entry_bytes_vld[15:0]  <=  ld_da_bytes_vld[15:0];
     rb_entry_iid[6:0]         <=  ld_da_iid[6:0];
+    rb_entry_vec              <=  ld_da_vec;
+    rb_entry_uop_idx[4:0]     <=  ld_da_uop_idx[4:0];
     rb_entry_sign_extend      <=  ld_da_sign_extend;
     //rb_entry_boundary         <=  ld_da_boundary_after_mask;   // 2026-10-15 停用 (恒 0)
     rb_entry_preg[5:0]        <=  ld_da_preg[5:0];
@@ -243,6 +254,8 @@ begin
     rb_entry_addr[31:0]  <=  st_da_addr[31:0];
     rb_entry_bytes_vld[15:0]  <=  st_da_bytes_vld[15:0];
     rb_entry_iid[6:0]         <=  st_da_iid[6:0];
+    rb_entry_vec              <=  1'b0;
+    rb_entry_uop_idx[4:0]     <=  5'b0;
     rb_entry_sign_extend      <=  1'b0;
     rb_entry_boundary         <=  1'b0;
     rb_entry_preg[5:0]        <=  7'b0;
@@ -595,7 +608,9 @@ assign rb_entry_req_wb_success     = rb_entry_vld
 //                 State 5 : wait for merge
 //==========================================================
 //------------------generate merge signal------------------
-assign rb_entry_iid_hit         = rb_entry_iid[6:0] ==  ld_da_iid[6:0];
+assign rb_entry_iid_hit         = (rb_entry_iid[6:0] ==  ld_da_iid[6:0])
+                                  && (!ld_da_vec ||
+                                      (rb_entry_uop_idx[4:0] == ld_da_uop_idx[4:0]));
 assign rb_entry_ld_merge_pre    = (rb_entry_state[3:0] ==  WAIT_MERGE)
                                   &&  rb_entry_iid_hit;
 

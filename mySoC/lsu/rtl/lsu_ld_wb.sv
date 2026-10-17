@@ -11,6 +11,9 @@ module ct_lsu_ld_wb #(
     input  logic         forever_cpuclk,
     input  logic [31:0]  ld_da_addr,
     input  logic [6:0]   ld_da_iid,
+    // 2026-10-17 S7: 向量 beat
+    input  logic         ld_da_vec,
+    input  logic [4:0]   ld_da_uop_idx,
     input  logic [5:0]   ld_da_preg,
     input  logic [3:0]   ld_da_preg_sign_sel,
     input  logic         ld_da_wb_cmplt_req,
@@ -47,7 +50,10 @@ module ct_lsu_ld_wb #(
     output logic [31:0]  lsu_idu_wb_pipe3_wb_preg_data,
     output logic [63:0]  lsu_idu_wb_pipe3_wb_preg_expand,
     output logic         lsu_idu_wb_pipe3_wb_preg_vld,
-    output logic [6:0]   lsu_idu_wb_pipe3_wb_preg_iid
+    output logic [6:0]   lsu_idu_wb_pipe3_wb_preg_iid,
+    output logic         lsu_idu_wb_pipe3_wb_preg_vec,
+    output logic [4:0]   lsu_idu_wb_pipe3_wb_uop_idx,
+    output logic         lsu_rtu_wb_pipe3_wb_preg_vec
 );
 
 //------------------------------------------------------------------
@@ -71,6 +77,8 @@ logic [6:0]   ld_wb_iid;
 logic         ld_wb_bus_err;
 logic [39:0]  ld_wb_data_addr;
 logic [6:0]   ld_wb_data_iid;
+logic         ld_wb_data_vec;
+logic [4:0]   ld_wb_data_uop_idx;
 logic [63:0]  ld_wb_data;
 logic [5:0]   ld_wb_data_preg;
 logic [63:0]  ld_wb_data_preg_expand;
@@ -224,11 +232,15 @@ begin
   begin
     ld_wb_data_addr[31:0] <=  {PA_WIDTH{1'b0}};
     ld_wb_data_iid[6:0]   <=  7'b0;
+    ld_wb_data_vec        <=  1'b0;
+    ld_wb_data_uop_idx[4:0] <= 5'b0;
   end
   else if(ld_wb_pre_data_vld)
   begin
     ld_wb_data_addr[31:0] <=  ld_wb_pre_data_addr[31:0];
     ld_wb_data_iid[6:0]   <=  ld_wb_pre_data_iid[6:0];
+    ld_wb_data_vec        <=  ld_da_vec;       // 只可能来自 DA (RB 通路恒标量)
+    ld_wb_data_uop_idx[4:0] <= ld_da_uop_idx[4:0];
   end
 end
 
@@ -272,12 +284,17 @@ assign ld_wb_preg_data_sign_extend[31:0] = {32{ld_wb_preg_sign_sel[3]}} & ld_wb_
 //==========================================================
 //                 Generate interface to rtu
 //==========================================================
+assign lsu_idu_wb_pipe3_wb_preg_vec   = ld_wb_data_vec;
+assign lsu_idu_wb_pipe3_wb_uop_idx[4:0] = ld_wb_data_uop_idx[4:0];
+assign lsu_rtu_wb_pipe3_wb_preg_vec   = ld_wb_data_vec;
+
 assign lsu_rtu_wb_pipe3_cmplt         = ld_wb_inst_vld;
 assign lsu_rtu_wb_pipe3_iid[6:0]      = ld_wb_iid[6:0];
 assign lsu_rtu_wb_pipe3_expt_vld      = ld_wb_expt;
 assign lsu_rtu_wb_pipe3_expt_addr     = ld_wb_expt_addr;
 
-assign lsu_rtu_wb_pipe3_wb_preg_vld   = ld_wb_data_vld;
+// S7: 向量 beat 不写 A910 标量 PRF (数据走 RVV VRF) ⇒ vld/expand 清 0
+assign lsu_rtu_wb_pipe3_wb_preg_vld   = ld_wb_data_vld & ~ld_wb_data_vec;
 assign lsu_rtu_wb_pipe3_wb_preg_expand[63:0] = ld_wb_data_preg_expand[63:0];
 
 assign lsu_rtu_async_expt_vld         = ld_wb_data_vld && ld_wb_bus_err;
@@ -285,10 +302,10 @@ assign lsu_rtu_async_expt_addr[31:0]  = (ld_wb_data_vld && ld_wb_bus_err)
                                         ? ld_wb_data_addr[31:0]
                                         : {PA_WIDTH{1'b0}};
 
-assign lsu_idu_wb_pipe3_wb_preg_vld          = ld_wb_data_vld;
+assign lsu_idu_wb_pipe3_wb_preg_vld          = ld_wb_data_vld & ~ld_wb_data_vec;
 assign lsu_idu_wb_pipe3_wb_preg[5:0]         = ld_wb_data_preg[5:0];
-assign lsu_idu_wb_pipe3_wb_preg_vld_dupx     = ld_wb_data_vld;
-assign lsu_idu_wb_pipe3_wb_preg_expand[63:0] = ld_wb_data_preg_expand[63:0];
+assign lsu_idu_wb_pipe3_wb_preg_vld_dupx     = ld_wb_data_vld & ~ld_wb_data_vec;
+assign lsu_idu_wb_pipe3_wb_preg_expand[63:0] = ld_wb_data_preg_expand[63:0] & {64{~ld_wb_data_vec}};
 assign lsu_idu_wb_pipe3_wb_preg_data[31:0]   = ld_wb_preg_data_sign_extend[31:0];
 // 数据写回那条指令的 iid —— 给顶层 difftest 观察口按 iid 配对用
 // (原先只按 preg 配对, preg 会被回收 ⇒ 16 拍窗口内能错配到另一条 load)

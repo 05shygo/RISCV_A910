@@ -19,6 +19,9 @@ module ct_idu_is_sdiq(
  //   input  logic         lsu_idu_ex1_sdiq_pop_vld,
     input  logic [5:0]   lsu_idu_wb_pipe3_wb_preg_dupx,
     input  logic         lsu_idu_wb_pipe3_wb_preg_vld_dupx,
+    // 第 5 路唤醒: RVV vset 写回 (S3)
+    input  logic [5:0]   rvv_idu_vset_wb_preg_dupx,
+    input  logic         rvv_idu_vset_wb_preg_vld_dupx,
     input  logic         rtu_yy_xx_flush,
     output logic [63:0]  idu_rtu_pst_preg_dealloc_mask,
     output logic         sdiq_ctrl_1_left_updt,
@@ -29,7 +32,12 @@ module ct_idu_is_sdiq(
     output logic [3:0]   sdiq_dp_issue_entry,
     output logic [7:0]   sdiq_dp_issue_read_data,
     output logic [3:0]   sdiq_create0_entry,
-    output logic [3:0]   sdiq_create1_entry
+    output logic [3:0]   sdiq_create1_entry,
+    // 2026-10-17 S7: 向量 store beat 的 SDIQ 旁路 (S8 fill 引擎驱动)
+    input  logic         vec_sdiq_create_vld,
+    input  logic [3:0]   vec_sdiq_create_entry,
+    output logic         sdiq_dp_issue_vec,
+    output logic [3:0]   sdiq_entry_vld_o
 );
 
 parameter int SDIQ_WIDTH = 8;
@@ -143,12 +151,14 @@ logic [3:0]      lsu_sdiq_has_in_sq;
 // 条目计数器
 //----------------------------------------------------------------
 assign sdiq_entry_cnt_create[2:0]   = {2'b0, ctrl_sdiq_create0_en}
-                                      + {2'b0, ctrl_sdiq_create1_en};
+                                      + {2'b0, ctrl_sdiq_create1_en}
+                                      + {2'b0, vec_sdiq_create_vld};
 
 assign sdiq_entry_cnt_pop[2:0]      = {2'b0, sdiq_issue_en};
 
 assign sdiq_entry_cnt_updt_vld      = ctrl_sdiq_create0_en
-                                      || sdiq_issue_en;
+                                      || sdiq_issue_en
+                                      || vec_sdiq_create_vld;
 
 assign sdiq_entry_cnt_updt_val[2:0] = sdiq_entry_cnt[2:0]
                                       + sdiq_entry_cnt_create[2:0]
@@ -240,8 +250,28 @@ begin
 end
 
 assign sdiq_entry_create_en[3:0] =
-       {4{ctrl_sdiq_create0_en}} & sdiq_entry_create0_in[3:0]
-     | {4{ctrl_sdiq_create1_en}} & sdiq_entry_create1_in[3:0];
+       ({4{ctrl_sdiq_create0_en}} & sdiq_entry_create0_in[3:0]
+     |  {4{ctrl_sdiq_create1_en}} & sdiq_entry_create1_in[3:0])
+     |  ({4{vec_sdiq_create_vld}} & vec_sdiq_create_entry[3:0]);
+
+// S7: 向量 SDIQ 表项的标记 (每个 entry 一位), create 置, issue/冲刷清
+logic [3:0] sdiq_entry_vec;
+always @(posedge forever_cpuclk or negedge cpurst_b)
+begin
+  if (!cpurst_b)
+    sdiq_entry_vec[3:0] <= 4'b0;
+  else if (rtu_yy_xx_flush)
+    sdiq_entry_vec[3:0] <= 4'b0;
+  else
+    sdiq_entry_vec[3:0] <= (sdiq_entry_vec[3:0]
+                            | ({4{vec_sdiq_create_vld}} & vec_sdiq_create_entry[3:0]))
+                           & ~({4{sdiq_issue_en}} & sdiq_dp_issue_entry[3:0]);
+end
+
+// 向量 create data 固定 8'b0000_0010 ({preg=0, wb=1}, src0_vld=0)
+// ⚠️ 不能写成 7 位 {6'b0,1'b1} —— 零扩展后 wb 落到 bit0, x_create_data[7:1]
+//    全 0 ⇒ SDIQ 表项永不 ready (计划 §9.8.1)。
+localparam [7:0] SDIQ_VEC_CREATE_DATA = 8'b0000_0010;
 
 //----------------------------------------------------------------
 // 准备创建信号
@@ -260,7 +290,10 @@ assign sdiq_entry_create1_agevec[3:0] = sdiq_entry_vld[3:0]
 //----------------------------------------------------------------
 always @(*)
 begin
-    if (sdiq_entry_create0_in[0]) begin
+    if (vec_sdiq_create_vld && vec_sdiq_create_entry[0]) begin
+        sdiq_entry0_create_data[SDIQ_WIDTH-1:0] = SDIQ_VEC_CREATE_DATA;
+    end
+    else if (sdiq_entry_create0_in[0]) begin
         sdiq_entry0_create_agevec[2:0] = sdiq_entry_create0_agevec[3:1];
         sdiq_entry0_create_data[SDIQ_WIDTH-1:0] =
             dp_sdiq_create0_data[SDIQ_WIDTH-1:0];
@@ -277,7 +310,10 @@ end
 //----------------------------------------------------------------
 always @(*)
 begin
-    if (sdiq_entry_create0_in[1]) begin
+    if (vec_sdiq_create_vld && vec_sdiq_create_entry[1]) begin
+        sdiq_entry1_create_data[SDIQ_WIDTH-1:0] = SDIQ_VEC_CREATE_DATA;
+    end
+    else if (sdiq_entry_create0_in[1]) begin
         sdiq_entry1_create_agevec[2:0] = {sdiq_entry_create0_agevec[3:2],
                                            sdiq_entry_create0_agevec[0]};
         sdiq_entry1_create_data[SDIQ_WIDTH-1:0] =
@@ -296,7 +332,10 @@ end
 //----------------------------------------------------------------
 always @(*)
 begin
-    if (sdiq_entry_create0_in[2]) begin
+    if (vec_sdiq_create_vld && vec_sdiq_create_entry[2]) begin
+        sdiq_entry2_create_data[SDIQ_WIDTH-1:0] = SDIQ_VEC_CREATE_DATA;
+    end
+    else if (sdiq_entry_create0_in[2]) begin
         sdiq_entry2_create_agevec[2:0] = {sdiq_entry_create0_agevec[3],
                                            sdiq_entry_create0_agevec[1:0]};
         sdiq_entry2_create_data[SDIQ_WIDTH-1:0] =
@@ -315,7 +354,10 @@ end
 //----------------------------------------------------------------
 always @(*)
 begin
-    if (sdiq_entry_create0_in[3]) begin
+    if (vec_sdiq_create_vld && vec_sdiq_create_entry[3]) begin
+        sdiq_entry3_create_data[SDIQ_WIDTH-1:0] = SDIQ_VEC_CREATE_DATA;
+    end
+    else if (sdiq_entry_create0_in[3]) begin
         sdiq_entry3_create_agevec[2:0] = sdiq_entry_create0_agevec[2:0];
         sdiq_entry3_create_data[SDIQ_WIDTH-1:0] =
             dp_sdiq_create0_data[SDIQ_WIDTH-1:0];
@@ -427,6 +469,8 @@ assign idu_rtu_pst_preg_dealloc_mask[63:0] = sdiq_src0_preg_dealloc_mask[63:0];
 //             LSU Issue Queue Entry Instance
 //==========================================================
 assign lsu_sdiq_has_in_sq =lsu_sdiq_has_in_sq_sdiq[3:0];
+assign sdiq_dp_issue_vec  = |(sdiq_entry_vec[3:0] & sdiq_dp_issue_entry[3:0]);
+assign sdiq_entry_vld_o   = sdiq_entry_vld[3:0];
 //assign lsu_sq_sdiq_unalign = {4{lsu_sq_sdiq_unalign_vld}} & lsu_sq_sdiq_unalign_sdiq[3:0];
 
 // entry 0
@@ -444,6 +488,8 @@ ct_idu_is_sdiq_entry u_ct_idu_is_sdiq_entry_0 (
     .lsu_idu_ex1_sdiq_pop_vld           (sdiq_issue_en           ),
     .lsu_idu_wb_pipe3_wb_preg_dupx      (lsu_idu_wb_pipe3_wb_preg_dupx      ),
     .lsu_idu_wb_pipe3_wb_preg_vld_dupx  (lsu_idu_wb_pipe3_wb_preg_vld_dupx  ),
+    .rvv_idu_vset_wb_preg_dupx          (rvv_idu_vset_wb_preg_dupx          ),
+    .rvv_idu_vset_wb_preg_vld_dupx      (rvv_idu_vset_wb_preg_vld_dupx      ),
     .rtu_yy_xx_flush                    (rtu_yy_xx_flush                    ),
     .x_create_agevec                    (sdiq_entry0_create_agevec          ),
     .x_create_data                      (sdiq_entry0_create_data            ),
@@ -473,6 +519,8 @@ ct_idu_is_sdiq_entry u_ct_idu_is_sdiq_entry_1 (
     .lsu_idu_ex1_sdiq_pop_vld           (sdiq_issue_en           ),
     .lsu_idu_wb_pipe3_wb_preg_dupx      (lsu_idu_wb_pipe3_wb_preg_dupx      ),
     .lsu_idu_wb_pipe3_wb_preg_vld_dupx  (lsu_idu_wb_pipe3_wb_preg_vld_dupx  ),
+    .rvv_idu_vset_wb_preg_dupx          (rvv_idu_vset_wb_preg_dupx          ),
+    .rvv_idu_vset_wb_preg_vld_dupx      (rvv_idu_vset_wb_preg_vld_dupx      ),
     .rtu_yy_xx_flush                    (rtu_yy_xx_flush                    ),
     .x_create_agevec                    (sdiq_entry1_create_agevec          ),
     .x_create_data                      (sdiq_entry1_create_data            ),
@@ -502,6 +550,8 @@ ct_idu_is_sdiq_entry u_ct_idu_is_sdiq_entry_2 (
     .lsu_idu_ex1_sdiq_pop_vld           (sdiq_issue_en           ),
     .lsu_idu_wb_pipe3_wb_preg_dupx      (lsu_idu_wb_pipe3_wb_preg_dupx      ),
     .lsu_idu_wb_pipe3_wb_preg_vld_dupx  (lsu_idu_wb_pipe3_wb_preg_vld_dupx  ),
+    .rvv_idu_vset_wb_preg_dupx          (rvv_idu_vset_wb_preg_dupx          ),
+    .rvv_idu_vset_wb_preg_vld_dupx      (rvv_idu_vset_wb_preg_vld_dupx      ),
     .rtu_yy_xx_flush                    (rtu_yy_xx_flush                    ),
     .x_create_agevec                    (sdiq_entry2_create_agevec          ),
     .x_create_data                      (sdiq_entry2_create_data            ),
@@ -531,6 +581,8 @@ ct_idu_is_sdiq_entry u_ct_idu_is_sdiq_entry_3 (
     .lsu_idu_ex1_sdiq_pop_vld           (sdiq_issue_en           ),
     .lsu_idu_wb_pipe3_wb_preg_dupx      (lsu_idu_wb_pipe3_wb_preg_dupx      ),
     .lsu_idu_wb_pipe3_wb_preg_vld_dupx  (lsu_idu_wb_pipe3_wb_preg_vld_dupx  ),
+    .rvv_idu_vset_wb_preg_dupx          (rvv_idu_vset_wb_preg_dupx          ),
+    .rvv_idu_vset_wb_preg_vld_dupx      (rvv_idu_vset_wb_preg_vld_dupx      ),
     .rtu_yy_xx_flush                    (rtu_yy_xx_flush                    ),
     .x_create_agevec                    (sdiq_entry3_create_agevec          ),
     .x_create_data                      (sdiq_entry3_create_data            ),

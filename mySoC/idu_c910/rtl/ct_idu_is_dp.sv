@@ -7,15 +7,15 @@ module ct_idu_is_dp (
 
   // IR data
 
-  input  logic [75:0] dp_ir_inst0_data,
+  input  logic [78:0] dp_ir_inst0_data,
 
   input  logic [64:0] dp_ir_inst0_pc,
   input  logic [24:0] dp_ir_inst0_chk,
-  input  logic [75:0] dp_ir_inst1_data,
+  input  logic [78:0] dp_ir_inst1_data,
   input  logic [64:0] dp_ir_inst1_pc,
   input  logic [24:0] dp_ir_inst1_chk,
 
-  input  logic [75:0] dp_ir_inst2_data,
+  input  logic [78:0] dp_ir_inst2_data,
 
   input  logic [64:0] dp_ir_inst2_pc,
   input  logic [24:0] dp_ir_inst2_chk,
@@ -39,6 +39,10 @@ module ct_idu_is_dp (
   // Writeback from LSU
   input  logic [5:0]   lsu_idu_wb_pipe3_wb_preg_dupx,
   input  logic         lsu_idu_wb_pipe3_wb_preg_vld_dupx,
+
+  // 第 5 路唤醒: RVV vset 写回 (S3)
+  input  logic [5:0]   rvv_idu_vset_wb_preg_dupx,
+  input  logic         rvv_idu_vset_wb_preg_vld_dupx,
 
   // Control signals
   input  logic         ctrl_ir_pipedown_inst0_vld,
@@ -70,11 +74,14 @@ module ct_idu_is_dp (
   input  logic [1:0]   ctrl_dp_is_dis_mult_create1_sel,
   input  logic [1:0]   ctrl_dp_is_dis_div_create0_sel,
   input  logic [1:0]   ctrl_dp_is_dis_div_create1_sel,
+  // VIQ create0/create1 的源车道选择 (S1 新增; S2 接到 ct_idu_vecq)
+  input  logic [1:0]   ctrl_dp_is_dis_vec_create0_sel,
+  input  logic [1:0]   ctrl_dp_is_dis_vec_create1_sel,
 
   //----------------------------------------------------------------------------
   // Outputs
   //----------------------------------------------------------------------------
-  output logic [6:0]   dp_ctrl_is_dis_inst2_ctrl_info,
+  output logic [8:0]   dp_ctrl_is_dis_inst2_ctrl_info,
   output logic [94:0]  dp_aiq_create0_data,
   output logic [94:0]  dp_aiq_create1_data,
   output logic [151:0] dp_biq_create0_data,
@@ -82,14 +89,26 @@ module ct_idu_is_dp (
   output logic         dp_ctrl_is_inst0_dst_vld,
   output logic         dp_ctrl_is_inst1_dst_vld,
   output logic         dp_ctrl_is_inst2_dst_vld,
-  output logic [59:0]  dp_lsiq_create0_data,
-  output logic [59:0]  dp_lsiq_create1_data,
+  output logic [60:0]  dp_lsiq_create0_data,
+  output logic [60:0]  dp_lsiq_create1_data,
+  // 2026-10-17 S8: fill 引擎要按 anchor 记 iid
+  output logic [6:0]   dp_lsiq_create0_iid,
+  output logic [6:0]   dp_lsiq_create1_iid,
   output logic [7:0]   dp_sdiq_create0_data,
   output logic [7:0]   dp_sdiq_create1_data,
   output logic [61:0]  dp_mult_create0_data,
   output logic [61:0]  dp_mult_create1_data,
   output logic [61:0]  dp_div_create0_data,
   output logic [61:0]  dp_div_create1_data,
+
+  // 向量队列 (VIQ) 建表数据 (S1 新增; S2 接到 ct_idu_vecq)
+  output logic [100:0] dp_vec_create0_data,
+  output logic [100:0] dp_vec_create1_data,
+  output logic [6:0]   dp_vec_create0_iid,
+  output logic [6:0]   dp_vec_create1_iid,
+  output logic         dp_ctrl_is_inst0_vec,
+  output logic         dp_ctrl_is_inst1_vec,
+  output logic         dp_ctrl_is_inst2_vec,
 
   //----------------------------------------------------------------------------
   // 【2026-10-08 新增】派遣记录 —— 给 RTU（退休单元）用的逐路录出
@@ -108,9 +127,9 @@ module ct_idu_is_dp (
   // ⚠️ 按车道录出, 但**是否真的派发**由 ct_idu_is_ctrl 的 ctrl_dp_dis_inst{k}_vld 决定 —
   //    这两者必须成对使用 (data 是组合值, 车道没派发时它没有意义)。
   //----------------------------------------------------------------------------
-  output logic [75:0]  dp_is_dis_inst0_data,
-  output logic [75:0]  dp_is_dis_inst1_data,
-  output logic [75:0]  dp_is_dis_inst2_data,
+  output logic [78:0]  dp_is_dis_inst0_data,
+  output logic [78:0]  dp_is_dis_inst1_data,
+  output logic [78:0]  dp_is_dis_inst2_data,
   output logic [31:0]  dp_is_dis_inst0_pc,
   output logic [31:0]  dp_is_dis_inst1_pc,
   output logic [31:0]  dp_is_dis_inst2_pc,
@@ -126,7 +145,9 @@ module ct_idu_is_dp (
 //                 IS ctrl path parameters
 //----------------------------------------------------------
 
-parameter IS_WIDTH             = 76;
+parameter IS_WIDTH             = 79;
+parameter IS_VEC_TYPE          = 78;   // [78:77]
+parameter IS_VEC               = 76;
 parameter IS_ILLEGAL           = 75;
 parameter IS_ALU_SHORT         = 74;
 parameter IS_LSU               = 73;
@@ -192,7 +213,8 @@ parameter BIQ_OPCODE            = 31;
 //----------------------------------------------------------
 //                    LSIQ Parameters
 //----------------------------------------------------------
-parameter LSIQ_WIDTH             = 60;
+parameter LSIQ_WIDTH             = 61;      // S7: 60→61
+parameter LSIQ_VEC               = 60;      // S7: anchor 标记
 parameter LSIQ_IID               = 59;
 parameter LSIQ_SDIQ_ENTRY        = 52;
 parameter LSIQ_STORE             = 48;
@@ -241,6 +263,22 @@ logic [IS_WIDTH-1:0] is_inst2_read_data;
 logic [IS_WIDTH-1:0] is_inst0_create_data;
 logic [IS_WIDTH-1:0] is_inst1_create_data;
 logic [IS_WIDTH-1:0] is_inst2_create_data;
+
+// 向量车道信息 (S1 新增) —— 从 pipe_entry 读口取 (已锁存)
+logic                is_inst0_vec;
+logic [1:0]          is_inst0_vec_type;
+logic                is_inst1_vec;
+logic [1:0]          is_inst1_vec_type;
+logic                is_inst2_vec;
+logic [1:0]          is_inst2_vec_type;
+
+// VIQ create0/create1 三选一后的原始数据 (S1 新增)
+logic [IS_WIDTH-1:0] is_vec_create0_data;
+logic [64:0]         is_vec_create0_pc;
+logic [6:0]          is_vec_create0_iid;
+logic [IS_WIDTH-1:0] is_vec_create1_data;
+logic [64:0]         is_vec_create1_pc;
+logic [6:0]          is_vec_create1_iid;
 
 // 【补齐】以下 6 个信号在原代码中使用但未声明
 logic [64:0] is_inst0_create_pc;
@@ -303,17 +341,20 @@ end
 //   * data 是 83 位原样, 由 ct_idu_top 拆字段 (IDU 这边不解释 RTU 的 flags 编码);
 //   * pc 只录 [31:0] —— 内部 65 位 = {taken, npc[31:0], pc[31:0]};
 //   * chk 内部声明成了 [64:0] 但只用 [24:0] (见上面声明处的注释), 这里按 25 位录。
-assign dp_is_dis_inst0_data[75:0] = is_inst0_read_data[75:0];
-assign dp_is_dis_inst1_data[75:0] = is_inst1_read_data[75:0];
-assign dp_is_dis_inst2_data[75:0] = is_inst2_read_data[75:0];
+assign dp_is_dis_inst0_data[78:0] = is_inst0_read_data[78:0];
+assign dp_is_dis_inst1_data[78:0] = is_inst1_read_data[78:0];
+assign dp_is_dis_inst2_data[78:0] = is_inst2_read_data[78:0];
 assign dp_is_dis_inst0_pc[31:0]   = is_inst0_read_pc[31:0];
 assign dp_is_dis_inst1_pc[31:0]   = is_inst1_read_pc[31:0];
 assign dp_is_dis_inst2_pc[31:0]   = is_inst2_read_pc[31:0];
-assign dp_is_dis_inst0_chk[24:0]  = is_inst0_read_chk[24:0];
-assign dp_is_dis_inst1_chk[24:0]  = is_inst1_read_chk[24:0];
-assign dp_is_dis_inst2_chk[24:0]  = is_inst2_read_chk[24:0];
+// 向量指令没有分支预测快照: chk 必须清零 (否则 RTU 会拿垃圾预测去训练)
+assign dp_is_dis_inst0_chk[24:0]  = is_inst0_vec ? 25'd0 : is_inst0_read_chk[24:0];
+assign dp_is_dis_inst1_chk[24:0]  = is_inst1_vec ? 25'd0 : is_inst1_read_chk[24:0];
+assign dp_is_dis_inst2_chk[24:0]  = is_inst2_vec ? 25'd0 : is_inst2_read_chk[24:0];
 
-parameter IS_CTRL_WIDTH       = 7;
+parameter IS_CTRL_WIDTH       = 9;
+parameter IS_CTRL_VMEM        = 8;
+parameter IS_CTRL_VEC         = 7;
 parameter IS_CTRL_ILLEGAL     = 6;
 parameter IS_CTRL_ALU         = 5;
 parameter IS_CTRL_STADDR      = 4;
@@ -329,6 +370,12 @@ assign dp_ctrl_is_dis_inst2_ctrl_info[IS_CTRL_BJU]     = is_inst2_read_data[IS_B
 assign dp_ctrl_is_dis_inst2_ctrl_info[IS_CTRL_DIV]     = is_inst2_read_data[IS_DIV];
 assign dp_ctrl_is_dis_inst2_ctrl_info[IS_CTRL_MULT]    = is_inst2_read_data[IS_MULT];
 assign dp_ctrl_is_dis_inst2_ctrl_info[IS_CTRL_ALU]     = is_inst2_read_data[IS_ALU];
+// 向量控制位 (S1 新增)
+assign dp_ctrl_is_dis_inst2_ctrl_info[IS_CTRL_VEC]     = is_inst2_read_data[IS_VEC];
+assign dp_ctrl_is_dis_inst2_ctrl_info[IS_CTRL_VMEM]    =
+       is_inst2_read_data[IS_VEC] &&
+       (is_inst2_read_data[IS_VEC_TYPE:IS_VEC_TYPE-1] == 2'b01 ||
+        is_inst2_read_data[IS_VEC_TYPE:IS_VEC_TYPE-1] == 2'b10);
 
 //----------------------------------------------------------
 //            pipeline entry registers instance
@@ -344,6 +391,8 @@ ct_idu_is_pipe_entry u_ct_idu_is_pipe_entry_0 (
   .iu_idu_ex2_pipe2_wb_preg_vld_dupx (iu_idu_ex2_pipe2_wb_preg_vld_dupx),
   .lsu_idu_wb_pipe3_wb_preg_dupx     (lsu_idu_wb_pipe3_wb_preg_dupx),
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx (lsu_idu_wb_pipe3_wb_preg_vld_dupx),
+  .rvv_idu_vset_wb_preg_dupx         (rvv_idu_vset_wb_preg_dupx         ),
+  .rvv_idu_vset_wb_preg_vld_dupx     (rvv_idu_vset_wb_preg_vld_dupx     ),
   .rtu_yy_xx_flush                   (rtu_yy_xx_flush),
   .x_create_data                     (is_inst0_create_data),
   .x_create_pc                       (is_inst0_create_pc),
@@ -365,6 +414,8 @@ ct_idu_is_pipe_entry u_ct_idu_is_pipe_entry_1 (
   .iu_idu_ex2_pipe2_wb_preg_vld_dupx (iu_idu_ex2_pipe2_wb_preg_vld_dupx),
   .lsu_idu_wb_pipe3_wb_preg_dupx     (lsu_idu_wb_pipe3_wb_preg_dupx),
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx (lsu_idu_wb_pipe3_wb_preg_vld_dupx),
+  .rvv_idu_vset_wb_preg_dupx         (rvv_idu_vset_wb_preg_dupx         ),
+  .rvv_idu_vset_wb_preg_vld_dupx     (rvv_idu_vset_wb_preg_vld_dupx     ),
   .rtu_yy_xx_flush                   (rtu_yy_xx_flush),
   .x_create_data                     (is_inst1_create_data),
   .x_create_pc                       (is_inst1_create_pc),
@@ -386,6 +437,8 @@ ct_idu_is_pipe_entry u_ct_idu_is_pipe_entry_2 (
   .iu_idu_ex2_pipe2_wb_preg_vld_dupx (iu_idu_ex2_pipe2_wb_preg_vld_dupx),
   .lsu_idu_wb_pipe3_wb_preg_dupx     (lsu_idu_wb_pipe3_wb_preg_dupx),
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx (lsu_idu_wb_pipe3_wb_preg_vld_dupx),
+  .rvv_idu_vset_wb_preg_dupx         (rvv_idu_vset_wb_preg_dupx         ),
+  .rvv_idu_vset_wb_preg_vld_dupx     (rvv_idu_vset_wb_preg_vld_dupx     ),
   .rtu_yy_xx_flush                   (rtu_yy_xx_flush),
   .x_create_data                     (is_inst2_create_data),
   .x_create_pc                       (is_inst2_create_pc),
@@ -406,6 +459,20 @@ logic [6:0] is_inst2_iid;
 assign is_inst0_iid[6:0] = rtu_idu_rob_inst0_iid[6:0];
 assign is_inst1_iid[6:0] = rtu_idu_rob_inst1_iid[6:0];
 assign is_inst2_iid[6:0] = rtu_idu_rob_inst2_iid[6:0];
+
+//----------------------------------------------------------
+//                       Assign VEC (S1 新增)
+//----------------------------------------------------------
+assign is_inst0_vec      = is_inst0_read_data[IS_VEC];
+assign is_inst0_vec_type = is_inst0_read_data[IS_VEC_TYPE:IS_VEC_TYPE-1];
+assign is_inst1_vec      = is_inst1_read_data[IS_VEC];
+assign is_inst1_vec_type = is_inst1_read_data[IS_VEC_TYPE:IS_VEC_TYPE-1];
+assign is_inst2_vec      = is_inst2_read_data[IS_VEC];
+assign is_inst2_vec_type = is_inst2_read_data[IS_VEC_TYPE:IS_VEC_TYPE-1];
+
+assign dp_ctrl_is_inst0_vec = is_inst0_vec;
+assign dp_ctrl_is_inst1_vec = is_inst1_vec;
+assign dp_ctrl_is_inst2_vec = is_inst2_vec;
 
 //==========================================================
 //                 Create Data for PST
@@ -697,6 +764,8 @@ logic [LSIQ_WIDTH-1:0] lsiq_create1_data;
 
 assign dp_lsiq_create0_data[LSIQ_WIDTH-1:0]                  = lsiq_create0_data[LSIQ_WIDTH-1:0];
 assign dp_lsiq_create1_data[LSIQ_WIDTH-1:0]                  = lsiq_create1_data[LSIQ_WIDTH-1:0];
+assign dp_lsiq_create0_iid[6:0]                             = is_lsiq_create0_iid[6:0];
+assign dp_lsiq_create1_iid[6:0]                             = is_lsiq_create1_iid[6:0];
 
 // ⚠️ 2026-10-14 修复 (coremark_i1 卡死的真凶): 原版 ct_idu_is_dp.v:5459-5473 这里是一次
 //    **重映射** —— SDIQ 的 create0/create1 是按"这拍窗口里第几条 store"分配的, 而 LSIQ 的
@@ -713,34 +782,65 @@ assign dp_lsiq_create1_data[LSIQ_WIDTH-1:0]                  = lsiq_create1_data
 //    ⇒ `sq_entry_pop_req` 永远 0 ⇒ **SQ 排不空** ⇒ ROB 队头 store 永不退休 ⇒ 整个核死锁。
 //    实测: coremark_i1 有 6 次这样的建表 (T404/T453/T572/T2262/T2450/T2558),
 //    每次都是 `lsiq_c0=1 lsiq_c1=1 sdiq_c0=1 sdiq_c1=0` 且 c1 的 sdiq 字段 = 0。
+// 2026-10-17 S7: 向量 LOAD/STORE 的 anchor. 合成 opcode/地址/preg/sdiq 都由
+// S8 fill 引擎的 beat update 填, create 时只给占位值 + 固定源编码 7'b0000001。
+wire        is_lsiq_create0_vec      = is_lsiq_create0_data[IS_VEC];
+wire [1:0]  is_lsiq_create0_vec_type = is_lsiq_create0_data[IS_VEC_TYPE:IS_VEC_TYPE-1];
+
 assign lsiq_create0_data[LSIQ_SDIQ_ENTRY:LSIQ_SDIQ_ENTRY-3] =
-       is_lsiq_create0_data[IS_LOAD] ? 4'b0 : ctrl_is_sdiq_create0_entry[3:0];
-assign lsiq_create0_data[LSIQ_STORE]                         = is_lsiq_create0_data[IS_STORE];
-assign lsiq_create0_data[LSIQ_LOAD]                          = is_lsiq_create0_data[IS_LOAD];
-assign lsiq_create0_data[LSIQ_SRC0_DATA:LSIQ_SRC0_DATA-6]    = is_lsiq_create0_data[IS_SRC0_DATA:IS_SRC0_DATA-6];
-assign lsiq_create0_data[LSIQ_DST_PREG:LSIQ_DST_PREG-5]      = is_lsiq_create0_data[IS_DST_PREG:IS_DST_PREG-5];
-assign lsiq_create0_data[LSIQ_DST_VLD]                       = is_lsiq_create0_data[IS_DST_VLD];
-assign lsiq_create0_data[LSIQ_SRC0_VLD]                      = is_lsiq_create0_data[IS_SRC0_VLD];
+       (is_lsiq_create0_vec || is_lsiq_create0_data[IS_LOAD]) ? 4'b0
+                                                              : ctrl_is_sdiq_create0_entry[3:0];
+assign lsiq_create0_data[LSIQ_VEC]                           = is_lsiq_create0_vec;
+assign lsiq_create0_data[LSIQ_STORE]                         =
+       is_lsiq_create0_data[IS_STORE] ||
+       (is_lsiq_create0_vec && (is_lsiq_create0_vec_type == 2'b10));
+assign lsiq_create0_data[LSIQ_LOAD]                          =
+       is_lsiq_create0_data[IS_LOAD]  ||
+       (is_lsiq_create0_vec && (is_lsiq_create0_vec_type == 2'b01));
+assign lsiq_create0_data[LSIQ_SRC0_DATA:LSIQ_SRC0_DATA-6]    =
+       is_lsiq_create0_vec ? 7'b0000001
+                           : is_lsiq_create0_data[IS_SRC0_DATA:IS_SRC0_DATA-6];
+assign lsiq_create0_data[LSIQ_DST_PREG:LSIQ_DST_PREG-5]      =
+       is_lsiq_create0_vec ? 6'b0 : is_lsiq_create0_data[IS_DST_PREG:IS_DST_PREG-5];
+assign lsiq_create0_data[LSIQ_DST_VLD]                       =
+       is_lsiq_create0_vec ? 1'b0 : is_lsiq_create0_data[IS_DST_VLD];
+assign lsiq_create0_data[LSIQ_SRC0_VLD]                      =
+       is_lsiq_create0_vec ? 1'b1 : is_lsiq_create0_data[IS_SRC0_VLD];
 assign lsiq_create0_data[LSIQ_IID:LSIQ_IID-6]                = is_lsiq_create0_iid[6:0];
-assign lsiq_create0_data[LSIQ_OPCODE:LSIQ_OPCODE-31]         = is_lsiq_create0_data[IS_OPCODE:IS_OPCODE-31];
+assign lsiq_create0_data[LSIQ_OPCODE:LSIQ_OPCODE-31]         =
+       is_lsiq_create0_vec ? 32'b0 : is_lsiq_create0_data[IS_OPCODE:IS_OPCODE-31];
 
 // ⚠️ 2026-10-14 修复 (同上): slot1 的 sdiq_entry 要按"窗口里第几条 store"选 SDIQ 的
 //    create0/create1, 不能硬绑 create1。原版 ct_idu_is_dp.v:5470-5473。
 //    ⚠️⚠️ 2026-10-14 二次修: 上面那段注释写对了口径, 但**这一行漏了 slot0 是不是 store 的
 //    判断** (硬绑 create1) ⇒ 窗口是 [load, store] 时 slot1 那条 store 仍然拿 create1=0
 //    ⇒ 1694 条卡死照旧。必须按原版补 `is_lsiq_create0_data[IS_STADDR]` 这个条件。
+wire        is_lsiq_create1_vec      = is_lsiq_create1_data[IS_VEC];
+wire [1:0]  is_lsiq_create1_vec_type = is_lsiq_create1_data[IS_VEC_TYPE:IS_VEC_TYPE-1];
+
 assign lsiq_create1_data[LSIQ_SDIQ_ENTRY:LSIQ_SDIQ_ENTRY-3] =
-       is_lsiq_create1_data[IS_LOAD] ? 4'b0
+       (is_lsiq_create1_vec || is_lsiq_create1_data[IS_LOAD]) ? 4'b0
      : ( is_lsiq_create0_data[IS_STADDR] ? ctrl_is_sdiq_create1_entry[3:0]  // slot0 也是 store ⇒ 这是第 2 条
                                          : ctrl_is_sdiq_create0_entry[3:0] );// slot0 是 load ⇒ 这是第 1 条
-assign lsiq_create1_data[LSIQ_STORE]                         = is_lsiq_create1_data[IS_STORE];
-assign lsiq_create1_data[LSIQ_LOAD]                          = is_lsiq_create1_data[IS_LOAD];
-assign lsiq_create1_data[LSIQ_SRC0_DATA:LSIQ_SRC0_DATA-6]    = is_lsiq_create1_data[IS_SRC0_DATA:IS_SRC0_DATA-6];
-assign lsiq_create1_data[LSIQ_DST_PREG:LSIQ_DST_PREG-5]      = is_lsiq_create1_data[IS_DST_PREG:IS_DST_PREG-5];
-assign lsiq_create1_data[LSIQ_DST_VLD]                       = is_lsiq_create1_data[IS_DST_VLD];
-assign lsiq_create1_data[LSIQ_SRC0_VLD]                      = is_lsiq_create1_data[IS_SRC0_VLD];
+assign lsiq_create1_data[LSIQ_VEC]                           = is_lsiq_create1_vec;
+assign lsiq_create1_data[LSIQ_STORE]                         =
+       is_lsiq_create1_data[IS_STORE] ||
+       (is_lsiq_create1_vec && (is_lsiq_create1_vec_type == 2'b10));
+assign lsiq_create1_data[LSIQ_LOAD]                          =
+       is_lsiq_create1_data[IS_LOAD]  ||
+       (is_lsiq_create1_vec && (is_lsiq_create1_vec_type == 2'b01));
+assign lsiq_create1_data[LSIQ_SRC0_DATA:LSIQ_SRC0_DATA-6]    =
+       is_lsiq_create1_vec ? 7'b0000001
+                           : is_lsiq_create1_data[IS_SRC0_DATA:IS_SRC0_DATA-6];
+assign lsiq_create1_data[LSIQ_DST_PREG:LSIQ_DST_PREG-5]      =
+       is_lsiq_create1_vec ? 6'b0 : is_lsiq_create1_data[IS_DST_PREG:IS_DST_PREG-5];
+assign lsiq_create1_data[LSIQ_DST_VLD]                       =
+       is_lsiq_create1_vec ? 1'b0 : is_lsiq_create1_data[IS_DST_VLD];
+assign lsiq_create1_data[LSIQ_SRC0_VLD]                      =
+       is_lsiq_create1_vec ? 1'b1 : is_lsiq_create1_data[IS_SRC0_VLD];
 assign lsiq_create1_data[LSIQ_IID:LSIQ_IID-6]                = is_lsiq_create1_iid[6:0];
-assign lsiq_create1_data[LSIQ_OPCODE:LSIQ_OPCODE-31]         = is_lsiq_create1_data[IS_OPCODE:IS_OPCODE-31];
+assign lsiq_create1_data[LSIQ_OPCODE:LSIQ_OPCODE-31]         =
+       is_lsiq_create1_vec ? 32'b0 : is_lsiq_create1_data[IS_OPCODE:IS_OPCODE-31];
 
 //----------------------------------------------------------
 //                  Create Data for SDIQ
@@ -785,6 +885,92 @@ assign sdiq_create0_data[SDIQ_SRC1_VLD]                     = is_sdiq_create0_da
 
 assign sdiq_create1_data[SDIQ_SRC1_DATA:SDIQ_SRC1_DATA-6]   = is_sdiq_create1_data[IS_SRC1_DATA:IS_SRC1_DATA-6];
 assign sdiq_create1_data[SDIQ_SRC1_VLD]                     = is_sdiq_create1_data[IS_SRC1_VLD];
+
+//----------------------------------------------------------
+//                  Create Data for VIQ (S1 新增)
+//----------------------------------------------------------
+// 三选一 mux 与 AIQ 完全同构: 按 ctrl_dp_is_dis_vec_create{0,1}_sel 取车道。
+always @(*)
+begin
+  case(ctrl_dp_is_dis_vec_create0_sel[1:0])
+    2'd0: begin
+          is_vec_create0_data[IS_WIDTH-1:0] = is_inst0_read_data[IS_WIDTH-1:0];
+          is_vec_create0_pc[64:0]           = is_inst0_read_pc[64:0];
+          is_vec_create0_iid[6:0]           = is_inst0_iid[6:0];
+          end
+    2'd1: begin
+          is_vec_create0_data[IS_WIDTH-1:0] = is_inst1_read_data[IS_WIDTH-1:0];
+          is_vec_create0_pc[64:0]           = is_inst1_read_pc[64:0];
+          is_vec_create0_iid[6:0]           = is_inst1_iid[6:0];
+          end
+    2'd2: begin
+          is_vec_create0_data[IS_WIDTH-1:0] = is_inst2_read_data[IS_WIDTH-1:0];
+          is_vec_create0_pc[64:0]           = is_inst2_read_pc[64:0];
+          is_vec_create0_iid[6:0]           = is_inst2_iid[6:0];
+          end
+    default: begin
+          is_vec_create0_data[IS_WIDTH-1:0] = {IS_WIDTH{1'bx}};
+          is_vec_create0_pc[64:0]           = {65{1'bx}};
+          is_vec_create0_iid[6:0]           = {7{1'bx}};
+          end
+  endcase
+end
+
+always @(*)
+begin
+  case(ctrl_dp_is_dis_vec_create1_sel[1:0])
+    2'd0: begin
+          is_vec_create1_data[IS_WIDTH-1:0] = is_inst0_read_data[IS_WIDTH-1:0];
+          is_vec_create1_pc[64:0]           = is_inst0_read_pc[64:0];
+          is_vec_create1_iid[6:0]           = is_inst0_iid[6:0];
+          end
+    2'd1: begin
+          is_vec_create1_data[IS_WIDTH-1:0] = is_inst1_read_data[IS_WIDTH-1:0];
+          is_vec_create1_pc[64:0]           = is_inst1_read_pc[64:0];
+          is_vec_create1_iid[6:0]           = is_inst1_iid[6:0];
+          end
+    2'd2: begin
+          is_vec_create1_data[IS_WIDTH-1:0] = is_inst2_read_data[IS_WIDTH-1:0];
+          is_vec_create1_pc[64:0]           = is_inst2_read_pc[64:0];
+          is_vec_create1_iid[6:0]           = is_inst2_iid[6:0];
+          end
+    default: begin
+          is_vec_create1_data[IS_WIDTH-1:0] = {IS_WIDTH{1'bx}};
+          is_vec_create1_pc[64:0]           = {65{1'bx}};
+          is_vec_create1_iid[6:0]           = {7{1'bx}};
+          end
+  endcase
+end
+
+// 101 位打包 —— 顺序必须与 VIQ (S2 的 ct_idu_vecq) 的字段定义逐位一致:
+//   [100:69] pc, [68:37] opcode, [36:30] iid, [29:28] vec_type,
+//   [27:22] dst_preg, [21:17] dst_reg, [16] dst_vld,
+//   [15:9] src1_data, [8:2] src0_data, [1] src1_vld, [0] src0_vld
+assign dp_vec_create0_data[100:69] = is_vec_create0_pc[31:0];
+assign dp_vec_create0_data[68:37]  = is_vec_create0_data[IS_OPCODE:IS_OPCODE-31];
+assign dp_vec_create0_data[36:30]  = is_vec_create0_iid[6:0];
+assign dp_vec_create0_data[29:28]  = is_vec_create0_data[IS_VEC_TYPE:IS_VEC_TYPE-1];
+assign dp_vec_create0_data[27:22]  = is_vec_create0_data[IS_DST_PREG:IS_DST_PREG-5];
+assign dp_vec_create0_data[21:17]  = is_vec_create0_data[IS_DST_REG:IS_DST_REG-4];
+assign dp_vec_create0_data[16]     = is_vec_create0_data[IS_DST_VLD];
+assign dp_vec_create0_data[15:9]   = is_vec_create0_data[IS_SRC1_DATA:IS_SRC1_DATA-6];
+assign dp_vec_create0_data[8:2]    = is_vec_create0_data[IS_SRC0_DATA:IS_SRC0_DATA-6];
+assign dp_vec_create0_data[1]      = is_vec_create0_data[IS_SRC1_VLD];
+assign dp_vec_create0_data[0]      = is_vec_create0_data[IS_SRC0_VLD];
+assign dp_vec_create0_iid[6:0]     = is_vec_create0_iid[6:0];
+
+assign dp_vec_create1_data[100:69] = is_vec_create1_pc[31:0];
+assign dp_vec_create1_data[68:37]  = is_vec_create1_data[IS_OPCODE:IS_OPCODE-31];
+assign dp_vec_create1_data[36:30]  = is_vec_create1_iid[6:0];
+assign dp_vec_create1_data[29:28]  = is_vec_create1_data[IS_VEC_TYPE:IS_VEC_TYPE-1];
+assign dp_vec_create1_data[27:22]  = is_vec_create1_data[IS_DST_PREG:IS_DST_PREG-5];
+assign dp_vec_create1_data[21:17]  = is_vec_create1_data[IS_DST_REG:IS_DST_REG-4];
+assign dp_vec_create1_data[16]     = is_vec_create1_data[IS_DST_VLD];
+assign dp_vec_create1_data[15:9]   = is_vec_create1_data[IS_SRC1_DATA:IS_SRC1_DATA-6];
+assign dp_vec_create1_data[8:2]    = is_vec_create1_data[IS_SRC0_DATA:IS_SRC0_DATA-6];
+assign dp_vec_create1_data[1]      = is_vec_create1_data[IS_SRC1_VLD];
+assign dp_vec_create1_data[0]      = is_vec_create1_data[IS_SRC0_VLD];
+assign dp_vec_create1_iid[6:0]     = is_vec_create1_iid[6:0];
 
 //----------------------------------------------------------
 //                  Create Data for MULT

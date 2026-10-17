@@ -2,14 +2,14 @@ module ct_idu_ir_dp (
   input  logic            cpurst_b,
   input  logic            forever_clk,
   input  logic            ctrl_ir_stall,
-  output logic [122:0]     crtl_ir_inst2_data,
+  output logic [125:0]     crtl_ir_inst2_data,
   output logic [24:0]     crtl_ir_inst2_chk,
 
-  input  logic [122:0]     dp_id_pipedown_inst0_data,
+  input  logic [125:0]     dp_id_pipedown_inst0_data,
   input  logic [24:0]      dp_id_pipedown_inst0_chk,
-  input  logic [122:0]     dp_id_pipedown_inst1_data,
+  input  logic [125:0]     dp_id_pipedown_inst1_data,
   input  logic [24:0]      dp_id_pipedown_inst1_chk,
-  input  logic [122:0]     dp_id_pipedown_inst2_data,
+  input  logic [125:0]     dp_id_pipedown_inst2_data,
   input  logic [24:0]      dp_id_pipedown_inst2_chk,
 
   input  logic [5  :0]    rt_dp_inst0_rel_preg,
@@ -31,28 +31,28 @@ module ct_idu_ir_dp (
   input  logic [5  :0]    rtu_idu_alloc_preg1,
   input  logic [5  :0]    rtu_idu_alloc_preg2,
 
-  output logic [6  :0]    dp_ctrl_ir_inst0_ctrl_info,
+  output logic [8  :0]    dp_ctrl_ir_inst0_ctrl_info,
   output logic            dp_ctrl_ir_inst0_dst_vld,
   output logic            dp_ctrl_ir_inst0_dst_x0,
   output logic            dp_ctrl_ir_inst0_illegal,
 
-  output logic [6  :0]    dp_ctrl_ir_inst1_ctrl_info,
+  output logic [8  :0]    dp_ctrl_ir_inst1_ctrl_info,
   output logic            dp_ctrl_ir_inst1_dst_vld,
   output logic            dp_ctrl_ir_inst1_dst_x0,
   output logic            dp_ctrl_ir_inst1_illegal,
 
-  output logic [6  :0]    dp_ctrl_ir_inst2_ctrl_info,
+  output logic [8  :0]    dp_ctrl_ir_inst2_ctrl_info,
   output logic            dp_ctrl_ir_inst2_dst_vld,
   output logic            dp_ctrl_ir_inst2_dst_x0,
   output logic            dp_ctrl_ir_inst2_illegal,
 
-  output logic [75:0]     dp_ir_inst0_data,
+  output logic [78:0]     dp_ir_inst0_data,
   output logic [64:0]     dp_ir_inst0_pc,
   output logic [24:0]     dp_ir_inst0_chk,
-  output logic [75 :0]    dp_ir_inst1_data,
+  output logic [78 :0]    dp_ir_inst1_data,
   output logic [64:0]     dp_ir_inst1_pc,
   output logic [24:0]     dp_ir_inst1_chk,
-  output logic [75 :0]    dp_ir_inst2_data,
+  output logic [78 :0]    dp_ir_inst2_data,
   output logic [64:0]     dp_ir_inst2_pc,
   output logic [24:0]     dp_ir_inst2_chk,
 
@@ -84,7 +84,9 @@ module ct_idu_ir_dp (
 //==========================================================
 //                       Parameters
 //==========================================================
-parameter IR_WIDTH            = 123;
+parameter IR_WIDTH            = 126;
+parameter IR_VEC_TYPE         = 125;   // [125:124]
+parameter IR_VEC              = 123;
 parameter IR_TAKEN            = 122;
 parameter IR_NPC              = 121;
 parameter IR_PC               = 89;
@@ -99,7 +101,9 @@ parameter IR_SRC0_REG         = 37;
 parameter IR_SRC0_VLD         = 32;
 parameter IR_OPCODE           = 31;
 
-parameter IS_CTRL_WIDTH       = 7;
+parameter IS_CTRL_WIDTH       = 9;
+parameter IS_CTRL_VMEM        = 8;
+parameter IS_CTRL_VEC         = 7;
 parameter IS_CTRL_ILLEGAL     = 6;
 parameter IS_CTRL_ALU         = 5;
 parameter IS_CTRL_STADDR      = 4;
@@ -109,6 +113,8 @@ parameter IS_CTRL_DIV         = 1;
 parameter IS_CTRL_MULT        = 0;
 
 
+parameter IS_VEC_TYPE          = 78;   // [78:77]
+parameter IS_VEC               = 76;
 parameter IS_ILLEGAL           = 75;
 parameter IS_ALU_SHORT         = 74;
 parameter IS_LSU               = 73;
@@ -148,6 +154,8 @@ logic [31 :0]     ir_inst0_opcode;
 logic             ir_inst0_store;
 logic             ir_inst0_type_alu;
 logic             ir_inst0_alu_short;
+logic             ir_inst0_vec;
+logic [1  :0]     ir_inst0_vec_type;
 
 logic [5  :0]     ir_inst1_dst_preg;
 logic             ir_inst1_load;
@@ -155,6 +163,8 @@ logic [31 :0]     ir_inst1_opcode;
 logic             ir_inst1_store;
 logic             ir_inst1_type_alu;
 logic             ir_inst1_alu_short;
+logic             ir_inst1_vec;
+logic [1  :0]     ir_inst1_vec_type;
 
 logic [5  :0]     ir_inst2_dst_preg;
 logic             ir_inst2_load;
@@ -162,6 +172,8 @@ logic [31 :0]     ir_inst2_opcode;
 logic             ir_inst2_store;
 logic             ir_inst2_type_alu;
 logic             ir_inst2_alu_short;
+logic             ir_inst2_vec;
+logic [1  :0]     ir_inst2_vec_type;
 
 logic [5  :0]     ir_pipedown_inst0_dst_preg;
 logic [5  :0]     ir_pipedown_inst1_dst_preg;
@@ -205,6 +217,15 @@ end
 assign dp_ir_inst0_chk[24:0] = ir_inst0_chk[24:0];
 assign dp_ir_inst1_chk[24:0] = ir_inst1_chk[24:0];
 assign dp_ir_inst2_chk[24:0] = ir_inst2_chk[24:0];
+
+// 向量标志 (S1 新增): 新字段在 IR[125:123], 老字段的绝对位号不变
+assign ir_inst0_vec      = ir_inst0_data[IR_VEC];
+assign ir_inst0_vec_type = ir_inst0_data[IR_VEC_TYPE:IR_VEC_TYPE-1];
+assign ir_inst1_vec      = ir_inst1_data[IR_VEC];
+assign ir_inst1_vec_type = ir_inst1_data[IR_VEC_TYPE:IR_VEC_TYPE-1];
+assign ir_inst2_vec      = ir_inst2_data[IR_VEC];
+assign ir_inst2_vec_type = ir_inst2_data[IR_VEC_TYPE:IR_VEC_TYPE-1];
+
 //==========================================================
 //                Prepare IR control data
 //==========================================================
@@ -287,8 +308,25 @@ assign dp_ctrl_ir_inst0_ctrl_info[IS_CTRL_ILLEGAL] =
 assign dp_ctrl_ir_inst1_ctrl_info[IS_CTRL_ILLEGAL] = 
        dp_ctrl_ir_inst1_illegal;
 
-assign dp_ctrl_ir_inst2_ctrl_info[IS_CTRL_ILLEGAL] = 
-       dp_ctrl_ir_inst2_illegal;       
+assign dp_ctrl_ir_inst2_ctrl_info[IS_CTRL_ILLEGAL] =
+       dp_ctrl_ir_inst2_illegal;
+
+// 向量控制位 (S1 新增):
+//   IS_CTRL_VEC  —— 任一向量指令
+//   IS_CTRL_VMEM —— 向量访存 (LOAD/STORE), S7 之前不产生 LSIQ anchor
+assign dp_ctrl_ir_inst0_ctrl_info[IS_CTRL_VEC] =
+       ir_inst0_vec;
+assign dp_ctrl_ir_inst1_ctrl_info[IS_CTRL_VEC] =
+       ir_inst1_vec;
+assign dp_ctrl_ir_inst2_ctrl_info[IS_CTRL_VEC] =
+       ir_inst2_vec;
+
+assign dp_ctrl_ir_inst0_ctrl_info[IS_CTRL_VMEM] =
+       ir_inst0_vec && (ir_inst0_vec_type == 2'b01 || ir_inst0_vec_type == 2'b10);
+assign dp_ctrl_ir_inst1_ctrl_info[IS_CTRL_VMEM] =
+       ir_inst1_vec && (ir_inst1_vec_type == 2'b01 || ir_inst1_vec_type == 2'b10);
+assign dp_ctrl_ir_inst2_ctrl_info[IS_CTRL_VMEM] =
+       ir_inst2_vec && (ir_inst2_vec_type == 2'b01 || ir_inst2_vec_type == 2'b10);
 
 assign ir_inst0_type_alu =
        ir_inst0_data[IR_INST_TYPE-5];
@@ -396,7 +434,7 @@ assign dp_rt_inst2_src1_reg[4:0] =
        ir_inst2_data[IR_SRC1_REG:IR_SRC1_REG-4];
 
 
-assign crtl_ir_inst2_data[122:0] = ir_inst2_data[IR_WIDTH-1:0];
+assign crtl_ir_inst2_data[125:0] = ir_inst2_data[IR_WIDTH-1:0];
 // 2026-10-08 修: 原写成 ctrl_ir_inst2_chk (少了个 l), 与端口名 crtl_ir_inst2_chk 不符
 // ⇒ "Identifier not declared" ⇒ 整个 IDU 编不过。
 assign crtl_ir_inst2_chk[24:0]  = ir_inst2_chk[24:0];
@@ -465,6 +503,10 @@ ct_idu_ir_decd x_ct_idu_ir_decd2 (
 
 //是alu的快速指令，不是乘除法那些
 assign dp_ir_inst0_pc[64:0] = ir_inst0_data[IR_TAKEN:IR_PC-31];
+
+// 向量标志 (S1 新增): IS[78:76], 老字段位号不变
+assign dp_ir_inst0_data[IS_VEC_TYPE:IS_VEC_TYPE-1] = ir_inst0_vec_type;
+assign dp_ir_inst0_data[IS_VEC]                    = ir_inst0_vec;
 
 assign dp_ir_inst0_data[IS_ILLEGAL] =
        dp_ctrl_ir_inst0_illegal;
@@ -559,6 +601,10 @@ assign dp_ir_inst0_data[IS_OPCODE:IS_OPCODE-31] =
 // Launch and optimization signals
 assign dp_ir_inst1_pc[64:0] = ir_inst1_data[IR_TAKEN:IR_PC-31];
 
+// 向量标志 (S1 新增): IS[78:76], 老字段位号不变
+assign dp_ir_inst1_data[IS_VEC_TYPE:IS_VEC_TYPE-1] = ir_inst1_vec_type;
+assign dp_ir_inst1_data[IS_VEC]                    = ir_inst1_vec;
+
 assign dp_ir_inst1_data[IS_ILLEGAL] =
        dp_ctrl_ir_inst1_illegal;
 
@@ -629,6 +675,10 @@ assign dp_ir_inst1_data[IS_OPCODE:IS_OPCODE-31] =
 
 // Instruction 2 - RV32I signal assignments to Issue Stage
 assign dp_ir_inst2_pc[64:0] = ir_inst2_data[IR_TAKEN:IR_PC-31];
+
+// 向量标志 (S1 新增): IS[78:76], 老字段位号不变
+assign dp_ir_inst2_data[IS_VEC_TYPE:IS_VEC_TYPE-1] = ir_inst2_vec_type;
+assign dp_ir_inst2_data[IS_VEC]                    = ir_inst2_vec;
 
 assign dp_ir_inst2_data[IS_ILLEGAL] =
        dp_ctrl_ir_inst2_illegal;

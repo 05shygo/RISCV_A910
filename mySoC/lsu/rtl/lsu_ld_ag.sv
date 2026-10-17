@@ -31,6 +31,10 @@ module lsu_ld_ag #(
   input  logic [LSIQ_ENTRY-1:0]        idu_lsu_ld_lch_entry,
   input  logic                         idu_lsu_ld_oldest,
   input  logic [5:0]                   idu_lsu_ld_preg,
+  // 2026-10-17 S7: 向量 beat
+  input  logic                         idu_lsu_ld_vec,
+  input  logic [4:0]                   idu_lsu_ld_uop_idx,
+  input  logic                         idu_lsu_ld_last,
   input  logic [11:0]                  idu_lsu_ld_offset,
   // 2026-10-15 停用: LSU 不再接收 IDU 的 offset_plus (只有非对齐拆分才用它)
   //input  logic [12:0]                  idu_lsu_ld_offset_plus,
@@ -79,6 +83,9 @@ module lsu_ld_ag #(
   output logic [LSIQ_ENTRY-1:0]        ld_ag_lsid,
   output logic                         ld_ag_old,
   output logic [5:0]                   ld_ag_preg,
+  output logic                         ld_ag_vec,
+  output logic [4:0]                   ld_ag_uop_idx,
+  output logic                         ld_ag_last,
   //output logic                         ld_ag_boundary,
   //output logic                         ld_ag_acclr_en,
   // 2026-10-15 停用: bypass 通路在本仓没实现 (ld_dc_chk_ld_bypass_vld 无人使用), 整条摘掉: output logic                         ld_ag_dc_fwd_bypass_en,
@@ -233,6 +240,9 @@ begin
     ld_ag_lsid[LSIQ_ENTRY-1:0]  <=  {LSIQ_ENTRY{1'b0}};
     ld_ag_old                   <=  1'b0;
     ld_ag_preg[5:0]             <=  7'b0;
+    ld_ag_vec                   <=  1'b0;
+    ld_ag_uop_idx[4:0]          <=  5'b0;
+    ld_ag_last                  <=  1'b0;
   end
   else if(!ld_ag_stall_vld  &&  idu_lsu_ld_sel)
   begin
@@ -243,6 +253,9 @@ begin
     ld_ag_lsid[LSIQ_ENTRY-1:0]  <=  idu_lsu_ld_lch_entry[LSIQ_ENTRY-1:0];
     ld_ag_old                   <=  idu_lsu_ld_oldest;
     ld_ag_preg[5:0]             <=  idu_lsu_ld_preg[5:0];
+    ld_ag_vec                   <=  idu_lsu_ld_vec;
+    ld_ag_uop_idx[4:0]          <=  idu_lsu_ld_uop_idx[4:0];
+    ld_ag_last                  <=  idu_lsu_ld_last;
   end
 end
 

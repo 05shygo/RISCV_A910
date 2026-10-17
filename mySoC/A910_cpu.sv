@@ -1,3 +1,7 @@
+// 2026-10-17 (S3): RVV 桥需要 UOP_RVV2LSU_t / UOP_LSU2RVV_t 类型。
+// 头文件带 include guard；RvvCore/bridge 之后再次 include 会直接跳过。
+`include "rvv_backend.svh"
+
 //----------------------------------------------------------------------------
 // A910_cpu — 新顶层: 自研 IFU + C910 IDU/LSU/BIU + 自研 RTU
 //
@@ -145,6 +149,29 @@ module A910_cpu
   logic [  7:0] idu_lsu_st_lch_entry;
   logic         idu_lsu_st_oldest;
   logic [  3:0] idu_lsu_st_sdiq_entry;
+  // 2026-10-17 S7: 向量 beat
+  logic         idu_lsu_ld_vec;
+  logic [  4:0] idu_lsu_ld_uop_idx;
+  logic         idu_lsu_ld_last;
+  logic         idu_lsu_st_vec;
+  logic [  4:0] idu_lsu_st_uop_idx;
+  logic         idu_lsu_st_last;
+  logic [  7:0] lsu_idu_beat_done;
+  // 2026-10-17 S8: fill 引擎接口
+  logic         rvv_lsu_uop_valid;
+  UOP_RVV2LSU_t rvv_lsu_uop;
+  logic         rvv_lsu_uop_ready;
+  logic         rvv_lsu_resp_valid;
+  UOP_LSU2RVV_t rvv_lsu_resp;
+  logic         rvv_lsu_resp_ready;
+  logic         vec_st_cmit_vld;
+  logic [  6:0] vec_st_cmit_iid;
+  logic         lsu_idu_wb_pipe3_wb_preg_vec;
+  logic [  4:0] lsu_idu_wb_pipe3_wb_uop_idx;
+  logic         lsu_idu_sq_pop_vld;
+  logic [  4:0] lsu_idu_sq_pop_uop_idx;
+  logic         lsu_rtu_wb_pipe3_wb_preg_vec;
+  logic         lsu_rtu_wb_pipe4_vec;
 
   logic         idu_lsu_sdiq_sel;
   logic [  3:0] idu_lsu_rf_pipe5_sdiq_entry;
@@ -541,9 +568,9 @@ module A910_cpu
   // ---------------------------------------------------------------------------
   logic         cmplt_vld0;        // 待接: ALU0
   logic [  6:0] cmplt_iid0;
-  logic         cmplt_vld1;        // 待接: ALU1
+  logic         cmplt_vld1;        // S4: RVV core ROB 的完成链
   logic [  6:0] cmplt_iid1;
-  logic         cmplt_vld2;        // 待接: ALU2
+  logic         cmplt_vld2;        // S3: RVV bridge 的 vset 完成
   logic [  6:0] cmplt_iid2;
   logic         cmplt_vld3;        // 待接: BEU
   logic [  6:0] cmplt_iid3;
@@ -555,12 +582,25 @@ module A910_cpu
   logic         resolve_mispred;
   logic [ 31:0] resolve_target;
   logic         beu_redirect_vld;  // 待接: BEU
-  // IU 侧的异常源 (BEU 取指非对齐 / IDU 非法指令) —— 待接, 见末尾清单 A,
+  // IU 侧的异常源 (BEU 取指非对齐 / IDU 非法指令) —— 见末尾清单 A,
   // 它对应 RTU 的 expt_iu_* 那一路。
   logic         other_expt_vld;
   logic [  6:0] other_expt_iid;
   logic [  4:0] other_expt_cause;
   logic [ 31:0] other_expt_tval;
+
+  // 2026-10-17 S5: IU 侧的异常源现在有**两路** (同拍会撞):
+  //   beu_expt_* : IU_beu_pipe 的取指地址非对齐 (cause 0)
+  //   rvv_expt_* : RVV bridge 的非法向量指令 (cause 2)
+  // ⚠️ 不能 OR 两路 vld —— 同拍会把更老的丢掉, 且它以后不会再报
+  //    (RTU_expt.v 开头明说同拍冲突在进模块前无法补救) ⇒ 必须按年龄锦标赛。
+  logic         beu_expt_vld;
+  logic [  6:0] beu_expt_iid;
+  logic [  4:0] beu_expt_cause;
+  logic [ 31:0] beu_expt_tval;
+  logic         beu_older_rvv;
+  logic         pick_beu_expt;
+  logic         pick_rvv_expt;
   logic [ 31:0] csr_rdata;         // 待接: CSR 文件
   logic         int_pending;       // 待接: CSR 文件
   logic [ 31:0] csr_trap_vector;   // 待接: CSR 文件
@@ -1081,6 +1121,33 @@ module A910_cpu
   // ============================================================
   // IDU
   // ============================================================
+  // ---- IDU ↔ RVV bridge 接口 (S2 新增) ----
+  // S2 只把接口冻结: bridge 在 S3 才落地 ⇒ ready 钉 0、vset 写回钉 0。
+  // 这 12 根输出暂无人消费, 先声明成显式线网 (不允许隐式 1 位线网)。
+  logic        idu_vec_inst_valid;
+  logic [6:0]  idu_vec_inst_iid;
+  logic [31:0] idu_vec_inst_pc;
+  logic [1:0]  idu_vec_inst_opcode;
+  logic [24:0] idu_vec_inst_bits;
+  logic        idu_vec_src0_vld;
+  logic [31:0] idu_vec_src0_data;
+  logic [5:0]  idu_vec_src0_preg;
+  logic        idu_vec_src0_wb;
+  logic        idu_vec_src1_vld;
+  logic [31:0] idu_vec_src1_data;
+  logic [5:0]  idu_vec_src1_preg;
+  logic        idu_vec_src1_wb;
+  logic [5:0]  idu_vec_dst_preg;
+  logic        idu_vec_dst_vld;
+  logic [4:0]  idu_vec_dst_reg;
+  logic        rvv_vec_inst_ready;
+  logic        rvv_idu_vset_wb_vld;
+  logic [5:0]  rvv_idu_vset_wb_preg;
+  logic [31:0] rvv_idu_vset_wb_data;
+  logic [6:0]  rvv_idu_vset_wb_iid;
+
+  // S3: 这些由 rvv_a910_bridge 驱动 (见 IDU 之后的例化)
+
   ct_idu_top u_ct_idu_top (
   //==========================================================
   // Global signals
@@ -1170,6 +1237,27 @@ module A910_cpu
   .lsu_idu_lsiq_pop0_vld          (lsu_idu_lsiq_pop0_vld),
   .lsu_idu_lsiq_pop1_vld          (lsu_idu_lsiq_pop1_vld),
   .lsu_idu_lsiq_pop_entry         (lsu_idu_lsiq_pop_entry),
+  .lsu_idu_beat_done              (lsu_idu_beat_done),
+  // 2026-10-17 S8: fill 引擎接口
+  .rvv_lsu_uop_valid              (rvv_lsu_uop_valid),
+  .rvv_lsu_uop                    (rvv_lsu_uop),
+  .rvv_lsu_uop_ready              (rvv_lsu_uop_ready),
+  .rvv_lsu_resp_valid             (rvv_lsu_resp_valid),
+  .rvv_lsu_resp                   (rvv_lsu_resp),
+  .rvv_lsu_resp_ready             (rvv_lsu_resp_ready),
+  .rtu_yy_xx_commit0              (rtu_yy_xx_commit0),
+  .rtu_yy_xx_commit0_iid          (rtu_yy_xx_commit0_iid),
+  .rtu_yy_xx_commit1              (rtu_yy_xx_commit1),
+  .rtu_yy_xx_commit1_iid          (rtu_yy_xx_commit1_iid),
+  .rtu_yy_xx_commit2              (rtu_yy_xx_commit2),
+  .rtu_yy_xx_commit2_iid          (rtu_yy_xx_commit2_iid),
+  .lsu_idu_wb_pipe3_wb_preg_vec   (lsu_idu_wb_pipe3_wb_preg_vec),
+  .lsu_idu_wb_pipe3_wb_uop_idx    (lsu_idu_wb_pipe3_wb_uop_idx),
+  .lsu_idu_wb_pipe3_wb_preg_iid   (lsu_idu_wb_pipe3_wb_preg_iid),
+  .lsu_idu_sq_pop_vld             (lsu_idu_sq_pop_vld),
+  .lsu_idu_sq_pop_uop_idx         (lsu_idu_sq_pop_uop_idx),
+  .vec_st_cmit_vld                (vec_st_cmit_vld),
+  .vec_st_cmit_iid                (vec_st_cmit_iid),
 
   //==========================================================
   // Interface with LSU - SDIQ control
@@ -1227,6 +1315,9 @@ module A910_cpu
   // 2026-10-15 停用: .idu_lsu_ld_unalign_2nd         (idu_lsu_ld_unalign_2nd),
   .idu_lsu_ld_lch_entry           (idu_lsu_ld_lch_entry),
   .idu_lsu_ld_oldest              (idu_lsu_ld_oldest),
+  .idu_lsu_ld_vec                 (idu_lsu_ld_vec),
+  .idu_lsu_ld_uop_idx             (idu_lsu_ld_uop_idx),
+  .idu_lsu_ld_last                (idu_lsu_ld_last),
 
   //==========================================================
   // Output to LSU - Store pipe
@@ -1242,6 +1333,9 @@ module A910_cpu
   .idu_lsu_st_lch_entry           (idu_lsu_st_lch_entry),
   .idu_lsu_st_oldest              (idu_lsu_st_oldest),
   .idu_lsu_st_sdiq_entry          (idu_lsu_st_sdiq_entry),
+  .idu_lsu_st_vec                 (idu_lsu_st_vec),
+  .idu_lsu_st_uop_idx             (idu_lsu_st_uop_idx),
+  .idu_lsu_st_last                (idu_lsu_st_last),
 
   //==========================================================
   // Output to LSU - SDIQ pipe
@@ -1335,8 +1429,169 @@ module A910_cpu
   // 执行单元的发射准入
   // ⚠️ 待接: 源是 MUL/DIV wrapper 的 busy, 本文件还没例化。
   //==========================================================
-  .md_unit_stall                  (md_unit_stall)
+  .md_unit_stall                  (md_unit_stall),
+
+  //==========================================================
+  // Interface with RVV bridge (S2 新增)
+  //==========================================================
+  .idu_vec_inst_valid             (idu_vec_inst_valid),
+  .idu_vec_inst_iid               (idu_vec_inst_iid),
+  .idu_vec_inst_pc                (idu_vec_inst_pc),
+  .idu_vec_inst_opcode            (idu_vec_inst_opcode),
+  .idu_vec_inst_bits              (idu_vec_inst_bits),
+  .idu_vec_src0_vld               (idu_vec_src0_vld),
+  .idu_vec_src0_data              (idu_vec_src0_data),
+  .idu_vec_src0_preg              (idu_vec_src0_preg),
+  .idu_vec_src0_wb                (idu_vec_src0_wb),
+  .idu_vec_src1_vld               (idu_vec_src1_vld),
+  .idu_vec_src1_data              (idu_vec_src1_data),
+  .idu_vec_src1_preg              (idu_vec_src1_preg),
+  .idu_vec_src1_wb                (idu_vec_src1_wb),
+  .idu_vec_dst_preg               (idu_vec_dst_preg),
+  .idu_vec_dst_vld                (idu_vec_dst_vld),
+  .idu_vec_dst_reg                (idu_vec_dst_reg),
+  .rvv_vec_inst_ready             (rvv_vec_inst_ready),
+  .rvv_idu_vset_wb_vld            (rvv_idu_vset_wb_vld),
+  .rvv_idu_vset_wb_preg           (rvv_idu_vset_wb_preg),
+  .rvv_idu_vset_wb_data           (rvv_idu_vset_wb_data),
+  .rvv_idu_vset_wb_iid            (rvv_idu_vset_wb_iid)
   );
+
+  // ============================================================
+  // RVV bridge (S3)
+  // ============================================================
+  // IDU VIQ head (1 条/拍) → RvvCore (N=1)；vset 完成回 IDU 的 PRF/唤醒，
+  // 并通过 RTU 完成口 2 让 vset 的 ROB 表项退休。
+  // 其余端口 (trap/LSU) 先在 S3 接出但钉 0 / 悬空, S5/S8 再用。
+  logic        rvv_cmplt_vld1;
+  logic [6:0]  rvv_cmplt_iid1;
+  logic        rvv_cmplt_vld2;
+  logic [6:0]  rvv_cmplt_iid2;
+  logic        rvv_expt_vld;
+  logic [6:0]  rvv_expt_iid;
+  logic [4:0]  rvv_expt_cause;
+  logic [31:0] rvv_expt_tval;
+  logic        rvv_idle;
+  logic        rvv_trap_valid;
+  logic [31:0] rvv_trap_inst;
+
+  rvv_a910_bridge u_rvv_a910_bridge (
+    .clk                            (clk),
+    .rst                            (~rst_b),
+
+    // IDU VIQ head
+    .idu_vec_inst_valid             (idu_vec_inst_valid),
+    .idu_vec_inst_iid               (idu_vec_inst_iid),
+    .idu_vec_inst_pc                (idu_vec_inst_pc),
+    .idu_vec_inst_opcode            (idu_vec_inst_opcode),
+    .idu_vec_inst_bits              (idu_vec_inst_bits),
+    .idu_vec_src0_vld               (idu_vec_src0_vld),
+    .idu_vec_src0_data              (idu_vec_src0_data),
+    .idu_vec_src0_preg              (idu_vec_src0_preg),
+    .idu_vec_src0_wb                (idu_vec_src0_wb),
+    .idu_vec_src1_vld               (idu_vec_src1_vld),
+    .idu_vec_src1_data              (idu_vec_src1_data),
+    .idu_vec_src1_preg              (idu_vec_src1_preg),
+    .idu_vec_src1_wb                (idu_vec_src1_wb),
+    .idu_vec_dst_preg               (idu_vec_dst_preg),
+    .idu_vec_dst_vld                (idu_vec_dst_vld),
+    .idu_vec_dst_reg                (idu_vec_dst_reg),
+    .rvv_vec_inst_ready             (rvv_vec_inst_ready),
+
+    // vset 写回 → IDU PRF 第 6 写口 + dep entry 第 5 唤醒
+    .rvv_idu_vset_wb_vld            (rvv_idu_vset_wb_vld),
+    .rvv_idu_vset_wb_preg           (rvv_idu_vset_wb_preg),
+    .rvv_idu_vset_wb_data           (rvv_idu_vset_wb_data),
+    .rvv_idu_vset_wb_iid            (rvv_idu_vset_wb_iid),
+
+    // RTU
+    .cmplt_vld1                     (rvv_cmplt_vld1),
+    .cmplt_iid1                     (rvv_cmplt_iid1),
+    .cmplt_vld2                     (rvv_cmplt_vld2),
+    .cmplt_iid2                     (rvv_cmplt_iid2),
+    .rtu_commit0                    (rtu_yy_xx_commit0),
+    .rtu_commit1                    (rtu_yy_xx_commit1),
+    .rtu_commit2                    (rtu_yy_xx_commit2),
+    .rtu_commit_iid0                (rtu_yy_xx_commit0_iid),
+    .rtu_commit_iid1                (rtu_yy_xx_commit1_iid),
+    .rtu_commit_iid2                (rtu_yy_xx_commit2_iid),
+    .rtu_flush                      (rtu_yy_xx_flush),
+
+    // 标量写回直通 (S3b): {vset, LSU pipe3, IU pipe2, pipe1, pipe0}
+    .scalar_wb_vld                  ({rvv_idu_vset_wb_vld,
+                                      lsu_idu_wb_pipe3_wb_preg_vld,
+                                      iu_idu_ex2_pipe2_wb_preg_vld,
+                                      iu_idu_ex2_pipe1_wb_preg_vld,
+                                      iu_idu_ex2_pipe0_wb_preg_vld}),
+    .scalar_wb_preg                 ({rvv_idu_vset_wb_preg,
+                                      lsu_idu_wb_pipe3_wb_preg[5:0],
+                                      iu_idu_ex2_pipe2_wb_preg_dupx[5:0],
+                                      iu_idu_ex2_pipe1_wb_preg_dupx[5:0],
+                                      iu_idu_ex2_pipe0_wb_preg_dupx[5:0]}),
+    .scalar_wb_data                 ({rvv_idu_vset_wb_data,
+                                      lsu_idu_wb_pipe3_wb_preg_data,
+                                      iu_idu_ex2_pipe2_wb_preg_data,
+                                      iu_idu_ex2_pipe1_wb_preg_data,
+                                      iu_idu_ex2_pipe0_wb_preg_data}),
+
+    // 异常 (S5)
+    .rvv_expt_vld                   (rvv_expt_vld),
+    .rvv_expt_iid                   (rvv_expt_iid),
+    .rvv_expt_cause                 (rvv_expt_cause),
+    .rvv_expt_tval                  (rvv_expt_tval),
+
+    // 状态/调试
+    .rvv_idle                       (rvv_idle),
+    .rvv_trap_valid                 (rvv_trap_valid),
+    .rvv_trap_inst                  (rvv_trap_inst),
+
+    // 向量 LSU (S8): uop 出 bridge → IDU fill 引擎; 响应由 IDU 回 bridge
+    .rvv_lsu_uop_valid              (rvv_lsu_uop_valid),
+    .rvv_lsu_uop                    (rvv_lsu_uop),
+    .rvv_lsu_uop_ready              (rvv_lsu_uop_ready),
+    .rvv_lsu_resp_valid             (rvv_lsu_resp_valid),
+    .rvv_lsu_resp                   (rvv_lsu_resp),
+    .rvv_lsu_resp_ready             (rvv_lsu_resp_ready)
+  );
+
+  // vset 完成 → RTU 完成口 2 (vset 的 ROB 表项)
+  // ⚠️ 不能直接 assign cmplt_vld2 —— 它现在由 bridge 驱动。
+  assign cmplt_vld2     = rvv_cmplt_vld2;
+  assign cmplt_iid2     = rvv_cmplt_iid2;
+
+  // S4: 向量计算/访存指令完成 → RTU 完成口 1
+  // (bridge 在 core ROB 的完成链里产生: 一条指令的全部 uop 都 done 时发一拍)
+  assign cmplt_vld1     = rvv_cmplt_vld1;
+  assign cmplt_iid1     = rvv_cmplt_iid1;
+
+  // ============================================================
+  // S5: IU 侧异常源合并 (BEU 取指非对齐 vs RVV 非法向量指令)
+  // ============================================================
+  // 两路**同拍**可能同时有效 ⇒ 必须按 iid 年龄锦标赛取更老的那条。
+  // 用 RTU_iid_cmp (与 RTU 内部同规则): x_iid0_older 表示 iid0 比 iid1 老。
+  RTU_iid_cmp u_cmp_expt (
+    .x_iid0       (beu_expt_iid),
+    .x_iid1       (rvv_expt_iid),
+    .x_iid0_older (beu_older_rvv)
+  );
+
+  // 只有一路有效时直接选它 (另一路的 iid 是残留值, 不能无条件比年龄)。
+  assign pick_beu_expt = beu_expt_vld & (~rvv_expt_vld | beu_older_rvv);
+  assign pick_rvv_expt = rvv_expt_vld & ~pick_beu_expt;
+
+  assign other_expt_vld   = pick_beu_expt | pick_rvv_expt;
+  assign other_expt_iid   = pick_beu_expt ? beu_expt_iid   : rvv_expt_iid;
+  assign other_expt_cause = pick_beu_expt ? beu_expt_cause : rvv_expt_cause;
+  assign other_expt_tval  = pick_beu_expt ? beu_expt_tval  : rvv_expt_tval;
+
+  // rvv_trap_* / rvv_idle / rvv_lsu_* 中未消费的留作观察口 (S8 再接 LSU)
+
+  // S7: fill 引擎 (S8) 未接 —— anchor 只占位不发射
+  assign lsiq_vec_upd_entry = 8'd0;
+  assign lsiq_vec_upd_data  = 106'd0;
+  assign lsiq_vec_beat_rdy  = 8'd0;
+  assign vec_old_iid        = 7'd0;
+  assign vec_old_vld        = 1'b0;
 
   // ============================================================
   // LSU
@@ -1359,6 +1614,9 @@ module A910_cpu
     .idu_lsu_ld_iid                 (idu_lsu_ld_iid),
     .idu_lsu_ld_lch_entry           (idu_lsu_ld_lch_entry),
     .idu_lsu_ld_oldest              (idu_lsu_ld_oldest),
+    .idu_lsu_ld_vec                 (idu_lsu_ld_vec),
+    .idu_lsu_ld_uop_idx             (idu_lsu_ld_uop_idx),
+    .idu_lsu_ld_last                (idu_lsu_ld_last),
     .idu_lsu_ld_preg                (idu_lsu_ld_preg),
     .idu_lsu_ld_offset              (idu_lsu_ld_offset),
     //.idu_lsu_ld_offset_plus         (idu_lsu_ld_offset_plus),
@@ -1371,6 +1629,11 @@ module A910_cpu
     .idu_lsu_st_iid                 (idu_lsu_st_iid),
     .idu_lsu_st_lch_entry           (idu_lsu_st_lch_entry),
     .idu_lsu_st_sdiq_entry          (idu_lsu_st_sdiq_entry),
+    .idu_lsu_st_vec                 (idu_lsu_st_vec),
+    .idu_lsu_st_uop_idx             (idu_lsu_st_uop_idx),
+    .idu_lsu_st_last                (idu_lsu_st_last),
+    .vec_st_cmit_vld                (vec_st_cmit_vld),
+    .vec_st_cmit_iid                (vec_st_cmit_iid),
     .idu_lsu_st_oldest              (idu_lsu_st_oldest),
     .idu_lsu_st_offset              (idu_lsu_st_offset),
     //.idu_lsu_st_offset_plus         (idu_lsu_st_offset_plus),
@@ -1521,7 +1784,14 @@ module A910_cpu
     .lsu_rtu_wb_pipe4_expt_addr     (lsu_rtu_wb_pipe4_expt_addr),
     .lsu_rtu_wb_pipe4_flush         (lsu_rtu_wb_pipe4_flush),
     .lsu_rtu_wb_pipe4_iid           (lsu_rtu_wb_pipe4_iid),
-    .lsu_rtu_wb_pipe4_spec_fail     (lsu_rtu_wb_pipe4_spec_fail)
+    .lsu_rtu_wb_pipe4_spec_fail     (lsu_rtu_wb_pipe4_spec_fail),
+    .lsu_idu_wb_pipe3_wb_preg_vec   (lsu_idu_wb_pipe3_wb_preg_vec),
+    .lsu_idu_wb_pipe3_wb_uop_idx    (lsu_idu_wb_pipe3_wb_uop_idx),
+    .lsu_idu_beat_done              (lsu_idu_beat_done),
+    .lsu_idu_sq_pop_vld             (lsu_idu_sq_pop_vld),
+    .lsu_idu_sq_pop_uop_idx         (lsu_idu_sq_pop_uop_idx),
+    .lsu_rtu_wb_pipe3_wb_preg_vec   (lsu_rtu_wb_pipe3_wb_preg_vec),
+    .lsu_rtu_wb_pipe4_vec           (lsu_rtu_wb_pipe4_vec)
 
     // Store queue wakeup
  // .sq_data_depd_wakeup            (),
@@ -1609,6 +1879,8 @@ module A910_cpu
     .lsu_rtu_wb_pipe4_expt_addr         (lsu_rtu_wb_pipe4_expt_addr),
     .lsu_rtu_wb_pipe4_flush             (lsu_rtu_wb_pipe4_flush),
     .lsu_rtu_wb_pipe4_spec_fail         (lsu_rtu_wb_pipe4_spec_fail),
+    .lsu_rtu_wb_pipe3_wb_preg_vec       (lsu_rtu_wb_pipe3_wb_preg_vec),
+    .lsu_rtu_wb_pipe4_vec               (lsu_rtu_wb_pipe4_vec),
 
     // ---- 其它异常源 (非法指令 / 取指故障 …): 待接, 见末尾清单 ----
     .other_expt_vld                     (other_expt_vld),
@@ -1786,11 +2058,17 @@ module A910_cpu
   //    "组合的 pre" 改成"寄存的 data_vld"正是为了这件事 —— 配对错了会写错号。
   // ⚠️ 只做"或", 不做寄存/打拍: 门是电平保持的 (RTU_preg 里 `wb_ok` 自己锁存)。
   // ===========================================================================
+  // 第 6 写口: RVV vset 的标量 rd (S3)。漏掉这一项 ⇒ RTU 的 preg 永远等不到
+  // 写回事件, 静默永久出池。
+  wire [63:0] vset_wb_mask =
+        {64{rvv_idu_vset_wb_vld}} & (64'd1 << rvv_idu_vset_wb_preg);
+
   wire [63:0] preg_wb_mask =
         ({64{iu_idu_ex2_pipe0_wb_preg_vld}} & iu_idu_ex2_pipe0_wb_preg_expand)
       | ({64{iu_idu_ex2_pipe1_wb_preg_vld}} & iu_idu_ex2_pipe1_wb_preg_expand)
       | ({64{iu_idu_ex2_pipe2_wb_preg_vld}} & iu_idu_ex2_pipe2_wb_preg_expand)
-      | ({64{lsu_rtu_wb_pipe3_wb_preg_vld}} & lsu_rtu_wb_pipe3_wb_preg_expand);
+      | ({64{lsu_rtu_wb_pipe3_wb_preg_vld}} & lsu_rtu_wb_pipe3_wb_preg_expand)
+      | vset_wb_mask;
 
   RTU u_rtu (
     .cpu_clk                    (clk),
@@ -2139,11 +2417,11 @@ module A910_cpu
     .iu_chgflw_vld      (iu_chgflw_vld),
     .iu_chgflw_pc       (iu_chgflw_pc),
 
-    // 异常源: 取指地址非对齐
-    .expt_vld           (other_expt_vld),
-    .expt_iid           (other_expt_iid),
-    .expt_cause         (other_expt_cause),
-    .expt_tval          (other_expt_tval),
+    // 异常源: 取指地址非对齐 (S5 起先与 RVV 源做年龄锦标赛, 再进 other_expt_*)
+    .expt_vld           (beu_expt_vld),
+    .expt_iid           (beu_expt_iid),
+    .expt_cause         (beu_expt_cause),
+    .expt_tval          (beu_expt_tval),
 
     // 观察口
     .o_actual_npc       (),

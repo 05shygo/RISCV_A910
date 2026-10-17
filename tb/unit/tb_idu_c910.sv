@@ -15,6 +15,8 @@
 //==========================================================
 
 `timescale 1ns/1ps
+// 2026-10-17 S8: ct_idu_top 用了 RVV 的 L/S 结构体类型
+`include "rvv_backend.svh"
 
 module tb_idu_c910;
 
@@ -81,10 +83,29 @@ module tb_idu_c910;
   wire       lsu_idu_lsiq_pop0_vld;
   wire       lsu_idu_lsiq_pop1_vld;
   wire [ 7:0] lsu_idu_lsiq_pop_entry;
+  wire [ 7:0] lsu_idu_beat_done;
+  wire       rvv_lsu_uop_valid;
+  wire       rvv_lsu_resp_ready;
+  wire       rtu_yy_xx_commit0;
+  wire [ 6:0] rtu_yy_xx_commit0_iid;
+  wire       rtu_yy_xx_commit1;
+  wire [ 6:0] rtu_yy_xx_commit1_iid;
+  wire       rtu_yy_xx_commit2;
+  wire [ 6:0] rtu_yy_xx_commit2_iid;
+  wire       lsu_idu_wb_pipe3_wb_preg_vec;
+  wire [ 4:0] lsu_idu_wb_pipe3_wb_uop_idx;
+  wire [ 6:0] lsu_idu_wb_pipe3_wb_preg_iid;
+  wire       lsu_idu_sq_pop_vld;
+  wire [ 4:0] lsu_idu_sq_pop_uop_idx;
   wire [ 3:0] lsu_sdiq_has_in_sq_sdiq;
   wire [ 5:0] rtu_preg_raddr1;
   wire [ 5:0] rtu_preg_raddr2;
   wire [ 5:0] rtu_csr_src_raddr;
+  wire       rvv_vec_inst_ready;
+  wire       rvv_idu_vset_wb_vld;
+  wire [ 5:0] rvv_idu_vset_wb_preg;
+  wire [31:0] rvv_idu_vset_wb_data;
+  wire [ 6:0] rvv_idu_vset_wb_iid;
 
   // ---- 输出 ----
   wire [ 1:0] idu_accept_num;
@@ -92,6 +113,10 @@ module tb_idu_c910;
   wire       idu_rtu_ir_preg1_alloc_vld;
   wire       idu_rtu_ir_preg2_alloc_vld;
   wire [63:0] idu_rtu_pst_preg_dealloc_mask;
+  wire       rvv_lsu_uop_ready;
+  wire       rvv_lsu_resp_valid;
+  wire       vec_st_cmit_vld;
+  wire [ 6:0] vec_st_cmit_iid;
   wire       idu_aiq_sel;
   wire [ 6:0] idu_aiq_iid;
   wire [ 5:0] idu_aiq_dst_preg;
@@ -130,6 +155,12 @@ module tb_idu_c910;
   wire [ 7:0] idu_lsu_st_lch_entry;
   wire       idu_lsu_st_oldest;
   wire [ 3:0] idu_lsu_st_sdiq_entry;
+  wire       idu_lsu_ld_vec;
+  wire [ 4:0] idu_lsu_ld_uop_idx;
+  wire       idu_lsu_ld_last;
+  wire       idu_lsu_st_vec;
+  wire [ 4:0] idu_lsu_st_uop_idx;
+  wire       idu_lsu_st_last;
   wire       idu_lsu_sdiq_sel;
   wire [ 3:0] idu_lsu_rf_pipe5_sdiq_entry;
   wire [31:0] idu_lsu_rf_pipe5_src0;
@@ -185,6 +216,22 @@ module tb_idu_c910;
   wire [31:0] rtu_preg_rdata1;
   wire [31:0] rtu_preg_rdata2;
   wire [31:0] rtu_csr_src_rdata;
+  wire       idu_vec_inst_valid;
+  wire [ 6:0] idu_vec_inst_iid;
+  wire [31:0] idu_vec_inst_pc;
+  wire [ 1:0] idu_vec_inst_opcode;
+  wire [24:0] idu_vec_inst_bits;
+  wire       idu_vec_src0_vld;
+  wire [31:0] idu_vec_src0_data;
+  wire [ 5:0] idu_vec_src0_preg;
+  wire       idu_vec_src0_wb;
+  wire       idu_vec_src1_vld;
+  wire [31:0] idu_vec_src1_data;
+  wire [ 5:0] idu_vec_src1_preg;
+  wire       idu_vec_src1_wb;
+  wire [ 5:0] idu_vec_dst_preg;
+  wire       idu_vec_dst_vld;
+  wire [ 4:0] idu_vec_dst_reg;
 
   assign forever_cpuclk = clk;
   assign cpurst_b       = rst_n;
@@ -230,10 +277,29 @@ module tb_idu_c910;
   assign lsu_idu_lsiq_pop0_vld            = 1'b0;
   assign lsu_idu_lsiq_pop1_vld            = 1'b0;
   assign lsu_idu_lsiq_pop_entry           = 8'b0;
+  assign lsu_idu_beat_done                = 8'b0;
+  assign rvv_lsu_uop_valid                = 1'b0;
+  assign rvv_lsu_resp_ready               = 1'b0;
+  assign rtu_yy_xx_commit0                = 1'b0;
+  assign rtu_yy_xx_commit0_iid            = 7'b0;
+  assign rtu_yy_xx_commit1                = 1'b0;
+  assign rtu_yy_xx_commit1_iid            = 7'b0;
+  assign rtu_yy_xx_commit2                = 1'b0;
+  assign rtu_yy_xx_commit2_iid            = 7'b0;
+  assign lsu_idu_wb_pipe3_wb_preg_vec     = 1'b0;
+  assign lsu_idu_wb_pipe3_wb_uop_idx      = 5'b0;
+  assign lsu_idu_wb_pipe3_wb_preg_iid     = 7'b0;
+  assign lsu_idu_sq_pop_vld               = 1'b0;
+  assign lsu_idu_sq_pop_uop_idx           = 5'b0;
   assign lsu_sdiq_has_in_sq_sdiq          = 4'b0;
   assign rtu_preg_raddr1                  = 6'b0;
   assign rtu_preg_raddr2                  = 6'b0;
   assign rtu_csr_src_raddr                = 6'b0;
+  assign rvv_vec_inst_ready               = 1'b0;
+  assign rvv_idu_vset_wb_vld              = 1'b0;
+  assign rvv_idu_vset_wb_preg             = 6'b0;
+  assign rvv_idu_vset_wb_data             = 32'b0;
+  assign rvv_idu_vset_wb_iid              = 7'b0;
 
   // ROB 不满 ⇒ 允许派遣; 不冲刷; 乘除单元不忙
   assign md_unit_stall    = 1'b0;
@@ -290,10 +356,29 @@ module tb_idu_c910;
     .lsu_idu_lsiq_pop0_vld            (lsu_idu_lsiq_pop0_vld           ),
     .lsu_idu_lsiq_pop1_vld            (lsu_idu_lsiq_pop1_vld           ),
     .lsu_idu_lsiq_pop_entry           (lsu_idu_lsiq_pop_entry          ),
+    .lsu_idu_beat_done                (lsu_idu_beat_done               ),
+    .rvv_lsu_uop_valid                (rvv_lsu_uop_valid               ),
+    .rvv_lsu_resp_ready               (rvv_lsu_resp_ready              ),
+    .rtu_yy_xx_commit0                (rtu_yy_xx_commit0               ),
+    .rtu_yy_xx_commit0_iid            (rtu_yy_xx_commit0_iid           ),
+    .rtu_yy_xx_commit1                (rtu_yy_xx_commit1               ),
+    .rtu_yy_xx_commit1_iid            (rtu_yy_xx_commit1_iid           ),
+    .rtu_yy_xx_commit2                (rtu_yy_xx_commit2               ),
+    .rtu_yy_xx_commit2_iid            (rtu_yy_xx_commit2_iid           ),
+    .lsu_idu_wb_pipe3_wb_preg_vec     (lsu_idu_wb_pipe3_wb_preg_vec    ),
+    .lsu_idu_wb_pipe3_wb_uop_idx      (lsu_idu_wb_pipe3_wb_uop_idx     ),
+    .lsu_idu_wb_pipe3_wb_preg_iid     (lsu_idu_wb_pipe3_wb_preg_iid    ),
+    .lsu_idu_sq_pop_vld               (lsu_idu_sq_pop_vld              ),
+    .lsu_idu_sq_pop_uop_idx           (lsu_idu_sq_pop_uop_idx          ),
     .lsu_sdiq_has_in_sq_sdiq          (lsu_sdiq_has_in_sq_sdiq         ),
     .rtu_preg_raddr1                  (rtu_preg_raddr1                 ),
     .rtu_preg_raddr2                  (rtu_preg_raddr2                 ),
     .rtu_csr_src_raddr                (rtu_csr_src_raddr               ),
+    .rvv_vec_inst_ready               (rvv_vec_inst_ready              ),
+    .rvv_idu_vset_wb_vld              (rvv_idu_vset_wb_vld             ),
+    .rvv_idu_vset_wb_preg             (rvv_idu_vset_wb_preg            ),
+    .rvv_idu_vset_wb_data             (rvv_idu_vset_wb_data            ),
+    .rvv_idu_vset_wb_iid              (rvv_idu_vset_wb_iid             ),
     .rtu_idu_rob_full                 (rtu_idu_rob_full                ),
     .rtu_yy_xx_flush                  (rtu_yy_xx_flush                 ),
     .md_unit_stall                    (md_unit_stall                   ),
@@ -314,6 +399,10 @@ module tb_idu_c910;
     .idu_rtu_ir_preg1_alloc_vld       (idu_rtu_ir_preg1_alloc_vld      ),
     .idu_rtu_ir_preg2_alloc_vld       (idu_rtu_ir_preg2_alloc_vld      ),
     .idu_rtu_pst_preg_dealloc_mask    (idu_rtu_pst_preg_dealloc_mask   ),
+    .rvv_lsu_uop_ready                (rvv_lsu_uop_ready               ),
+    .rvv_lsu_resp_valid               (rvv_lsu_resp_valid              ),
+    .vec_st_cmit_vld                  (vec_st_cmit_vld                 ),
+    .vec_st_cmit_iid                  (vec_st_cmit_iid                 ),
     .idu_aiq_sel                      (idu_aiq_sel                     ),
     .idu_aiq_iid                      (idu_aiq_iid                     ),
     .idu_aiq_dst_preg                 (idu_aiq_dst_preg                ),
@@ -352,6 +441,12 @@ module tb_idu_c910;
     .idu_lsu_st_lch_entry             (idu_lsu_st_lch_entry            ),
     .idu_lsu_st_oldest                (idu_lsu_st_oldest               ),
     .idu_lsu_st_sdiq_entry            (idu_lsu_st_sdiq_entry           ),
+    .idu_lsu_ld_vec                   (idu_lsu_ld_vec                  ),
+    .idu_lsu_ld_uop_idx               (idu_lsu_ld_uop_idx              ),
+    .idu_lsu_ld_last                  (idu_lsu_ld_last                 ),
+    .idu_lsu_st_vec                   (idu_lsu_st_vec                  ),
+    .idu_lsu_st_uop_idx               (idu_lsu_st_uop_idx              ),
+    .idu_lsu_st_last                  (idu_lsu_st_last                 ),
     .idu_lsu_sdiq_sel                 (idu_lsu_sdiq_sel                ),
     .idu_lsu_rf_pipe5_sdiq_entry      (idu_lsu_rf_pipe5_sdiq_entry     ),
     .idu_lsu_rf_pipe5_src0            (idu_lsu_rf_pipe5_src0           ),
@@ -406,7 +501,23 @@ module tb_idu_c910;
     .rtu_preg_rdata0                  (rtu_preg_rdata0                 ),
     .rtu_preg_rdata1                  (rtu_preg_rdata1                 ),
     .rtu_preg_rdata2                  (rtu_preg_rdata2                 ),
-    .rtu_csr_src_rdata                (rtu_csr_src_rdata               )
+    .rtu_csr_src_rdata                (rtu_csr_src_rdata               ),
+    .idu_vec_inst_valid               (idu_vec_inst_valid              ),
+    .idu_vec_inst_iid                 (idu_vec_inst_iid                ),
+    .idu_vec_inst_pc                  (idu_vec_inst_pc                 ),
+    .idu_vec_inst_opcode              (idu_vec_inst_opcode             ),
+    .idu_vec_inst_bits                (idu_vec_inst_bits               ),
+    .idu_vec_src0_vld                 (idu_vec_src0_vld                ),
+    .idu_vec_src0_data                (idu_vec_src0_data               ),
+    .idu_vec_src0_preg                (idu_vec_src0_preg               ),
+    .idu_vec_src0_wb                  (idu_vec_src0_wb                 ),
+    .idu_vec_src1_vld                 (idu_vec_src1_vld                ),
+    .idu_vec_src1_data                (idu_vec_src1_data               ),
+    .idu_vec_src1_preg                (idu_vec_src1_preg               ),
+    .idu_vec_src1_wb                  (idu_vec_src1_wb                 ),
+    .idu_vec_dst_preg                 (idu_vec_dst_preg                ),
+    .idu_vec_dst_vld                  (idu_vec_dst_vld                 ),
+    .idu_vec_dst_reg                  (idu_vec_dst_reg                 )
   );
 
   //==========================================================

@@ -26,6 +26,10 @@ module lsu_ld_dc #(
     //input  logic                          ld_ag_secd,
     input  logic                          ld_ag_sign_extend,
     input  logic [6:0]                    ld_ag_iid,
+    // 2026-10-17 S7: 向量 beat
+    input  logic                          ld_ag_vec,
+    input  logic [4:0]                    ld_ag_uop_idx,
+    input  logic                          ld_ag_last,
     input  logic [LSIQ_ENTRY-1:0]         ld_ag_lsid,
     input  logic                          ld_ag_old,
     input  logic [5:0]                    ld_ag_preg,
@@ -78,6 +82,10 @@ module lsu_ld_dc #(
     //output logic                          ld_dc_secd,        // 2026-10-15 停用
     output logic                          ld_dc_sign_extend,
     output logic [6:0]                    ld_dc_iid,
+    // 2026-10-17 S7: 向量 beat
+    output logic                          ld_dc_vec,
+    output logic [4:0]                    ld_dc_uop_idx,
+    output logic                          ld_dc_last,
     output logic [LSIQ_ENTRY-1:0]         ld_dc_lsid,
     output logic                          ld_dc_old,
     output logic [5:0]                    ld_dc_preg,
@@ -213,6 +221,9 @@ always @(posedge forever_cpuclk or negedge cpurst_b) begin
         //ld_dc_secd               <= 1'b0;
         ld_dc_sign_extend        <= 1'b0;
         ld_dc_iid[6:0]           <= 7'b0;
+        ld_dc_vec                <= 1'b0;
+        ld_dc_uop_idx[4:0]       <= 5'b0;
+        ld_dc_last               <= 1'b0;
         ld_dc_lsid[LSIQ_ENTRY-1:0] <= {LSIQ_ENTRY{1'b0}};
         ld_dc_old                <= 1'b0;
         ld_dc_preg[5:0]          <= 7'b0;
@@ -229,6 +240,9 @@ always @(posedge forever_cpuclk or negedge cpurst_b) begin
         //ld_dc_secd               <= ld_ag_secd;
         ld_dc_sign_extend        <= ld_ag_sign_extend;
         ld_dc_iid[6:0]           <= ld_ag_iid[6:0];
+        ld_dc_vec                <= ld_ag_vec;
+        ld_dc_uop_idx[4:0]       <= ld_ag_uop_idx[4:0];
+        ld_dc_last               <= ld_ag_last;
         ld_dc_lsid[LSIQ_ENTRY-1:0] <= ld_ag_lsid[LSIQ_ENTRY-1:0];
         ld_dc_old                <= ld_ag_old; // 原代码写 ld_ag_oldest，输入端口只有 ld_ag_old，注意核对RTL
         ld_dc_preg[5:0]          <= ld_ag_preg[5:0];

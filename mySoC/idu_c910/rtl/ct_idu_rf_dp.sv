@@ -60,7 +60,9 @@ module ct_idu_rf_dp (
   // Pipe3: LSIQ Load
   //==========================================================
   input  logic [7:0]     lsiq_dp_pipe3_issue_entry,
-  input  logic [59:0]    lsiq_dp_pipe3_issue_read_data,
+  input  logic [60:0]    lsiq_dp_pipe3_issue_read_data,
+  input  logic [105:0]   lsiq_dp_pipe3_vec_beat,
+  input  logic           lsiq_dp_pipe3_issue_vec,
   input  logic           lsiq_xx_pipe3_issue_en,
   // 2026-10-15 停用: 非对齐"第二半"标记 (整条链已摘, 见 ct_idu_is_lsiq_entry.sv)
   //input  logic           lsiq_pipe3_entry_unalign_2nd,
@@ -77,12 +79,18 @@ module ct_idu_rf_dp (
   //output logic           idu_lsu_ld_unalign_2nd,
   output logic [7:0]     idu_lsu_ld_lch_entry,
   output logic           idu_lsu_ld_oldest,
+  // 2026-10-17 S7: 向量 beat 标识
+  output logic           idu_lsu_ld_vec,
+  output logic [4:0]     idu_lsu_ld_uop_idx,
+  output logic           idu_lsu_ld_last,
 
   //==========================================================
   // Pipe4: LSIQ Store
   //==========================================================
   input  logic [7:0]     lsiq_dp_pipe4_issue_entry,
-  input  logic [59:0]    lsiq_dp_pipe4_issue_read_data,
+  input  logic [60:0]    lsiq_dp_pipe4_issue_read_data,
+  input  logic [105:0]   lsiq_dp_pipe4_vec_beat,
+  input  logic           lsiq_dp_pipe4_issue_vec,
   input  logic           lsiq_xx_pipe4_issue_en,
   //input  logic           lsiq_pipe4_entry_unalign_2nd,
   input  logic           lsiq_pipe4_entry_old,
@@ -98,12 +106,20 @@ module ct_idu_rf_dp (
   output logic [7:0]     idu_lsu_st_lch_entry,
   output logic           idu_lsu_st_oldest,
   output logic [3:0]     idu_lsu_st_sdiq_entry,
+  // 2026-10-17 S7: 向量 beat 标识
+  output logic           idu_lsu_st_vec,
+  output logic [4:0]     idu_lsu_st_uop_idx,
+  output logic           idu_lsu_st_last,
 
   //==========================================================
   // Pipe5: SDIQ
   //==========================================================
   input  logic [3:0]     sdiq_dp_issue_entry,
   input  logic [7:0]     sdiq_dp_issue_read_data,
+  // 2026-10-17 S7: 向量 store beat 的数据旁路 (S8 fill 引擎)
+  input  logic           sdiq_dp_issue_vec,
+  input  logic [3:0]     vec_sdiq_issue_entry,
+  input  logic [31:0]    vec_sd_data,
   input  logic           sdiq_xx_issue_en,
   input  logic [31:0]    prf_dp_rf_pipe5_src0_data,
   output logic [5:0]     dp_prf_rf_pipe5_src0_preg,
@@ -177,7 +193,14 @@ parameter BIQ_OPCODE            = 31;
 //----------------------------------------------------------
 //                    LSIQ Parameters
 //----------------------------------------------------------
-parameter LSIQ_WIDTH             = 60;
+parameter LSIQ_WIDTH             = 61;      // S7: 60→61
+parameter LSIQ_VEC               = 60;      // S7: anchor 标记
+parameter VEC_BEAT_OPCODE        = 105;     // [105:74]
+parameter VEC_BEAT_ADDR          = 73;      // [73:42]
+parameter VEC_BEAT_SDIQ          = 41;      // [41:38]
+parameter VEC_BEAT_UOPIDX        = 37;      // [37:33]
+parameter VEC_BEAT_LAST          = 32;
+parameter VEC_BEAT_SDATA         = 31;      // [31:0]
 parameter LSIQ_IID               = 59;
 parameter LSIQ_SDIQ_ENTRY        = 52;
 parameter LSIQ_STORE             = 48;
@@ -258,6 +281,8 @@ logic [7:0]            rf_pipe3_iq_entry;
 //logic                  rf_pipe3_2nd;    // 2026-10-15 停用: 非对齐第二半
 logic                  rf_pipe3_old;
 logic [LSIQ_WIDTH-1:0] rf_pipe3_data;
+logic [105:0] rf_pipe3_vec_beat;
+logic         rf_pipe3_issue_vec;
 logic                  rf_pipe3_prf_src0_preg_updt_vld;
 logic [5:0]            rf_pipe3_prf_src0_preg;
 logic [1:0]            pipe3_decd_inst_size;
@@ -274,6 +299,8 @@ logic [7:0]            rf_pipe4_iq_entry;
 //logic                  rf_pipe4_2nd;    // 2026-10-15 停用: 非对齐第二半
 logic                  rf_pipe4_old;
 logic [LSIQ_WIDTH-1:0] rf_pipe4_data;
+logic [105:0] rf_pipe4_vec_beat;
+logic         rf_pipe4_issue_vec;
 logic                  rf_pipe4_prf_src0_preg_updt_vld;
 logic [5:0]            rf_pipe4_prf_src0_preg;
 logic [1:0]            pipe4_decd_inst_size;
@@ -289,6 +316,7 @@ logic [3:0]            rf_pipe5_iq_entry;
 logic                  rf_pipe5_prf_src0_preg_updt_vld;
 logic [5:0]            rf_pipe5_prf_src0_preg;
 logic [31:0]           rf_pipe5_src0_data;
+logic                  rf_pipe5_vec;
 
 //----------------------------------------------------------
 // Pipe6
@@ -571,12 +599,16 @@ begin
     //rf_pipe3_2nd                  <= 1'b0;
     rf_pipe3_old                  <= 1'b0;
     rf_pipe3_data[LSIQ_WIDTH-1:0] <= {LSIQ_WIDTH{1'b0}};
+    rf_pipe3_vec_beat[105:0]      <= 106'b0;
+    rf_pipe3_issue_vec            <= 1'b0;
   end
   else if(lsiq_xx_pipe3_issue_en) begin
     rf_pipe3_iq_entry[7:0]        <= lsiq_dp_pipe3_issue_entry[7:0];
     //rf_pipe3_2nd                  <= lsiq_pipe3_entry_unalign_2nd;
     rf_pipe3_old                  <= lsiq_pipe3_entry_old;
     rf_pipe3_data[LSIQ_WIDTH-1:0] <= lsiq_dp_pipe3_issue_read_data[LSIQ_WIDTH-1:0];
+    rf_pipe3_vec_beat[105:0]      <= lsiq_dp_pipe3_vec_beat[105:0];
+    rf_pipe3_issue_vec            <= lsiq_dp_pipe3_issue_vec;
   end
   else begin
     rf_pipe3_iq_entry[7:0]        <= rf_pipe3_iq_entry[7:0];
@@ -625,16 +657,27 @@ assign rf_pipe3_src0_data[31:0] = prf_dp_rf_pipe3_src0_data[31:0];
 //----------------------------------------------------------
 //                Output to Execution Units
 //----------------------------------------------------------
+// 2026-10-17 S7: anchor beat 覆盖 —— 地址直接当基址 (offset 恒 0),
+// 目的 preg = uop_idx (S8 用 {iid,uop_idx} 把数据拼回向量寄存器),
+// oldest 恒 0 (保守建 LQ, 见计划 §9.10)。
 assign idu_lsu_ld_iid[6:0]          = rf_pipe3_data[LSIQ_IID:LSIQ_IID-6];
-assign idu_lsu_ld_preg[5:0]         = rf_pipe3_data[LSIQ_DST_PREG:LSIQ_DST_PREG-5];
-assign idu_lsu_ld_src0[31:0]        = rf_pipe3_src0_data[31:0];
-assign idu_lsu_ld_offset[11:0]      = pipe3_decd_offset[11:0];
+assign idu_lsu_ld_preg[5:0]         = rf_pipe3_issue_vec
+                                      ? {1'b0, rf_pipe3_vec_beat[VEC_BEAT_UOPIDX-:5]}
+                                      : rf_pipe3_data[LSIQ_DST_PREG:LSIQ_DST_PREG-5];
+assign idu_lsu_ld_src0[31:0]        = rf_pipe3_issue_vec
+                                      ? rf_pipe3_vec_beat[VEC_BEAT_ADDR-:32]
+                                      : rf_pipe3_src0_data[31:0];
+assign idu_lsu_ld_offset[11:0]      = rf_pipe3_issue_vec ? 12'b0 : pipe3_decd_offset[11:0];
 //assign idu_lsu_ld_offset_plus[12:0] = pipe3_decd_offset_plus[12:0];
 assign idu_lsu_ld_sign_extend       = pipe3_decd_sign_extend;
 assign idu_lsu_ld_inst_size[1:0]    = pipe3_decd_inst_size[1:0];
 //assign idu_lsu_ld_unalign_2nd       = rf_pipe3_2nd;
 assign idu_lsu_ld_lch_entry[7:0]    = rf_pipe3_iq_entry[7:0];
-assign idu_lsu_ld_oldest            = rf_pipe3_old;
+assign idu_lsu_ld_oldest            = rf_pipe3_issue_vec ? 1'b0 : rf_pipe3_old;
+assign idu_lsu_ld_vec               = rf_pipe3_issue_vec;
+assign idu_lsu_ld_uop_idx[4:0]      = rf_pipe3_vec_beat[VEC_BEAT_UOPIDX-:5];
+assign idu_lsu_ld_last              = rf_pipe3_issue_vec
+                                      ? rf_pipe3_vec_beat[VEC_BEAT_LAST] : 1'b1;
 
 //==========================================================
 //                    Pipe4 Data Path
@@ -649,12 +692,16 @@ begin
     //rf_pipe4_2nd                  <= 1'b0;
     rf_pipe4_old                  <= 1'b0;
     rf_pipe4_data[LSIQ_WIDTH-1:0] <= {LSIQ_WIDTH{1'b0}};
+    rf_pipe4_vec_beat[105:0]      <= 106'b0;
+    rf_pipe4_issue_vec            <= 1'b0;
   end
   else if(lsiq_xx_pipe4_issue_en) begin
     rf_pipe4_iq_entry[7:0]        <= lsiq_dp_pipe4_issue_entry[7:0];
     //rf_pipe4_2nd                  <= lsiq_pipe4_entry_unalign_2nd;
     rf_pipe4_old                  <= lsiq_pipe4_entry_old;
     rf_pipe4_data[LSIQ_WIDTH-1:0] <= lsiq_dp_pipe4_issue_read_data[LSIQ_WIDTH-1:0];
+    rf_pipe4_vec_beat[105:0]      <= lsiq_dp_pipe4_vec_beat[105:0];
+    rf_pipe4_issue_vec            <= lsiq_dp_pipe4_issue_vec;
   end
   else begin
     rf_pipe4_iq_entry[7:0]        <= rf_pipe4_iq_entry[7:0];
@@ -704,14 +751,22 @@ assign rf_pipe4_src0_data[31:0] = prf_dp_rf_pipe4_src0_data[31:0];
 //----------------------------------------------------------
 assign idu_lsu_st_iid[6:0]          = rf_pipe4_data[LSIQ_IID:LSIQ_IID-6];
 //assign idu_lsu_st_preg[5:0]         = rf_pipe4_data[LSIQ_DST_PREG:LSIQ_DST_PREG-5];
-assign idu_lsu_st_src0[31:0]        = rf_pipe4_src0_data[31:0];
-assign idu_lsu_st_offset[11:0]      = pipe4_decd_offset[11:0];
+assign idu_lsu_st_src0[31:0]        = rf_pipe4_issue_vec
+                                      ? rf_pipe4_vec_beat[VEC_BEAT_ADDR-:32]
+                                      : rf_pipe4_src0_data[31:0];
+assign idu_lsu_st_offset[11:0]      = rf_pipe4_issue_vec ? 12'b0 : pipe4_decd_offset[11:0];
 //assign idu_lsu_st_offset_plus[12:0] = pipe4_decd_offset_plus[12:0];
 assign idu_lsu_st_inst_size[1:0]    = pipe4_decd_inst_size[1:0];
 //assign idu_lsu_st_unalign_2nd       = rf_pipe4_2nd;
 assign idu_lsu_st_lch_entry[7:0]    = rf_pipe4_iq_entry[7:0];
-assign idu_lsu_st_oldest            = rf_pipe4_old;
-assign idu_lsu_st_sdiq_entry[3:0]   = rf_pipe4_data[LSIQ_SDIQ_ENTRY:LSIQ_SDIQ_ENTRY-3];
+assign idu_lsu_st_oldest            = rf_pipe4_issue_vec ? 1'b0 : rf_pipe4_old;
+assign idu_lsu_st_sdiq_entry[3:0]   = rf_pipe4_issue_vec
+                                      ? rf_pipe4_vec_beat[VEC_BEAT_SDIQ-:4]
+                                      : rf_pipe4_data[LSIQ_SDIQ_ENTRY:LSIQ_SDIQ_ENTRY-3];
+assign idu_lsu_st_vec               = rf_pipe4_issue_vec;
+assign idu_lsu_st_uop_idx[4:0]      = rf_pipe4_vec_beat[VEC_BEAT_UOPIDX-:5];
+assign idu_lsu_st_last              = rf_pipe4_issue_vec
+                                      ? rf_pipe4_vec_beat[VEC_BEAT_LAST] : 1'b1;
 
 //==========================================================
 //                    Pipe5 Data Path
@@ -723,12 +778,15 @@ always @(posedge forever_cpuclk or negedge cpurst_b)
 begin
   if(!cpurst_b) begin
     rf_pipe5_iq_entry[3:0] <= 4'b0;
+    rf_pipe5_vec           <= 1'b0;
   end
   else if(sdiq_xx_issue_en) begin
     rf_pipe5_iq_entry[3:0] <= sdiq_dp_issue_entry[3:0];
+    rf_pipe5_vec           <= sdiq_dp_issue_vec;
   end
   else begin
     rf_pipe5_iq_entry[3:0] <= rf_pipe5_iq_entry[3:0];
+    rf_pipe5_vec           <= rf_pipe5_vec;
   end
 end
 
@@ -759,7 +817,9 @@ assign rf_pipe5_src0_data[31:0] = prf_dp_rf_pipe5_src0_data[31:0];
 //                Output to Execution Units
 //----------------------------------------------------------
 assign idu_lsu_rf_pipe5_sdiq_entry[3:0] = rf_pipe5_iq_entry[3:0];
-assign idu_lsu_rf_pipe5_src0[31:0]      = rf_pipe5_src0_data[31:0];
+// S7: 向量 store beat 的数据来自 fill 引擎, 不走 PRF
+assign idu_lsu_rf_pipe5_src0[31:0]      = rf_pipe5_vec ? vec_sd_data[31:0]
+                                                      : rf_pipe5_src0_data[31:0];
 
 //==========================================================
 //                    Pipe6 Data Path

@@ -24,6 +24,9 @@ module ct_idu_is_md (
   input  logic         iu_idu_ex2_pipe2_wb_preg_vld_dupx,
   input  logic [5:0]   lsu_idu_wb_pipe3_wb_preg_dupx,
   input  logic         lsu_idu_wb_pipe3_wb_preg_vld_dupx,
+  // 第 5 路唤醒: RVV vset 写回 (S3)
+  input  logic [5:0]   rvv_idu_vset_wb_preg_dupx,
+  input  logic         rvv_idu_vset_wb_preg_vld_dupx,
   input  logic         rtu_yy_xx_flush,
 
   // 【2026-10-08 新增】**单元忙 ⇒ 这一拍别发**。
@@ -378,6 +381,8 @@ ct_idu_is_md_entry x_ct_idu_is_md_entry0 (
 
     .lsu_idu_wb_pipe3_wb_preg_dupx    (lsu_idu_wb_pipe3_wb_preg_dupx    ),
     .lsu_idu_wb_pipe3_wb_preg_vld_dupx(lsu_idu_wb_pipe3_wb_preg_vld_dupx),
+    .rvv_idu_vset_wb_preg_dupx        (rvv_idu_vset_wb_preg_dupx        ),
+    .rvv_idu_vset_wb_preg_vld_dupx    (rvv_idu_vset_wb_preg_vld_dupx    ),
 
     .rtu_yy_xx_flush                 (rtu_yy_xx_flush                 ),
 
@@ -409,6 +414,8 @@ ct_idu_is_md_entry x_ct_idu_is_md_entry1 (
 
     .lsu_idu_wb_pipe3_wb_preg_dupx    (lsu_idu_wb_pipe3_wb_preg_dupx    ),
     .lsu_idu_wb_pipe3_wb_preg_vld_dupx(lsu_idu_wb_pipe3_wb_preg_vld_dupx),
+    .rvv_idu_vset_wb_preg_dupx        (rvv_idu_vset_wb_preg_dupx        ),
+    .rvv_idu_vset_wb_preg_vld_dupx    (rvv_idu_vset_wb_preg_vld_dupx    ),
 
     .rtu_yy_xx_flush                 (rtu_yy_xx_flush                 ),
 
@@ -440,6 +447,8 @@ ct_idu_is_md_entry x_ct_idu_is_md_entry2 (
 
     .lsu_idu_wb_pipe3_wb_preg_dupx    (lsu_idu_wb_pipe3_wb_preg_dupx    ),
     .lsu_idu_wb_pipe3_wb_preg_vld_dupx(lsu_idu_wb_pipe3_wb_preg_vld_dupx),
+    .rvv_idu_vset_wb_preg_dupx        (rvv_idu_vset_wb_preg_dupx        ),
+    .rvv_idu_vset_wb_preg_vld_dupx    (rvv_idu_vset_wb_preg_vld_dupx    ),
 
     .rtu_yy_xx_flush                 (rtu_yy_xx_flush                 ),
 
@@ -471,6 +480,8 @@ ct_idu_is_md_entry x_ct_idu_is_md_entry3 (
 
     .lsu_idu_wb_pipe3_wb_preg_dupx    (lsu_idu_wb_pipe3_wb_preg_dupx    ),
     .lsu_idu_wb_pipe3_wb_preg_vld_dupx(lsu_idu_wb_pipe3_wb_preg_vld_dupx),
+    .rvv_idu_vset_wb_preg_dupx        (rvv_idu_vset_wb_preg_dupx        ),
+    .rvv_idu_vset_wb_preg_vld_dupx    (rvv_idu_vset_wb_preg_vld_dupx    ),
 
     .rtu_yy_xx_flush                 (rtu_yy_xx_flush                 ),
 

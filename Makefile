@@ -93,7 +93,8 @@ VHDR := $(wildcard $(PWD)/mySoC/*.vh) $(wildcard $(PWD)/mySoC/rtu/rtl/*.vh)
 SVSRC := $(wildcard $(PWD)/tb/*.sv)
 DPIC := $(wildcard $(PWD)/dpi/*.c)
 CSRC_GM := $(wildcard $(PWD)/golden_model/*.c) $(wildcard $(PWD)/golden_model/stage/*.c) $(wildcard $(PWD)/golden_model/peripheral/*.c)
-INC  := +incdir+$(PWD)/mySoC +incdir+$(PWD)/vsrc +incdir+$(PWD)/mySoC/rtu/rtl
+INC  := +incdir+$(PWD)/mySoC +incdir+$(PWD)/vsrc +incdir+$(PWD)/mySoC/rtu/rtl \
+        +incdir+$(PWD)/mySoC/idu_c910/rtl
 DEFINES := +define+PATH=$(TESTFILE) +define+PATHHEX=$(TESTHEX) +define+PATH128=$(TESTHEX128)
 ifeq ($(IFU),1)
 DEFINES += +define+USE_IFU
@@ -230,7 +231,7 @@ CROSS     ?= riscv32-unknown-elf-
 ASM_SRCS  := $(wildcard $(PWD)/asm/*.S)
 ASM_BINS  := $(patsubst $(PWD)/asm/%.S,$(PWD)/bin/%.bin,$(ASM_SRCS))
 
-.PHONY: all build run run-all verdi clean help coremark asm muldiv-unit rtu-unit rtu-lsu-unit rtu-adapter-unit rtu-expt-unit iu-alu-unit iu-beu-unit iu-md-unit rtu-subsys-elab biu-unit a910-elab a910-run a910-difftest a910-difftest-all a910-difftest-all_wave a910-difftest-wave verdi-difftest
+.PHONY: all build run run-all verdi clean help coremark asm muldiv-unit rtu-unit rtu-lsu-unit rtu-adapter-unit rtu-expt-unit iu-alu-unit iu-beu-unit iu-md-unit rtu-subsys-elab biu-unit a910-elab rvv-elab a910-run a910-difftest a910-difftest-all a910-difftest-all_wave a910-difftest-wave verdi-difftest
 
 asm: $(ASM_BINS)
 
@@ -238,7 +239,7 @@ $(PWD)/bin/%.bin: $(PWD)/asm/%.S
 	@mkdir -p $(PWD)/bin
 	# _zicsr 不能省: asm/trap.S 用了 csrw/csrr, 而 binutils 2.43 会正确拒绝
 	# 没有 zicsr 的 CSR 指令(旧的 Xuantie binutils 2.35 放过了, 所以以前没暴露)。
-	@$(TOOLCHAIN)/$(CROSS)gcc -march=rv32im_zicsr -mabi=ilp32 -nostdlib -nostartfiles \
+	@$(TOOLCHAIN)/$(CROSS)gcc -march=rv32imv_zicsr -mabi=ilp32 -nostdlib -nostartfiles \
 	    -Wl,-Ttext=0 $< -o $(PWD)/asm/$*.elf
 	@$(TOOLCHAIN)/$(CROSS)objdump -D $(PWD)/asm/$*.elf > $(PWD)/asm/$*.dump
 	@$(TOOLCHAIN)/$(CROSS)objcopy -O binary $(PWD)/asm/$*.elf $@
@@ -582,9 +583,9 @@ idu-unit: $(IDU_UNIT_SIMV)
 #    生成器: scripts/gen_idu_smoke_tb.py
 $(IDU_UNIT_SIMV): $(IDU_UNIT_SRC) $(IDU_UNIT_TB)
 	@mkdir -p $(IDU_UNIT_BUILD)
-	$(VCS) $(VCS_FLAGS) $(INC) -top tb_idu_c910 -o $(IDU_UNIT_SIMV) \
+	$(VCS) $(VCS_FLAGS) $(INC) $(RVV_INC) $(RVV_DEFS) -top tb_idu_c910 -o $(IDU_UNIT_SIMV) \
 	  -Mdir=$(IDU_UNIT_BUILD)/csrc -l $(IDU_UNIT_BUILD)/compile.log \
-	  $(IDU_UNIT_SRC) $(IDU_UNIT_TB)
+	  $(RVV_HDR) $(IDU_UNIT_SRC) $(IDU_UNIT_TB)
 
 LSU_UNIT_BUILD := $(PWD)/obj_unit_lsu
 LSU_UNIT_SIMV  := $(LSU_UNIT_BUILD)/simv
@@ -734,13 +735,61 @@ rtu-subsys-elab:
 # ---------------------------------------------------------------------------
 A910_BUILD := $(PWD)/obj_a910
 A910_LOG   := $(A910_BUILD)/elab.log
+
+# ---------------------------------------------------------------------------
+# coralnpu RVV core 子集 (S0 编译基线, 见 doc/rvv_a910_接入修改_分阶段执行计划_zh.md §2)
+#
+# 只把 RVV 的**可综合设计文件**放进文件表:
+#   * RVV_DROP 里是三组"本计划不用"的文件:
+#       - FP 类 (falu/fdiv/freduction/sqrt7): 不开 ZVE32F_ON, 上游 BUILD 也不编;
+#       - Aligner_tb / MultiFifo_tb: 单元 TB, 不是设计;
+#       - rvv_backend_div_unit_divider.sv: **死代码** —— 上游 design/BUILD 没列它,
+#         div_unit 例化的是 common/intdivider。本修订的 rvv_backend_div.svh 已把
+#         DIV_SIGN_SRC_e 换成了 DIV_RES_t, 留着它必报 "Unknown type for port"。
+#   * common/ 里只有 20 个原语 (上游的 fp_add.sv 未拷入, 它无条件引用 fpnew_pkg)。
+#   * 不开 ZVE32F_ON / ZVT_ON / ARBITER_ON / DISPATCH3 / PRECISE_RVVTRAP ——
+#     默认配置就是本计划要的"无 FP/Zvt、PU 直连 ROB"。
+#   * RTBUF_DEPTH=128 把 `ROB_TAG_WIDTH 变成 7, 正好装 A910 的 iid (7 位);
+#     不定义时默认 4 位, 与 A910 对接会静默错位。
+# ---------------------------------------------------------------------------
+RVV_DESIGN := $(wildcard $(PWD)/mySoC/design/*.sv)
+RVV_DROP   := rvv_backend_falu.sv rvv_backend_falu_unit.sv \
+              rvv_backend_fdiv.sv rvv_backend_fdiv_unit.sv \
+              rvv_backend_fdiv_wrapper.sv rvv_backend_freduction.sv \
+              rvv_backend_sqrt7_rec7.sv rvv_backend_div_unit_divider.sv \
+              Aligner_tb.sv MultiFifo_tb.sv
+RVV_SRC    := $(filter-out $(addprefix $(PWD)/mySoC/design/,$(RVV_DROP)),$(RVV_DESIGN))
+# ⚠️ 9 个 .svh 必须**作为源文件显式喂给 VCS**, 且按依赖顺序排在最前。
+#    +incdir 只让 `include 找得到文件, 并不会主动解析它; 而好几处 .sv 根本没
+#    include 自己需要的头 (例: rvv_backend_alu_unit.sv / *_execution_p1.sv 用
+#    PIPE_DATA_t, 但只有 rvv_backend_alu_unit_addsub.sv include 了
+#    rvv_backend_alu.svh); RvvCore.sv / RvvFrontEnd.sv 更是一个 include 都没有。
+#    上游 bzl 文件表把 inc/*.svh 当 srcs 列出, 所以没暴露; VCS 文件表得照做。
+#    顺序与上游一致: rvv_backend.svh 自己 include define+opcode。
+RVV_HDR    := $(PWD)/mySoC/design/inc/rvv_backend.svh \
+              $(PWD)/mySoC/design/inc/rvv_backend_alu.svh \
+              $(PWD)/mySoC/design/inc/rvv_backend_define.svh \
+              $(PWD)/mySoC/design/inc/rvv_backend_dispatch.svh \
+              $(PWD)/mySoC/design/inc/rvv_backend_div.svh \
+              $(PWD)/mySoC/design/inc/rvv_backend_falu.svh \
+              $(PWD)/mySoC/design/inc/rvv_backend_opcode.svh \
+              $(PWD)/mySoC/design/inc/rvv_backend_pmtrdt.svh \
+              $(PWD)/mySoC/design/inc/rvv_backend_sva.svh
+RVV_COMMON := $(wildcard $(PWD)/mySoC/design/common/*.sv)
+RVV_INC    := +incdir+$(PWD)/mySoC/design/inc
+RVV_DEFS   := +define+VLEN_128 +define+RTBUF_DEPTH=128
+RVV_BUILD  := $(PWD)/obj_rvv_elab
+RVV_LOG    := $(RVV_BUILD)/elab.log
+
 A910_SRC   := $(PWD)/mySoC/A910_cpu.sv \
+              $(PWD)/mySoC/rvv_a910_bridge.sv \
               $(wildcard $(PWD)/mySoC/ifu2/rtl/*.v) \
               $(wildcard $(PWD)/mySoC/rtu/rtl/*.v) \
               $(wildcard $(PWD)/mySoC/idu_c910/rtl/*.sv) \
               $(wildcard $(PWD)/mySoC/iu/rtl/*.v) \
               $(wildcard $(PWD)/mySoC/lsu/rtl/*.sv) \
-              $(wildcard $(PWD)/mySoC/biu/rtl/*.sv)
+              $(wildcard $(PWD)/mySoC/biu/rtl/*.sv) \
+              $(RVV_HDR) $(RVV_SRC) $(RVV_COMMON)
 
 a910-elab:
 	@mkdir -p $(A910_BUILD)
@@ -749,13 +798,15 @@ a910-elab:
 	#    于是下面的计数全是 0, 这个目标就成了永远绿的假检查。
 	#    (本机时钟偏移还会让 VCS 更爱走这条捷径, 见 memory `eda-env-csh-vcs`。)
 	@rm -rf $(A910_BUILD)/simv.daidir $(A910_BUILD)/simv
-	@$(VCS) $(VCS_FLAGS) $(INC) +define+RTU_PREG64 +define+DCACHE_2KB \
+	@$(VCS) $(VCS_FLAGS) $(INC) $(RVV_INC) $(RVV_DEFS) \
+	  +define+RTU_PREG64 +define+DCACHE_2KB \
 	  -top A910_cpu -o $(A910_BUILD)/simv $(A910_SRC) > $(A910_LOG) 2>&1 || true
 	@E=$$(grep -cE 'Error-\[' $(A910_LOG) || true); \
-	 W=$$(grep -cE 'Warning-\[IWNF\]' $(A910_LOG) || true); \
-	 T=$$(grep -cE 'Warning-\[DCTTSW\]' $(A910_LOG) || true); \
-	 P=$$(grep -A2 'Warning-\[PCWM-W\]' $(A910_LOG) | grep -c 'A910_cpu.sv' || true); \
-	 echo "  Error=$$E  IWNF(悬空线)=$$W  DCTTSW(常量截断)=$$T  PCWM-W(A910_cpu.sv 里)=$$P"; \
+	 set -- $$(awk -f $(PWD)/scripts/elab_warn_count.awk $(A910_LOG)); \
+	 W=$$1; T=$$2; P=$$3; R=$$4; PO=$$5; \
+	 if [ -z "$$W" ]; then echo "  ❌ 警告计数失败 (scripts/elab_warn_count.awk)"; exit 1; fi; \
+	 echo "  Error=$$E  IWNF(悬空线)=$$W  DCTTSW(常量截断)=$$T  PCWM-W(A910_cpu.sv)=$$P"; \
+	 echo "  RVV 警告(不门禁)=$$R  其余 A910 文件 PCWM-W(既有基线, 不门禁)=$$PO"; \
 	 if [ "$$E" != "0" ]; then echo "  ❌ elaborate 失败, 见 $(A910_LOG)"; exit 1; fi; \
 	 if [ "$$W" != "0" ]; then \
 	   echo "  ❌ 有悬空线 —— 某个信号连了但没驱动 (症状是静默的, 见本目标的注释)"; \
@@ -767,6 +818,28 @@ a910-elab:
 	 if [ "$$P" != "0" ]; then \
 	   echo "  ❌ A910_cpu.sv 里 PCWM-W = $$P, 预期 0 (2026-10-10 起 RTU 的 preg 端口\n     随 PREG 档走, 与 IDU 天然同宽; 位宽差全部显式落在适配层)。\n     逐条查上面的日志 —— 每一条都可能是隐式截断。"; exit 1; fi; \
 	 echo "  ✅ A910_cpu elaborate 通过 (RTU ↔ IDU/LSU/IFU/BIU 连线已接死)"
+
+# ---------------------------------------------------------------------------
+# coralnpu RVV core 单独 elaborate (S0 编译基线)
+#
+# 目的: 在没有 A910 顶层的情况下, 单独检查 RVV 文件表 + incdir + define 是否自洽。
+# 判据: Error-[...] = 0。上游既有的 Warning 不参与门禁 —— S0 结束时把
+#       IWNF/DCTTSW/PCWM-W 全集存成 doc/rvv_a910_elab_warn_baseline.txt,
+#       后续阶段只要求"不比基线新增"。
+# ⚠️ 同 a910-elab: 必须先删 simv.daidir, 否则 VCS 会走增量捷径、一条警告都不重发
+#    (本机时钟偏移还会让它更爱走这条捷径, 见 memory `eda-env-mnt-tools`)。
+# ---------------------------------------------------------------------------
+rvv-elab:
+	@mkdir -p $(RVV_BUILD)
+	@rm -rf $(RVV_BUILD)/simv.daidir $(RVV_BUILD)/simv
+	@$(VCS) $(VCS_FLAGS) $(INC) $(RVV_INC) $(RVV_DEFS) \
+	  -top RvvCore -o $(RVV_BUILD)/simv \
+	  $(RVV_HDR) $(RVV_SRC) $(RVV_COMMON) > $(RVV_LOG) 2>&1 || true
+	@E=$$(grep -cE 'Error-\[' $(RVV_LOG) || true); \
+	 echo "  RVV Error=$$E"; \
+	 if [ "$$E" != "0" ]; then \
+	   echo "  ❌ rvv-elab 失败, 见 $(RVV_LOG)"; \
+	   grep -A6 'Error-\[' $(RVV_LOG) | head -40; exit 1; fi
 
 # ---------------------------------------------------------------------------
 # A910_cpu 整核**冒烟台** (2026-10-11 立): 乱序多发射新顶层的第一个能跑的 TB。
@@ -817,7 +890,7 @@ a910-run_smoke:
 
 $(A910_SIMV): $(A910_SRC) $(A910_TB_SRC)
 	@mkdir -p $(A910_SIM_BUILD)
-	$(VCS) $(VCS_FLAGS) $(VCS_FLAGS_EXTRA) $(INC) $(FSDB_VCS) \
+	$(VCS) $(VCS_FLAGS) $(VCS_FLAGS_EXTRA) $(INC) $(RVV_INC) $(RVV_DEFS) $(FSDB_VCS) \
 	  +define+RTU_PREG64 +define+DCACHE_2KB +define+FSDB \
 	  +define+PATH=$(TESTFILE) +define+PATHHEX=$(TESTHEX) +define+PATH128=$(TESTHEX128) \
 	  -top tb_a910_smoke -o $(A910_SIMV) -Mdir=$(A910_SIM_BUILD)/csrc \
@@ -860,7 +933,7 @@ a910-difftest: $(A910_DT_SIMV) $(PWD)/bin/$(TEST).bin $(PWD)/bin/$(TEST).hex $(P
 
 $(A910_DT_SIMV): $(A910_SRC) $(A910_DT_TB) $(DPIC) $(CSRC_GM)
 	@mkdir -p $(A910_DT_BUILD)
-	$(VCS) $(VCS_FLAGS) $(VCS_FLAGS_EXTRA) $(INC) \
+	$(VCS) $(VCS_FLAGS) $(VCS_FLAGS_EXTRA) $(INC) $(RVV_INC) $(RVV_DEFS) \
 	  -CFLAGS -DVCS -CFLAGS -I$(PWD)/golden_model/include \
 	  +define+RTU_PREG64 +define+DCACHE_2KB \
 	  +define+PATH=$(TESTFILE) +define+PATHHEX=$(TESTHEX) +define+PATH128=$(TESTHEX128) \
@@ -874,14 +947,18 @@ $(A910_DT_SIMV): $(A910_SRC) $(A910_DT_TB) $(DPIC) $(CSRC_GM)
 # ⚠️ npu_loop / npu_smoke: NPU 还在做 (2026-10-14: npu_loop 第 6 条退休就失配),
 #    先排除, 免得整套总表被两条在做中的用例染红。NPU 收尾后从这行删掉即可。
 A910_DT_SKIP ?= coremark start peri trap npu_loop npu_smoke
+# ⚠️ 2026-10-17 S9: 日志目录**不能**用 /tmp/a910_dt —— 多用户机器上常是别人 (IC1)
+#    先建的 (775, IC2 只有 others 的 r-x) ⇒ 重定向 "Permission denied" ⇒ 每个
+#    用例都被判 FAIL (但 sim.log 里其实是 PASS)。改写到自己的构建目录。
+A910_DT_LOG := $(A910_DT_BUILD)/logs
 
 a910-difftest-all: $(A910_DT_SIMV)
-	@mkdir -p /tmp/a910_dt
+	@mkdir -p $(A910_DT_LOG)
 	@pass=""; fail=""; \
 	for f in $(PWD)/bin/*.bin; do \
 	  t=$$(basename $$f .bin); \
 	  case " $(A910_DT_SKIP) " in *" $$t "*) continue;; esac; \
-	  $(MAKE) --no-print-directory a910-difftest TEST=$$t > /tmp/a910_dt/$$t.log 2>&1; \
+	  $(MAKE) --no-print-directory a910-difftest TEST=$$t > $(A910_DT_LOG)/$$t.log 2>&1; \
 	  if [ $$? -eq 0 ]; then pass="$$pass $$t"; st="PASS"; else fail="$$fail $$t"; st="FAIL"; fi; \
 	  printf "  %-16s %s\n" "$$t" "$$st"; \
 	done; \
@@ -890,7 +967,7 @@ a910-difftest-all: $(A910_DT_SIMV)
 	if [ -n "$$pass" ]; then echo "$$pass" | sed -e 's/^ //; s/ /, /g'; else echo "  (无)"; fi; \
 	echo "FAIL ($$(echo $$fail | wc -w)):"; \
 	if [ -n "$$fail" ]; then echo "$$fail" | sed -e 's/^ //; s/ /, /g'; else echo "  (无)"; fi; \
-	echo "日志: /tmp/a910_dt/<用例>.log"
+	echo "日志: $(A910_DT_LOG)/<用例>.log"
 
 # ---------------------------------------------------------------------------
 # A910 difftest 带波形版本
@@ -919,7 +996,7 @@ A910_DT_WAVE_SIMV  := $(A910_DT_WAVE_BUILD)/simv
 # 带 FSDB 波形支持的 difftest simv
 $(A910_DT_WAVE_SIMV): $(A910_SRC) $(A910_DT_TB) $(DPIC) $(CSRC_GM)
 	@mkdir -p $(A910_DT_WAVE_BUILD)
-	$(VCS) $(VCS_FLAGS) $(VCS_FLAGS_EXTRA) $(INC) $(FSDB_VCS) \
+	$(VCS) $(VCS_FLAGS) $(VCS_FLAGS_EXTRA) $(INC) $(RVV_INC) $(RVV_DEFS) $(FSDB_VCS) \
 	  -CFLAGS -DVCS -CFLAGS -I$(PWD)/golden_model/include \
 	  +define+RTU_PREG64 +define+DCACHE_2KB +define+FSDB \
 	  +define+PATH=$(TESTFILE) +define+PATHHEX=$(TESTHEX) +define+PATH128=$(TESTHEX128) \
@@ -1143,13 +1220,15 @@ A910_VERDI_TOP := tb_a910_smoke
 #    两边不一致)。
 #    缺 +incdir 还会让 `` `include "defines.vh" `` 找不到文件。
 A910_VERDI_DEFS := +define+RTU_PREG64 +define+DCACHE_2KB \
-                   +incdir+$(PWD)/mySoC +incdir+$(PWD)/vsrc +incdir+$(PWD)/mySoC/rtu/rtl
+                   +incdir+$(PWD)/mySoC +incdir+$(PWD)/vsrc +incdir+$(PWD)/mySoC/rtu/rtl \
+                   $(RVV_INC) $(RVV_DEFS)
 
 # a910-difftest 专用的 Verdi 配置（与 smoke 测试分开）
 A910_DT_VERDI_SRC := $(A910_SRC) $(A910_DT_TB)
 A910_DT_VERDI_TOP := tb_a910_difftest
 A910_DT_VERDI_DEFS := +define+RTU_PREG64 +define+DCACHE_2KB +define+FSDB \
-                      +incdir+$(PWD)/mySoC +incdir+$(PWD)/vsrc +incdir+$(PWD)/mySoC/rtu/rtl
+                      +incdir+$(PWD)/mySoC +incdir+$(PWD)/vsrc +incdir+$(PWD)/mySoC/rtu/rtl \
+                      $(RVV_INC) $(RVV_DEFS)
 
 verdi:
 	# 如果没有指定 WAVE，自动找最新的波形文件

@@ -17,6 +17,10 @@ module ct_lsu_st_ag #(
     // 2026-10-15 停用: 非对齐拆分通路的"第二条"标记, 见下方 "非对齐硬件已停用" 一节
     //input  logic         idu_lsu_st_unalign_2nd,
     input  logic [6:0]   idu_lsu_st_iid,
+    // 2026-10-17 S7: 向量 beat
+    input  logic         idu_lsu_st_vec,
+    input  logic [4:0]   idu_lsu_st_uop_idx,
+    input  logic         idu_lsu_st_last,
     input  logic [LSIQ_ENTRY-1:0]  idu_lsu_st_lch_entry,
     input  logic [SDIQ_ENTRY-1:0]  idu_lsu_st_sdiq_entry,
     input  logic         idu_lsu_st_oldest,
@@ -40,6 +44,9 @@ module ct_lsu_st_ag #(
     output logic         st_ag_dc_inst_vld,
     output logic [3:0]   st_ag_dc_rot_sel,
     output logic [6:0]   st_ag_iid,
+    output logic         st_ag_vec,
+    output logic [4:0]   st_ag_uop_idx,
+    output logic         st_ag_last,
     output logic         st_ag_inst_vld,
     output logic [LSIQ_ENTRY-1:0]   st_ag_lsid,
     output logic         st_ag_old,
@@ -104,6 +111,9 @@ module ct_lsu_st_ag #(
             // 2026-10-15 停用: st_ag_secd 改由下方常量驱动
             //st_ag_secd                    <= 1'b0;
             st_ag_iid[6:0]                <= 7'b0;
+            st_ag_vec                     <= 1'b0;
+            st_ag_uop_idx[4:0]            <= 5'b0;
+            st_ag_last                    <= 1'b0;
             st_ag_lsid[LSIQ_ENTRY-1:0]    <= {LSIQ_ENTRY{1'b0}};
             st_ag_sdid_oh[SDIQ_ENTRY-1:0] <= {SDIQ_ENTRY{1'b0}};
             st_ag_old                     <= 1'b0;
@@ -113,6 +123,9 @@ module ct_lsu_st_ag #(
             // 2026-10-15 停用: 非对齐第二条标记
             //st_ag_secd                    <= idu_lsu_st_unalign_2nd;
             st_ag_iid[6:0]                <= idu_lsu_st_iid[6:0];
+            st_ag_vec                     <= idu_lsu_st_vec;
+            st_ag_uop_idx[4:0]            <= idu_lsu_st_uop_idx[4:0];
+            st_ag_last                    <= idu_lsu_st_last;
             st_ag_lsid[LSIQ_ENTRY-1:0]    <= idu_lsu_st_lch_entry[LSIQ_ENTRY-1:0];
             st_ag_sdid_oh[SDIQ_ENTRY-1:0] <= idu_lsu_st_sdiq_entry[SDIQ_ENTRY-1:0];
             st_ag_old                     <= idu_lsu_st_oldest;

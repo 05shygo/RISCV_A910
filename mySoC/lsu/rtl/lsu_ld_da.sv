@@ -15,6 +15,10 @@ module lsu_ld_da #(
     //input  logic                          ld_dc_secd,
     input  logic                          ld_dc_sign_extend,
     input  logic [6:0]                    ld_dc_iid,
+    // 2026-10-17 S7: 向量 beat
+    input  logic                          ld_dc_vec,
+    input  logic [4:0]                    ld_dc_uop_idx,
+    input  logic                          ld_dc_last,
     input  logic [LSIQ_ENTRY-1:0]         ld_dc_lsid,
     input  logic                          ld_dc_old,
     input  logic [5:0]                    ld_dc_preg,
@@ -79,6 +83,11 @@ module lsu_ld_da #(
     //output logic                          ld_da_secd,                // 2026-10-15 停用
     output logic                          ld_da_sign_extend,
     output logic [6:0]                    ld_da_iid,
+    // 2026-10-17 S7: 向量 beat
+    output logic                          ld_da_vec,
+    output logic [4:0]                    ld_da_uop_idx,
+    output logic                          ld_da_last,
+    output logic [LSIQ_ENTRY-1:0]         ld_da_idu_beat_done,
     output logic [LSIQ_ENTRY-1:0]         ld_da_lsid,
     output logic                          ld_da_old,
     output logic [5:0]                    ld_da_preg,
@@ -277,6 +286,9 @@ always @(posedge forever_cpuclk or negedge cpurst_b) begin
     //ld_da_secd              <= 1'b0;
     ld_da_sign_extend       <= 1'b0;
     ld_da_iid               <= {IID_WIDTH+1{1'b0}};
+    ld_da_vec               <= 1'b0;
+    ld_da_uop_idx           <= 5'b0;
+    ld_da_last              <= 1'b0;
     ld_da_lsid              <= {LSIQ_ENTRY{1'b0}};
     ld_da_old               <= 1'b0;
     ld_da_preg              <= 7'b0;
@@ -301,6 +313,9 @@ always @(posedge forever_cpuclk or negedge cpurst_b) begin
     //ld_da_secd              <= ld_dc_secd;
     ld_da_sign_extend       <= ld_dc_sign_extend;
     ld_da_iid               <= ld_dc_iid;
+    ld_da_vec               <= ld_dc_vec;
+    ld_da_uop_idx           <= ld_dc_uop_idx;
+    ld_da_last              <= ld_dc_last;
     ld_da_lsid              <= ld_dc_lsid;
     ld_da_old               <= ld_dc_old;
     ld_da_preg              <= ld_dc_preg;
@@ -637,11 +652,20 @@ assign ld_da_idu_rb_full[LSIQ_ENTRY-1:0]    = {LSIQ_ENTRY{ld_da_rb_full_vld}}
                                               & ld_da_mask_lsid[LSIQ_ENTRY-1:0];
 
 // 2026-10-15 停用: boundary_first 恒 0 (对齐 load 一条就走完, 不存在"第一半")
+// 2026-10-17 S7: 向量 anchor 的**非最后 beat 绝不能 pop** —— agevec/counter 都
+// 在 pop 上更新, 提前拉会把 anchor 从年龄图删掉但 vld 还在。
 assign ld_da_idu_pop_vld                    = ld_da_inst_vld
                                               //&&  !ld_da_boundary_first
-                                              &&  !ld_da_restart_vld;
+                                              &&  !ld_da_restart_vld
+                                              &&  (!ld_da_vec || ld_da_last);
 assign ld_da_idu_pop_entry[LSIQ_ENTRY-1:0]  = {LSIQ_ENTRY{ld_da_idu_pop_vld}}
                                               & ld_da_mask_lsid[LSIQ_ENTRY-1:0];
+
+// S7: 非最后 beat 完成 ⇒ 只清 anchor 的 frz, 不动 agevec/counter
+assign ld_da_idu_beat_done[LSIQ_ENTRY-1:0]  =
+      {LSIQ_ENTRY{ld_da_inst_vld && !ld_da_restart_vld &&
+                  ld_da_vec && !ld_da_last}}
+      & ld_da_mask_lsid[LSIQ_ENTRY-1:0];
 
 // 2026-10-15 停用: 非对齐第二半请求唤醒 IDU, 已摘
 //assign ld_da_idu_secd_vld                   = ld_da_inst_vld

@@ -2,8 +2,8 @@ module ct_idu_is_lsiq (
   input  logic         cpurst_b,
   input  logic         ctrl_lsiq_create0_en,
   input  logic         ctrl_lsiq_create1_en,
-  input  logic [59:0]  dp_lsiq_create0_data,
-  input  logic [59:0]  dp_lsiq_create1_data,
+  input  logic [60:0]  dp_lsiq_create0_data,
+  input  logic [60:0]  dp_lsiq_create1_data,
   input  logic         forever_cpuclk,
   input  logic [5:0]   iu_idu_ex2_pipe0_wb_preg_dupx,
   input  logic         iu_idu_ex2_pipe0_wb_preg_vld_dupx,
@@ -25,22 +25,41 @@ module ct_idu_is_lsiq (
   input  logic [7:0]   lsu_idu_imme_wakeup,
   input  logic [5:0]   lsu_idu_wb_pipe3_wb_preg_dupx,
   input  logic         lsu_idu_wb_pipe3_wb_preg_vld_dupx,
+  // 第 5 路唤醒: RVV vset 写回 (S3)
+  input  logic [5:0]   rvv_idu_vset_wb_preg_dupx,
+  input  logic         rvv_idu_vset_wb_preg_vld_dupx,
   input  logic         rtu_yy_xx_flush,
   output logic         lsiq_ctrl_1_left_updt,
   output logic         lsiq_ctrl_full_updt,
   output logic         lsiq_rf_pipe3_issue_en,
   output logic         lsiq_rf_pipe4_issue_en,
-  output logic [59:0]  lsiq_dp_pipe3_entry_read_data,
+  output logic [60:0]  lsiq_dp_pipe3_entry_read_data,
   // 2026-10-15 停用: output logic         lsiq_pipe3_entry_unalign_2nd,
   output logic         lsiq_pipe3_entry_old,
   output logic [7:0]   lsiq_dp_pipe3_issue_entry,
-  output logic [59:0]  lsiq_dp_pipe4_entry_read_data,
+  output logic [60:0]  lsiq_dp_pipe4_entry_read_data,
   // 2026-10-15 停用: output logic         lsiq_pipe4_entry_unalign_2nd,
   output logic         lsiq_pipe4_entry_old,
-  output logic [7:0]   lsiq_dp_pipe4_issue_entry
+  output logic [7:0]   lsiq_dp_pipe4_issue_entry,
+  // 2026-10-17 S7: anchor 广播
+  input  logic [7:0]    lsiq_vec_upd_entry,      // fill 引擎: 写 beat 的表项
+  input  logic [105:0]  lsiq_vec_upd_data,       // VEC_BEAT_WIDTH
+  input  logic [7:0]    lsiq_vec_beat_rdy,       // fill 引擎: beat 可发射
+  input  logic [7:0]    lsu_idu_beat_done,       // LSU DA: 非最后 beat 完成
+  // 2026-10-17 S7: fill 引擎报"在飞的向量 L/S 里最老的 iid" (旧 old 的跨类型修正)
+  input  logic [6:0]    vec_old_iid,
+  input  logic          vec_old_vld,
+  output logic [105:0]  lsiq_dp_pipe3_vec_beat,
+  output logic [105:0]  lsiq_dp_pipe4_vec_beat,
+  output logic          lsiq_dp_pipe3_issue_vec,
+  output logic          lsiq_dp_pipe4_issue_vec,
+  output logic [7:0]    lsiq_vec_old,            // 该 anchor 是否是 LSIQ 最老项
+  output logic [7:0]    lsiq_vec_create_entry,   // 本拍建的是哪个表项 (one-hot)
+  output logic          lsiq_vec_create_vld
 );
 
-parameter LSIQ_WIDTH             = 60;
+parameter LSIQ_WIDTH             = 61;      // S7: 60→61
+parameter LSIQ_VEC               = 60;      // S7: anchor 标记
 parameter LSIQ_IID               = 59;
 parameter LSIQ_SDIQ_ENTRY        = 52;
 parameter LSIQ_STORE             = 48;
@@ -195,6 +214,27 @@ parameter LSIQ_OPCODE            = 31;
   logic [6:0]  lsiq_entry6_other_raw_rdy;
   logic [6:0]  lsiq_entry7_other_raw_rdy;
 
+  // S7: anchor beat 读数据 / vec 标记
+  logic [105:0] lsiq_entry0_read_vec_beat;
+  logic [105:0] lsiq_entry1_read_vec_beat;
+  logic [105:0] lsiq_entry2_read_vec_beat;
+  logic [105:0] lsiq_entry3_read_vec_beat;
+  logic [105:0] lsiq_entry4_read_vec_beat;
+  logic [105:0] lsiq_entry5_read_vec_beat;
+  logic [105:0] lsiq_entry6_read_vec_beat;
+  logic [105:0] lsiq_entry7_read_vec_beat;
+  logic         lsiq_entry0_vec;
+  logic         lsiq_entry1_vec;
+  logic         lsiq_entry2_vec;
+  logic         lsiq_entry3_vec;
+  logic         lsiq_entry4_vec;
+  logic         lsiq_entry5_vec;
+  logic         lsiq_entry6_vec;
+  logic         lsiq_entry7_vec;
+  logic [7:0]   lsiq_entry_vec;
+  logic [7:0]   lsiq_entry_create0_vec;
+  logic [7:0]   lsiq_entry_create1_vec;
+
   // read data
   logic [LSIQ_WIDTH-1:0] lsiq_entry0_read_data;
   logic [LSIQ_WIDTH-1:0] lsiq_entry1_read_data;
@@ -230,6 +270,21 @@ parameter LSIQ_OPCODE            = 31;
   logic        lsiq_entry5_old;
   logic        lsiq_entry6_old;
   logic        lsiq_entry7_old;
+
+// 2026-10-17 S7 (§9.10): 标量表项的 old 只看 8 个 LSIQ 表项, 看不到"A910 里还有
+// 更老的向量 store" ⇒ 会误判最老 ⇒ ld_dc_old=1 ⇒ 不建 LQ ⇒ 更老的向量 store 后到
+// 时无法触发 RAW 重放 ⇒ 静默读旧值。这里把 vec_old (fill 引擎给) 也纳入比较。
+// anchor (vec=1) 不修正: 它自己就是年龄图里的向量项。
+wire [7:0] lsiq_entry_old_fixed =
+   { (lsiq_entry7_old && !(vec_old_vld && !lsiq_entry7_vec && iid_older7(vec_old_iid, lsiq_entry7_read_data[LSIQ_IID-:7]))),
+     (lsiq_entry6_old && !(vec_old_vld && !lsiq_entry6_vec && iid_older7(vec_old_iid, lsiq_entry6_read_data[LSIQ_IID-:7]))),
+     (lsiq_entry5_old && !(vec_old_vld && !lsiq_entry5_vec && iid_older7(vec_old_iid, lsiq_entry5_read_data[LSIQ_IID-:7]))),
+     (lsiq_entry4_old && !(vec_old_vld && !lsiq_entry4_vec && iid_older7(vec_old_iid, lsiq_entry4_read_data[LSIQ_IID-:7]))),
+     (lsiq_entry3_old && !(vec_old_vld && !lsiq_entry3_vec && iid_older7(vec_old_iid, lsiq_entry3_read_data[LSIQ_IID-:7]))),
+     (lsiq_entry2_old && !(vec_old_vld && !lsiq_entry2_vec && iid_older7(vec_old_iid, lsiq_entry2_read_data[LSIQ_IID-:7]))),
+     (lsiq_entry1_old && !(vec_old_vld && !lsiq_entry1_vec && iid_older7(vec_old_iid, lsiq_entry1_read_data[LSIQ_IID-:7]))),
+     (lsiq_entry0_old && !(vec_old_vld && !lsiq_entry0_vec && iid_older7(vec_old_iid, lsiq_entry0_read_data[LSIQ_IID-:7]))) };
+
 
 //--------------------lsiq entry counter--------------------
 //if create, add entry counter
@@ -544,49 +599,49 @@ begin
              lsiq_dp_pipe3_entry_read_data[LSIQ_WIDTH-1:0] =
                lsiq_entry0_read_data[LSIQ_WIDTH-1:0];
              // 2026-10-15 停用: lsiq_pipe3_entry_unalign_2nd = unalign_2nd[0];
-             lsiq_pipe3_entry_old         = lsiq_entry0_old;
+             lsiq_pipe3_entry_old         = lsiq_entry_old_fixed[0];
            end
     8'h02: begin
              lsiq_dp_pipe3_entry_read_data[LSIQ_WIDTH-1:0] =
                lsiq_entry1_read_data[LSIQ_WIDTH-1:0];
              // 2026-10-15 停用: lsiq_pipe3_entry_unalign_2nd = unalign_2nd[1];
-             lsiq_pipe3_entry_old         = lsiq_entry1_old;
+             lsiq_pipe3_entry_old         = lsiq_entry_old_fixed[1];
            end
     8'h04: begin
              lsiq_dp_pipe3_entry_read_data[LSIQ_WIDTH-1:0] =
                lsiq_entry2_read_data[LSIQ_WIDTH-1:0];
              // 2026-10-15 停用: lsiq_pipe3_entry_unalign_2nd = unalign_2nd[2];
-             lsiq_pipe3_entry_old         = lsiq_entry2_old;
+             lsiq_pipe3_entry_old         = lsiq_entry_old_fixed[2];
            end
     8'h08: begin
              lsiq_dp_pipe3_entry_read_data[LSIQ_WIDTH-1:0] =
                lsiq_entry3_read_data[LSIQ_WIDTH-1:0];
              // 2026-10-15 停用: lsiq_pipe3_entry_unalign_2nd = unalign_2nd[3];
-             lsiq_pipe3_entry_old         = lsiq_entry3_old;
+             lsiq_pipe3_entry_old         = lsiq_entry_old_fixed[3];
            end
     8'h10: begin
              lsiq_dp_pipe3_entry_read_data[LSIQ_WIDTH-1:0] =
                lsiq_entry4_read_data[LSIQ_WIDTH-1:0];
              // 2026-10-15 停用: lsiq_pipe3_entry_unalign_2nd = unalign_2nd[4];
-             lsiq_pipe3_entry_old         = lsiq_entry4_old;
+             lsiq_pipe3_entry_old         = lsiq_entry_old_fixed[4];
            end
     8'h20: begin
              lsiq_dp_pipe3_entry_read_data[LSIQ_WIDTH-1:0] =
                lsiq_entry5_read_data[LSIQ_WIDTH-1:0];
              // 2026-10-15 停用: lsiq_pipe3_entry_unalign_2nd = unalign_2nd[5];
-             lsiq_pipe3_entry_old         = lsiq_entry5_old;
+             lsiq_pipe3_entry_old         = lsiq_entry_old_fixed[5];
            end
     8'h40: begin
              lsiq_dp_pipe3_entry_read_data[LSIQ_WIDTH-1:0] =
                lsiq_entry6_read_data[LSIQ_WIDTH-1:0];
              // 2026-10-15 停用: lsiq_pipe3_entry_unalign_2nd = unalign_2nd[6];
-             lsiq_pipe3_entry_old         = lsiq_entry6_old;
+             lsiq_pipe3_entry_old         = lsiq_entry_old_fixed[6];
            end
     8'h80: begin
              lsiq_dp_pipe3_entry_read_data[LSIQ_WIDTH-1:0] =
                lsiq_entry7_read_data[LSIQ_WIDTH-1:0];
              // 2026-10-15 停用: lsiq_pipe3_entry_unalign_2nd = unalign_2nd[7];
-             lsiq_pipe3_entry_old         = lsiq_entry7_old;
+             lsiq_pipe3_entry_old         = lsiq_entry_old_fixed[7];
            end
     default: begin
              lsiq_dp_pipe3_entry_read_data[LSIQ_WIDTH-1:0] =
@@ -604,49 +659,49 @@ begin
              lsiq_dp_pipe4_entry_read_data[LSIQ_WIDTH-1:0] =
                lsiq_entry0_read_data[LSIQ_WIDTH-1:0];
              // 2026-10-15 停用: lsiq_pipe4_entry_unalign_2nd = unalign_2nd[0];
-             lsiq_pipe4_entry_old         = lsiq_entry0_old;
+             lsiq_pipe4_entry_old         = lsiq_entry_old_fixed[0];
            end
     8'h02: begin
              lsiq_dp_pipe4_entry_read_data[LSIQ_WIDTH-1:0] =
                lsiq_entry1_read_data[LSIQ_WIDTH-1:0];
              // 2026-10-15 停用: lsiq_pipe4_entry_unalign_2nd = unalign_2nd[1];
-             lsiq_pipe4_entry_old         = lsiq_entry1_old;
+             lsiq_pipe4_entry_old         = lsiq_entry_old_fixed[1];
            end
     8'h04: begin
              lsiq_dp_pipe4_entry_read_data[LSIQ_WIDTH-1:0] =
                lsiq_entry2_read_data[LSIQ_WIDTH-1:0];
              // 2026-10-15 停用: lsiq_pipe4_entry_unalign_2nd = unalign_2nd[2];
-             lsiq_pipe4_entry_old         = lsiq_entry2_old;
+             lsiq_pipe4_entry_old         = lsiq_entry_old_fixed[2];
            end
     8'h08: begin
              lsiq_dp_pipe4_entry_read_data[LSIQ_WIDTH-1:0] =
                lsiq_entry3_read_data[LSIQ_WIDTH-1:0];
              // 2026-10-15 停用: lsiq_pipe4_entry_unalign_2nd = unalign_2nd[3];
-             lsiq_pipe4_entry_old         = lsiq_entry3_old;
+             lsiq_pipe4_entry_old         = lsiq_entry_old_fixed[3];
            end
     8'h10: begin
              lsiq_dp_pipe4_entry_read_data[LSIQ_WIDTH-1:0] =
                lsiq_entry4_read_data[LSIQ_WIDTH-1:0];
              // 2026-10-15 停用: lsiq_pipe4_entry_unalign_2nd = unalign_2nd[4];
-             lsiq_pipe4_entry_old         = lsiq_entry4_old;
+             lsiq_pipe4_entry_old         = lsiq_entry_old_fixed[4];
            end
     8'h20: begin
              lsiq_dp_pipe4_entry_read_data[LSIQ_WIDTH-1:0] =
                lsiq_entry5_read_data[LSIQ_WIDTH-1:0];
              // 2026-10-15 停用: lsiq_pipe4_entry_unalign_2nd = unalign_2nd[5];
-             lsiq_pipe4_entry_old         = lsiq_entry5_old;
+             lsiq_pipe4_entry_old         = lsiq_entry_old_fixed[5];
            end
     8'h40: begin
              lsiq_dp_pipe4_entry_read_data[LSIQ_WIDTH-1:0] =
                lsiq_entry6_read_data[LSIQ_WIDTH-1:0];
              // 2026-10-15 停用: lsiq_pipe4_entry_unalign_2nd = unalign_2nd[6];
-             lsiq_pipe4_entry_old         = lsiq_entry6_old;
+             lsiq_pipe4_entry_old         = lsiq_entry_old_fixed[6];
            end
     8'h80: begin
              lsiq_dp_pipe4_entry_read_data[LSIQ_WIDTH-1:0] =
                lsiq_entry7_read_data[LSIQ_WIDTH-1:0];
              // 2026-10-15 停用: lsiq_pipe4_entry_unalign_2nd = unalign_2nd[7];
-             lsiq_pipe4_entry_old         = lsiq_entry7_old;
+             lsiq_pipe4_entry_old         = lsiq_entry_old_fixed[7];
            end
     default: begin
              lsiq_dp_pipe4_entry_read_data[LSIQ_WIDTH-1:0] =
@@ -759,6 +814,8 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry0 (
   .lsu_idu_imme_wakeup              (lsu_idu_imme_wakeup[0]),
   .lsu_idu_wb_pipe3_wb_preg_dupx    (lsu_idu_wb_pipe3_wb_preg_dupx    ),
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx(lsu_idu_wb_pipe3_wb_preg_vld_dupx),
+  .rvv_idu_vset_wb_preg_dupx        (rvv_idu_vset_wb_preg_dupx        ),
+  .rvv_idu_vset_wb_preg_vld_dupx    (rvv_idu_vset_wb_preg_vld_dupx    ),
   .rtu_yy_xx_flush                 (rtu_yy_xx_flush                 ),
   .x_create_agevec                  (lsiq_entry0_create_agevec        ),
   .x_create_agevec_all                  (lsiq_entry0_create_agevec_all        ),
@@ -778,6 +835,12 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry0 (
   .x_sq_full_set                    (lsiq_entry0_sq_full_set          ),
   .x_store                          (lsiq_entry_store[0]              ),
   // 2026-10-15 停用: .x_unalign_2nd_set                (lsiq_entry0_unalign_2nd_set      ),
+  .x_vec_beat_rdy                   (lsiq_vec_beat_rdy[0]            ),
+  .x_vec_upd_en                     (lsiq_vec_upd_entry[0]           ),
+  .x_vec_upd_data                   (lsiq_vec_upd_data                ),
+  .x_vec_beat_done                  (lsu_idu_beat_done[0]            ),
+  .x_read_vec_beat                  (lsiq_entry0_read_vec_beat       ),
+  .x_read_vec                       (lsiq_entry0_vec                 ),
   .x_vld                            (lsiq_entry0_vld                  ),
   .old                              (lsiq_entry0_old                  )
 );
@@ -798,6 +861,8 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry1 (
   .lsu_idu_imme_wakeup              (lsu_idu_imme_wakeup[1]),
   .lsu_idu_wb_pipe3_wb_preg_dupx    (lsu_idu_wb_pipe3_wb_preg_dupx    ),
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx(lsu_idu_wb_pipe3_wb_preg_vld_dupx),
+  .rvv_idu_vset_wb_preg_dupx        (rvv_idu_vset_wb_preg_dupx        ),
+  .rvv_idu_vset_wb_preg_vld_dupx    (rvv_idu_vset_wb_preg_vld_dupx    ),
   .rtu_yy_xx_flush                 (rtu_yy_xx_flush                 ),
   .x_create_agevec                  (lsiq_entry1_create_agevec        ),
   .x_create_agevec_all                  (lsiq_entry1_create_agevec_all        ),
@@ -817,6 +882,12 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry1 (
   .x_sq_full_set                    (lsiq_entry1_sq_full_set          ),
   .x_store                          (lsiq_entry_store[1]              ),
   // 2026-10-15 停用: .x_unalign_2nd_set                (lsiq_entry1_unalign_2nd_set      ),
+  .x_vec_beat_rdy                   (lsiq_vec_beat_rdy[1]            ),
+  .x_vec_upd_en                     (lsiq_vec_upd_entry[1]           ),
+  .x_vec_upd_data                   (lsiq_vec_upd_data                ),
+  .x_vec_beat_done                  (lsu_idu_beat_done[1]            ),
+  .x_read_vec_beat                  (lsiq_entry1_read_vec_beat       ),
+  .x_read_vec                       (lsiq_entry1_vec                 ),
   .x_vld                            (lsiq_entry1_vld                  ),
   .old                              (lsiq_entry1_old                  )
 );
@@ -837,6 +908,8 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry2 (
   .lsu_idu_imme_wakeup              (lsu_idu_imme_wakeup[2]),
   .lsu_idu_wb_pipe3_wb_preg_dupx    (lsu_idu_wb_pipe3_wb_preg_dupx    ),
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx(lsu_idu_wb_pipe3_wb_preg_vld_dupx),
+  .rvv_idu_vset_wb_preg_dupx        (rvv_idu_vset_wb_preg_dupx        ),
+  .rvv_idu_vset_wb_preg_vld_dupx    (rvv_idu_vset_wb_preg_vld_dupx    ),
   .rtu_yy_xx_flush                 (rtu_yy_xx_flush                 ),
   .x_create_agevec                  (lsiq_entry2_create_agevec        ),
   .x_create_agevec_all                  (lsiq_entry2_create_agevec_all        ),
@@ -856,6 +929,12 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry2 (
   .x_sq_full_set                    (lsiq_entry2_sq_full_set          ),
   .x_store                          (lsiq_entry_store[2]              ),
   // 2026-10-15 停用: .x_unalign_2nd_set                (lsiq_entry2_unalign_2nd_set      ),
+  .x_vec_beat_rdy                   (lsiq_vec_beat_rdy[2]            ),
+  .x_vec_upd_en                     (lsiq_vec_upd_entry[2]           ),
+  .x_vec_upd_data                   (lsiq_vec_upd_data                ),
+  .x_vec_beat_done                  (lsu_idu_beat_done[2]            ),
+  .x_read_vec_beat                  (lsiq_entry2_read_vec_beat       ),
+  .x_read_vec                       (lsiq_entry2_vec                 ),
   .x_vld                            (lsiq_entry2_vld                  ),
   .old                              (lsiq_entry2_old                  )
 );
@@ -876,6 +955,8 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry3 (
   .lsu_idu_imme_wakeup              (lsu_idu_imme_wakeup[3]),
   .lsu_idu_wb_pipe3_wb_preg_dupx    (lsu_idu_wb_pipe3_wb_preg_dupx    ),
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx(lsu_idu_wb_pipe3_wb_preg_vld_dupx),
+  .rvv_idu_vset_wb_preg_dupx        (rvv_idu_vset_wb_preg_dupx        ),
+  .rvv_idu_vset_wb_preg_vld_dupx    (rvv_idu_vset_wb_preg_vld_dupx    ),
   .rtu_yy_xx_flush                 (rtu_yy_xx_flush                 ),
   .x_create_agevec                  (lsiq_entry3_create_agevec        ),
   .x_create_agevec_all                  (lsiq_entry3_create_agevec_all        ),
@@ -895,6 +976,12 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry3 (
   .x_sq_full_set                    (lsiq_entry3_sq_full_set          ),
   .x_store                          (lsiq_entry_store[3]              ),
   // 2026-10-15 停用: .x_unalign_2nd_set                (lsiq_entry3_unalign_2nd_set      ),
+  .x_vec_beat_rdy                   (lsiq_vec_beat_rdy[3]            ),
+  .x_vec_upd_en                     (lsiq_vec_upd_entry[3]           ),
+  .x_vec_upd_data                   (lsiq_vec_upd_data                ),
+  .x_vec_beat_done                  (lsu_idu_beat_done[3]            ),
+  .x_read_vec_beat                  (lsiq_entry3_read_vec_beat       ),
+  .x_read_vec                       (lsiq_entry3_vec                 ),
   .x_vld                            (lsiq_entry3_vld                  ),
   .old                              (lsiq_entry3_old                  )
 );
@@ -915,6 +1002,8 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry4 (
   .lsu_idu_imme_wakeup              (lsu_idu_imme_wakeup[4]),
   .lsu_idu_wb_pipe3_wb_preg_dupx    (lsu_idu_wb_pipe3_wb_preg_dupx    ),
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx(lsu_idu_wb_pipe3_wb_preg_vld_dupx),
+  .rvv_idu_vset_wb_preg_dupx        (rvv_idu_vset_wb_preg_dupx        ),
+  .rvv_idu_vset_wb_preg_vld_dupx    (rvv_idu_vset_wb_preg_vld_dupx    ),
   .rtu_yy_xx_flush                 (rtu_yy_xx_flush                 ),
   .x_create_agevec                  (lsiq_entry4_create_agevec        ),
   .x_create_agevec_all                  (lsiq_entry4_create_agevec_all        ),
@@ -934,6 +1023,12 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry4 (
   .x_sq_full_set                    (lsiq_entry4_sq_full_set          ),
   .x_store                          (lsiq_entry_store[4]              ),
   // 2026-10-15 停用: .x_unalign_2nd_set                (lsiq_entry4_unalign_2nd_set      ),
+  .x_vec_beat_rdy                   (lsiq_vec_beat_rdy[4]            ),
+  .x_vec_upd_en                     (lsiq_vec_upd_entry[4]           ),
+  .x_vec_upd_data                   (lsiq_vec_upd_data                ),
+  .x_vec_beat_done                  (lsu_idu_beat_done[4]            ),
+  .x_read_vec_beat                  (lsiq_entry4_read_vec_beat       ),
+  .x_read_vec                       (lsiq_entry4_vec                 ),
   .x_vld                            (lsiq_entry4_vld                  ),
   .old                              (lsiq_entry4_old                  )
 );
@@ -954,6 +1049,8 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry5 (
   .lsu_idu_imme_wakeup              (lsu_idu_imme_wakeup[5]),
   .lsu_idu_wb_pipe3_wb_preg_dupx    (lsu_idu_wb_pipe3_wb_preg_dupx    ),
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx(lsu_idu_wb_pipe3_wb_preg_vld_dupx),
+  .rvv_idu_vset_wb_preg_dupx        (rvv_idu_vset_wb_preg_dupx        ),
+  .rvv_idu_vset_wb_preg_vld_dupx    (rvv_idu_vset_wb_preg_vld_dupx    ),
   .rtu_yy_xx_flush                 (rtu_yy_xx_flush                 ),
   .x_create_agevec                  (lsiq_entry5_create_agevec        ),
   .x_create_agevec_all                  (lsiq_entry5_create_agevec_all        ),
@@ -973,6 +1070,12 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry5 (
   .x_sq_full_set                    (lsiq_entry5_sq_full_set          ),
   .x_store                          (lsiq_entry_store[5]              ),
   // 2026-10-15 停用: .x_unalign_2nd_set                (lsiq_entry5_unalign_2nd_set      ),
+  .x_vec_beat_rdy                   (lsiq_vec_beat_rdy[5]            ),
+  .x_vec_upd_en                     (lsiq_vec_upd_entry[5]           ),
+  .x_vec_upd_data                   (lsiq_vec_upd_data                ),
+  .x_vec_beat_done                  (lsu_idu_beat_done[5]            ),
+  .x_read_vec_beat                  (lsiq_entry5_read_vec_beat       ),
+  .x_read_vec                       (lsiq_entry5_vec                 ),
   .x_vld                            (lsiq_entry5_vld                  ),
   .old                              (lsiq_entry5_old                  )
 );
@@ -993,6 +1096,8 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry6 (
   .lsu_idu_imme_wakeup              (lsu_idu_imme_wakeup[6]),
   .lsu_idu_wb_pipe3_wb_preg_dupx    (lsu_idu_wb_pipe3_wb_preg_dupx    ),
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx(lsu_idu_wb_pipe3_wb_preg_vld_dupx),
+  .rvv_idu_vset_wb_preg_dupx        (rvv_idu_vset_wb_preg_dupx        ),
+  .rvv_idu_vset_wb_preg_vld_dupx    (rvv_idu_vset_wb_preg_vld_dupx    ),
   .rtu_yy_xx_flush                 (rtu_yy_xx_flush                 ),
   .x_create_agevec                  (lsiq_entry6_create_agevec        ),
   .x_create_agevec_all                  (lsiq_entry6_create_agevec_all        ),
@@ -1012,6 +1117,12 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry6 (
   .x_sq_full_set                    (lsiq_entry6_sq_full_set          ),
   .x_store                          (lsiq_entry_store[6]              ),
   // 2026-10-15 停用: .x_unalign_2nd_set                (lsiq_entry6_unalign_2nd_set      ),
+  .x_vec_beat_rdy                   (lsiq_vec_beat_rdy[6]            ),
+  .x_vec_upd_en                     (lsiq_vec_upd_entry[6]           ),
+  .x_vec_upd_data                   (lsiq_vec_upd_data                ),
+  .x_vec_beat_done                  (lsu_idu_beat_done[6]            ),
+  .x_read_vec_beat                  (lsiq_entry6_read_vec_beat       ),
+  .x_read_vec                       (lsiq_entry6_vec                 ),
   .x_vld                            (lsiq_entry6_vld                  ),
   .old                              (lsiq_entry6_old                  )
 );
@@ -1032,6 +1143,8 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry7 (
   .lsu_idu_imme_wakeup              (lsu_idu_imme_wakeup[7]),
   .lsu_idu_wb_pipe3_wb_preg_dupx    (lsu_idu_wb_pipe3_wb_preg_dupx    ),
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx(lsu_idu_wb_pipe3_wb_preg_vld_dupx),
+  .rvv_idu_vset_wb_preg_dupx        (rvv_idu_vset_wb_preg_dupx        ),
+  .rvv_idu_vset_wb_preg_vld_dupx    (rvv_idu_vset_wb_preg_vld_dupx    ),
   .rtu_yy_xx_flush                 (rtu_yy_xx_flush                 ),
   .x_create_agevec                  (lsiq_entry7_create_agevec        ),
   .x_create_agevec_all                  (lsiq_entry7_create_agevec_all        ),
@@ -1051,8 +1164,73 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry7 (
   .x_sq_full_set                    (lsiq_entry7_sq_full_set          ),
   .x_store                          (lsiq_entry_store[7]              ),
   // 2026-10-15 停用: .x_unalign_2nd_set                (lsiq_entry7_unalign_2nd_set      ),
+  .x_vec_beat_rdy                   (lsiq_vec_beat_rdy[7]            ),
+  .x_vec_upd_en                     (lsiq_vec_upd_entry[7]           ),
+  .x_vec_upd_data                   (lsiq_vec_upd_data                ),
+  .x_vec_beat_done                  (lsu_idu_beat_done[7]            ),
+  .x_read_vec_beat                  (lsiq_entry7_read_vec_beat       ),
+  .x_read_vec                       (lsiq_entry7_vec                 ),
   .x_vld                            (lsiq_entry7_vld                  ),
   .old                              (lsiq_entry7_old                  )
 );
+
+
+//==========================================================
+//        S7: anchor beat 选路 / vec_old / create one-hot
+//==========================================================
+// 年龄比较 (与 RTU_iid_cmp 同规则)
+function automatic logic iid_older7 (input logic [6:0] a, input logic [6:0] b);
+  iid_older7 = (a[6] ^ b[6]) ? (a[5:0] > b[5:0]) : (a[5:0] < b[5:0]);
+endfunction
+
+assign lsiq_entry_vec[7:0] = {lsiq_entry7_vec, lsiq_entry6_vec, lsiq_entry5_vec, lsiq_entry4_vec,
+                              lsiq_entry3_vec, lsiq_entry2_vec, lsiq_entry1_vec, lsiq_entry0_vec};
+
+// "该 anchor 是否是 LSIQ 最老项" —— 给 fill 引擎做 vector load 的 old 门控
+assign lsiq_vec_old[7:0] = {lsiq_entry7_old, lsiq_entry6_old, lsiq_entry5_old, lsiq_entry4_old,
+                            lsiq_entry3_old, lsiq_entry2_old, lsiq_entry1_old, lsiq_entry0_old};
+
+// 本拍 create 的 anchor 表项 (one-hot) —— S8 的 fill 引擎要表项号, 只有 create_en 不够
+genvar gv;
+generate
+  for (gv=0; gv<8; gv++) begin : gen_vec_create
+    assign lsiq_vec_create_entry[gv] = lsiq_entry_create_en[gv] &
+          ( lsiq_entry_create0_in[gv] ? dp_lsiq_create0_data[LSIQ_VEC]
+                                      : dp_lsiq_create1_data[LSIQ_VEC] );
+  end
+endgenerate
+assign lsiq_vec_create_vld = |lsiq_vec_create_entry[7:0];
+
+// pipe3 beat 选路
+always @(*)
+begin
+  case (lsiq_dp_pipe3_issue_entry[7:0])
+    8'h01: begin lsiq_dp_pipe3_vec_beat = lsiq_entry0_read_vec_beat; lsiq_dp_pipe3_issue_vec = lsiq_entry0_vec; end
+    8'h02: begin lsiq_dp_pipe3_vec_beat = lsiq_entry1_read_vec_beat; lsiq_dp_pipe3_issue_vec = lsiq_entry1_vec; end
+    8'h04: begin lsiq_dp_pipe3_vec_beat = lsiq_entry2_read_vec_beat; lsiq_dp_pipe3_issue_vec = lsiq_entry2_vec; end
+    8'h08: begin lsiq_dp_pipe3_vec_beat = lsiq_entry3_read_vec_beat; lsiq_dp_pipe3_issue_vec = lsiq_entry3_vec; end
+    8'h10: begin lsiq_dp_pipe3_vec_beat = lsiq_entry4_read_vec_beat; lsiq_dp_pipe3_issue_vec = lsiq_entry4_vec; end
+    8'h20: begin lsiq_dp_pipe3_vec_beat = lsiq_entry5_read_vec_beat; lsiq_dp_pipe3_issue_vec = lsiq_entry5_vec; end
+    8'h40: begin lsiq_dp_pipe3_vec_beat = lsiq_entry6_read_vec_beat; lsiq_dp_pipe3_issue_vec = lsiq_entry6_vec; end
+    8'h80: begin lsiq_dp_pipe3_vec_beat = lsiq_entry7_read_vec_beat; lsiq_dp_pipe3_issue_vec = lsiq_entry7_vec; end
+    default: begin lsiq_dp_pipe3_vec_beat = {106{1'bx}}; lsiq_dp_pipe3_issue_vec = 1'bx; end
+  endcase
+end
+
+// pipe4 beat 选路
+always @(*)
+begin
+  case (lsiq_dp_pipe4_issue_entry[7:0])
+    8'h01: begin lsiq_dp_pipe4_vec_beat = lsiq_entry0_read_vec_beat; lsiq_dp_pipe4_issue_vec = lsiq_entry0_vec; end
+    8'h02: begin lsiq_dp_pipe4_vec_beat = lsiq_entry1_read_vec_beat; lsiq_dp_pipe4_issue_vec = lsiq_entry1_vec; end
+    8'h04: begin lsiq_dp_pipe4_vec_beat = lsiq_entry2_read_vec_beat; lsiq_dp_pipe4_issue_vec = lsiq_entry2_vec; end
+    8'h08: begin lsiq_dp_pipe4_vec_beat = lsiq_entry3_read_vec_beat; lsiq_dp_pipe4_issue_vec = lsiq_entry3_vec; end
+    8'h10: begin lsiq_dp_pipe4_vec_beat = lsiq_entry4_read_vec_beat; lsiq_dp_pipe4_issue_vec = lsiq_entry4_vec; end
+    8'h20: begin lsiq_dp_pipe4_vec_beat = lsiq_entry5_read_vec_beat; lsiq_dp_pipe4_issue_vec = lsiq_entry5_vec; end
+    8'h40: begin lsiq_dp_pipe4_vec_beat = lsiq_entry6_read_vec_beat; lsiq_dp_pipe4_issue_vec = lsiq_entry6_vec; end
+    8'h80: begin lsiq_dp_pipe4_vec_beat = lsiq_entry7_read_vec_beat; lsiq_dp_pipe4_issue_vec = lsiq_entry7_vec; end
+    default: begin lsiq_dp_pipe4_vec_beat = {106{1'bx}}; lsiq_dp_pipe4_issue_vec = 1'bx; end
+  endcase
+end
 
 endmodule

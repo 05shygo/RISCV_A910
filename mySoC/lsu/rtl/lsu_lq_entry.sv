@@ -7,6 +7,13 @@ module ct_lsu_lq_entry (
     input  logic [15:0]  ld_dc_bytes_vld,
     //input  logic [15:0]  ld_dc_bytes_vld1,
     input  logic [6:0]   ld_dc_iid,
+    // 2026-10-17 S7: 向量 load 的 beat
+    input  logic         ld_dc_vec,
+    input  logic         ld_dc_old,
+    input  logic [4:0]   ld_dc_uop_idx,
+    input  logic         ld_da_wb_cmplt_req,
+    input  logic [6:0]   ld_da_iid,
+    input  logic [4:0]   ld_da_uop_idx,
     //input  logic         ld_dc_secd,
     input  logic         lq_entry_create0_vld_x,
     //input  logic         lq_entry_create1_vld_x,
@@ -21,6 +28,8 @@ module ct_lsu_lq_entry (
     input  logic [15:0]  st_dc_bytes_vld,
     input  logic         st_dc_chk_st_inst_vld,
     input  logic [6:0]   st_dc_iid,
+    input  logic         st_dc_vec,
+    input  logic [4:0]   st_dc_uop_idx,
     output logic         lq_entry_inst_hit_x,
     output logic         lq_entry_raw_spec_fail_x,
     output logic         lq_entry_vld_x
@@ -30,6 +39,10 @@ module ct_lsu_lq_entry (
 logic [27:0] lq_entry_addr0_tto4;
 logic [15:0] lq_entry_bytes_vld;
 logic [6:0]  lq_entry_iid;
+// 2026-10-17 S7
+logic        lq_entry_vec;
+logic        lq_entry_old;
+logic [4:0]  lq_entry_uop_idx;
 //logic        lq_entry_secd;     // 2026-10-15 停用: 只有非对齐第二半才是 1, 现在恒 0
 logic        lq_entry_vld;
 
@@ -87,6 +100,13 @@ begin
     lq_entry_addr0_tto4[27:0] <=  lq_entry_from_ld_dc_addr0[31:4];
     lq_entry_bytes_vld[15:0]  <=  ld_dc_bytes_vld[15:0];
     lq_entry_iid[6:0]         <=  ld_dc_iid[6:0];
+    lq_entry_vec              <=  ld_dc_vec;
+    // 计划 §9.6.1: 向量 beat 的 lq_entry_old 直接取 1 —— fill 引擎已经保证
+    // 向量 load 只在 anchor 是 LSIQ 最老项时才发 beat (RAW 双保险),
+    // 而 ld_dc_old 对向量被 rf_dp 强制成 0 (保守建 LQ) ⇒ 不能直接用它,
+    // 否则向量 LQ 表项永不提前 pop ⇒ 8 项 LQ 被一条向量 load 占满 ⇒ 卡死。
+    lq_entry_old              <=  ld_dc_vec ? 1'b1 : ld_dc_old;
+    lq_entry_uop_idx[4:0]     <=  ld_dc_uop_idx[4:0];
     //lq_entry_secd             <=  ld_dc_secd;
   end
   // 2026-10-15 停用: 非对齐"第二半"的 lq 表项 (地址取 addr1 / 掩码取 bytes_vld1)
@@ -117,7 +137,15 @@ assign lq_entry_cmit_vld  = (lq_entry_cmit_hit0
                                 ||  lq_entry_cmit_hit2)
                             &&  lq_entry_vld;
 
-assign lq_entry_pop_vld   = lq_entry_cmit_vld;
+// 2026-10-17 S7: 向量 load 的"提前 pop" —— 数据写完就释放表项 (否则 8 项 LQ
+// 会被一条多 beat 向量 load 占满)。双保险: 只有 lq_entry_old (LD 时锁存)
+// 的项才提前 pop; fill 引擎还会额外要求 anchor 是 LSIQ 最老项。
+// 标量项 (lq_entry_vec=0) 行为完全不变。
+assign lq_entry_pop_vld   = lq_entry_cmit_vld ||
+                            (lq_entry_vec && lq_entry_old &&
+                             ld_da_wb_cmplt_req &&
+                             (ld_da_iid[6:0] == lq_entry_iid[6:0]) &&
+                             (ld_da_uop_idx[4:0] == lq_entry_uop_idx[4:0]));
 
 //==========================================================
 //                 lq iid check
@@ -126,7 +154,9 @@ assign lq_entry_pop_vld   = lq_entry_cmit_vld;
 // 2026-10-15 停用: 原式还有 `&& (lq_entry_secd == ld_dc_secd)`, 两侧恒 0 恒等
 assign lq_entry_inst_hit  = lq_entry_vld
                             //&&  (lq_entry_secd  ==  ld_dc_secd)
-                            &&  (lq_entry_iid[6:0] ==  ld_dc_iid[6:0]);
+                            &&  (lq_entry_iid[6:0] ==  ld_dc_iid[6:0])
+                            &&  (!ld_dc_vec ||
+                                 (lq_entry_uop_idx[4:0] == ld_dc_uop_idx[4:0]));
 
 //==========================================================
 //                 RAR speculation check

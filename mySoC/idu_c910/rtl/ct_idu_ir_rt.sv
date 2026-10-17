@@ -42,6 +42,10 @@ module ct_idu_ir_rt (
   input  logic         iu_idu_ex2_pipe2_wb_preg_vld_dupx,
   input  logic [5:0]   lsu_idu_wb_pipe3_wb_preg_dupx,
   input  logic         lsu_idu_wb_pipe3_wb_preg_vld_dupx,
+  // 第 5 路唤醒: RVV vset 写回 (S3)。改名表里 32 个逻辑寄存器表项也是
+  // ct_idu_dep_reg_entry —— 不接这一路, vset 写的 rd 在改名表里永远不 ready。
+  input  logic [5:0]   rvv_idu_vset_wb_preg_dupx,
+  input  logic         rvv_idu_vset_wb_preg_vld_dupx,
   input  logic [191:0] rtu_idu_rt_recover_preg,
   input  logic         rtu_yy_xx_flush,
   output logic [6:0]   rt_dp_inst0_src0_data,
@@ -147,6 +151,8 @@ generate
       .iu_idu_ex2_pipe2_wb_preg_dupx     (iu_idu_ex2_pipe2_wb_preg_dupx     ),
       .lsu_idu_wb_pipe3_wb_preg_dupx     (lsu_idu_wb_pipe3_wb_preg_dupx     ),
       .lsu_idu_wb_pipe3_wb_preg_vld_dupx (lsu_idu_wb_pipe3_wb_preg_vld_dupx ),
+      .rvv_idu_vset_wb_preg_dupx         (rvv_idu_vset_wb_preg_dupx         ),
+      .rvv_idu_vset_wb_preg_vld_dupx     (rvv_idu_vset_wb_preg_vld_dupx     ),
       .x_create_data                     (reg_create_data[j]                ),  // 11 位 (2026-10-08 修宽度)
       .x_write_en                        (reg_write_en_arr[j]               ),
       .x_read_data                       (reg_read_data_raw[j]              )  // 13 位 (2026-10-08 修宽度)

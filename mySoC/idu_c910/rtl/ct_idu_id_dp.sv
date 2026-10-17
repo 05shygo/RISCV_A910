@@ -10,16 +10,16 @@ module ct_idu_id_dp(
   input  logic [96:0]  ifu_idu_ib_inst2_data,
   input  logic [24:0]  ifu_idu_if_inst2_chk,
   input  logic         rtu_yy_xx_flush,
-  input  logic [122:0]  crtl_ir_inst2_data,
+  input  logic [125:0]  crtl_ir_inst2_data,
   // 2026-10-08 修: 原来这里是 `inout logic` —— inout 端口在 SV 里不能带 logic 数据类型,
   // 直接语法错 (token is ')')。本模块对它**只读** (见 :134 用来拼 dp_ib_inst0_chk),
   // 与 :13 的 crtl_ir_inst2_data 完全对称, 那个就是 input ⇒ 这里也改成 input。
   input  logic [24:0]  crtl_ir_inst2_chk,
-  output logic [122:0] dp_id_pipedown_inst0_data,
+  output logic [125:0] dp_id_pipedown_inst0_data,
   output logic [24:0]  dp_id_pipedown_inst0_chk,
-  output logic [122:0] dp_id_pipedown_inst1_data,
+  output logic [125:0] dp_id_pipedown_inst1_data,
   output logic [24:0]  dp_id_pipedown_inst1_chk,
-  output logic [122:0] dp_id_pipedown_inst2_data,
+  output logic [125:0] dp_id_pipedown_inst2_data,
   // 2026-10-08 修: 原来末端口后面还留了个**尾逗号**。ANSI 端口表的尾逗号在
   // IEEE 1800 里合法, 但本仓的 VCS 配置不接受 (报 "token is ')'")。
   // 全仓其它文件的端口表都没有尾逗号, 这里跟着去掉。
@@ -44,7 +44,9 @@ parameter CHK_WIDTH           = 25;
 //----------------------------------------------------------
 //                 IR data path parameters
 //----------------------------------------------------------
-parameter IR_WIDTH            = 123;
+parameter IR_WIDTH            = 126;
+parameter IR_VEC_TYPE         = 125;   // [125:124] 01=LOAD, 10=STORE, 11=RVV
+parameter IR_VEC              = 123;
 parameter IR_TAKEN            = 122;
 parameter IR_NPC              = 121;
 parameter IR_PC               = 89;
@@ -110,6 +112,14 @@ logic                id_inst2_dst_x0;    // 补齐
 logic [5:0]          id_inst0_inst_type;
 logic [5:0]          id_inst1_inst_type;
 logic [5:0]          id_inst2_inst_type;  // 补齐
+
+// 解码器输出：向量标志 (S1 新增)
+logic                id_inst0_vec;
+logic [1:0]          id_inst0_vec_type;
+logic                id_inst1_vec;
+logic [1:0]          id_inst1_vec_type;
+logic                id_inst2_vec;
+logic [1:0]          id_inst2_vec_type;
 logic [IR_WIDTH-1:0] dp_id_pipedown_inst0_data_raw;
 logic [IR_WIDTH-1:0] dp_id_pipedown_inst1_data_raw;
 logic [IR_WIDTH-1:0] dp_id_pipedown_inst2_data_raw;
@@ -226,6 +236,8 @@ ct_idu_id_decd u_ct_idu_id_decd_0 (
     .dst_reg   (id_inst0_dst_reg),
     .dst_x0    (id_inst0_dst_x0),
     .inst_type (id_inst0_inst_type),
+    .vec       (id_inst0_vec),
+    .vec_type  (id_inst0_vec_type),
     .illegal   (id_inst0_illegal)
 );
 
@@ -239,6 +251,8 @@ ct_idu_id_decd u_ct_idu_id_decd_1 (
     .dst_reg   (id_inst1_dst_reg),
     .dst_x0    (id_inst1_dst_x0),
     .inst_type (id_inst1_inst_type),
+    .vec       (id_inst1_vec),
+    .vec_type  (id_inst1_vec_type),
     .illegal   (id_inst1_illegal)
 );
 
@@ -252,6 +266,8 @@ ct_idu_id_decd u_ct_idu_id_decd_2 (
     .dst_reg   (id_inst2_dst_reg),
     .dst_x0    (id_inst2_dst_x0),
     .inst_type (id_inst2_inst_type),
+    .vec       (id_inst2_vec),
+    .vec_type  (id_inst2_vec_type),
     .illegal   (id_inst2_illegal)
 );
 
@@ -262,6 +278,8 @@ assign id_inst0_taken = id_inst0_data[ID_TAKEN];
 assign id_inst0_npc = id_inst0_data[ID_NPC:ID_NPC-31];
 assign id_inst0_pc  = id_inst0_data[ID_PC:ID_PC-31];
 assign dp_id_pipedown_inst0_data_raw[IR_WIDTH-1:0] = {
+    id_inst0_vec_type,
+    id_inst0_vec,
     id_inst0_taken,
     id_inst0_npc,
     id_inst0_pc,
@@ -281,6 +299,8 @@ assign id_inst1_taken = id_inst1_data[ID_TAKEN];
 assign id_inst1_npc = id_inst1_data[ID_NPC:ID_NPC-31];
 assign id_inst1_pc  = id_inst1_data[ID_PC:ID_PC-31];
 assign dp_id_pipedown_inst1_data_raw[IR_WIDTH-1:0] = {
+    id_inst1_vec_type,
+    id_inst1_vec,
     id_inst1_taken,
     id_inst1_npc,
     id_inst1_pc,
@@ -300,6 +320,8 @@ assign id_inst2_taken = id_inst2_data[ID_TAKEN];
 assign id_inst2_npc = id_inst2_data[ID_NPC:ID_NPC-31];
 assign id_inst2_pc  = id_inst2_data[ID_PC:ID_PC-31];
 assign dp_id_pipedown_inst2_data_raw[IR_WIDTH-1:0] = {
+    id_inst2_vec_type,
+    id_inst2_vec,
     id_inst2_taken,
     id_inst2_npc,
     id_inst2_pc,

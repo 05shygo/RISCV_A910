@@ -39,10 +39,15 @@ module ct_lsu_sq #(
     input  logic         rtu_yy_xx_commit2,
     input  logic [6:0]   rtu_yy_xx_commit2_iid,
     input  logic         rtu_yy_xx_flush,
+    // 2026-10-17 S7: 向量 store 的提交电平
+    input  logic         vec_st_cmit_vld,
+    input  logic [6:0]   vec_st_cmit_iid,
     input  logic [31:0]  idu_lsu_rf_pipe5_src0,
     input  logic         idu_lsu_sdiq_sel,
     input  logic [3:0]   idu_lsu_rf_pipe5_sdiq_entry,
     input  logic [IID_WIDTH-1:0] st_da_iid,
+    input  logic         st_da_vec,
+    input  logic [4:0]   st_da_uop_idx,
     input  logic         st_da_inst_vld,
     // 2026-10-15 停用: 非对齐拆分通路整条摘掉 (secd/boundary)
     //input  logic         st_da_secd,
@@ -55,6 +60,8 @@ module ct_lsu_sq #(
     //input  logic         st_dc_boundary_first,
     input  logic [15:0]  st_dc_bytes_vld,
     input  logic [IID_WIDTH-1:0] st_dc_iid,
+    input  logic         st_dc_vec,
+    input  logic [4:0]   st_dc_uop_idx,
     input  logic         st_dc_old,
     input  logic [7:0]   st_dc_rot_sel_rev,
     input  logic [3:0]   st_dc_sdid,
@@ -91,6 +98,9 @@ module ct_lsu_sq #(
     output logic         wmb_ce_update_dcache_valid,
     output logic         wmb_ce_update_dcache_way,
     output logic         lsu_idu_sq_not_full,
+    // 2026-10-17 S7: SQ 表项弹出回送 uop_idx (给 S8 fill 引擎释放 request)
+    output logic         lsu_idu_sq_pop_vld,
+    output logic [4:0]   lsu_idu_sq_pop_uop_idx,
     // 给 RTU 的冲刷闸 (见 lsu_sq_entry.sv:436 的口径): "没有哪个**已退休**的表项
     // 还在等 store data"。C910 就是这根 (`ct_lsu_sq.v:3728`), 本仓移植时整条丢了。
     output logic         lsu_rtu_all_commit_st_data_vld
@@ -221,6 +231,9 @@ logic [SQ_ENTRY-1:0]sq_entry_cmit_data_not_vld;
     //==========================================================
     // SQ entry instances
     //==========================================================
+    // 2026-10-17 S7: 每个 SQ 表项的 uop_idx (给弹出回送)
+    logic [SQ_ENTRY-1:0][4:0] sq_entry_uop_idx;
+
     genvar i ;
     generate
         for (i = 0; i < SQ_ENTRY; i++) begin : gen_sq_entry
@@ -254,6 +267,8 @@ logic [SQ_ENTRY-1:0]sq_entry_cmit_data_not_vld;
                 .rtu_yy_xx_commit2                         (rtu_yy_xx_commit2),
                 .rtu_yy_xx_commit2_iid                     (rtu_yy_xx_commit2_iid),
                 .rtu_yy_xx_flush                           (rtu_yy_xx_flush),
+                .vec_st_cmit_vld                           (vec_st_cmit_vld),
+                .vec_st_cmit_iid                           (vec_st_cmit_iid),
                 .sd_ex1_inst_vld                           (idu_lsu_sdiq_sel),
                 .sd_rf_ex1_sdid                            (idu_lsu_rf_pipe5_sdiq_entry),
                 .sq_age_vec_set                            (sq_age_vec_set),
@@ -271,6 +286,8 @@ logic [SQ_ENTRY-1:0]sq_entry_cmit_data_not_vld;
                 .sq_pop_ptr_x                              (sq_pop_ptr[i]),
                 .st_da_iid                                 (st_da_iid),
                 .st_da_inst_vld                            (st_da_inst_vld),
+                .st_da_vec                                 (st_da_vec),
+                .st_da_uop_idx                             (st_da_uop_idx),
                 //.st_da_secd                                (st_da_secd),
                 .st_da_sq_dcache_dirty                     (st_da_sq_dcache_dirty),
                 .st_da_sq_dcache_valid                     (st_da_sq_dcache_valid),
@@ -281,6 +298,8 @@ logic [SQ_ENTRY-1:0]sq_entry_cmit_data_not_vld;
                 //.st_dc_boundary_first                      (st_dc_boundary_first),
                 .st_dc_bytes_vld                           (st_dc_bytes_vld),
                 .st_dc_iid                                 (st_dc_iid),
+                .st_dc_vec                                 (st_dc_vec),
+                .st_dc_uop_idx                             (st_dc_uop_idx),
                 .st_dc_rot_sel_rev                         (st_dc_rot_sel_rev),
                 .st_dc_sdid                                (st_dc_sdid),
             //    .st_dc_sdid_hit                            (st_dc_sdid_hit),
@@ -309,6 +328,7 @@ logic [SQ_ENTRY-1:0]sq_entry_cmit_data_not_vld;
                 .sq_entry_fwd_req_x                        (sq_entry_fwd_req[i]),
                 .sq_entry_iid_v                            (sq_entry_iid[i]),
                 .sq_entry_inst_hit_x                       (sq_entry_inst_hit[i]),
+                .sq_entry_uop_idx_x                        (sq_entry_uop_idx[i]),
                 .sq_entry_pop_req_x                        (sq_entry_pop_req[i]),
                 .sq_entry_rot_sel_v                        (sq_entry_rot_sel[i]),
                 .sq_entry_same_addr_newest_x               (sq_entry_same_addr_newest[i]),
@@ -361,6 +381,16 @@ logic [SQ_ENTRY-1:0]sq_entry_cmit_data_not_vld;
     assign sq_create_success = st_dc_sq_create_vld && !sq_st_dc_full && !rtu_yy_xx_flush;
 
     assign lsu_idu_sq_not_full = !sq_empty_less2;
+
+    // S7: 弹出表项的 uop_idx (sq_pop_ptr 是 one-hot)
+    always_comb begin
+      lsu_idu_sq_pop_uop_idx = 5'b0;
+      lsu_idu_sq_pop_vld     = |sq_pop_ptr[SQ_ENTRY-1:0];
+      for (int k=0; k<SQ_ENTRY; k++) begin
+        if (sq_pop_ptr[k])
+          lsu_idu_sq_pop_uop_idx = sq_entry_uop_idx[k];
+      end
+    end
 
     assign sq_entry_create_vld = {SQ_ENTRY{sq_create_success}} & sq_create_ptr;
     assign sq_create_same_addr_newest = &(~sq_entry_st_dc_same_addr_newer[SQ_ENTRY-1:0]);

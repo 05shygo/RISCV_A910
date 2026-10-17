@@ -51,6 +51,16 @@ module ct_idu_is_ctrl (
 
   input  logic         ctrl_ir_pre_dis_pipedown2,
 
+  // 向量派发 (S1 新增)
+  input  logic         ctrl_ir_pre_dis_inst0_vec,
+  input  logic         ctrl_ir_pre_dis_inst1_vec,
+  input  logic         ctrl_ir_pre_dis_inst2_vec,
+
+  input  logic         ctrl_ir_pre_dis_vec_create0_en,
+  input  logic [1:0]   ctrl_ir_pre_dis_vec_create0_sel,
+  input  logic         ctrl_ir_pre_dis_vec_create1_en,
+  input  logic [1:0]   ctrl_ir_pre_dis_vec_create1_sel,
+
   input  logic         ctrl_ir_pre_dis_sdiq_create0_en,
   input  logic [1:0]   ctrl_ir_pre_dis_sdiq_create0_sel,
   input  logic         ctrl_ir_pre_dis_sdiq_create1_en,
@@ -87,6 +97,10 @@ module ct_idu_is_ctrl (
   input  logic         sdiq_ctrl_1_left_updt,
   input  logic         sdiq_ctrl_full_updt,
 
+  // VIQ 水位 (S2 才会由 ct_idu_vecq 驱动; S1 在顶层钉 0)
+  input  logic         vecq_ctrl_1_left_updt,
+  input  logic         vecq_ctrl_full_updt,
+
   //----------------------------------------------------------------------------
   // Outputs
   //----------------------------------------------------------------------------
@@ -108,6 +122,9 @@ module ct_idu_is_ctrl (
   output logic         ctrl_div_create0_en,
   output logic         ctrl_div_create1_en,
 
+  output logic         ctrl_vec_create0_en,
+  output logic         ctrl_vec_create1_en,
+
   output logic         ctrl_dp_dis_inst0_preg_vld,
   output logic         ctrl_dp_dis_inst1_preg_vld,
   output logic         ctrl_dp_dis_inst2_preg_vld,
@@ -125,6 +142,8 @@ module ct_idu_is_ctrl (
   output logic [1:0]   ctrl_dp_is_dis_mult_create1_sel,
   output logic [1:0]   ctrl_dp_is_dis_div_create0_sel,
   output logic [1:0]   ctrl_dp_is_dis_div_create1_sel,
+  output logic [1:0]   ctrl_dp_is_dis_vec_create0_sel,
+  output logic [1:0]   ctrl_dp_is_dis_vec_create1_sel,
 
   output logic         ctrl_dp_is_dis_stall,
 /*
@@ -144,7 +163,12 @@ module ct_idu_is_ctrl (
   //    (store / 分支 / 跳转都不写 rd, 但都要建 ROB 表项)。
   output logic         ctrl_dp_dis_inst0_vld,
   output logic         ctrl_dp_dis_inst1_vld,
-  output logic         ctrl_dp_dis_inst2_vld
+  output logic         ctrl_dp_dis_inst2_vld,
+
+  // 与上面三根 vld 同拍、同车道: 该路是不是向量指令 (S2 给 VIQ 用)
+  output logic         ctrl_dp_dis_inst0_vec,
+  output logic         ctrl_dp_dis_inst1_vec,
+  output logic         ctrl_dp_dis_inst2_vec
 );
 
 //==========================================================
@@ -192,6 +216,15 @@ logic [1:0]  is_dis_div_create0_sel;
 logic        is_dis_div_create1_en;
 logic [1:0]  is_dis_div_create1_sel;
 
+// 向量派发寄存器 (S1 新增)
+logic        is_dis_inst0_vec;
+logic        is_dis_inst1_vec;
+logic        is_dis_inst2_vec;
+logic        is_dis_vec_create0_en;
+logic [1:0]  is_dis_vec_create0_sel;
+logic        is_dis_vec_create1_en;
+logic [1:0]  is_dis_vec_create1_sel;
+
 // Updated create enable（用于 IQ full 预判）
 logic        is_dis_aiq_create0_en_updt;
 logic        is_dis_aiq_create1_en_updt;
@@ -205,6 +238,8 @@ logic        is_dis_mult_create0_en_updt;
 logic        is_dis_mult_create1_en_updt;
 logic        is_dis_div_create0_en_updt;
 logic        is_dis_div_create1_en_updt;
+logic        is_dis_vec_create0_en_updt;
+logic        is_dis_vec_create1_en_updt;
 
 logic        ctrl_is_aiq_full_updt;
 logic        ctrl_is_biq_full_updt;
@@ -212,6 +247,7 @@ logic        ctrl_is_lsiq_full_updt;
 logic        ctrl_is_sdiq_full_updt;
 logic        ctrl_is_mult_full_updt;
 logic        ctrl_is_div_full_updt;
+logic        ctrl_is_vecq_full_updt;
 logic        ctrl_is_iq_full_updt;
 
 logic        ctrl_is_iq_full;
@@ -290,6 +326,14 @@ begin
     is_dis_div_create0_sel  <= 2'b0;
     is_dis_div_create1_en   <= 1'b0;
     is_dis_div_create1_sel  <= 2'b0;
+
+    is_dis_inst0_vec        <= 1'b0;
+    is_dis_inst1_vec        <= 1'b0;
+    is_dis_inst2_vec        <= 1'b0;
+    is_dis_vec_create0_en   <= 1'b0;
+    is_dis_vec_create0_sel  <= 2'b0;
+    is_dis_vec_create1_en   <= 1'b0;
+    is_dis_vec_create1_sel  <= 2'b0;
   end
   else if(rtu_yy_xx_flush) begin
     is_dis_inst0_vld <= 1'b0;
@@ -326,6 +370,14 @@ begin
     is_dis_div_create0_sel  <= 2'b0;
     is_dis_div_create1_en   <= 1'b0;
     is_dis_div_create1_sel  <= 2'b0;
+
+    is_dis_inst0_vec        <= 1'b0;
+    is_dis_inst1_vec        <= 1'b0;
+    is_dis_inst2_vec        <= 1'b0;
+    is_dis_vec_create0_en   <= 1'b0;
+    is_dis_vec_create0_sel  <= 2'b0;
+    is_dis_vec_create1_en   <= 1'b0;
+    is_dis_vec_create1_sel  <= 2'b0;
   end
   else if(!ctrl_is_dis_stall) begin
     is_dis_inst0_vld <= ctrl_ir_pre_dis_inst0_vld;
@@ -362,6 +414,14 @@ begin
     is_dis_div_create0_sel  <= ctrl_ir_pre_dis_div_create0_sel;
     is_dis_div_create1_en   <= ctrl_ir_pre_dis_div_create1_en;
     is_dis_div_create1_sel  <= ctrl_ir_pre_dis_div_create1_sel;
+
+    is_dis_inst0_vec        <= ctrl_ir_pre_dis_inst0_vec;
+    is_dis_inst1_vec        <= ctrl_ir_pre_dis_inst1_vec;
+    is_dis_inst2_vec        <= ctrl_ir_pre_dis_inst2_vec;
+    is_dis_vec_create0_en   <= ctrl_ir_pre_dis_vec_create0_en;
+    is_dis_vec_create0_sel  <= ctrl_ir_pre_dis_vec_create0_sel;
+    is_dis_vec_create1_en   <= ctrl_ir_pre_dis_vec_create1_en;
+    is_dis_vec_create1_sel  <= ctrl_ir_pre_dis_vec_create1_sel;
   end
   else begin
     is_dis_inst0_vld <= is_dis_inst0_vld;
@@ -398,6 +458,14 @@ begin
     is_dis_div_create0_sel  <= is_dis_div_create0_sel;
     is_dis_div_create1_en   <= is_dis_div_create1_en;
     is_dis_div_create1_sel  <= is_dis_div_create1_sel;
+
+    is_dis_inst0_vec        <= is_dis_inst0_vec;
+    is_dis_inst1_vec        <= is_dis_inst1_vec;
+    is_dis_inst2_vec        <= is_dis_inst2_vec;
+    is_dis_vec_create0_en   <= is_dis_vec_create0_en;
+    is_dis_vec_create0_sel  <= is_dis_vec_create0_sel;
+    is_dis_vec_create1_en   <= is_dis_vec_create1_en;
+    is_dis_vec_create1_sel  <= is_dis_vec_create1_sel;
   end
 end
 
@@ -426,6 +494,11 @@ assign ctrl_dp_dis_inst2_preg_vld = is_dis_inst2_vld
 assign ctrl_dp_dis_inst0_vld = is_dis_inst0_vld && !ctrl_is_dis_stall;
 assign ctrl_dp_dis_inst1_vld = is_dis_inst1_vld && !ctrl_is_dis_stall;
 assign ctrl_dp_dis_inst2_vld = is_dis_inst2_vld && !ctrl_is_dis_stall;
+
+// 与上面三根同拍、同车道: 该路是不是向量指令 (S1 新增)
+assign ctrl_dp_dis_inst0_vec = is_dis_inst0_vec && !ctrl_is_dis_stall;
+assign ctrl_dp_dis_inst1_vec = is_dis_inst1_vec && !ctrl_is_dis_stall;
+assign ctrl_dp_dis_inst2_vec = is_dis_inst2_vec && !ctrl_is_dis_stall;
 
 
 //==========================================================
@@ -473,6 +546,14 @@ assign ctrl_div_create1_en = is_dis_div_create1_en && !ctrl_is_dis_stall;
 assign ctrl_dp_is_dis_div_create0_sel = is_dis_div_create0_sel;
 assign ctrl_dp_is_dis_div_create1_sel = is_dis_div_create1_sel;
 
+//------------------------- VIQ ----------------------------
+// S1: VIQ 还不存在, ctrl_vec_* 暂时没有消费者; S2 由 ct_idu_top 接到 ct_idu_vecq。
+assign ctrl_vec_create0_en = is_dis_vec_create0_en && !ctrl_is_dis_stall;
+assign ctrl_vec_create1_en = is_dis_vec_create1_en && !ctrl_is_dis_stall;
+
+assign ctrl_dp_is_dis_vec_create0_sel = is_dis_vec_create0_sel;
+assign ctrl_dp_is_dis_vec_create1_sel = is_dis_vec_create1_sel;
+
 //==========================================================
 //                Issue Queue Full Prepare
 //==========================================================
@@ -496,6 +577,9 @@ begin
 
     is_dis_div_create0_en_updt  = ctrl_ir_pre_dis_div_create0_en;
     is_dis_div_create1_en_updt  = ctrl_ir_pre_dis_div_create1_en;
+
+    is_dis_vec_create0_en_updt  = ctrl_ir_pre_dis_vec_create0_en;
+    is_dis_vec_create1_en_updt  = ctrl_ir_pre_dis_vec_create1_en;
   end
   else begin
     is_dis_aiq_create0_en_updt  = is_dis_aiq_create0_en;
@@ -515,6 +599,9 @@ begin
 
     is_dis_div_create0_en_updt  = is_dis_div_create0_en;
     is_dis_div_create1_en_updt  = is_dis_div_create1_en;
+
+    is_dis_vec_create0_en_updt  = is_dis_vec_create0_en;
+    is_dis_vec_create1_en_updt  = is_dis_vec_create1_en;
   end
 end
 
@@ -545,12 +632,18 @@ assign ctrl_is_div_full_updt =
           (is_dis_div_create0_en_updt && div_ctrl_full_updt)
        || (is_dis_div_create1_en_updt && div_ctrl_1_left_updt);
 
+// S1: vecq_ctrl_* 在顶层钉 0 ⇒ 这一项恒 0; S2 VIQ 落地后自然生效
+assign ctrl_is_vecq_full_updt =
+          (is_dis_vec_create0_en_updt && vecq_ctrl_full_updt)
+       || (is_dis_vec_create1_en_updt && vecq_ctrl_1_left_updt);
+
 assign ctrl_is_iq_full_updt = ctrl_is_aiq_full_updt
                             || ctrl_is_biq_full_updt
                             || ctrl_is_lsiq_full_updt
                             || ctrl_is_sdiq_full_updt
                             || ctrl_is_mult_full_updt
-                            || ctrl_is_div_full_updt;
+                            || ctrl_is_div_full_updt
+                            || ctrl_is_vecq_full_updt;
 
 //==========================================================
 //                      Queue Full

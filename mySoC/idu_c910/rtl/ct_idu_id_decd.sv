@@ -22,6 +22,10 @@ module ct_idu_id_decd (
     // Instruction type (one-hot encoding)
     output wire [5:0]  inst_type,      // [4]:MUL [3]:DIV [2]:BR [1]:LSU [0]:ALU
 
+    // 向量指令标志 (S1 新增, 见 doc/rvv_a910_接入修改_分阶段执行计划_zh.md §3.2)
+    output wire        vec,            // 任一向量 opcode: LOAD-FP / STORE-FP / OP-V
+    output wire [1:0]  vec_type,       // 01=向量 LOAD, 10=向量 STORE, 11=RVV(vset/计算)
+
     // Illegal instruction flag
     output wire        illegal         // Illegal instruction detected
 );
@@ -52,6 +56,28 @@ wire op_alur   = (opcode == 7'b0110011);  // ADD, SUB, SLL, SLT, SLTU, XOR, SRL,
                                            // MUL, MULH, MULHSU, MULHU, DIV, DIVU, REM, REMU
 wire op_fence  = (opcode == 7'b0001111);  // FENCE (excluded)
 wire op_system = (opcode == 7'b1110011);  // ECALL, EBREAK, CSR* (excluded)
+
+// ==============================================================================
+// RVV opcode decode (S1 新增)
+// ==============================================================================
+// 0x07 = LOAD-FP:   RVV 里是向量 load
+// 0x27 = STORE-FP:  RVV 里是向量 store
+// 0x57 = OP-V:      向量运算 / vsetvli / vsetivli / vsetvl
+wire op_vload  = (opcode == 7'b0000111);
+wire op_vstore = (opcode == 7'b0100111);
+wire op_rvv    = (opcode == 7'b1010111);
+wire is_vset   = op_rvv && (funct3 == 3'b111);
+// vsetivli: {1'b1, 2'b11, uimm[4:0], rs1, 3'b111, rd, 0x57}
+wire is_vsetivli = is_vset && (inst[31:30] == 2'b11);
+// vsetvl:   bit31=1 且不是 vsetivli (inst[30:25]=000000, rs2 是 vtype 寄存器)
+wire is_vsetvl   = is_vset && inst[31] && !is_vsetivli;
+// 向量 L/S 的 strided 形式 (mop[1:0]=10): rs2 是步长标量
+wire is_vstride  = (op_vload || op_vstore) && (inst[27:26] == 2'b10);
+// 标量 rs1 的用法: 向量 L/S 的基址; vsetvl/vsetvli 的 AVL;
+// 其余 OP-V 只有 x-register 形式 (funct3[2]=1) 才用 rs1
+wire is_vsrc1    = is_vstride || is_vsetvl;
+wire is_vsrc0    = op_vload || op_vstore ||
+                   (op_rvv && (is_vset ? !is_vsetivli : funct3[2]));
 
 // ==============================================================================
 // Detailed instruction validation
@@ -132,7 +158,8 @@ wire is_alu = alui_valid || is_alu_r || op_lui || op_auipc;
 
 // Valid instruction check
 wire valid_inst = op_lui || op_auipc || op_jal || jalr_valid || branch_valid ||
-                  load_valid || store_valid || alui_valid || alur_valid;
+                  load_valid || store_valid || alui_valid || alur_valid ||
+                  op_vload || op_vstore || op_rvv;
 
 // Illegal instruction: not valid OR explicitly excluded (FENCE/SYSTEM)
 assign illegal = !valid_inst || op_fence || op_system;
@@ -141,20 +168,26 @@ assign illegal = !valid_inst || op_fence || op_system;
 // Source operand validity
 // ==============================================================================
 // rs1 is valid for: JALR, BRANCH, LOAD, STORE, ALU_I, ALU_R
-assign src0_vld = (jalr_valid || branch_valid || load_valid || store_valid || alui_valid || alur_valid) && !illegal;
+//                + 向量 L/S 的基址 / vset* 的 AVL / x-register 形式的向量运算
+assign src0_vld = (jalr_valid || branch_valid || load_valid || store_valid || alui_valid || alur_valid ||
+                   is_vsrc0) && !illegal;
 assign src0_reg = rs1;
 
 // rs2 is valid for: BRANCH, STORE, ALU_R (including M extension)
-assign src1_vld = (branch_valid || store_valid || alur_valid) && !illegal;
+//                + strided 向量 L/S 的步长 / vsetvl 的 vtype
+assign src1_vld = (branch_valid || store_valid || alur_valid || is_vsrc1) && !illegal;
 assign src1_reg = rs2;
 
 // ==============================================================================
 // Destination operand validity
 // ==============================================================================
 // rd is valid for: LUI, AUIPC, JAL, JALR, LOAD, ALU_I, ALU_R
-assign dst_vld = (op_lui || op_auipc || op_jal || jalr_valid || load_valid || alui_valid || alur_valid) && !illegal;
+//                + vset* (只有 vset* 的 rd 是标量寄存器; 其余向量指令的 vd 不占标量 preg)
+assign dst_vld = (op_lui || op_auipc || op_jal || jalr_valid || load_valid || alui_valid || alur_valid ||
+                  (is_vset && rd != 5'b0)) && !illegal;
 assign dst_reg = rd;
-assign dst_x0  = (rd == 5'b0);
+// 非 vset 的向量指令强制 dst_x0=1, 保证即使 dst_vld 意外为 1 也不分配标量 preg
+assign dst_x0  = (rd == 5'b0) || (vec && !is_vset);
 
 // ==============================================================================
 // Instruction type (one-hot encoding)
@@ -175,5 +208,15 @@ assign inst_type[4] = is_div_any && !illegal;
 
 // [4] MUL: multiplication operations
 assign inst_type[5] = is_mul_any && !illegal;
+
+// ==============================================================================
+// 向量标志输出 (S1 新增)
+// ==============================================================================
+// 注意: 这里**不**把 vec 拼进 inst_type —— 向量指令不能进任何标量队列
+// (AIQ/BIQ/MD/LSIQ/SDIQ), 它由 IR 级的 !vec 门控挡掉。
+assign vec      = op_vload | op_vstore | op_rvv;
+assign vec_type = op_rvv    ? 2'b11 :
+                  op_vstore ? 2'b10 :
+                  op_vload  ? 2'b01 : 2'b00;
 
 endmodule

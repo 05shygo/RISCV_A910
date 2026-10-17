@@ -44,6 +44,9 @@ module ct_lsu_st_da #(
   input  logic         st_dc_dcwp_hit_idx,
   input  logic         st_dc_get_dcache_tag_dirty,
   input  logic [6:0]   st_dc_iid,
+    input  logic         st_dc_vec,
+    input  logic [4:0]   st_dc_uop_idx,
+    input  logic         st_dc_last,
   input  logic         st_dc_inst_vld,
   input  logic [LSIQ_ENTRY-1:0] st_dc_lsid,
   input  logic         st_dc_old,
@@ -64,6 +67,10 @@ module ct_lsu_st_da #(
   output logic [LSIQ_ENTRY-1:0] st_da_idu_rb_full,
   //output logic [LSIQ_ENTRY-1:0] st_da_idu_secd,   // 2026-10-15 停用
   output logic [6:0]   st_da_iid,
+  output logic         st_da_vec,
+  output logic [4:0]   st_da_uop_idx,
+  output logic         st_da_last,
+  output logic [LSIQ_ENTRY-1:0] st_da_idu_beat_done,
   output logic         st_da_inst_vld,
   output logic         st_da_old,
   output logic         st_da_rb_cmit,
@@ -172,6 +179,9 @@ always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
     st_da_spec_fail <= 1'b0;
     //st_da_secd <= 1'b0;
     st_da_iid <= 7'b0;
+    st_da_vec <= 1'b0;
+    st_da_uop_idx <= 5'b0;
+    st_da_last <= 1'b0;
     st_da_lsid <= {LSIQ_ENTRY{1'b0}};
     st_da_old <= 1'b0;
     st_da_expt<= 1'b0;
@@ -182,6 +192,9 @@ always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
     st_da_spec_fail <= st_dc_spec_fail;
     //st_da_secd <= st_dc_secd;
     st_da_iid <= st_dc_iid;
+    st_da_vec <= st_dc_vec;
+    st_da_uop_idx <= st_dc_uop_idx;
+    st_da_last <= st_dc_last;
     st_da_lsid <= st_dc_lsid;
     st_da_old <= st_dc_old;
     st_da_expt<= st_dc_expt;
@@ -328,8 +341,14 @@ assign st_da_mask_lsid[LSIQ_ENTRY-1:0] = {LSIQ_ENTRY{st_da_inst_vld}} & st_da_ls
 
 assign st_da_idu_rb_full[LSIQ_ENTRY-1:0] = {LSIQ_ENTRY{st_da_rb_full_vld}} & st_da_mask_lsid[LSIQ_ENTRY-1:0];
 
-assign st_da_idu_pop_vld = st_da_wb_cmplt_req;
+// S7: 非最后 beat 不 pop (agevec/counter 在 pop 上更新)
+assign st_da_idu_pop_vld = st_da_wb_cmplt_req && (!st_da_vec || st_da_last);
 assign st_da_idu_pop_entry[LSIQ_ENTRY-1:0] = {LSIQ_ENTRY{st_da_idu_pop_vld}} & st_da_mask_lsid[LSIQ_ENTRY-1:0];
+
+// S7: 非最后 beat 完成 ⇒ 只清 anchor 的 frz
+assign st_da_idu_beat_done[LSIQ_ENTRY-1:0] =
+      {LSIQ_ENTRY{st_da_wb_cmplt_req && st_da_vec && !st_da_last}}
+      & st_da_mask_lsid[LSIQ_ENTRY-1:0];
 
 // 2026-10-15 停用: 非对齐第二半请求唤醒 IDU (boundary_first 恒 0)
 //assign st_da_idu_secd_vld = st_da_inst_vld && st_da_boundary_first && !st_da_restart_vld && !st_da_expt;

@@ -21,6 +21,10 @@ module lsu_top #(
   // 2026-10-15 停用: LSU 不再接收 IDU 的 offset_plus
   //input  logic [12:0]          idu_lsu_ld_offset_plus,
   input  logic [31:0]          idu_lsu_ld_src,
+  // 2026-10-17 S7: 向量 beat
+  input  logic                 idu_lsu_ld_vec,
+  input  logic [4:0]           idu_lsu_ld_uop_idx,
+  input  logic                 idu_lsu_ld_last,
 
   // IDU to LSU - Store interface
   input  logic                 idu_lsu_st_sel,
@@ -33,6 +37,13 @@ module lsu_top #(
   input  logic [11:0]          idu_lsu_st_offset,
   //input  logic [12:0]          idu_lsu_st_offset_plus,
   input  logic [31:0]          idu_lsu_st_src0,
+  // 2026-10-17 S7: 向量 beat
+  input  logic                 idu_lsu_st_vec,
+  input  logic [4:0]           idu_lsu_st_uop_idx,
+  input  logic                 idu_lsu_st_last,
+  // S8 fill 引擎给的向量 store 提交电平
+  input  logic                 vec_st_cmit_vld,
+  input  logic [6:0]           vec_st_cmit_iid,
 
   input  logic [31:0]          idu_lsu_rf_pipe5_src0,  // in
   input  logic                 idu_lsu_sdiq_sel,  // in
@@ -225,6 +236,16 @@ module lsu_top #(
   output logic [63:0]          lsu_idu_wb_pipe3_wb_preg_expand,
   output logic                 lsu_idu_wb_pipe3_wb_preg_vld,
   output logic [6:0]           lsu_idu_wb_pipe3_wb_preg_iid,
+  // 2026-10-17 S7: 向量 load 写回的 beat 标识 (给 S8 fill 引擎)
+  output logic                 lsu_idu_wb_pipe3_wb_preg_vec,
+  output logic [4:0]           lsu_idu_wb_pipe3_wb_uop_idx,
+  // 2026-10-17 S7: 非最后 beat 完成
+  output logic [LSIQ_ENTRY-1:0] lsu_idu_beat_done,
+  // 2026-10-17 S7: 给 S8 fill 引擎
+  output logic                 lsu_idu_sq_pop_vld,
+  output logic [4:0]           lsu_idu_sq_pop_uop_idx,
+  output logic                 lsu_rtu_wb_pipe3_wb_preg_vec,
+  output logic                 lsu_rtu_wb_pipe4_vec,
 
   // LSU to RTU - Writeback pipe4
   output logic                 lsu_rtu_wb_pipe4_cmplt,
@@ -310,6 +331,7 @@ assign lsu_idu_lsiq_pop0_vld = ld_da_idu_pop_vld;
 logic st_da_idu_pop_vld;
 assign lsu_idu_lsiq_pop1_vld =st_da_idu_pop_vld;
 assign lsu_idu_lsiq_pop_vld = lsu_idu_lsiq_pop0_vld | lsu_idu_lsiq_pop1_vld;
+
 
 //==========================================================
 // BIU interface internal signals
@@ -435,6 +457,10 @@ logic [1:0] ld_ag_inst_size;
 // 2026-10-15 停用: logic ld_ag_secd;
 logic ld_ag_sign_extend;
 logic [6:0] ld_ag_iid;
+// 2026-10-17 S7: ld 流水 vec/uop_idx/last
+logic        ld_ag_vec;
+logic [4:0]  ld_ag_uop_idx;
+logic        ld_ag_last;
 logic [LSIQ_ENTRY-1:0] ld_ag_lsid;
 logic ld_ag_old;
 logic [5:0] ld_ag_preg;
@@ -469,6 +495,9 @@ logic [15:0] st_ag_dc_bytes_vld;
 logic st_ag_dc_inst_vld;
 logic [3:0] st_ag_dc_rot_sel;
 logic [6:0] st_ag_iid;
+logic        st_ag_vec;
+logic [4:0]  st_ag_uop_idx;
+logic        st_ag_last;
 logic st_ag_inst_vld;
 logic [LSIQ_ENTRY-1:0] st_ag_lsid;
 logic st_ag_old;
@@ -492,6 +521,9 @@ logic st_dc_inst_vld;
 logic st_dc_borrow_vld;
 // 2026-10-15 停用: logic st_dc_secd;
 logic [6:0] st_dc_iid;
+logic        st_dc_vec;
+logic [4:0]  st_dc_uop_idx;
+logic        st_dc_last;
 logic [LSIQ_ENTRY-1:0] st_dc_lsid;
 logic [SDIQ_ENTRY-1:0] st_dc_sdid_oh;
 logic st_dc_old;
@@ -529,6 +561,10 @@ logic st_da_dcache_way;
 
 
 logic [6:0] st_da_iid;
+logic        st_da_vec;
+logic [4:0]  st_da_uop_idx;
+logic        st_da_last;
+logic [LSIQ_ENTRY-1:0] st_da_idu_beat_done;
 logic st_da_inst_vld;
 logic st_da_old;
 logic st_da_rb_cmit;
@@ -606,6 +642,9 @@ logic [1:0] ld_dc_inst_size;
 // 2026-10-15 停用: logic ld_dc_secd;
 logic ld_dc_sign_extend;
 logic [6:0] ld_dc_iid;
+logic        ld_dc_vec;
+logic [4:0]  ld_dc_uop_idx;
+logic        ld_dc_last;
 logic [LSIQ_ENTRY-1:0] ld_dc_lsid;
 logic ld_dc_old;
 logic [5:0] ld_dc_preg;
@@ -719,6 +758,10 @@ logic vb_dcache_arb_data_way;
 logic ld_da_vb_borrow_vb;
 logic [31:0] ld_da_addr;
 logic [6:0] ld_da_iid;
+logic        ld_da_vec;
+logic [4:0]  ld_da_uop_idx;
+logic        ld_da_last;
+logic [LSIQ_ENTRY-1:0] ld_da_idu_beat_done;
 logic [5:0] ld_da_preg;
 logic [3:0] ld_da_preg_sign_sel;
 logic ld_da_wb_cmplt_req;
@@ -989,6 +1032,9 @@ lsu_ld_ag #(
   //.idu_lsu_ld_unalign_2nd(idu_lsu_ld_unalign_2nd),//in  // 2026-10-15 停用
   .idu_lsu_ld_sign_extend(idu_lsu_ld_sign_extend),//in
   .idu_lsu_ld_iid(idu_lsu_ld_iid),//in
+  .idu_lsu_ld_vec(idu_lsu_ld_vec),//in
+  .idu_lsu_ld_uop_idx(idu_lsu_ld_uop_idx),//in
+  .idu_lsu_ld_last(idu_lsu_ld_last),//in
   .idu_lsu_ld_lch_entry(idu_lsu_ld_lch_entry),//in
   .idu_lsu_ld_oldest(idu_lsu_ld_oldest),//in
   .idu_lsu_ld_preg(idu_lsu_ld_preg),//in
@@ -1011,6 +1057,9 @@ lsu_ld_ag #(
   // 2026-10-15 停用: .ld_ag_secd(ld_ag_secd),
   .ld_ag_sign_extend(ld_ag_sign_extend),
   .ld_ag_iid(ld_ag_iid),
+  .ld_ag_vec(ld_ag_vec),
+  .ld_ag_uop_idx(ld_ag_uop_idx),
+  .ld_ag_last(ld_ag_last),
   .ld_ag_lsid(ld_ag_lsid),
   .ld_ag_old(ld_ag_old),
   .ld_ag_preg(ld_ag_preg),
@@ -1049,6 +1098,9 @@ lsu_ld_dc #(
   // 2026-10-15 停用: .ld_ag_secd(ld_ag_secd),
   .ld_ag_sign_extend(ld_ag_sign_extend),
   .ld_ag_iid(ld_ag_iid),
+  .ld_ag_vec(ld_ag_vec),
+  .ld_ag_uop_idx(ld_ag_uop_idx),
+  .ld_ag_last(ld_ag_last),
   .ld_ag_lsid(ld_ag_lsid),
   .ld_ag_old(ld_ag_old),
   .ld_ag_preg(ld_ag_preg),
@@ -1088,6 +1140,9 @@ lsu_ld_dc #(
   // 2026-10-15 停用: .ld_dc_secd(ld_dc_secd),
   .ld_dc_sign_extend(ld_dc_sign_extend),
   .ld_dc_iid(ld_dc_iid),
+  .ld_dc_vec(ld_dc_vec),
+  .ld_dc_uop_idx(ld_dc_uop_idx),
+  .ld_dc_last(ld_dc_last),
   .ld_dc_lsid(ld_dc_lsid),
   .ld_dc_old(ld_dc_old),
   .ld_dc_preg(ld_dc_preg),
@@ -1137,6 +1192,9 @@ lsu_ld_da #(
   // 2026-10-15 停用: .ld_dc_secd(ld_dc_secd),
   .ld_dc_sign_extend(ld_dc_sign_extend),
   .ld_dc_iid(ld_dc_iid),
+  .ld_dc_vec(ld_dc_vec),
+  .ld_dc_uop_idx(ld_dc_uop_idx),
+  .ld_dc_last(ld_dc_last),
   .ld_dc_lsid(ld_dc_lsid),
   .ld_dc_old(ld_dc_old),
   .ld_dc_preg(ld_dc_preg),
@@ -1196,6 +1254,10 @@ lsu_ld_da #(
   // 2026-10-15 停用: .ld_da_secd(ld_da_secd),
   .ld_da_sign_extend(ld_da_sign_extend),
   .ld_da_iid(ld_da_iid),
+  .ld_da_vec(ld_da_vec),
+  .ld_da_uop_idx(ld_da_uop_idx),
+  .ld_da_last(ld_da_last),
+  .ld_da_idu_beat_done(ld_da_idu_beat_done),
   .ld_da_lsid(ld_da_lsid),
   .ld_da_old(ld_da_old),
   .ld_da_preg(ld_da_preg),
@@ -1248,6 +1310,8 @@ ct_lsu_ld_wb #(
   .forever_cpuclk(forever_cpuclk),
   .ld_da_addr(ld_da_addr),
   .ld_da_iid(ld_da_iid),
+  .ld_da_vec(ld_da_vec),
+  .ld_da_uop_idx(ld_da_uop_idx),
   .ld_da_preg(ld_da_preg),
   .ld_da_preg_sign_sel(ld_da_preg_sign_sel),
   .ld_da_wb_cmplt_req(ld_da_wb_cmplt_req),
@@ -1282,7 +1346,10 @@ ct_lsu_ld_wb #(
   .lsu_idu_wb_pipe3_wb_preg_data(lsu_idu_wb_pipe3_wb_preg_data),
   .lsu_idu_wb_pipe3_wb_preg_expand(lsu_idu_wb_pipe3_wb_preg_expand),
   .lsu_idu_wb_pipe3_wb_preg_vld(lsu_idu_wb_pipe3_wb_preg_vld),
-  .lsu_idu_wb_pipe3_wb_preg_iid(lsu_idu_wb_pipe3_wb_preg_iid)
+  .lsu_idu_wb_pipe3_wb_preg_iid(lsu_idu_wb_pipe3_wb_preg_iid),
+  .lsu_idu_wb_pipe3_wb_preg_vec(lsu_idu_wb_pipe3_wb_preg_vec),
+  .lsu_idu_wb_pipe3_wb_uop_idx(lsu_idu_wb_pipe3_wb_uop_idx),
+  .lsu_rtu_wb_pipe3_wb_preg_vec(lsu_rtu_wb_pipe3_wb_preg_vec)
 );
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1326,6 +1393,9 @@ ct_lsu_st_ag #(
   .idu_lsu_st_inst_size(idu_lsu_st_inst_size),
   //.idu_lsu_st_unalign_2nd(idu_lsu_st_unalign_2nd),  // 2026-10-15 停用
   .idu_lsu_st_iid(idu_lsu_st_iid),
+  .idu_lsu_st_vec(idu_lsu_st_vec),
+  .idu_lsu_st_uop_idx(idu_lsu_st_uop_idx),
+  .idu_lsu_st_last(idu_lsu_st_last),
   .idu_lsu_st_lch_entry(idu_lsu_st_lch_entry),
   .idu_lsu_st_sdiq_entry(idu_lsu_st_sdiq_entry),
   .idu_lsu_st_oldest(idu_lsu_st_oldest),
@@ -1348,6 +1418,9 @@ ct_lsu_st_ag #(
   .st_ag_dc_inst_vld(st_ag_dc_inst_vld),
   .st_ag_dc_rot_sel(st_ag_dc_rot_sel),
   .st_ag_iid(st_ag_iid),
+  .st_ag_vec(st_ag_vec),
+  .st_ag_uop_idx(st_ag_uop_idx),
+  .st_ag_last(st_ag_last),
   .st_ag_inst_vld(st_ag_inst_vld),
   .st_ag_lsid(st_ag_lsid),
   .st_ag_old(st_ag_old),
@@ -1378,6 +1451,9 @@ ct_lsu_st_dc u_lsu_st_dc (
   .st_ag_dc_inst_vld(st_ag_dc_inst_vld),
   .st_ag_dc_rot_sel(st_ag_dc_rot_sel),
   .st_ag_iid(st_ag_iid),
+  .st_ag_vec(st_ag_vec),
+  .st_ag_uop_idx(st_ag_uop_idx),
+  .st_ag_last(st_ag_last),
   .st_ag_inst_vld(st_ag_inst_vld),
   .st_ag_lsid(st_ag_lsid),
   .st_ag_old(st_ag_old),
@@ -1388,6 +1464,9 @@ ct_lsu_st_dc u_lsu_st_dc (
   .st_dc_borrow_vld(st_dc_borrow_vld),
   // 2026-10-15 停用: .st_dc_secd(st_dc_secd),
   .st_dc_iid(st_dc_iid),
+  .st_dc_vec(st_dc_vec),
+  .st_dc_uop_idx(st_dc_uop_idx),
+  .st_dc_last(st_dc_last),
   .st_dc_lsid(st_dc_lsid),
   .st_dc_sdid_oh(st_dc_sdid_oh),
   .st_dc_old(st_dc_old),
@@ -1457,6 +1536,9 @@ ct_lsu_st_da #(
   .st_dc_dcwp_hit_idx(st_dc_dcwp_hit_idx),
   .st_dc_get_dcache_tag_dirty(st_dc_get_dcache_tag_dirty),
   .st_dc_iid(st_dc_iid),
+  .st_dc_vec(st_dc_vec),
+  .st_dc_uop_idx(st_dc_uop_idx),
+  .st_dc_last(st_dc_last),
   .st_dc_inst_vld(st_dc_inst_vld),
   .st_dc_lsid(st_dc_lsid),
   .st_dc_old(st_dc_old),
@@ -1476,6 +1558,10 @@ ct_lsu_st_da #(
   .st_da_idu_rb_full(st_da_idu_rb_full),
   // 2026-10-15 停用: .st_da_idu_secd(st_da_idu_secd),
   .st_da_iid(st_da_iid),
+  .st_da_vec(st_da_vec),
+  .st_da_uop_idx(st_da_uop_idx),
+  .st_da_last(st_da_last),
+  .st_da_idu_beat_done(st_da_idu_beat_done),
   .st_da_inst_vld(st_da_inst_vld),
   .st_da_old(st_da_old),
   .st_da_rb_cmit(st_da_rb_cmit),
@@ -1505,6 +1591,7 @@ ct_lsu_st_wb u_lsu_st_wb (
   .forever_cpuclk(forever_cpuclk),
   .rtu_yy_xx_flush(rtu_yy_xx_flush),
   .st_da_iid(st_da_iid),
+  .st_da_vec(st_da_vec),
   .st_da_wb_cmplt_req(st_da_wb_cmplt_req),
   .st_da_wb_expt_vld(st_da_wb_expt_vld),
   .st_da_wb_expt_addr(st_da_wb_expt_addr),
@@ -1514,7 +1601,8 @@ ct_lsu_st_wb u_lsu_st_wb (
   .lsu_rtu_wb_pipe4_expt_addr(lsu_rtu_wb_pipe4_expt_addr),
   .lsu_rtu_wb_pipe4_flush(lsu_rtu_wb_pipe4_flush),//out
   .lsu_rtu_wb_pipe4_iid(lsu_rtu_wb_pipe4_iid),//out
-  .lsu_rtu_wb_pipe4_spec_fail(lsu_rtu_wb_pipe4_spec_fail)//out
+  .lsu_rtu_wb_pipe4_spec_fail(lsu_rtu_wb_pipe4_spec_fail),
+  .lsu_rtu_wb_pipe4_vec(lsu_rtu_wb_pipe4_vec)//out
 );
 
 //----------------------------------------------------------
@@ -1596,10 +1684,14 @@ ct_lsu_sq #(
   .rtu_yy_xx_commit2(rtu_yy_xx_commit2),
   .rtu_yy_xx_commit2_iid(rtu_yy_xx_commit2_iid),
   .rtu_yy_xx_flush(rtu_yy_xx_flush),
+  .vec_st_cmit_vld(vec_st_cmit_vld),
+  .vec_st_cmit_iid(vec_st_cmit_iid),
   .idu_lsu_rf_pipe5_src0(idu_lsu_rf_pipe5_src0),  // in
   .idu_lsu_sdiq_sel(idu_lsu_sdiq_sel),  // in
   .idu_lsu_rf_pipe5_sdiq_entry(idu_lsu_rf_pipe5_sdiq_entry),  //in
   .st_da_iid(st_da_iid),
+  .st_da_vec(st_da_vec),
+  .st_da_uop_idx(st_da_uop_idx),
   .st_da_inst_vld(st_da_inst_vld),
   // 2026-10-15 停用: .st_da_secd(st_da_secd),
   .st_da_sq_dcache_dirty(st_da_sq_dcache_dirty),
@@ -1611,6 +1703,8 @@ ct_lsu_sq #(
   // 2026-10-15 停用: .st_dc_boundary_first(st_dc_boundary_first),
   .st_dc_bytes_vld(st_dc_bytes_vld),
   .st_dc_iid(st_dc_iid),
+  .st_dc_vec(st_dc_vec),
+  .st_dc_uop_idx(st_dc_uop_idx),
   .st_dc_old(st_dc_old),
   .st_dc_rot_sel_rev(st_dc_rot_sel_rev),
   .st_dc_sdid(st_dc_sdid_oh),
@@ -1645,6 +1739,8 @@ ct_lsu_sq #(
   .wmb_ce_update_dcache_valid(wmb_ce_update_dcache_valid),  
   .wmb_ce_update_dcache_way(wmb_ce_update_dcache_way),
   .lsu_idu_sq_not_full(lsu_idu_sq_not_full),
+  .lsu_idu_sq_pop_vld(lsu_idu_sq_pop_vld),
+  .lsu_idu_sq_pop_uop_idx(lsu_idu_sq_pop_uop_idx),
   .lsu_rtu_all_commit_st_data_vld(lsu_rtu_all_commit_st_data_vld)
 );
 
@@ -1659,6 +1755,12 @@ ct_lsu_lq u_lsu_lq (
   .ld_dc_bytes_vld(ld_dc_bytes_vld),
   // 2026-10-15 停用: .ld_dc_bytes_vld1(ld_dc_bytes_vld1),
   .ld_dc_iid(ld_dc_iid),
+  .ld_dc_vec(ld_dc_vec),
+  .ld_dc_old(ld_dc_old),
+  .ld_dc_uop_idx(ld_dc_uop_idx),
+  .ld_da_wb_cmplt_req(ld_da_wb_cmplt_req),
+  .ld_da_iid(ld_da_iid),
+  .ld_da_uop_idx(ld_da_uop_idx),
   // 2026-10-15 停用: .ld_dc_lq_create1_vld(ld_dc_lq_create1_vld),
   .ld_dc_lq_create_vld(ld_dc_lq_create_vld),
   // 2026-10-15 停用: .ld_dc_secd(ld_dc_secd),
@@ -1673,6 +1775,8 @@ ct_lsu_lq u_lsu_lq (
   .st_dc_bytes_vld(st_dc_bytes_vld),
   .st_dc_chk_st_inst_vld(st_dc_chk_st_inst_vld),
   .st_dc_iid(st_dc_iid),
+  .st_dc_vec(st_dc_vec),
+  .st_dc_uop_idx(st_dc_uop_idx),
   .lq_ld_dc_full(lq_ld_dc_full),
   .lq_ld_dc_inst_hit(lq_ld_dc_inst_hit),
   // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): .lq_ld_dc_less2(lq_ld_dc_less2),
@@ -2220,6 +2324,8 @@ lsu_mshr #(
   .ld_da_data_rot_sel(ld_da_data_rot_sel),  
   .ld_da_idx(ld_da_idx),
   .ld_da_iid(ld_da_iid),
+  .ld_da_vec(ld_da_vec),
+  .ld_da_uop_idx(ld_da_uop_idx),
   .ld_da_inst_size(ld_da_inst_size),
   .ld_da_old(ld_da_old),
   .ld_da_preg(ld_da_preg),
@@ -2287,5 +2393,8 @@ lsu_mshr #(
 );
 
 
+
+// 2026-10-17 S7: 非最后 beat 完成 (load DA / store DA)
+assign lsu_idu_beat_done = ld_da_idu_beat_done | st_da_idu_beat_done;
 
 endmodule

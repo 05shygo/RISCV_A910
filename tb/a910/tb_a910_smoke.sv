@@ -156,10 +156,8 @@ module tb_a910_smoke;
     force dut.iu_btb_chk      = 25'b0;
     force dut.iu_btb_taken    = 1'b0;
     force dut.iu_btb_is_cond  = 1'b0;
-    force dut.cmplt_vld1      = 1'b0;
-    force dut.cmplt_iid1      = 7'b0;
-    force dut.cmplt_vld2      = 1'b0;
-    force dut.cmplt_iid2      = 7'b0;
+    // 2026-10-17 S9: 删掉 cmplt 的 force —— 否则 bridge 生成的完成脉冲
+    // (cmplt_vld1 = core ROB 完成链 / cmplt_vld2 = vset) 永远传不到 RTU。
   end
 
   // 【临时诊断】把 RTU 的 flush_trig 钉成 0 —— 用来判定"X 是不是只在冲刷链上"
@@ -619,6 +617,128 @@ module tb_a910_smoke;
                  dut.u_ifu_biu_axi.biu_ifu_rvalid, dut.u_ifu_biu_axi.ifu_biu_rready,
                  retired);
       end
+    end
+  end
+
+  // =========================================================================
+  // 2026-10-17 S9: 向量通路一次性探针 (只打前 8 次, 用完可删)
+  // =========================================================================
+  integer v_issue=0, v_accept=0, v_lsuvalid=0, v_fillacc=0, v_beat=0, v_lsiqcrt=0, v_vqcreate=0, v_lsuok=0, v_acc2=0, v_lsu2=0, v_resp=0, v_ctx=0, v_wb=0;
+  always @(posedge clk) begin
+    if (dut.u_ct_idu_top.u_ct_idu_vecq.vecq_xx_issue_en && v_issue<8) begin
+      v_issue = v_issue + 1;
+      $display("[VDBG] T%0t VIQ issue iid=%0d op=%0d bits=%h", $time,
+               dut.idu_vec_inst_iid, dut.idu_vec_inst_opcode, dut.idu_vec_inst_bits);
+    end
+    if (dut.u_rvv_a910_bridge.accept && v_accept<8) begin
+      v_accept = v_accept + 1;
+      $display("[VDBG] T%0t bridge accept iid=%0d", $time, dut.idu_vec_inst_iid);
+    end
+    if (dut.u_rvv_a910_bridge.core_lsu_valid[0] && v_lsuvalid<8) begin
+      v_lsuvalid = v_lsuvalid + 1;
+      $display("[VDBG] T%0t core LSU uop iid=%0d store=%0d", $time,
+               dut.rvv_lsu_uop.rob_tag, dut.rvv_lsu_uop.lsu_is_store);
+    end
+    if (dut.u_ct_idu_top.u_vec_ls_fill.uop_accept && v_fillacc<8) begin
+      v_fillacc = v_fillacc + 1;
+      $display("[VDBG] T%0t fill accept found=%0d", $time,
+               dut.u_ct_idu_top.u_vec_ls_fill.uop_anchor_found);
+    end
+    if (dut.u_ct_idu_top.u_vec_ls_fill.beat_go && v_beat<80) begin
+      v_beat = v_beat + 1;
+      $display("[VDBG] T%0t fill beat anchor=%0d", $time,
+               dut.u_ct_idu_top.u_vec_ls_fill.beat_sel);
+    end
+    if (dut.u_ct_idu_top.lsiq_vec_create_vld && v_lsiqcrt<8) begin
+      v_lsiqcrt = v_lsiqcrt + 1;
+      $display("[VDBG] T%0t LSIQ vec create entry=%b iid=%0d", $time,
+               dut.u_ct_idu_top.lsiq_vec_create_entry, dut.u_ct_idu_top.lsiq_vec_create_iid);
+    end
+    if (dut.u_rvv_a910_bridge.accept) begin
+      $display("[VDBG] T%0t inst_data.rob_tag=%0d", $time, dut.u_rvv_a910_bridge.core_inst_data[0].rob_tag);
+    end
+    if (dut.u_rvv_a910_bridge.u_rvv_core.frontend.cmd_valid_o[0]) begin
+      $display("[VDBG] T%0t frontend cmd rob_tag=%0d", $time,
+               dut.u_rvv_a910_bridge.u_rvv_core.frontend_cmd_data[0].rob_tag);
+    end
+    if (dut.u_rvv_a910_bridge.u_rvv_core.backend.rs_valid_dp2lsu[0]) begin
+      $display("[VDBG] T%0t LSU RS push rob_tag=%0d", $time,
+               dut.u_rvv_a910_bridge.u_rvv_core.backend.rs_dp2lsu[0].rob_tag);
+    end
+    if (dut.u_rvv_a910_bridge.u_rvv_core.backend.uop_lsu_valid_rvv2lsu[0]) begin
+      $display("[VDBG] T%0t LSU RS out rob_tag=%0d idx=%h", $time,
+               dut.u_rvv_a910_bridge.u_rvv_core.backend.uop_lsu_rvv2lsu[0].rob_tag,
+               dut.u_rvv_a910_bridge.u_rvv_core.backend.uop_lsu_rvv2lsu[0].uop_index);
+    end
+    if ($time > 1090000 && $time < 1260000 && ($time % 100000) == 0) begin
+      $display("[VDBG] T%0t ctx0 act=%b busy=%b mask=%h ptr=%0d all=%b bit=%b old=%b mop=%0d vl=%0d",
+        $time,
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_active[0],
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_busy[0],
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_mask[0],
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_byte_ptr[0],
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_all_issued[0],
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_beat_issue[0],
+        dut.u_ct_idu_top.lsiq_vec_old[0],
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_mop[0],
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_vl[0]);
+    end
+    if (dut.u_ct_idu_top.u_vec_ls_fill.uop_accept && v_acc2<4) begin
+      v_acc2 = v_acc2 + 1;
+      $display("[VDBG] T%0t accept vl=%0d v0v=%b v0d=%h eew=%0d idx=%0d mop=%0d anchor=%0d",
+        $time, dut.rvv_lsu_uop.vl, dut.rvv_lsu_uop.v0_valid, dut.rvv_lsu_uop.v0_data,
+        dut.rvv_lsu_uop.vd_eew, dut.rvv_lsu_uop.uop_index,
+        dut.rvv_lsu_uop.lsu_type.lsu_mop, dut.u_ct_idu_top.u_vec_ls_fill.uop_anchor);
+    end
+    if ($time > 1070 && $time < 1400 && v_lsu2 < 24) begin
+      v_lsu2 = v_lsu2 + 1;
+      $display("[VDBG] T%0t LSU agdc=%b dcda=%b wbcmp=%b beatdn=%h pop=%h vec=%b last=%b wbvec=%b daid=%0d",
+        $time,
+        dut.u_lsu_top.ld_ag_dc_inst_vld,
+        dut.u_lsu_top.ld_dc_da_inst_vld,
+        dut.u_lsu_top.ld_da_wb_cmplt_req,
+        dut.u_lsu_top.ld_da_idu_beat_done,
+        dut.u_lsu_top.ld_da_idu_pop_entry,
+        dut.u_lsu_top.ld_da_vec,
+        dut.u_lsu_top.ld_da_last,
+        dut.lsu_idu_wb_pipe3_wb_preg_vec,
+        dut.u_lsu_top.ld_da_iid);
+    end
+    if (dut.lsu_idu_wb_pipe3_wb_preg_vec && v_wb<24) begin
+      v_wb = v_wb + 1;
+      $display("[VDBG] T%0t WB iid=%0d uop=%0d data=%h", $time,
+        dut.lsu_idu_wb_pipe3_wb_preg_iid, dut.lsu_idu_wb_pipe3_wb_uop_idx,
+        dut.lsu_idu_wb_pipe3_wb_preg_data);
+    end
+    if (dut.rvv_lsu_resp_valid && v_resp<8) begin
+      v_resp = v_resp + 1;
+      $display("[VDBG] T%0t RESP iid=%0d uop=%0d last=%b wv=%b data=%h",
+        $time, dut.rvv_lsu_resp.rob_tag, dut.rvv_lsu_resp.uop_index,
+        dut.rvv_lsu_resp.lsu_vstore_last, dut.rvv_lsu_resp.vregfile_write_valid,
+        dut.rvv_lsu_resp.vregfile_write_data[31:0]);
+    end
+    if ($time > 2000 && $time < 2600 && v_ctx<40) begin
+      v_ctx = v_ctx + 1;
+      $display("[VDBG] T%0t FILL act=%b pend=%h all=%b stg=%b comm=%b drain=%b dr=%0d",
+        $time,
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_active,
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_ld_pend[2],
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_all_issued[2],
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_beat_staged,
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_committed,
+        dut.u_ct_idu_top.u_vec_ls_fill.drain_owner_vld,
+        dut.u_ct_idu_top.u_vec_ls_fill.drain_owner);
+    end
+    if (dut.u_rvv_a910_bridge.u_rvv_core.backend.uop_lsu_valid_rvv2lsu[0] && v_lsuok<6) begin
+      v_lsuok = v_lsuok + 1;
+      $display("[VDBG] T%0t flat tag=%h uop.tag=%h rsout.tag=%h", $time,
+               dut.u_rvv_a910_bridge.u_rvv_core.uop_lsu_rob_tag_rvv2lsu[0],
+               dut.u_rvv_a910_bridge.core_lsu_uop.rob_tag,
+               dut.u_rvv_a910_bridge.u_rvv_core.backend.uop_lsu_rvv2lsu[0].rob_tag);
+    end
+    if (dut.u_ct_idu_top.u_ct_idu_vecq.ctrl_vec_create0_en && v_vqcreate<8) begin
+      v_vqcreate = v_vqcreate + 1;
+      $display("[VDBG] T%0t vecq create0", $time);
     end
   end
 

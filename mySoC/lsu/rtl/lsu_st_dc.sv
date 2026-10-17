@@ -30,6 +30,9 @@ module ct_lsu_st_dc #(
     input  logic         st_ag_dc_inst_vld,
     input  logic [3:0]   st_ag_dc_rot_sel,
     input  logic [6:0]   st_ag_iid,
+    input  logic         st_ag_vec,
+    input  logic [4:0]   st_ag_uop_idx,
+    input  logic         st_ag_last,
     input  logic         st_ag_inst_vld,
     input  logic [7:0]  st_ag_lsid,
     input  logic         st_ag_old,
@@ -42,6 +45,9 @@ module ct_lsu_st_dc #(
     output logic         st_dc_borrow_vld,
     //output logic         st_dc_secd,          // 2026-10-15 停用
     output logic [6:0]   st_dc_iid,
+    output logic         st_dc_vec,
+    output logic [4:0]   st_dc_uop_idx,
+    output logic         st_dc_last,
     output logic [7:0]  st_dc_lsid,
     output logic [3:0]  st_dc_sdid_oh,
     output logic         st_dc_old,
@@ -105,6 +111,9 @@ module ct_lsu_st_dc #(
         if (!cpurst_b) begin
             //st_dc_secd                    <= 1'b0;
             st_dc_iid[6:0]                <= 7'b0;
+            st_dc_vec                     <= 1'b0;
+            st_dc_uop_idx[4:0]            <= 5'b0;
+            st_dc_last                    <= 1'b0;
             st_dc_lsid[LSIQ_ENTRY-1:0]    <= {LSIQ_ENTRY{1'b0}};
             st_dc_sdid_oh[SDIQ_ENTRY-1:0] <= {SDIQ_ENTRY{1'b0}};
             st_dc_old                     <= 1'b0;
@@ -116,6 +125,9 @@ module ct_lsu_st_dc #(
         else if (st_ag_inst_vld) begin
             //st_dc_secd                    <= st_ag_secd;
             st_dc_iid[6:0]                <= st_ag_iid[6:0];
+            st_dc_vec                     <= st_ag_vec;
+            st_dc_uop_idx[4:0]            <= st_ag_uop_idx[4:0];
+            st_dc_last                    <= st_ag_last;
             st_dc_lsid[LSIQ_ENTRY-1:0]    <= st_ag_lsid[LSIQ_ENTRY-1:0];
             st_dc_sdid_oh[SDIQ_ENTRY-1:0] <= st_ag_sdid_oh[SDIQ_ENTRY-1:0];
             st_dc_old                     <= st_ag_old;

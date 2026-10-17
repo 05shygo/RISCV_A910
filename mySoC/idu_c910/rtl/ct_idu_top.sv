@@ -1,3 +1,5 @@
+`include "ct_idu_vecq_defs.svh"
+
 module ct_idu_top(
   //==========================================================
   // Global signals
@@ -82,6 +84,32 @@ module ct_idu_top(
   input  logic         lsu_idu_lsiq_pop0_vld,
   input  logic         lsu_idu_lsiq_pop1_vld,
   input  logic [7:0]   lsu_idu_lsiq_pop_entry,
+  // 2026-10-17 S7: 非最后 beat 完成 (LSU DA)
+  input  logic [7:0]   lsu_idu_beat_done,
+  // 2026-10-17 S8: fill 引擎 ↔ RvvCore / LSU / RTU
+  input  logic         rvv_lsu_uop_valid,
+  input  UOP_RVV2LSU_t rvv_lsu_uop,
+  output logic         rvv_lsu_uop_ready,
+  output logic         rvv_lsu_resp_valid,
+  output UOP_LSU2RVV_t rvv_lsu_resp,
+  input  logic         rvv_lsu_resp_ready,
+  // RTU commit 广播
+  input  logic         rtu_yy_xx_commit0,
+  input  logic [6:0]   rtu_yy_xx_commit0_iid,
+  input  logic         rtu_yy_xx_commit1,
+  input  logic [6:0]   rtu_yy_xx_commit1_iid,
+  input  logic         rtu_yy_xx_commit2,
+  input  logic [6:0]   rtu_yy_xx_commit2_iid,
+  // LSU load 写回
+  input  logic         lsu_idu_wb_pipe3_wb_preg_vec,
+  input  logic [4:0]   lsu_idu_wb_pipe3_wb_uop_idx,
+  input  logic [6:0]   lsu_idu_wb_pipe3_wb_preg_iid,
+  // SQ 表项弹出
+  input  logic         lsu_idu_sq_pop_vld,
+  input  logic [4:0]   lsu_idu_sq_pop_uop_idx,
+  // 2026-10-17 S8: 向量 store 的提交电平 → SQ
+  output logic         vec_st_cmit_vld,
+  output logic [6:0]   vec_st_cmit_iid,
 
   //==========================================================
   // Interface with LSU - SDIQ control
@@ -151,6 +179,13 @@ module ct_idu_top(
   output logic [7:0]   idu_lsu_st_lch_entry,
   output logic         idu_lsu_st_oldest,
   output logic [3:0]   idu_lsu_st_sdiq_entry,
+  // 2026-10-17 S7: 向量 beat 标识
+  output logic         idu_lsu_ld_vec,
+  output logic [4:0]   idu_lsu_ld_uop_idx,
+  output logic         idu_lsu_ld_last,
+  output logic         idu_lsu_st_vec,
+  output logic [4:0]   idu_lsu_st_uop_idx,
+  output logic         idu_lsu_st_last,
 
   //==========================================================
   // Output to LSU - SDIQ pipe
@@ -266,7 +301,37 @@ module ct_idu_top(
   // 那条指令永远不完成 ⇒ 死等 (见 ct_idu_is_md 端口表的说明)。
   // ⚠️ 乘、除是**两条独立的 MD 队列** (x_ct_idu_is_mult / x_ct_idu_is_div), 但共用
   //    MUL_DIV 的一个请求口 ⇒ 这根 stall **两个队列都要接**。
-  input  logic         md_unit_stall
+  input  logic         md_unit_stall,
+
+  //==========================================================
+  // Interface with RVV bridge (S2 新增)
+  //
+  // VIQ (ct_idu_vecq) head 每拍最多送一条向量指令给 bridge。
+  // 本阶段 rvv_vec_inst_ready 由 A910_cpu 钉 0 (bridge 在 S3 才落地),
+  // 所以 VIQ 只进不出; 不仿真, 只为把接口冻结。
+  //==========================================================
+  output logic         idu_vec_inst_valid,
+  output logic [6:0]   idu_vec_inst_iid,
+  output logic [31:0]  idu_vec_inst_pc,
+  output logic [1:0]   idu_vec_inst_opcode,   // 0=LOAD 1=STORE 2=RVV
+  output logic [24:0]  idu_vec_inst_bits,     // inst[31:7]
+  output logic         idu_vec_src0_vld,
+  output logic [31:0]  idu_vec_src0_data,
+  // 2026-10-17 S3b: 标量源物理号 + issue 时是否已写回 (供 core RS 等迟到写回)
+  output logic [5:0]   idu_vec_src0_preg,
+  output logic         idu_vec_src0_wb,
+  output logic         idu_vec_src1_vld,
+  output logic [31:0]  idu_vec_src1_data,
+  output logic [5:0]   idu_vec_src1_preg,
+  output logic         idu_vec_src1_wb,
+  output logic [5:0]   idu_vec_dst_preg,
+  output logic         idu_vec_dst_vld,
+  output logic [4:0]   idu_vec_dst_reg,
+  input  logic         rvv_vec_inst_ready,
+  input  logic         rvv_idu_vset_wb_vld,
+  input  logic [5:0]   rvv_idu_vset_wb_preg,
+  input  logic [31:0]  rvv_idu_vset_wb_data,
+  input  logic [6:0]   rvv_idu_vset_wb_iid
 );
 
 //==========================================================
@@ -319,17 +384,77 @@ logic [1:0] ctrl_ir_pre_dis_mult_create0_sel;
 logic [1:0] ctrl_ir_pre_dis_mult_create1_sel;
 logic [1:0] ctrl_ir_pre_dis_sdiq_create0_sel;
 logic [1:0] ctrl_ir_pre_dis_sdiq_create1_sel;
+
+// ---- 向量派发 (S1 新增) ----
+logic        ctrl_ir_pre_dis_inst0_vec;
+logic        ctrl_ir_pre_dis_inst1_vec;
+logic        ctrl_ir_pre_dis_inst2_vec;
+logic        ctrl_ir_pre_dis_vec_create0_en;
+logic [1:0]  ctrl_ir_pre_dis_vec_create0_sel;
+logic        ctrl_ir_pre_dis_vec_create1_en;
+logic [1:0]  ctrl_ir_pre_dis_vec_create1_sel;
+logic        ctrl_vec_create0_en;
+logic        ctrl_vec_create1_en;
+logic [1:0]  ctrl_dp_is_dis_vec_create0_sel;
+logic [1:0]  ctrl_dp_is_dis_vec_create1_sel;
+logic        ctrl_dp_dis_inst0_vec;
+logic        ctrl_dp_dis_inst1_vec;
+logic        ctrl_dp_dis_inst2_vec;
+logic [100:0] dp_vec_create0_data;
+logic [100:0] dp_vec_create1_data;
+logic [6:0]  dp_vec_create0_iid;
+logic [6:0]  dp_vec_create1_iid;
+logic        dp_ctrl_is_inst0_vec;
+logic        dp_ctrl_is_inst1_vec;
+logic        dp_ctrl_is_inst2_vec;
+
+// ---- VIQ (S2 新增) ----
+logic [`VIQ_WIDTH-1:0] vecq_dp_issue_data;
+logic        vecq_dp_issue_src0_wb;
+logic        vecq_dp_issue_src1_wb;
+logic        vecq_ctrl_1_left_updt;
+logic        vecq_ctrl_full_updt;
+logic        vecq_xx_issue_en;
+logic        vecq_dp_issue_pop;
+logic [5:0]  vecq_prf_rd_addr0;
+logic [5:0]  vecq_prf_rd_addr1;
+logic [31:0] vecq_prf_rd_data0;
+logic [31:0] vecq_prf_rd_data1;
+logic [1:0]  vec_inst_type;
 logic [61:0] div_dp_issue_read_data;      // ★ 由 [62:0] 减 1 → [61:0]
-logic [59:0] lsiq_dp_pipe3_entry_read_data;
+logic [105:0] lsiq_dp_pipe3_vec_beat;
+logic [105:0] lsiq_dp_pipe4_vec_beat;
+logic         lsiq_dp_pipe3_issue_vec;
+logic         lsiq_dp_pipe4_issue_vec;
+logic [60:0] lsiq_dp_pipe3_entry_read_data;
 logic [7:0] lsiq_dp_pipe3_issue_entry;
-//logic [59:0] lsiq_dp_pipe3_issue_read_data;
-logic [59:0] lsiq_dp_pipe4_entry_read_data;
+//logic [60:0] lsiq_dp_pipe3_issue_read_data;
+logic [60:0] lsiq_dp_pipe4_entry_read_data;
 logic [7:0] lsiq_dp_pipe4_issue_entry;
-//logic [59:0] lsiq_dp_pipe4_issue_read_data;
+//logic [60:0] lsiq_dp_pipe4_issue_read_data;
 logic [61:0] mult_dp_issue_read_data;     // ★ 由 [62:0] 减 1 → [61:0]
 logic [3:0] sdiq_create0_entry;
 logic [3:0] sdiq_create1_entry;
 logic [3:0] sdiq_dp_issue_entry;
+logic       sdiq_dp_issue_vec;
+// 2026-10-17 S8: fill 引擎 ↔ LSIQ / SDIQ / rf_dp
+logic [7:0]   lsiq_vec_upd_entry;
+logic [105:0] lsiq_vec_upd_data;
+logic [7:0]   lsiq_vec_beat_rdy;
+logic [6:0]   vec_old_iid;
+logic         vec_old_vld;
+logic [7:0]   lsiq_vec_old;
+logic [7:0]   lsiq_vec_create_entry;
+logic         lsiq_vec_create_vld;
+logic         vec_sdiq_create_vld;
+logic [3:0]   vec_sdiq_create_entry;
+logic [3:0]   vec_sdiq_issue_entry;
+logic [31:0]  vec_sd_data;
+logic [3:0]   sdiq_entry_vld;
+logic [6:0]   dp_lsiq_create0_iid;
+logic [6:0]   dp_lsiq_create1_iid;
+logic [6:0]   lsiq_vec_create_iid;
+logic         lsiq_vec_create_store;
 logic [7:0] sdiq_dp_issue_read_data;
 
 logic         idu_ifu_inst0_ready;
@@ -342,11 +467,11 @@ logic        id_ir_inst0_vld;
 logic        id_ir_inst1_vld;
 logic        id_ir_inst2_vld;
 logic        ctrl_dp_id_stall;
-logic [122:0] dp_id_pipedown_inst0_data;
+logic [125:0] dp_id_pipedown_inst0_data;
 logic [24:0]  dp_id_pipedown_inst0_chk;
-logic [122:0] dp_id_pipedown_inst1_data;
+logic [125:0] dp_id_pipedown_inst1_data;
 logic [24:0]  dp_id_pipedown_inst1_chk;
-logic [122:0] dp_id_pipedown_inst2_data;
+logic [125:0] dp_id_pipedown_inst2_data;
 logic [24:0]  dp_id_pipedown_inst2_chk;
 
 // IR Stage control signals
@@ -366,9 +491,9 @@ logic        ctrl_ir_pre_dis_mult_create0_en;
 logic        ctrl_ir_pre_dis_div_create0_en;
 
 // IR Stage datapath signals
-logic [6:0]  dp_ctrl_ir_inst0_ctrl_info;
-logic [6:0]  dp_ctrl_ir_inst1_ctrl_info;
-logic [6:0]  dp_ctrl_ir_inst2_ctrl_info;
+logic [8:0]  dp_ctrl_ir_inst0_ctrl_info;
+logic [8:0]  dp_ctrl_ir_inst1_ctrl_info;
+logic [8:0]  dp_ctrl_ir_inst2_ctrl_info;
 logic        dp_ctrl_ir_inst0_dst_vld;
 logic        dp_ctrl_ir_inst1_dst_vld;
 logic        dp_ctrl_ir_inst2_dst_vld;
@@ -378,15 +503,15 @@ logic        dp_ctrl_ir_inst2_dst_x0;
 logic        dp_ctrl_ir_inst0_illegal;
 logic        dp_ctrl_ir_inst1_illegal;
 logic        dp_ctrl_ir_inst2_illegal;
-logic [122:0] crtl_ir_inst2_data;
+logic [125:0] crtl_ir_inst2_data;
 logic [24:0] crtl_ir_inst2_chk;
-logic [75:0] dp_ir_inst0_data;
+logic [78:0] dp_ir_inst0_data;
 logic [64:0] dp_ir_inst0_pc;
 logic [24:0] dp_ir_inst0_chk;
-logic [75:0] dp_ir_inst1_data;
+logic [78:0] dp_ir_inst1_data;
 logic [64:0] dp_ir_inst1_pc;
 logic [24:0] dp_ir_inst1_chk;
-logic [75:0] dp_ir_inst2_data;
+logic [78:0] dp_ir_inst2_data;
 logic [64:0] dp_ir_inst2_pc;
 logic [24:0] dp_ir_inst2_chk;
 
@@ -491,24 +616,24 @@ logic [94:0]  dp_aiq_create0_data;   // 64 → 96 (2026-10-08 加 PC)
 logic [94:0]  dp_aiq_create1_data;
 logic [151:0] dp_biq_create0_data;
 logic [151:0] dp_biq_create1_data;
-logic [59:0]  dp_lsiq_create0_data;
-logic [59:0]  dp_lsiq_create1_data;
+logic [60:0]  dp_lsiq_create0_data;
+logic [60:0]  dp_lsiq_create1_data;
 logic [7:0]   dp_sdiq_create0_data;
 logic [7:0]   dp_sdiq_create1_data;
 logic [61:0]  dp_mult_create0_data;
 logic [61:0]  dp_mult_create1_data;
 logic [61:0]  dp_div_create0_data;
 logic [61:0]  dp_div_create1_data;
-logic [6:0]   dp_ctrl_is_dis_inst2_ctrl_info;
+logic [8:0]   dp_ctrl_is_dis_inst2_ctrl_info;
 logic         dp_ctrl_is_inst0_dst_vld;
 logic         dp_ctrl_is_inst1_dst_vld;
 logic         dp_ctrl_is_inst2_dst_vld;
 
 // ---- 派遣记录 (2026-10-08 新增) ----
 // is_dp 按车道录出的三路原始数据 + is_ctrl 的"本路真的派发"
-logic [75:0]  dp_is_dis_inst0_data;
-logic [75:0]  dp_is_dis_inst1_data;
-logic [75:0]  dp_is_dis_inst2_data;
+logic [78:0]  dp_is_dis_inst0_data;
+logic [78:0]  dp_is_dis_inst1_data;
+logic [78:0]  dp_is_dis_inst2_data;
 logic [31:0]  dp_is_dis_inst0_pc;
 logic [31:0]  dp_is_dis_inst1_pc;
 logic [31:0]  dp_is_dis_inst2_pc;
@@ -694,6 +819,10 @@ ct_idu_ir_ctrl x_ct_idu_ir_ctrl (
   .ctrl_ir_pre_dis_aiq_create0_sel       (ctrl_ir_pre_dis_aiq_create0_sel),
   .ctrl_ir_pre_dis_aiq_create1_en        (ctrl_ir_pre_dis_aiq_create1_en),
   .ctrl_ir_pre_dis_aiq_create1_sel       (ctrl_ir_pre_dis_aiq_create1_sel),
+  .ctrl_ir_pre_dis_vec_create0_en        (ctrl_ir_pre_dis_vec_create0_en),
+  .ctrl_ir_pre_dis_vec_create0_sel       (ctrl_ir_pre_dis_vec_create0_sel),
+  .ctrl_ir_pre_dis_vec_create1_en        (ctrl_ir_pre_dis_vec_create1_en),
+  .ctrl_ir_pre_dis_vec_create1_sel       (ctrl_ir_pre_dis_vec_create1_sel),
   .ctrl_ir_pre_dis_biq_create0_en        (ctrl_ir_pre_dis_biq_create0_en),
   .ctrl_ir_pre_dis_biq_create0_sel       (ctrl_ir_pre_dis_biq_create0_sel),
   .ctrl_ir_pre_dis_biq_create1_en        (ctrl_ir_pre_dis_biq_create1_en),
@@ -706,6 +835,9 @@ ct_idu_ir_ctrl x_ct_idu_ir_ctrl (
   .ctrl_ir_pre_dis_lsiq_create1_en       (ctrl_ir_pre_dis_lsiq_create1_en),
   .ctrl_ir_pre_dis_lsiq_create1_sel      (ctrl_ir_pre_dis_lsiq_create1_sel),
   .ctrl_ir_pre_dis_pipedown2             (ctrl_ir_pre_dis_pipedown2),
+  .ctrl_ir_pre_dis_inst0_vec             (ctrl_ir_pre_dis_inst0_vec),
+  .ctrl_ir_pre_dis_inst1_vec             (ctrl_ir_pre_dis_inst1_vec),
+  .ctrl_ir_pre_dis_inst2_vec             (ctrl_ir_pre_dis_inst2_vec),
   .ctrl_ir_pre_dis_sdiq_create0_en       (ctrl_ir_pre_dis_sdiq_create0_en),
   .ctrl_ir_pre_dis_sdiq_create0_sel      (ctrl_ir_pre_dis_sdiq_create0_sel),
   .ctrl_ir_pre_dis_sdiq_create1_sel      (ctrl_ir_pre_dis_sdiq_create1_sel),
@@ -855,8 +987,10 @@ ct_idu_ir_rt x_ct_idu_ir_rt (
   .rt_dp_inst2_src1_data                 (rt_dp_inst2_src1_data),
   .rt_dp_inst0_rel_preg(rt_dp_inst0_rel_preg),
   .rt_dp_inst1_rel_preg(rt_dp_inst1_rel_preg), 
-  .rt_dp_inst2_rel_preg(rt_dp_inst2_rel_preg)
- // .rt_dp_inst2_src2_data                 (rt_dp_inst2_src2_data)
+  .rt_dp_inst2_rel_preg(rt_dp_inst2_rel_preg),
+ // .rt_dp_inst2_src2_data                 (rt_dp_inst2_src2_data),
+  .rvv_idu_vset_wb_preg_dupx         (rvv_idu_vset_wb_preg),
+  .rvv_idu_vset_wb_preg_vld_dupx     (rvv_idu_vset_wb_vld)
 );
 
 
@@ -877,6 +1011,10 @@ ct_idu_is_ctrl x_ct_idu_is_ctrl (
   .ctrl_ir_pre_dis_aiq_create0_sel       (ctrl_ir_pre_dis_aiq_create0_sel),
   .ctrl_ir_pre_dis_aiq_create1_en        (ctrl_ir_pre_dis_aiq_create1_en),
   .ctrl_ir_pre_dis_aiq_create1_sel       (ctrl_ir_pre_dis_aiq_create1_sel),
+  .ctrl_ir_pre_dis_vec_create0_en        (ctrl_ir_pre_dis_vec_create0_en),
+  .ctrl_ir_pre_dis_vec_create0_sel       (ctrl_ir_pre_dis_vec_create0_sel),
+  .ctrl_ir_pre_dis_vec_create1_en        (ctrl_ir_pre_dis_vec_create1_en),
+  .ctrl_ir_pre_dis_vec_create1_sel       (ctrl_ir_pre_dis_vec_create1_sel),
   .ctrl_ir_pre_dis_biq_create0_en        (ctrl_ir_pre_dis_biq_create0_en),
   .ctrl_ir_pre_dis_biq_create0_sel       (ctrl_ir_pre_dis_biq_create0_sel),
   .ctrl_ir_pre_dis_biq_create1_en        (ctrl_ir_pre_dis_biq_create1_en),
@@ -889,6 +1027,9 @@ ct_idu_is_ctrl x_ct_idu_is_ctrl (
   .ctrl_ir_pre_dis_lsiq_create1_en       (ctrl_ir_pre_dis_lsiq_create1_en),
   .ctrl_ir_pre_dis_lsiq_create1_sel      (ctrl_ir_pre_dis_lsiq_create1_sel),
   .ctrl_ir_pre_dis_pipedown2             (ctrl_ir_pre_dis_pipedown2),
+  .ctrl_ir_pre_dis_inst0_vec             (ctrl_ir_pre_dis_inst0_vec),
+  .ctrl_ir_pre_dis_inst1_vec             (ctrl_ir_pre_dis_inst1_vec),
+  .ctrl_ir_pre_dis_inst2_vec             (ctrl_ir_pre_dis_inst2_vec),
   .ctrl_ir_pre_dis_sdiq_create0_en       (ctrl_ir_pre_dis_sdiq_create0_en),
   .ctrl_ir_pre_dis_sdiq_create0_sel      (ctrl_ir_pre_dis_sdiq_create0_sel),
   .ctrl_ir_pre_dis_sdiq_create1_en       (ctrl_ir_pre_dis_sdiq_create1_en),
@@ -914,6 +1055,9 @@ ct_idu_is_ctrl x_ct_idu_is_ctrl (
   .rtu_yy_xx_flush                       (rtu_yy_xx_flush),
   .sdiq_ctrl_1_left_updt                 (sdiq_ctrl_1_left_updt),
   .sdiq_ctrl_full_updt                   (sdiq_ctrl_full_updt),
+  // S1: VIQ 还没落地, 水位输入按硬纪律钉 0; S2 改接 ct_idu_vecq
+  .vecq_ctrl_1_left_updt                 (vecq_ctrl_1_left_updt),
+  .vecq_ctrl_full_updt                   (vecq_ctrl_full_updt),
   // Outputs
   .ctrl_aiq_create0_en                   (ctrl_aiq_create0_en),
   .ctrl_aiq_create1_en                   (ctrl_aiq_create1_en),
@@ -927,6 +1071,8 @@ ct_idu_is_ctrl x_ct_idu_is_ctrl (
   .ctrl_mult_create1_en                  (ctrl_mult_create1_en),
   .ctrl_div_create0_en                   (ctrl_div_create0_en),
   .ctrl_div_create1_en                   (ctrl_div_create1_en),
+  .ctrl_vec_create0_en                   (ctrl_vec_create0_en),
+  .ctrl_vec_create1_en                   (ctrl_vec_create1_en),
   .ctrl_dp_dis_inst0_preg_vld            (ctrl_dp_dis_inst0_preg_vld),
   .ctrl_dp_dis_inst1_preg_vld            (ctrl_dp_dis_inst1_preg_vld),
   .ctrl_dp_dis_inst2_preg_vld            (ctrl_dp_dis_inst2_preg_vld),
@@ -943,6 +1089,8 @@ ct_idu_is_ctrl x_ct_idu_is_ctrl (
   .ctrl_dp_is_dis_mult_create1_sel       (ctrl_dp_is_dis_mult_create1_sel),
   .ctrl_dp_is_dis_div_create0_sel        (ctrl_dp_is_dis_div_create0_sel),
   .ctrl_dp_is_dis_div_create1_sel        (ctrl_dp_is_dis_div_create1_sel),
+  .ctrl_dp_is_dis_vec_create0_sel        (ctrl_dp_is_dis_vec_create0_sel),
+  .ctrl_dp_is_dis_vec_create1_sel        (ctrl_dp_is_dis_vec_create1_sel),
   .ctrl_dp_is_dis_stall                  (ctrl_dp_is_dis_stall),
   /*
   .ctrl_dp_is_inst0_vld                  (ctrl_dp_is_inst0_vld),
@@ -955,7 +1103,10 @@ ct_idu_is_ctrl x_ct_idu_is_ctrl (
   // ---- 派遣记录: 本路真的派发 (2026-10-08 新增) ----
   .ctrl_dp_dis_inst0_vld                 (ctrl_dp_dis_inst0_vld),
   .ctrl_dp_dis_inst1_vld                 (ctrl_dp_dis_inst1_vld),
-  .ctrl_dp_dis_inst2_vld                 (ctrl_dp_dis_inst2_vld)
+  .ctrl_dp_dis_inst2_vld                 (ctrl_dp_dis_inst2_vld),
+  .ctrl_dp_dis_inst0_vec                 (ctrl_dp_dis_inst0_vec),
+  .ctrl_dp_dis_inst1_vec                 (ctrl_dp_dis_inst1_vec),
+  .ctrl_dp_dis_inst2_vec                 (ctrl_dp_dis_inst2_vec)
 );
 
 // Instance 6: ct_idu_is_dp
@@ -1006,6 +1157,8 @@ ct_idu_is_dp x_ct_idu_is_dp (
   .ctrl_dp_is_dis_mult_create1_sel       (ctrl_dp_is_dis_mult_create1_sel),
   .ctrl_dp_is_dis_div_create0_sel        (ctrl_dp_is_dis_div_create0_sel),
   .ctrl_dp_is_dis_div_create1_sel        (ctrl_dp_is_dis_div_create1_sel),
+  .ctrl_dp_is_dis_vec_create0_sel        (ctrl_dp_is_dis_vec_create0_sel),
+  .ctrl_dp_is_dis_vec_create1_sel        (ctrl_dp_is_dis_vec_create1_sel),
   .dp_aiq_create0_data                              (dp_aiq_create0_data),
   .dp_aiq_create1_data                              (dp_aiq_create1_data),
   .dp_biq_create0_data                   (dp_biq_create0_data),
@@ -1014,13 +1167,23 @@ ct_idu_is_dp x_ct_idu_is_dp (
   .dp_ctrl_is_inst1_dst_vld                              (dp_ctrl_is_inst1_dst_vld),
   .dp_ctrl_is_inst2_dst_vld                              (dp_ctrl_is_inst2_dst_vld),
   .dp_lsiq_create0_data                              (dp_lsiq_create0_data),
+  .dp_lsiq_create0_iid                               (dp_lsiq_create0_iid),
   .dp_lsiq_create1_data                              (dp_lsiq_create1_data),
+  .dp_lsiq_create1_iid                               (dp_lsiq_create1_iid),
   .dp_sdiq_create0_data                              (dp_sdiq_create0_data),
   .dp_sdiq_create1_data                              (dp_sdiq_create1_data),
   .dp_mult_create0_data                  (dp_mult_create0_data),
   .dp_mult_create1_data                  (dp_mult_create1_data),
   .dp_div_create0_data                   (dp_div_create0_data),
   .dp_div_create1_data                   (dp_div_create1_data),
+  // ---- 向量建表数据 (S1; S2 接到 ct_idu_vecq) ----
+  .dp_vec_create0_data                   (dp_vec_create0_data),
+  .dp_vec_create1_data                   (dp_vec_create1_data),
+  .dp_vec_create0_iid                    (dp_vec_create0_iid),
+  .dp_vec_create1_iid                    (dp_vec_create1_iid),
+  .dp_ctrl_is_inst0_vec                  (dp_ctrl_is_inst0_vec),
+  .dp_ctrl_is_inst1_vec                  (dp_ctrl_is_inst1_vec),
+  .dp_ctrl_is_inst2_vec                  (dp_ctrl_is_inst2_vec),
   // ---- 派遣记录: 按车道录出 (2026-10-08 新增) ----
   .dp_is_dis_inst0_data                  (dp_is_dis_inst0_data),
   .dp_is_dis_inst1_data                  (dp_is_dis_inst1_data),
@@ -1030,8 +1193,108 @@ ct_idu_is_dp x_ct_idu_is_dp (
   .dp_is_dis_inst2_pc                    (dp_is_dis_inst2_pc),
   .dp_is_dis_inst0_chk                   (dp_is_dis_inst0_chk),
   .dp_is_dis_inst1_chk                   (dp_is_dis_inst1_chk),
-  .dp_is_dis_inst2_chk                   (dp_is_dis_inst2_chk)
+  .dp_is_dis_inst2_chk                   (dp_is_dis_inst2_chk),
+  .rvv_idu_vset_wb_preg_dupx         (rvv_idu_vset_wb_preg),
+  .rvv_idu_vset_wb_preg_vld_dupx     (rvv_idu_vset_wb_vld)
 );
+
+// Instance 6.5: ct_idu_vecq (VIQ, S2 新增)
+// 4 深、2 写 (create0/create1) / 1 读 (head)。它就是 RVV 通路的唯一指令缓冲:
+// bridge 和 RvvCore 内部都不再排队 (RvvCore N=1)。
+ct_idu_vecq u_ct_idu_vecq (
+  .vecq_ctrl_1_left_updt                 (vecq_ctrl_1_left_updt),
+  .vecq_ctrl_full_updt                   (vecq_ctrl_full_updt),
+  .vecq_xx_issue_en                      (vecq_xx_issue_en),
+  .vecq_dp_issue_data                    (vecq_dp_issue_data),
+  .vecq_dp_issue_src0_wb                 (vecq_dp_issue_src0_wb),
+  .vecq_dp_issue_src1_wb                 (vecq_dp_issue_src1_wb),
+  .vecq_prf_rd_addr0                     (vecq_prf_rd_addr0),
+  .vecq_prf_rd_addr1                     (vecq_prf_rd_addr1),
+  .vecq_prf_rd_data0                     (vecq_prf_rd_data0),
+  .vecq_prf_rd_data1                     (vecq_prf_rd_data1),
+  .cpurst_b                              (cpurst_b),
+  .forever_cpuclk                        (forever_cpuclk),
+  .ctrl_vec_create0_en                   (ctrl_vec_create0_en),
+  .ctrl_vec_create1_en                   (ctrl_vec_create1_en),
+  .dp_vec_create0_data                   (dp_vec_create0_data),
+  .dp_vec_create1_data                   (dp_vec_create1_data),
+  .dp_vec_create0_iid                    (dp_vec_create0_iid),
+  .dp_vec_create1_iid                    (dp_vec_create1_iid),
+  .rtu_yy_xx_flush                       (rtu_yy_xx_flush),
+  .vecq_dp_issue_pop                     (vecq_dp_issue_pop),
+  .iu_idu_ex2_pipe0_wb_preg_dupx         (iu_idu_ex2_pipe0_wb_preg_dupx),
+  .iu_idu_ex2_pipe0_wb_preg_vld_dupx     (iu_idu_ex2_pipe0_wb_preg_vld_dupx),
+  .iu_idu_ex2_pipe1_wb_preg_dupx         (iu_idu_ex2_pipe1_wb_preg_dupx),
+  .iu_idu_ex2_pipe1_wb_preg_vld_dupx     (iu_idu_ex2_pipe1_wb_preg_vld_dupx),
+  .iu_idu_ex2_pipe2_wb_preg_dupx         (iu_idu_ex2_pipe2_wb_preg_dupx),
+  .iu_idu_ex2_pipe2_wb_preg_vld_dupx     (iu_idu_ex2_pipe2_wb_preg_vld_dupx),
+  .lsu_idu_wb_pipe3_wb_preg_dupx         (lsu_idu_wb_pipe3_wb_preg_dupx),
+  .lsu_idu_wb_pipe3_wb_preg_vld_dupx     (lsu_idu_wb_pipe3_wb_preg_vld_dupx),
+  .rvv_idu_vset_wb_preg_dupx             (rvv_idu_vset_wb_preg),
+  .rvv_idu_vset_wb_preg_vld_dupx         (rvv_idu_vset_wb_vld)
+);
+
+//==========================================================
+//      VIQ → RVV bridge 接口 (S2 新增)
+//==========================================================
+assign vec_inst_type      = vecq_dp_issue_data[`VIQ_VEC_TYPE:`VIQ_VEC_TYPE-1];
+assign vecq_dp_issue_pop = vecq_xx_issue_en && rvv_vec_inst_ready;
+
+
+assign idu_vec_inst_valid = vecq_xx_issue_en;
+assign idu_vec_inst_iid   = vecq_dp_issue_data[`VIQ_IID:`VIQ_IID-6];
+assign idu_vec_inst_pc    = vecq_dp_issue_data[`VIQ_PC:`VIQ_PC-31];
+assign idu_vec_inst_bits  = vecq_dp_issue_data[`VIQ_OPCODE:`VIQ_OPCODE-24];
+
+// vec_type → bridge 的两类 opcode: 0=LOAD 1=STORE 2=RVV
+assign idu_vec_inst_opcode = (vec_inst_type == 2'b01) ? 2'd0 :
+                             (vec_inst_type == 2'b10) ? 2'd1 :
+                             (vec_inst_type == 2'b11) ? 2'd2 : 2'd0;
+
+// --- VIQ head 源数据的同拍写回旁路 (S3b) ---
+// dep entry 在写回那一拍就报 ready, 但 PRF 写是寄存器 ⇒ 组合读还是旧值。
+// 源在 issue 当拍写回时必须旁路 (与 A910_cpu 的 RTU 读口同款)。
+wire [5:0] vec_src0_preg = vecq_dp_issue_data[`VIQ_SRC0_DATA:`VIQ_SRC0_DATA-5];
+wire [5:0] vec_src1_preg = vecq_dp_issue_data[`VIQ_SRC1_DATA:`VIQ_SRC1_DATA-5];
+
+wire [31:0] vec_src0_data_mux =
+    (rvv_idu_vset_wb_vld && (rvv_idu_vset_wb_preg[5:0] == vec_src0_preg))
+        ? rvv_idu_vset_wb_data :
+    (lsu_idu_wb_pipe3_wb_preg_vld_dupx && (lsu_idu_wb_pipe3_wb_preg_dupx[5:0] == vec_src0_preg))
+        ? lsu_idu_wb_pipe3_wb_preg_data :
+    (iu_idu_ex2_pipe2_wb_preg_vld_dupx && (iu_idu_ex2_pipe2_wb_preg_dupx[5:0] == vec_src0_preg))
+        ? iu_idu_ex2_pipe2_wb_preg_data :
+    (iu_idu_ex2_pipe1_wb_preg_vld_dupx && (iu_idu_ex2_pipe1_wb_preg_dupx[5:0] == vec_src0_preg))
+        ? iu_idu_ex2_pipe1_wb_preg_data :
+    (iu_idu_ex2_pipe0_wb_preg_vld_dupx && (iu_idu_ex2_pipe0_wb_preg_dupx[5:0] == vec_src0_preg))
+        ? iu_idu_ex2_pipe0_wb_preg_data :
+          vecq_prf_rd_data0;
+
+wire [31:0] vec_src1_data_mux =
+    (rvv_idu_vset_wb_vld && (rvv_idu_vset_wb_preg[5:0] == vec_src1_preg))
+        ? rvv_idu_vset_wb_data :
+    (lsu_idu_wb_pipe3_wb_preg_vld_dupx && (lsu_idu_wb_pipe3_wb_preg_dupx[5:0] == vec_src1_preg))
+        ? lsu_idu_wb_pipe3_wb_preg_data :
+    (iu_idu_ex2_pipe2_wb_preg_vld_dupx && (iu_idu_ex2_pipe2_wb_preg_dupx[5:0] == vec_src1_preg))
+        ? iu_idu_ex2_pipe2_wb_preg_data :
+    (iu_idu_ex2_pipe1_wb_preg_vld_dupx && (iu_idu_ex2_pipe1_wb_preg_dupx[5:0] == vec_src1_preg))
+        ? iu_idu_ex2_pipe1_wb_preg_data :
+    (iu_idu_ex2_pipe0_wb_preg_vld_dupx && (iu_idu_ex2_pipe0_wb_preg_dupx[5:0] == vec_src1_preg))
+        ? iu_idu_ex2_pipe0_wb_preg_data :
+          vecq_prf_rd_data1;
+
+assign idu_vec_src0_vld  = vecq_dp_issue_data[`VIQ_SRC0_VLD];
+assign idu_vec_src0_data = vec_src0_data_mux;
+assign idu_vec_src1_vld  = vecq_dp_issue_data[`VIQ_SRC1_VLD];
+assign idu_vec_src1_data = vec_src1_data_mux;
+// S3b: srcX_data[6:1]=preg, [0]=wb (issue 时的快照)
+assign idu_vec_src0_preg = vecq_dp_issue_data[`VIQ_SRC0_DATA:`VIQ_SRC0_DATA-5];
+assign idu_vec_src0_wb   = vecq_dp_issue_src0_wb;   // 当前 wb, 来自 dep entry
+assign idu_vec_src1_preg = vecq_dp_issue_data[`VIQ_SRC1_DATA:`VIQ_SRC1_DATA-5];
+assign idu_vec_src1_wb   = vecq_dp_issue_src1_wb;   // 当前 wb, 来自 dep entry
+assign idu_vec_dst_preg  = vecq_dp_issue_data[`VIQ_DST_PREG:`VIQ_DST_PREG-5];
+assign idu_vec_dst_vld   = vecq_dp_issue_data[`VIQ_DST_VLD];
+assign idu_vec_dst_reg   = vecq_dp_issue_data[`VIQ_DST_REG:`VIQ_DST_REG-4];
 
 // Instance 4: ct_idu_is_aiq
 ct_idu_is_aiq x_ct_idu_is_aiq (
@@ -1053,7 +1316,9 @@ ct_idu_is_aiq x_ct_idu_is_aiq (
   .iu_idu_ex2_pipe2_wb_preg_vld_dupx                              (iu_idu_ex2_pipe2_wb_preg_vld_dupx),
   .lsu_idu_wb_pipe3_wb_preg_dupx                              (lsu_idu_wb_pipe3_wb_preg_dupx),
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx                              (lsu_idu_wb_pipe3_wb_preg_vld_dupx),
-  .rtu_yy_xx_flush                              (rtu_yy_xx_flush)
+  .rtu_yy_xx_flush                              (rtu_yy_xx_flush),
+  .rvv_idu_vset_wb_preg_dupx         (rvv_idu_vset_wb_preg),
+  .rvv_idu_vset_wb_preg_vld_dupx     (rvv_idu_vset_wb_vld)
 );
 
 ct_idu_is_md x_ct_idu_is_mult (
@@ -1076,7 +1341,9 @@ ct_idu_is_md x_ct_idu_is_mult (
   .lsu_idu_wb_pipe3_wb_preg_dupx                              (lsu_idu_wb_pipe3_wb_preg_dupx),
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx                              (lsu_idu_wb_pipe3_wb_preg_vld_dupx),
   .rtu_yy_xx_flush                              (rtu_yy_xx_flush),
-  .ctrl_md_unit_stall                              (md_unit_stall)  //2026-10-08 单元准入
+  .ctrl_md_unit_stall                              (md_unit_stall),  //2026-10-08 单元准入
+  .rvv_idu_vset_wb_preg_dupx         (rvv_idu_vset_wb_preg),
+  .rvv_idu_vset_wb_preg_vld_dupx     (rvv_idu_vset_wb_vld)
 );
 
 ct_idu_is_md x_ct_idu_is_div (
@@ -1099,7 +1366,9 @@ ct_idu_is_md x_ct_idu_is_div (
   .lsu_idu_wb_pipe3_wb_preg_dupx                              (lsu_idu_wb_pipe3_wb_preg_dupx),
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx                              (lsu_idu_wb_pipe3_wb_preg_vld_dupx),
   .rtu_yy_xx_flush                              (rtu_yy_xx_flush),
-  .ctrl_md_unit_stall                              (md_unit_stall)  //2026-10-08 单元准入
+  .ctrl_md_unit_stall                              (md_unit_stall),  //2026-10-08 单元准入
+  .rvv_idu_vset_wb_preg_dupx         (rvv_idu_vset_wb_preg),
+  .rvv_idu_vset_wb_preg_vld_dupx     (rvv_idu_vset_wb_vld)
 );
 
 // Instance 7: ct_idu_is_lsiq
@@ -1142,8 +1411,22 @@ ct_idu_is_lsiq x_ct_idu_is_lsiq (
   .lsiq_dp_pipe4_entry_read_data            (lsiq_dp_pipe4_entry_read_data),
   // 2026-10-15 停用: .lsiq_pipe4_entry_unalign_2nd          (lsiq_pipe4_entry_unalign_2nd),
   .lsiq_pipe4_entry_old                  (lsiq_pipe4_entry_old),
-  .lsiq_dp_pipe4_issue_entry            (lsiq_dp_pipe4_issue_entry)
-
+  .lsiq_dp_pipe4_issue_entry            (lsiq_dp_pipe4_issue_entry),
+  .lsiq_vec_upd_entry                    (lsiq_vec_upd_entry),
+  .lsiq_vec_upd_data                     (lsiq_vec_upd_data),
+  .lsiq_vec_beat_rdy                     (lsiq_vec_beat_rdy),
+  .vec_old_iid                           (vec_old_iid),
+  .vec_old_vld                           (vec_old_vld),
+  .lsu_idu_beat_done                     (lsu_idu_beat_done),
+  .lsiq_dp_pipe3_vec_beat                (lsiq_dp_pipe3_vec_beat),
+  .lsiq_dp_pipe4_vec_beat                (lsiq_dp_pipe4_vec_beat),
+  .lsiq_dp_pipe3_issue_vec               (lsiq_dp_pipe3_issue_vec),
+  .lsiq_dp_pipe4_issue_vec               (lsiq_dp_pipe4_issue_vec),
+  .lsiq_vec_old                          (lsiq_vec_old),
+  .lsiq_vec_create_entry                 (lsiq_vec_create_entry),
+  .lsiq_vec_create_vld                   (lsiq_vec_create_vld),
+  .rvv_idu_vset_wb_preg_dupx         (rvv_idu_vset_wb_preg),
+  .rvv_idu_vset_wb_preg_vld_dupx     (rvv_idu_vset_wb_vld)
 );
 
 // Instance 8: ct_idu_is_sdiq
@@ -1178,8 +1461,14 @@ ct_idu_is_sdiq x_ct_idu_is_sdiq (
   .sdiq_issue_en                         (sdiq_xx_issue_en),
   .sdiq_dp_issue_entry                              (sdiq_dp_issue_entry),
   .sdiq_dp_issue_read_data                              (sdiq_dp_issue_read_data),
+  .sdiq_dp_issue_vec                                    (sdiq_dp_issue_vec),
+  .sdiq_entry_vld_o                                     (sdiq_entry_vld),
+  .vec_sdiq_create_vld                                  (vec_sdiq_create_vld),
+  .vec_sdiq_create_entry                                (vec_sdiq_create_entry),
   .sdiq_create0_entry                              (sdiq_create0_entry),
-  .sdiq_create1_entry                              (sdiq_create1_entry)
+  .sdiq_create1_entry                              (sdiq_create1_entry),
+  .rvv_idu_vset_wb_preg_dupx         (rvv_idu_vset_wb_preg),
+  .rvv_idu_vset_wb_preg_vld_dupx     (rvv_idu_vset_wb_vld)
 );
 
 ct_idu_is_biq x_ct_idu_is_biq (
@@ -1201,7 +1490,9 @@ ct_idu_is_biq x_ct_idu_is_biq (
   .iu_idu_ex2_pipe2_wb_preg_vld_dupx                              (iu_idu_ex2_pipe2_wb_preg_vld_dupx),
   .lsu_idu_wb_pipe3_wb_preg_dupx                              (lsu_idu_wb_pipe3_wb_preg_dupx),
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx                              (lsu_idu_wb_pipe3_wb_preg_vld_dupx),
-  .rtu_yy_xx_flush                              (rtu_yy_xx_flush)
+  .rtu_yy_xx_flush                              (rtu_yy_xx_flush),
+  .rvv_idu_vset_wb_preg_dupx         (rvv_idu_vset_wb_preg),
+  .rvv_idu_vset_wb_preg_vld_dupx     (rvv_idu_vset_wb_vld)
 );
 
 // Instance 9: ct_idu_rf_ctrl
@@ -1267,6 +1558,8 @@ ct_idu_rf_dp x_ct_idu_rf_dp (
   .idu_div_rslt_sel                      (idu_div_rslt_sel),//out
   .lsiq_dp_pipe3_issue_entry             (lsiq_dp_pipe3_issue_entry),
   .lsiq_dp_pipe3_issue_read_data         (lsiq_dp_pipe3_entry_read_data),
+  .lsiq_dp_pipe3_vec_beat                (lsiq_dp_pipe3_vec_beat),
+  .lsiq_dp_pipe3_issue_vec               (lsiq_dp_pipe3_issue_vec),
   .lsiq_xx_pipe3_issue_en                              (lsiq_xx_pipe3_issue_en),
   // 2026-10-15 停用: .lsiq_pipe3_entry_unalign_2nd          (lsiq_pipe3_entry_unalign_2nd),
   .lsiq_pipe3_entry_old                  (lsiq_pipe3_entry_old),
@@ -1282,8 +1575,13 @@ ct_idu_rf_dp x_ct_idu_rf_dp (
   // 2026-10-15 停用: .idu_lsu_ld_unalign_2nd                (idu_lsu_ld_unalign_2nd),//out
   .idu_lsu_ld_lch_entry                  (idu_lsu_ld_lch_entry),//out
   .idu_lsu_ld_oldest                     (idu_lsu_ld_oldest),//out
+  .idu_lsu_ld_vec                        (idu_lsu_ld_vec),//out
+  .idu_lsu_ld_uop_idx                    (idu_lsu_ld_uop_idx),//out
+  .idu_lsu_ld_last                       (idu_lsu_ld_last),//out
   .lsiq_dp_pipe4_issue_entry             (lsiq_dp_pipe4_issue_entry),
   .lsiq_dp_pipe4_issue_read_data         (lsiq_dp_pipe4_entry_read_data),
+  .lsiq_dp_pipe4_vec_beat                (lsiq_dp_pipe4_vec_beat),
+  .lsiq_dp_pipe4_issue_vec               (lsiq_dp_pipe4_issue_vec),
   .lsiq_xx_pipe4_issue_en                              (lsiq_xx_pipe4_issue_en),
   // 2026-10-15 停用: .lsiq_pipe4_entry_unalign_2nd          (lsiq_pipe4_entry_unalign_2nd),
   .lsiq_pipe4_entry_old                  (lsiq_pipe4_entry_old),
@@ -1299,8 +1597,14 @@ ct_idu_rf_dp x_ct_idu_rf_dp (
   .idu_lsu_st_lch_entry                  (idu_lsu_st_lch_entry),//out
   .idu_lsu_st_oldest                     (idu_lsu_st_oldest),//out
   .idu_lsu_st_sdiq_entry                 (idu_lsu_st_sdiq_entry),//out
+  .idu_lsu_st_vec                        (idu_lsu_st_vec),//out
+  .idu_lsu_st_uop_idx                    (idu_lsu_st_uop_idx),//out
+  .idu_lsu_st_last                       (idu_lsu_st_last),//out
   .sdiq_dp_issue_entry                              (sdiq_dp_issue_entry),
   .sdiq_dp_issue_read_data                              (sdiq_dp_issue_read_data),
+  .sdiq_dp_issue_vec                                    (sdiq_dp_issue_vec),
+  .vec_sdiq_issue_entry                                 (vec_sdiq_issue_entry),
+  .vec_sd_data                                          (vec_sd_data),
   .sdiq_xx_issue_en                              (sdiq_xx_issue_en),
   .prf_dp_rf_pipe5_src0_data                              (prf_dp_rf_pipe5_src0_data),
   .dp_prf_rf_pipe5_src0_preg                              (dp_prf_rf_pipe5_src0_preg),
@@ -1340,6 +1644,9 @@ ct_idu_rf_prf_pregfile x_ct_idu_rf_prf_pregfile (
   .dp_prf_rf_pipe5_src0_preg                              (dp_prf_rf_pipe5_src0_preg),
   .dp_prf_rf_pipe6_src0_preg                              (dp_prf_rf_pipe6_src0_preg),
   .dp_prf_rf_pipe6_src1_preg                              (dp_prf_rf_pipe6_src1_preg),
+  // ---- VIQ head 的两个读口 (S2 新增) ----
+  .dp_prf_rf_vec_src0_preg                                (vecq_prf_rd_addr0),
+  .dp_prf_rf_vec_src1_preg                                (vecq_prf_rd_addr1),
   .iu_idu_ex2_pipe0_wb_preg_data                              (iu_idu_ex2_pipe0_wb_preg_data),//in
   .iu_idu_ex2_pipe0_wb_preg_expand                              (iu_idu_ex2_pipe0_wb_preg_expand),//in
   .iu_idu_ex2_pipe0_wb_preg_vld                              (iu_idu_ex2_pipe0_wb_preg_vld),//in
@@ -1352,6 +1659,10 @@ ct_idu_rf_prf_pregfile x_ct_idu_rf_prf_pregfile (
   .lsu_idu_wb_pipe3_wb_preg_data                              (lsu_idu_wb_pipe3_wb_preg_data),//in
   .lsu_idu_wb_pipe3_wb_preg_expand                              (lsu_idu_wb_pipe3_wb_preg_expand),//in
   .lsu_idu_wb_pipe3_wb_preg_vld                              (lsu_idu_wb_pipe3_wb_preg_vld),//in
+  // ---- RVV vset 标量 rd 的第 6 写口 (S3) ----
+  .rvv_vset_wb_preg_data                              (rvv_idu_vset_wb_data),
+  .rvv_vset_wb_preg_vld                               (rvv_idu_vset_wb_vld),
+  .rvv_vset_wb_preg_addr                              (rvv_idu_vset_wb_preg),
   .prf_dp_rf_pipe0_src0_data                              (prf_dp_rf_pipe0_src0_data),
   .prf_dp_rf_pipe0_src1_data                              (prf_dp_rf_pipe0_src1_data),
   .prf_dp_rf_pipe1_src0_data                              (prf_dp_rf_pipe1_src0_data),
@@ -1363,6 +1674,9 @@ ct_idu_rf_prf_pregfile x_ct_idu_rf_prf_pregfile (
   .prf_dp_rf_pipe5_src0_data                              (prf_dp_rf_pipe5_src0_data),
   .prf_dp_rf_pipe6_src0_data                              (prf_dp_rf_pipe6_src0_data),
   .prf_dp_rf_pipe6_src1_data                              (prf_dp_rf_pipe6_src1_data),
+  // ---- VIQ head 的两个读数据口 (S2 新增) ----
+  .prf_dp_rf_vec_src0_data                                (vecq_prf_rd_data0),
+  .prf_dp_rf_vec_src1_data                                (vecq_prf_rd_data1),
   // ---- RTU 的访问口 (2026-10-08 新增, 4 读 1 写) ----
   .rtu_preg_raddr0                       (rtu_preg_raddr0),
   .rtu_preg_raddr1                       (rtu_preg_raddr1),
@@ -1413,7 +1727,9 @@ ct_idu_rf_prf_pregfile x_ct_idu_rf_prf_pregfile (
 //    * is_store/is_branch 直接用 IS 级已经分类好的 IS_STORE / IS_BJU。
 //==========================================================
 
-parameter IS_WIDTH             = 76;
+parameter IS_WIDTH             = 79;
+parameter IS_VEC_TYPE          = 78;   // [78:77]
+parameter IS_VEC               = 76;
 parameter IS_ILLEGAL           = 75;
 parameter IS_ALU_SHORT         = 74;
 parameter IS_LSU               = 73;
@@ -1506,5 +1822,73 @@ assign idu_rtu_disp2_flags[3]       = (dp_is_dis_inst2_data[6:0] == 7'b1110011) 
 assign idu_rtu_disp2_flags[2]       = 1'b0;                                      // intmask
 assign idu_rtu_disp2_flags[1]       = dp_is_dis_inst2_data[IS_STORE];                  // is_store
 assign idu_rtu_disp2_flags[0]       = dp_is_dis_inst2_data[IS_BJU];                  // is_branch
+
+// ============================================================
+// 2026-10-17 S8: 向量 load/store fill 引擎
+// ============================================================
+// 本拍 create 的 anchor 的 iid / load-store (计划的口径: 同拍最多一个向量 L/S)
+localparam int LSIQ_VEC      = 60;
+localparam int LSIQ_STORE    = 48;
+wire lsiq_vec_create_sel0 = dp_lsiq_create0_data[LSIQ_VEC];
+assign lsiq_vec_create_iid   = lsiq_vec_create_sel0 ? dp_lsiq_create0_iid
+                                                    : dp_lsiq_create1_iid;
+assign lsiq_vec_create_store = lsiq_vec_create_sel0 ? dp_lsiq_create0_data[LSIQ_STORE]
+                                                    : dp_lsiq_create1_data[LSIQ_STORE];
+
+ct_idu_vec_ls_fill u_vec_ls_fill (
+  .cpurst_b                     (cpurst_b),
+  .forever_cpuclk               (forever_cpuclk),
+  .rtu_yy_xx_flush              (rtu_yy_xx_flush),
+
+  .rtu_yy_xx_commit0            (rtu_yy_xx_commit0),
+  .rtu_yy_xx_commit0_iid        (rtu_yy_xx_commit0_iid),
+  .rtu_yy_xx_commit1            (rtu_yy_xx_commit1),
+  .rtu_yy_xx_commit1_iid        (rtu_yy_xx_commit1_iid),
+  .rtu_yy_xx_commit2            (rtu_yy_xx_commit2),
+  .rtu_yy_xx_commit2_iid        (rtu_yy_xx_commit2_iid),
+
+  .rvv_lsu_uop_valid            (rvv_lsu_uop_valid),
+  .rvv_lsu_uop                  (rvv_lsu_uop),
+  .rvv_lsu_uop_ready            (rvv_lsu_uop_ready),
+  .rvv_lsu_resp_valid           (rvv_lsu_resp_valid),
+  .rvv_lsu_resp                 (rvv_lsu_resp),
+  .rvv_lsu_resp_ready           (rvv_lsu_resp_ready),
+
+  .lsiq_vec_create_entry        (lsiq_vec_create_entry),
+  .lsiq_vec_create_vld          (lsiq_vec_create_vld),
+  .lsiq_vec_create_iid          (lsiq_vec_create_iid),
+  .lsiq_vec_create_store        (lsiq_vec_create_store),
+  .lsiq_vec_upd_entry           (lsiq_vec_upd_entry),
+  .lsiq_vec_upd_data            (lsiq_vec_upd_data),
+  .lsiq_vec_beat_rdy            (lsiq_vec_beat_rdy),
+  .lsiq_vec_old                 (lsiq_vec_old),
+  .lsu_idu_beat_done            (lsu_idu_beat_done),
+  .lsu_idu_pop_entry            (lsu_idu_lsiq_pop_entry),
+
+  .lsu_idu_wb_pipe3_wb_preg_vec (lsu_idu_wb_pipe3_wb_preg_vec),
+  .lsu_idu_wb_pipe3_wb_uop_idx  (lsu_idu_wb_pipe3_wb_uop_idx),
+  .lsu_idu_wb_pipe3_wb_preg_iid (lsu_idu_wb_pipe3_wb_preg_iid),
+  .lsu_idu_wb_pipe3_wb_preg_data(lsu_idu_wb_pipe3_wb_preg_data),
+
+  .lsu_idu_sq_pop_vld           (lsu_idu_sq_pop_vld),
+  .lsu_idu_sq_pop_uop_idx       (lsu_idu_sq_pop_uop_idx),
+
+  .sdiq_entry_vld               (sdiq_entry_vld),
+  .vec_sdiq_create_vld          (vec_sdiq_create_vld),
+  .vec_sdiq_create_entry        (vec_sdiq_create_entry),
+  .sdiq_dp_issue_entry          (sdiq_dp_issue_entry),
+  .sdiq_issue_en                (sdiq_xx_issue_en),
+  .vec_sd_data                  (vec_sd_data),
+
+  .lsu_idu_lq_full              (lsu_idu_lq_full),
+  .lsu_idu_rb_full              (lsu_idu_rb_full),
+  .lsu_idu_sq_full              (lsu_idu_sq_full),
+
+  .vec_old_iid                  (vec_old_iid),
+  .vec_old_vld                  (vec_old_vld),
+
+  .vec_st_cmit_vld              (vec_st_cmit_vld),
+  .vec_st_cmit_iid              (vec_st_cmit_iid)
+);
 
 endmodule

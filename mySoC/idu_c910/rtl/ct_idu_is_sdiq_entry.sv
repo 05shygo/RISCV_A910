@@ -48,6 +48,9 @@ module ct_idu_is_sdiq_entry (
   input  logic         iu_idu_ex2_pipe2_wb_preg_vld_dupx,
   input  logic [5:0]   lsu_idu_wb_pipe3_wb_preg_dupx,
   input  logic         lsu_idu_wb_pipe3_wb_preg_vld_dupx,
+  // 第 5 路唤醒: RVV vset 写回 (S3)
+  input  logic [5:0]   rvv_idu_vset_wb_preg_dupx,
+  input  logic         rvv_idu_vset_wb_preg_vld_dupx,
 
   //==========================================================
   // SDIQ 控制
@@ -212,6 +215,8 @@ ct_idu_dep_reg_entry u_ct_idu_dep_reg_entry_src1 (
   // 写端口：LSU pipe3 wb
   .lsu_idu_wb_pipe3_wb_preg_dupx     (lsu_idu_wb_pipe3_wb_preg_dupx     ),
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx (lsu_idu_wb_pipe3_wb_preg_vld_dupx ),
+  .rvv_idu_vset_wb_preg_dupx         (rvv_idu_vset_wb_preg_dupx         ),
+  .rvv_idu_vset_wb_preg_vld_dupx     (rvv_idu_vset_wb_preg_vld_dupx     ),
 
   // flush
   .rtu_yy_xx_flush                   (rtu_yy_xx_flush                   ),

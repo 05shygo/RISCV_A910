@@ -10,16 +10,16 @@ module ct_idu_ir_ctrl (
   input  logic         ctrl_is_inst2_vld,
   input  logic         ctrl_is_stall,
   input  logic [1:0]   ctrl_xx_is_inst0_sel,
-  input  logic [6:0]   dp_ctrl_ir_inst0_ctrl_info,
+  input  logic [8:0]   dp_ctrl_ir_inst0_ctrl_info,
   input  logic         dp_ctrl_ir_inst0_dst_vld,
   input  logic         dp_ctrl_ir_inst0_dst_x0,
-  input  logic [6:0]   dp_ctrl_ir_inst1_ctrl_info,
+  input  logic [8:0]   dp_ctrl_ir_inst1_ctrl_info,
   input  logic         dp_ctrl_ir_inst1_dst_vld,
   input  logic         dp_ctrl_ir_inst1_dst_x0,
-  input  logic [6:0]   dp_ctrl_ir_inst2_ctrl_info,
+  input  logic [8:0]   dp_ctrl_ir_inst2_ctrl_info,
   input  logic         dp_ctrl_ir_inst2_dst_vld,
   input  logic         dp_ctrl_ir_inst2_dst_x0,
-  input  logic [6:0]   dp_ctrl_is_dis_inst2_ctrl_info,
+  input  logic [8:0]   dp_ctrl_is_dis_inst2_ctrl_info,
   input  logic         rtu_idu_alloc_preg0_vld,
   input  logic         rtu_idu_alloc_preg1_vld,
   input  logic         rtu_idu_alloc_preg2_vld,
@@ -34,6 +34,14 @@ module ct_idu_ir_ctrl (
   output logic [1:0]   ctrl_ir_pre_dis_aiq_create0_sel,
   output logic         ctrl_ir_pre_dis_aiq_create1_en,
   output logic [1:0]   ctrl_ir_pre_dis_aiq_create1_sel,
+  // 向量派发 (S1 新增): 逐车道的向量标志 (is_ctrl 用) + VIQ create 仲裁
+  output logic         ctrl_ir_pre_dis_inst0_vec,
+  output logic         ctrl_ir_pre_dis_inst1_vec,
+  output logic         ctrl_ir_pre_dis_inst2_vec,
+  output logic         ctrl_ir_pre_dis_vec_create0_en,
+  output logic [1:0]   ctrl_ir_pre_dis_vec_create0_sel,
+  output logic         ctrl_ir_pre_dis_vec_create1_en,
+  output logic [1:0]   ctrl_ir_pre_dis_vec_create1_sel,
   output logic         ctrl_ir_pre_dis_biq_create0_en,
   output logic [1:0]   ctrl_ir_pre_dis_biq_create0_sel,
   output logic         ctrl_ir_pre_dis_biq_create1_en,
@@ -122,11 +130,11 @@ logic             ctrl_ir_pre_dis_sdiq_create1_sel_inst1;
 logic             ctrl_ir_pre_dis_type_stall_pipedown2;
 logic             ctrl_ir_preg_stall;
 logic             ir_inst_clk;
-logic [12:0]      ir_pipedown_inst0_ctrl_info;
+logic [14:0]      ir_pipedown_inst0_ctrl_info;
 logic             ir_pipedown_inst0_vld;
-logic [12:0]      ir_pipedown_inst1_ctrl_info;
+logic [14:0]      ir_pipedown_inst1_ctrl_info;
 logic             ir_pipedown_inst1_vld;
-logic [12:0]      ir_pipedown_inst2_ctrl_info;
+logic [14:0]      ir_pipedown_inst2_ctrl_info;
 logic             ir_pipedown_inst2_vld;
 // 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [12:0]      ir_pipedown_inst3_ctrl_info;
 
@@ -175,13 +183,28 @@ logic             ctrl_ir_pre_dis_inst2_mult;
 logic             ctrl_ir_pre_dis_inst0_div;
 logic             ctrl_ir_pre_dis_inst1_div;
 logic             ctrl_ir_pre_dis_inst2_div;
+
+// ---- 向量 create 仲裁 (S1 新增) ----
+logic             ctrl_ir_inst0_vec;
+logic             ctrl_ir_inst1_vec;
+logic             ctrl_ir_inst2_vec;
+logic             ctrl_ir_inst0_vec_vld;
+logic             ctrl_ir_inst1_vec_vld;
+logic             ctrl_ir_inst2_vec_vld;
+logic             ctrl_ir_pre_dis_3_vec_inst;
+logic             ctrl_ir_pre_dis_vec_create0_sel_inst0;
+logic             ctrl_ir_pre_dis_vec_create0_sel_inst1;
+logic             ctrl_ir_pre_dis_vec_create1_sel_inst1;
+
 //==========================================================
 //                       Parameters
 //==========================================================
 //----------------------------------------------------------
 //                 IS ctrl path parameters
 //----------------------------------------------------------
-parameter IS_CTRL_WIDTH       = 7;
+parameter IS_CTRL_WIDTH       = 9;
+parameter IS_CTRL_VMEM        = 8;
+parameter IS_CTRL_VEC         = 7;
 parameter IS_CTRL_ILLEGAL     = 6;
 parameter IS_CTRL_ALU         = 5;
 parameter IS_CTRL_STADDR      = 4;
@@ -312,29 +335,45 @@ assign ir_pipedown_inst2_ctrl_info[IS_CTRL_WIDTH-1:0] =
   | {IS_CTRL_WIDTH{ctrl_xx_is_inst0_sel[1]}} & dp_ctrl_ir_inst2_ctrl_info[IS_CTRL_WIDTH-1:0];
 
 //rename for pre dispatch
-assign ctrl_ir_inst0_aiq          = ir_pipedown_inst0_ctrl_info[IS_CTRL_ALU] | ir_pipedown_inst0_ctrl_info[IS_CTRL_ILLEGAL];
-assign ctrl_ir_inst1_aiq          = ir_pipedown_inst1_ctrl_info[IS_CTRL_ALU] | ir_pipedown_inst1_ctrl_info[IS_CTRL_ILLEGAL];;
-assign ctrl_ir_inst2_aiq          = ir_pipedown_inst2_ctrl_info[IS_CTRL_ALU] | ir_pipedown_inst2_ctrl_info[IS_CTRL_ILLEGAL];;
+// 向量标志 (S1 新增): 来自 IR 级 ctrl_info
+assign ctrl_ir_inst0_vec          = ir_pipedown_inst0_ctrl_info[IS_CTRL_VEC];
+assign ctrl_ir_inst1_vec          = ir_pipedown_inst1_ctrl_info[IS_CTRL_VEC];
+assign ctrl_ir_inst2_vec          = ir_pipedown_inst2_ctrl_info[IS_CTRL_VEC];
 
-assign ctrl_ir_inst0_mult  = ir_pipedown_inst0_ctrl_info[IS_CTRL_MULT];
-assign ctrl_ir_inst1_mult  = ir_pipedown_inst1_ctrl_info[IS_CTRL_MULT];
-assign ctrl_ir_inst2_mult  = ir_pipedown_inst2_ctrl_info[IS_CTRL_MULT];
+// ⚠️ 六个标量队列全部加 `!vec` 门控 (S1): 向量指令**不能**进任何标量队列。
+//    S7 会把 lsiq 改成 `(标量 LSU) || IS_CTRL_VMEM`, 让向量 L/S 在 IR 级创建 anchor;
+//    其余五个队列永远 `!vec`。S1~S6 期间 lsiq 也按 `!vec` 挡住。
+assign ctrl_ir_inst0_aiq          = (ir_pipedown_inst0_ctrl_info[IS_CTRL_ALU] | ir_pipedown_inst0_ctrl_info[IS_CTRL_ILLEGAL])
+                                 && !ctrl_ir_inst0_vec;
+assign ctrl_ir_inst1_aiq          = (ir_pipedown_inst1_ctrl_info[IS_CTRL_ALU] | ir_pipedown_inst1_ctrl_info[IS_CTRL_ILLEGAL])
+                                 && !ctrl_ir_inst1_vec;
+assign ctrl_ir_inst2_aiq          = (ir_pipedown_inst2_ctrl_info[IS_CTRL_ALU] | ir_pipedown_inst2_ctrl_info[IS_CTRL_ILLEGAL])
+                                 && !ctrl_ir_inst2_vec;
 
-assign ctrl_ir_inst0_div  = ir_pipedown_inst0_ctrl_info[IS_CTRL_DIV];
-assign ctrl_ir_inst1_div  = ir_pipedown_inst1_ctrl_info[IS_CTRL_DIV];
-assign ctrl_ir_inst2_div  = ir_pipedown_inst2_ctrl_info[IS_CTRL_DIV];
+assign ctrl_ir_inst0_mult  = ir_pipedown_inst0_ctrl_info[IS_CTRL_MULT] && !ctrl_ir_inst0_vec;
+assign ctrl_ir_inst1_mult  = ir_pipedown_inst1_ctrl_info[IS_CTRL_MULT] && !ctrl_ir_inst1_vec;
+assign ctrl_ir_inst2_mult  = ir_pipedown_inst2_ctrl_info[IS_CTRL_MULT] && !ctrl_ir_inst2_vec;
 
-assign ctrl_ir_inst0_biq           = ir_pipedown_inst0_ctrl_info[IS_CTRL_BJU];
-assign ctrl_ir_inst1_biq           = ir_pipedown_inst1_ctrl_info[IS_CTRL_BJU];
-assign ctrl_ir_inst2_biq           = ir_pipedown_inst2_ctrl_info[IS_CTRL_BJU];
+assign ctrl_ir_inst0_div  = ir_pipedown_inst0_ctrl_info[IS_CTRL_DIV] && !ctrl_ir_inst0_vec;
+assign ctrl_ir_inst1_div  = ir_pipedown_inst1_ctrl_info[IS_CTRL_DIV] && !ctrl_ir_inst1_vec;
+assign ctrl_ir_inst2_div  = ir_pipedown_inst2_ctrl_info[IS_CTRL_DIV] && !ctrl_ir_inst2_vec;
 
-assign ctrl_ir_inst0_lsiq          = ir_pipedown_inst0_ctrl_info[IS_CTRL_LSU];
-assign ctrl_ir_inst1_lsiq          = ir_pipedown_inst1_ctrl_info[IS_CTRL_LSU];
-assign ctrl_ir_inst2_lsiq          = ir_pipedown_inst2_ctrl_info[IS_CTRL_LSU];
+assign ctrl_ir_inst0_biq           = ir_pipedown_inst0_ctrl_info[IS_CTRL_BJU] && !ctrl_ir_inst0_vec;
+assign ctrl_ir_inst1_biq           = ir_pipedown_inst1_ctrl_info[IS_CTRL_BJU] && !ctrl_ir_inst1_vec;
+assign ctrl_ir_inst2_biq           = ir_pipedown_inst2_ctrl_info[IS_CTRL_BJU] && !ctrl_ir_inst2_vec;
 
-assign ctrl_ir_inst0_sdiq          = ir_pipedown_inst0_ctrl_info[IS_CTRL_STADDR];
-assign ctrl_ir_inst1_sdiq          = ir_pipedown_inst1_ctrl_info[IS_CTRL_STADDR];
-assign ctrl_ir_inst2_sdiq          = ir_pipedown_inst2_ctrl_info[IS_CTRL_STADDR];
+// 2026-10-17 S7: 向量 LOAD/STORE 也要在 IR→IS 派发时建 LSIQ anchor
+// (IS_CTRL_VMEM 由 ct_idu_ir_dp 从 vec_type 生成, = load 或 store)
+assign ctrl_ir_inst0_lsiq          = (ir_pipedown_inst0_ctrl_info[IS_CTRL_LSU] && !ctrl_ir_inst0_vec)
+                                   || ir_pipedown_inst0_ctrl_info[IS_CTRL_VMEM];
+assign ctrl_ir_inst1_lsiq          = (ir_pipedown_inst1_ctrl_info[IS_CTRL_LSU] && !ctrl_ir_inst1_vec)
+                                   || ir_pipedown_inst1_ctrl_info[IS_CTRL_VMEM];
+assign ctrl_ir_inst2_lsiq          = (ir_pipedown_inst2_ctrl_info[IS_CTRL_LSU] && !ctrl_ir_inst2_vec)
+                                   || ir_pipedown_inst2_ctrl_info[IS_CTRL_VMEM];
+
+assign ctrl_ir_inst0_sdiq          = ir_pipedown_inst0_ctrl_info[IS_CTRL_STADDR] && !ctrl_ir_inst0_vec;
+assign ctrl_ir_inst1_sdiq          = ir_pipedown_inst1_ctrl_info[IS_CTRL_STADDR] && !ctrl_ir_inst1_vec;
+assign ctrl_ir_inst2_sdiq          = ir_pipedown_inst2_ctrl_info[IS_CTRL_STADDR] && !ctrl_ir_inst2_vec;
 
 //----------------------------------------------------------
 //                  prepare IS inst valid
@@ -343,6 +382,25 @@ assign ctrl_ir_pre_dis_inst0_vld = ir_pipedown_inst0_vld;
 assign ctrl_ir_pre_dis_inst1_vld = ir_pipedown_inst1_vld;
 assign ctrl_ir_pre_dis_inst2_vld = ir_pipedown_inst2_vld
                                    && !ctrl_ir_pre_dis_type_stall_pipedown2;
+
+// 向量指令的 pre-dispatch 标志 (S1 新增)
+// ⚠️ 必须带 `_vld` 门控: IR 级数据寄存器不复位, 无效车道的 vec 位是 X,
+//    裸标志相与会把 X 污染进 pipedown2 (与 mult/div 那次历史 bug 同款)。
+assign ctrl_ir_pre_dis_inst0_vec = ctrl_ir_pre_dis_inst0_vld && ctrl_ir_inst0_vec;
+assign ctrl_ir_pre_dis_inst1_vec = ctrl_ir_pre_dis_inst1_vld && ctrl_ir_inst1_vec;
+assign ctrl_ir_pre_dis_inst2_vec = ctrl_ir_pre_dis_inst2_vld && ctrl_ir_inst2_vec;
+
+// ⚠️ 3_vec 必须用**原始** ir_pipedown_instN_vld, 不能用 pre_dis_instN_vld:
+//    pre_dis_inst2_vld 本身已经与 type_stall_pipedown2 相与, 而 type_stall 又
+//    包含 3_vec_inst ⇒ 若这里用 pre_dis_inst2_vld 就会形成组合环
+//    (inst2_vld → type_stall → 3_vec → inst2_vec → inst2_vld), 振荡。
+//    这与 AIQ 的 ctrl_ir_instN_aiq_vld 用原始 vld 完全同构 (见 :366-383 的历史教训)。
+assign ctrl_ir_inst0_vec_vld = ir_pipedown_inst0_vld && ctrl_ir_inst0_vec;
+assign ctrl_ir_inst1_vec_vld = ir_pipedown_inst1_vld && ctrl_ir_inst1_vec;
+assign ctrl_ir_inst2_vec_vld = ir_pipedown_inst2_vld && ctrl_ir_inst2_vec;
+assign ctrl_ir_pre_dis_3_vec_inst =
+            ctrl_ir_inst0_vec_vld && ctrl_ir_inst1_vec_vld &&
+            ctrl_ir_inst2_vec_vld;
 
 //----------------------------------------------------------
 //             prepare IS dispatch type stall
@@ -388,7 +446,8 @@ assign ctrl_ir_pre_dis_type_stall_pipedown2 = ctrl_ir_pre_dis_3_biq_inst
                                            || ctrl_ir_pre_dis_3_aiq_inst
                                            || ctrl_ir_pre_dis_3_lsiq_inst
                                            || ctrl_ir_pre_dis_3_mult_inst
-                                           || ctrl_ir_pre_dis_3_div_inst;
+                                           || ctrl_ir_pre_dis_3_div_inst
+                                           || ctrl_ir_pre_dis_3_vec_inst;
 
 assign ctrl_ir_pre_dis_pipedown2  = ir_pipedown_inst2_vld
                                     && ctrl_ir_pre_dis_type_stall_pipedown2;
@@ -486,6 +545,46 @@ begin
     ctrl_ir_pre_dis_aiq_create1_sel[1:0] = 2'd1;
   else
     ctrl_ir_pre_dis_aiq_create1_sel[1:0] = 2'd2;
+end
+
+//----------------------------------------------------------
+//                  VIQ create enable and Select (S1 新增)
+//----------------------------------------------------------
+// 仲裁与 AIQ 完全同构: create0 取最老, create1 取次老。一拍最多两条向量指令
+// 进 IS (第三条由 ctrl_ir_pre_dis_3_vec_inst 压到下一拍)。
+assign ctrl_ir_pre_dis_vec_create0_en = ctrl_ir_pre_dis_inst0_vec
+                                     || ctrl_ir_pre_dis_inst1_vec
+                                     || ctrl_ir_pre_dis_inst2_vec;
+
+assign ctrl_ir_pre_dis_vec_create1_en =
+            ctrl_ir_pre_dis_inst0_vec && ctrl_ir_pre_dis_inst1_vec
+         || ctrl_ir_pre_dis_inst0_vec && ctrl_ir_pre_dis_inst2_vec
+         || ctrl_ir_pre_dis_inst1_vec && ctrl_ir_pre_dis_inst2_vec;
+
+assign ctrl_ir_pre_dis_vec_create0_sel_inst0 =
+              ctrl_ir_pre_dis_inst0_vec;
+assign ctrl_ir_pre_dis_vec_create0_sel_inst1 =
+              ctrl_ir_pre_dis_inst1_vec & !ctrl_ir_pre_dis_inst0_vec;
+
+always @(*)
+begin
+  if(ctrl_ir_pre_dis_vec_create0_sel_inst0)
+    ctrl_ir_pre_dis_vec_create0_sel[1:0] = 2'd0;
+  else if(ctrl_ir_pre_dis_vec_create0_sel_inst1)
+    ctrl_ir_pre_dis_vec_create0_sel[1:0] = 2'd1;
+  else
+    ctrl_ir_pre_dis_vec_create0_sel[1:0] = 2'd2;
+end
+
+assign ctrl_ir_pre_dis_vec_create1_sel_inst1 =
+              ctrl_ir_pre_dis_inst1_vec & ctrl_ir_pre_dis_inst0_vec;
+
+always @(*)
+begin
+  if(ctrl_ir_pre_dis_vec_create1_sel_inst1)
+    ctrl_ir_pre_dis_vec_create1_sel[1:0] = 2'd1;
+  else
+    ctrl_ir_pre_dis_vec_create1_sel[1:0] = 2'd2;
 end
 
 //----------------------------------------------------------

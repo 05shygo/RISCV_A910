@@ -1109,10 +1109,8 @@ module tb_a910_difftest;
     force dut.iu_btb_chk      = 25'b0;
     force dut.iu_btb_taken    = 1'b0;
     force dut.iu_btb_is_cond  = 1'b0;
-    force dut.cmplt_vld1      = 1'b0;
-    force dut.cmplt_iid1      = 7'b0;
-    force dut.cmplt_vld2      = 1'b0;
-    force dut.cmplt_iid2      = 7'b0;
+    // 2026-10-17 S9: 删掉 cmplt 的 force —— 否则 bridge 生成的完成脉冲
+    // (cmplt_vld1 = core ROB 完成链 / cmplt_vld2 = vset) 永远传不到 RTU。
   end
 
   // -------------------------------------------------------------------------

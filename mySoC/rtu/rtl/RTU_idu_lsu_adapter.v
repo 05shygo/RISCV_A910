@@ -123,6 +123,9 @@ module RTU_idu_lsu_adapter (
     input  wire [31:0] lsu_rtu_wb_pipe4_expt_addr,
     input  wire        lsu_rtu_wb_pipe4_flush,      // store 投机写失败
     input  wire        lsu_rtu_wb_pipe4_spec_fail,
+    // 2026-10-17 S7: 向量写回屏蔽
+    input  wire        lsu_rtu_wb_pipe3_wb_preg_vec,
+    input  wire        lsu_rtu_wb_pipe4_vec,
 
     // ============================================================
     //  其它异常源（非法指令 / 取指故障 …）—— 由顶层喂进来，
@@ -388,9 +391,12 @@ module RTU_idu_lsu_adapter (
     // ============================================================
     //  7) §6.1 完成口 5/6 —— LSU 读 / 写
     // ============================================================
-    assign cmplt_vld5 = lsu_rtu_wb_pipe3_cmplt;
+    // 2026-10-17 S7: 向量 load/store 的 beat **不能**让 A910 的标量表项退休:
+    // 完成由 RVV bridge 的 cmplt_vld1 统一负责 (整条指令完成), 这里屏蔽掉。
+    // ⚠️ uop_idx 只用于 LQ/MSHR/引擎, 不能进 PRF/唤醒/RTU 释放/dealloc。
+    assign cmplt_vld5 = lsu_rtu_wb_pipe3_cmplt & ~lsu_rtu_wb_pipe3_wb_preg_vec;
     assign cmplt_iid5 = lsu_rtu_wb_pipe3_iid;
-    assign cmplt_vld6 = lsu_rtu_wb_pipe4_cmplt;
+    assign cmplt_vld6 = lsu_rtu_wb_pipe4_cmplt & ~lsu_rtu_wb_pipe4_vec;
     assign cmplt_iid6 = lsu_rtu_wb_pipe4_iid;
 
     // ============================================================

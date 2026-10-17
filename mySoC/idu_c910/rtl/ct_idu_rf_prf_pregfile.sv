@@ -21,6 +21,14 @@ module ct_idu_rf_prf_pregfile (
   input  logic [5:0]   dp_prf_rf_pipe6_src1_preg,
 
   //==========================================================
+  // RVV 向量队列 (VIQ) 的两个读口 (2026-10-17 S2 新增)
+  //==========================================================
+  // VIQ head 的 src0/src1 preg。纯组合 64:1 mux, 无 ready 位;
+  // srcX_vld=0 时上层已把地址接 0, 读值丢弃。
+  input  logic [5:0]   dp_prf_rf_vec_src0_preg,
+  input  logic [5:0]   dp_prf_rf_vec_src1_preg,
+
+  //==========================================================
   // 写端口（来自 IU/LSU，位宽适配 32bit 寄存器）
   //==========================================================
   input  logic [31:0]  iu_idu_ex2_pipe0_wb_preg_data,
@@ -52,6 +60,12 @@ module ct_idu_rf_prf_pregfile (
   output logic [31:0]  prf_dp_rf_pipe6_src1_data,
 
   //==========================================================
+  // RVV 向量队列 (VIQ) 的两个读数据口 (2026-10-17 S2 新增)
+  //==========================================================
+  output logic [31:0]  prf_dp_rf_vec_src0_data,
+  output logic [31:0]  prf_dp_rf_vec_src1_data,
+
+  //==========================================================
   // 【2026-10-08 新增】RTU 的访问口 —— 退休级要**按物理号**取数
   //==========================================================
   // 【为什么必须加】(RTU §6.1 的 A1/A5)
@@ -71,6 +85,16 @@ module ct_idu_rf_prf_pregfile (
   input  logic         rtu_csr_rd_we,
   input  logic [5:0]   rtu_csr_rd_addr,
   input  logic [31:0]  rtu_csr_rd_wdata,
+
+  //==========================================================
+  // 【2026-10-17 S3 新增】RVV vset* 的第 6 个写口
+  //==========================================================
+  // vset 的 rd 是标量寄存器, 但它的写回来自 RVV core 的 frontend
+  // (`reg_write_valid_o`), 不在 IU/LSU 的 4 个写回总线上 ⇒ 必须单独一口。
+  input  logic [31:0]  rvv_vset_wb_preg_data,
+  input  logic         rvv_vset_wb_preg_vld,
+  input  logic [5:0]   rvv_vset_wb_preg_addr,
+
   output logic [31:0]  rtu_preg_rdata0,
   output logic [31:0]  rtu_preg_rdata1,
   output logic [31:0]  rtu_preg_rdata2,
@@ -87,7 +111,7 @@ logic [31:0] preg_reg_dout [0:63];
 // ⚠️ 2026-10-08: 3 → **4** 位。第 4 位是 RTU 的 CSR rd 写口 ——
 //    忘了改这里的话，下面 `assign preg_wb_vld[j] = {csr, pipe3, pipe1, pipe0}`
 //    会被**静默截断**成 3 位（丢掉最高位），于是 CSR 的 rd 永远写不进 PRF。
-logic [4:0]  preg_wb_vld   [0:63];
+logic [5:0]  preg_wb_vld   [0:63];
 
 //----------------------------------------------------------
 //                         Preg 0
@@ -109,8 +133,9 @@ generate
       .iu_idu_ex2_pipe2_wb_preg_data (iu_idu_ex2_pipe2_wb_preg_data),
       .lsu_idu_wb_pipe3_wb_preg_data (lsu_idu_wb_pipe3_wb_preg_data),
       .rtu_csr_rd_wdata              (rtu_csr_rd_wdata             ), // 2026-10-08 第 4 写口
+      .rvv_vset_wb_preg_data         (rvv_vset_wb_preg_data        ), // 2026-10-17 第 6 写口
       .x_reg_dout                    (preg_reg_dout[i]             ),
-      .x_wb_vld                      (preg_wb_vld[i]               )  // [3:0]
+      .x_wb_vld                      (preg_wb_vld[i]               )  // [5:0]
     );
   end
 endgenerate
@@ -124,6 +149,7 @@ logic [63:0] pipe1_wb_vld;
 logic [63:0] pipe2_wb_vld;
 logic [63:0] pipe3_wb_vld;
 logic [63:0] csr_rd_wb_vld;   // 2026-10-08 新增
+logic [63:0] vset_wb_vld;     // 2026-10-17 S3 新增
 
 assign pipe0_wb_vld = {64{iu_idu_ex2_pipe0_wb_preg_vld}}
                       & iu_idu_ex2_pipe0_wb_preg_expand;
@@ -138,13 +164,18 @@ assign pipe3_wb_vld = {64{lsu_idu_wb_pipe3_wb_preg_vld}}
 // （不用 ct_idu_expand_64 是因为那是个模块、这里只要一行移位。）
 assign csr_rd_wb_vld = {64{rtu_csr_rd_we}} & (64'd1 << rtu_csr_rd_addr);
 
+// 第 6 写口: RVV vset* 的 rd (S3)
+assign vset_wb_vld = {64{rvv_vset_wb_preg_vld}} & (64'd1 << rvv_vset_wb_preg_addr);
+
 // preg0 恒为常量 0，不写入
-assign preg_wb_vld[0] = 5'b00000;
+assign preg_wb_vld[0] = 6'b000000;
 
 genvar j;
 generate
   for (j = 1; j < 64; j = j + 1) begin : gen_wb_vld
-    assign preg_wb_vld[j] = {csr_rd_wb_vld[j], pipe3_wb_vld[j],
+    // 位序: bit0=pipe0, bit1=pipe1, bit2=pipe2, bit3=pipe3, bit4=CSR, bit5=vset
+    assign preg_wb_vld[j] = {vset_wb_vld[j],
+                             csr_rd_wb_vld[j], pipe3_wb_vld[j],
                              pipe2_wb_vld[j], pipe1_wb_vld[j], pipe0_wb_vld[j]};
   end
 endgenerate
@@ -214,6 +245,12 @@ assign prf_dp_rf_pipe6_src0_data = preg_reg_dout[dp_prf_rf_pipe6_src0_preg];
 //                 Read Port 11: pipe6 src1
 //----------------------------------------------------------
 assign prf_dp_rf_pipe6_src1_data = preg_reg_dout[dp_prf_rf_pipe6_src1_preg];
+
+//----------------------------------------------------------
+//   Read Port 11a/11b (2026-10-17 S2 新增): RVV VIQ head 的两个源
+//----------------------------------------------------------
+assign prf_dp_rf_vec_src0_data = preg_reg_dout[dp_prf_rf_vec_src0_preg];
+assign prf_dp_rf_vec_src1_data = preg_reg_dout[dp_prf_rf_vec_src1_preg];
 
 //----------------------------------------------------------
 //   Read Port 12~15 (2026-10-08 新增): RTU 的退休读口

@@ -9,6 +9,9 @@ module ct_idu_is_pipe_entry (
   input  logic         iu_idu_ex2_pipe2_wb_preg_vld_dupx,
   input  logic [5:0]   lsu_idu_wb_pipe3_wb_preg_dupx,
   input  logic         lsu_idu_wb_pipe3_wb_preg_vld_dupx,
+  // 第 5 路唤醒: RVV vset 写回 (S3)
+  input  logic [5:0]   rvv_idu_vset_wb_preg_dupx,
+  input  logic         rvv_idu_vset_wb_preg_vld_dupx,
   // ⚠️ 原为 rtu_idu_flush_fe / rtu_idu_flush_is 两个口, 归一成 rtu_yy_xx_flush。
   //    理由: 本设计**只有一个**冲刷信号 (rtu_yy_xx_flush, 顶层端口表里没有 fe/is),
   //    而两处例化点 (ct_idu_is_dp -> is_pipe_entry, ct_idu_is_sdiq -> is_sdiq_entry)
@@ -17,11 +20,11 @@ module ct_idu_is_pipe_entry (
   //    前端/发射级分开冲刷 (C910 有) 是 Phase 3/4 的事, 届时再拆。
   input  logic         rtu_yy_xx_flush,
 
-  input  logic [75:0]  x_create_data,
+  input  logic [78:0]  x_create_data,
   input  logic [64:0]  x_create_pc,
   input  logic [24:0]  x_create_chk,
   input  logic         x_create_dp_en,
-  output logic [75:0]  x_read_data,
+  output logic [78:0]  x_read_data,
 
   output logic [64:0]  x_read_pc,
   output logic [24:0]  x_read_chk
@@ -30,7 +33,9 @@ module ct_idu_is_pipe_entry (
 //==========================================================
 //                 IR/IS pipeline select
 //==========================================================
-parameter IS_WIDTH             = 76;
+parameter IS_WIDTH             = 79;
+parameter IS_VEC_TYPE          = 78;   // [78:77]
+parameter IS_VEC               = 76;
 parameter IS_ILLEGAL           = 75;
 parameter IS_ALU_SHORT         = 74;
 parameter IS_LSU               = 73;
@@ -72,6 +77,9 @@ logic         entry_mult;
 logic         entry_div;
 logic         entry_lsu;
 logic         entry_alu_short;
+// 向量标志 (S1 新增): 与其它静态字段一样必须锁存, 否则 IS_VEC 读出恒 X
+logic         entry_vec;
+logic [1:0]   entry_vec_type;
 
 logic [6:0]   x_create_src0_data;
 logic [6:0]   x_create_src1_data;
@@ -142,6 +150,8 @@ begin
     entry_lsu                <= 1'b0;
     entry_alu_short          <= 1'b0;
     entry_illegal            <= 1'b0;
+    entry_vec                <= 1'b0;
+    entry_vec_type           <= 2'b0;
   end
   else if(x_create_dp_en) begin
     entry_opcode[31:0]       <= x_create_data[IS_OPCODE:IS_OPCODE-31];
@@ -158,6 +168,8 @@ begin
     entry_lsu                <= x_create_data[IS_LSU];
     entry_alu_short          <= x_create_data[IS_ALU_SHORT];
     entry_illegal            <= x_create_data[IS_ILLEGAL];
+    entry_vec                <= x_create_data[IS_VEC];
+    entry_vec_type           <= x_create_data[IS_VEC_TYPE:IS_VEC_TYPE-1];
   end
   else begin
     entry_opcode[31:0]       <= entry_opcode[31:0];
@@ -174,6 +186,8 @@ begin
     entry_lsu                <= entry_lsu;
     entry_alu_short          <= entry_alu_short;
     entry_illegal            <= entry_illegal;
+    entry_vec                <= entry_vec;
+    entry_vec_type           <= entry_vec_type;
   end
 end
 
@@ -192,6 +206,9 @@ assign x_read_data[IS_DIV]                 = entry_div;
 assign x_read_data[IS_LSU]                 = entry_lsu;
 assign x_read_data[IS_ALU_SHORT]           = entry_alu_short;
 assign x_read_data[IS_ILLEGAL]             = entry_illegal;
+// 向量标志 (S1 新增)
+assign x_read_data[IS_VEC_TYPE:IS_VEC_TYPE-1] = entry_vec_type;
+assign x_read_data[IS_VEC]                 = entry_vec;
 //==========================================================
 //              Source Dependency Information
 //==========================================================
@@ -228,6 +245,8 @@ ct_idu_dep_reg_entry u_ct_idu_dep_reg_entry_src0 (
   .iu_idu_ex2_pipe2_wb_preg_vld_dupx (iu_idu_ex2_pipe2_wb_preg_vld_dupx),
   .lsu_idu_wb_pipe3_wb_preg_dupx     (lsu_idu_wb_pipe3_wb_preg_dupx),
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx (lsu_idu_wb_pipe3_wb_preg_vld_dupx),
+  .rvv_idu_vset_wb_preg_dupx         (rvv_idu_vset_wb_preg_dupx         ),
+  .rvv_idu_vset_wb_preg_vld_dupx     (rvv_idu_vset_wb_preg_vld_dupx     ),
   .rtu_yy_xx_flush                   (rtu_yy_xx_flush                   ),
   .x_create_data                     (x_create_src0_data[6:0]),
   .x_write_en                        (x_create_dp_en),
@@ -246,6 +265,8 @@ ct_idu_dep_reg_entry u_ct_idu_dep_reg_entry_src1 (
   .iu_idu_ex2_pipe2_wb_preg_vld_dupx (iu_idu_ex2_pipe2_wb_preg_vld_dupx),
   .lsu_idu_wb_pipe3_wb_preg_dupx     (lsu_idu_wb_pipe3_wb_preg_dupx),
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx (lsu_idu_wb_pipe3_wb_preg_vld_dupx),
+  .rvv_idu_vset_wb_preg_dupx         (rvv_idu_vset_wb_preg_dupx         ),
+  .rvv_idu_vset_wb_preg_vld_dupx     (rvv_idu_vset_wb_preg_vld_dupx     ),
   .rtu_yy_xx_flush                   (rtu_yy_xx_flush                   ),
   .x_create_data                     (x_create_src1_data[6:0]),
   .x_write_en                        (x_create_dp_en),
