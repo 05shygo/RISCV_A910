@@ -14,8 +14,10 @@
 //      `lsu_vstore_last` 让 core 完成/提交；**提交后**才把 beat 排空进 LSU。
 //
 // 简化（首版，S9 再按用例收紧）:
-//   * 每个 A910 beat 就是 **1 个字节**（LBU/SB）。计划里的 1/2/4B 合并是优化，
-//     不影响正确性：LSU 的 AG/DC/DA 对 size=1 天然支持。
+//   * 默认每个 A910 beat 是 **1 个字节**（LBU/SB），但同一切片内连续、
+//     4B 对齐、4 字节全 active 的组会合并成一个 **32 位 LW/SW** beat。
+//     这样对齐的 16B uop 从 16 个请求降到 4 个；不满足条件时回退到 1B。
+//     （A910 LSU 的 load 写回口只有 32 位，所以不可能一次 beat 取 16B。）
 //   * mop 支持 US / CS / IU / IO；segment 由 S6 的 store uop 数限制兜住。
 //   * request index 在**写回**时释放（计划写"LQ pop 后"，但 LQ 的 pop 不回送
 //     uop_idx；匹配靠 {iid,uop_idx}，iid 不同 ⇒ 提前释放不会串）。
@@ -93,6 +95,8 @@ parameter NUM_REQ    = 32;
 localparam logic [$clog2(`VLENB):0] FF_TAIL_MAX = `VLENB;
 localparam logic [31:0] SYNTH_LBU = 32'h0000_0003;   // opcode 0000011, funct3 000
 localparam logic [31:0] SYNTH_SB  = 32'h0000_0023;   // opcode 0100011, funct3 000
+localparam logic [31:0] SYNTH_LW  = 32'h0000_2003;   // opcode 0000011, funct3 010
+localparam logic [31:0] SYNTH_SW  = 32'h0000_2023;   // opcode 0100011, funct3 010
 
 // ---------------------------------------------------------------------------
 // 小工具
@@ -124,6 +128,48 @@ function automatic logic [15:0] calc_mask (input logic [127:0] v0_data,
     elem = ({4'b0, uop_index} + {5'b0, b[3:0]}) >> sh;
     calc_mask[b] = (elem < {1'b0, vl}) && (!v0_valid || v0_data[b]);
   end
+endfunction
+
+// ---------------------------------------------------------------------------
+// 计算 anchor 中第 byte_pos 个字节的完整地址
+// ---------------------------------------------------------------------------
+// 与原来的 beat_addr case 逐式一致; 抽成函数是为了同时检查"相邻 4 字节
+// 地址是否连续" (4B 合并条件)。
+function automatic logic [31:0] vec_byte_addr (
+    input logic [2:0]   mop,
+    input logic [31:0]  base,
+    input logic [31:0]  stride,
+    input logic [127:0] vidx,
+    input logic [2:0]   vs2_eew,
+    input logic [2:0]   vd_eew,
+    input logic [4:0]   uop_idx,
+    input logic [3:0]   byte_pos
+);
+  logic [2:0] sh;
+  logic [2:0] sh2;
+  logic [8:0] elem;
+
+  sh   = eew_shift(vd_eew);
+  elem = ({4'b0, uop_idx} + {5'b0, byte_pos}) >> sh;
+
+  case (mop)
+    3'd0: begin // US
+      vec_byte_addr = base + {27'b0, uop_idx}*32'd16 + {28'b0, byte_pos};
+    end
+    3'd2: begin // CS
+      vec_byte_addr = base
+                    + $signed(stride) * $signed({23'b0, elem})
+                    + {28'b0, (byte_pos & ((8'd1 << sh) - 8'd1))};
+    end
+    3'd1, 3'd3: begin // IU / IO
+      sh2 = eew_shift(vs2_eew);
+      vec_byte_addr = base
+                    + $signed(vidx[((elem * (8'd1 << sh2)) & 5'h0F)*8 +: 32])
+                      * $signed({29'b0, (8'd1 << sh)})
+                    + {28'b0, (byte_pos & ((8'd1 << sh) - 8'd1))};
+    end
+    default: vec_byte_addr = base + {28'b0, byte_pos};
+  endcase
 endfunction
 
 // ---------------------------------------------------------------------------
@@ -170,6 +216,7 @@ logic [NUM_REQ-1:0] req_valid;
 logic [2:0]  req_anchor [0:NUM_REQ-1];
 logic [4:0]  req_uop    [0:NUM_REQ-1];
 logic [3:0]  req_lane   [0:NUM_REQ-1];
+logic [2:0]  req_len    [0:NUM_REQ-1];   // 1 或 4
 logic        req_store  [0:NUM_REQ-1];
 logic [4:0]  req_alloc_ptr;
 logic [31:0] sd_entry_data [0:3];
@@ -204,13 +251,25 @@ logic        resp_load_can;
 // ---------------------------------------------------------------------------
 logic [2:0] beat_sel;
 logic [3:0] beat_byte;
-logic [2:0] beat_sh;
-logic [8:0] beat_elem;
 logic       beat_active;
 logic       beat_is_load;
 logic [31:0] beat_addr;
 logic       beat_go;           // 真正发射 (active + 允许)
 logic       beat_skip;         // 非 active 字节, 直接跳过
+
+// 4B 合并 (2026-10-17): 同一 uop 内连续、4B 对齐、4 字节全 active 的组
+// 合成一个 LW/SW beat。其余情况保持 1 字节 LBU/SB。
+logic       beat_merge4;
+logic [2:0] beat_len;          // 1 或 4
+logic [4:0] beat_end;          // 本 beat 覆盖的最后一个字节
+logic       beat_is_last;
+logic [31:0] beat_opcode;
+logic [31:0] beat_sdata;
+logic [3:0]  beat_word_base;   // 4B 窗口起点 (<=12)
+logic [3:0]  beat_mask4;       // 从 beat_byte 开始的 4 位 mask
+logic [31:0] beat_addr_p1;
+logic [31:0] beat_addr_p2;
+logic [31:0] beat_addr_p3;
 
 // 2026-10-17 S9 修: 有一个 beat 在飞时必须**锁定它的 anchor** 去做 beat_done
 // 的清除; 否则 beat_sel 会跳到别的 anchor, done 清错表项 ⇒ 永远只发第一个 beat。
@@ -239,29 +298,55 @@ end
 
 always_comb begin
   beat_byte   = ctx_byte_ptr[beat_sel];
-  beat_sh     = eew_shift(ctx_vd_eew[beat_sel]);
-  beat_elem   = ({4'b0, ctx_uop_idx[beat_sel]} + {5'b0, beat_byte}) >> beat_sh;
   beat_active = ctx_mask[beat_sel][beat_byte];
   beat_is_load= !ctx_store[beat_sel];
-  case (ctx_mop[beat_sel])
-    3'd0: begin // US
-      beat_addr = ctx_base[beat_sel] + {27'b0, ctx_uop_idx[beat_sel]}*32'd16
-                                    + {28'b0, beat_byte};
-    end
-    3'd2: begin // CS
-      beat_addr = ctx_base[beat_sel]
-                + $signed(ctx_stride[beat_sel]) * $signed({23'b0, beat_elem})
-                + {29'b0, (beat_byte & ((8'd1 << beat_sh) - 8'd1))};
-    end
-    3'd1, 3'd3: begin // IU / IO
-      beat_addr = ctx_base[beat_sel]
-                + $signed(ctx_vidx[beat_sel][
-                     ((beat_elem * (8'd1 << eew_shift(ctx_vs2_eew[beat_sel]))) & 5'h0F) * 8 +: 32])
-                * $signed({29'b0, (8'd1 << beat_sh)})
-                + {29'b0, (beat_byte & ((8'd1 << beat_sh) - 8'd1))};
-    end
-    default: beat_addr = ctx_base[beat_sel] + {28'b0, beat_byte};
-  endcase
+  beat_addr   = vec_byte_addr(ctx_mop[beat_sel], ctx_base[beat_sel],
+                              ctx_stride[beat_sel], ctx_vidx[beat_sel],
+                              ctx_vs2_eew[beat_sel], ctx_vd_eew[beat_sel],
+                              ctx_uop_idx[beat_sel], beat_byte);
+
+  // ---------------- 4B 合并判定 ----------------
+  // 条件:
+  //   1) 4 个字节都在这个 16B 切片内;
+  //   2) 起始地址 4B 对齐;
+  //   3) 4 个字节全部 active;
+  //   4) 4 个字节的地址连续 (US 恒成立; CS/IU/IO 只有元素内/索引恰好连续才成立)。
+  // 不满足时保持原来的 1 字节 LBU/SB。
+  beat_word_base = (beat_byte <= 4'd12) ? beat_byte : 4'd12;
+  beat_mask4     = ctx_mask[beat_sel][beat_word_base +: 4];
+  beat_merge4    = 1'b0;
+  beat_addr_p1   = 32'd0;
+  beat_addr_p2   = 32'd0;
+  beat_addr_p3   = 32'd0;
+  if (beat_byte <= 4'd12) begin
+    beat_addr_p1 = vec_byte_addr(ctx_mop[beat_sel], ctx_base[beat_sel],
+                                 ctx_stride[beat_sel], ctx_vidx[beat_sel],
+                                 ctx_vs2_eew[beat_sel], ctx_vd_eew[beat_sel],
+                                 ctx_uop_idx[beat_sel], beat_byte + 4'd1);
+    beat_addr_p2 = vec_byte_addr(ctx_mop[beat_sel], ctx_base[beat_sel],
+                                 ctx_stride[beat_sel], ctx_vidx[beat_sel],
+                                 ctx_vs2_eew[beat_sel], ctx_vd_eew[beat_sel],
+                                 ctx_uop_idx[beat_sel], beat_byte + 4'd2);
+    beat_addr_p3 = vec_byte_addr(ctx_mop[beat_sel], ctx_base[beat_sel],
+                                 ctx_stride[beat_sel], ctx_vidx[beat_sel],
+                                 ctx_vs2_eew[beat_sel], ctx_vd_eew[beat_sel],
+                                 ctx_uop_idx[beat_sel], beat_byte + 4'd3);
+    beat_merge4  = (beat_addr[1:0] == 2'b00) &&
+                   (&beat_mask4) &&
+                   (beat_addr_p1 == (beat_addr + 32'd1)) &&
+                   (beat_addr_p2 == (beat_addr + 32'd2)) &&
+                   (beat_addr_p3 == (beat_addr + 32'd3));
+  end
+
+  beat_len    = beat_merge4 ? 3'd4 : 3'd1;
+  beat_end    = {1'b0, beat_byte} + {2'b0, beat_len} - 5'd1;
+  beat_is_last= ctx_uop_last[beat_sel] && (beat_end[3:0] == 4'd15);
+  beat_opcode = beat_merge4 ? (beat_is_load ? SYNTH_LW : SYNTH_SW)
+                            : (beat_is_load ? SYNTH_LBU : SYNTH_SB);
+  beat_sdata  = beat_is_load ? 32'd0 :
+                (beat_merge4 ? ctx_sdata[beat_sel][beat_word_base*8 +: 32]
+                             : ({{24{1'b0}}, ctx_sdata[beat_sel][beat_byte*8 +: 8]}
+                                << (beat_addr[1:0]*8)));
 end
 
 wire beat_sel_valid = drain_owner_vld ||
@@ -304,12 +389,12 @@ always_comb begin
   lsiq_vec_beat_rdy  = 8'd0;
   if (beat_go) begin
     lsiq_vec_upd_entry[beat_sel] = 1'b1;
-    lsiq_vec_upd_data = { beat_is_load ? SYNTH_LBU : SYNTH_SB,
+    lsiq_vec_upd_data = { beat_opcode,
                           beat_addr[31:0],
                           beat_sdiq,
                           beat_req,
-                          (ctx_uop_last[beat_sel] && (beat_byte == 4'd15)),
-                          {{24{1'b0}}, ctx_sdata[beat_sel][beat_byte*8 +: 8]} << (beat_addr[1:0]*8) };
+                          beat_is_last,
+                          beat_sdata };
   end
   // ready 比 update 晚一拍; 持续保持到该 beat 完成 (frz 会挡住重复发射)
   if (beat_rdy) lsiq_vec_beat_rdy[beat_sel] = 1'b1;
@@ -452,8 +537,8 @@ always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
     end
     else if (beat_go) begin
       ctx_beat_staged[beat_sel] <= 1'b1;
-      if (ctx_byte_ptr[beat_sel] == 4'd15) ctx_all_issued[beat_sel] <= 1'b1;
-      else                                 ctx_byte_ptr[beat_sel]   <= ctx_byte_ptr[beat_sel] + 4'd1;
+      if (beat_end[3:0] == 4'd15) ctx_all_issued[beat_sel] <= 1'b1;
+      else                        ctx_byte_ptr[beat_sel]   <= ctx_byte_ptr[beat_sel] + beat_len;
     end
     else if (ctx_beat_staged[beat_sel] && !ctx_beat_issue[beat_sel]) begin
       // update 后一拍: 标记 outstanding (ready 正在拉; frz 保证只发一次)
@@ -470,9 +555,17 @@ always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
         if (req_valid[r] && !req_store[r] &&
             (req_uop[r] == lsu_idu_wb_pipe3_wb_uop_idx) &&
             (ctx_iid[req_anchor[r]] == lsu_idu_wb_pipe3_wb_preg_iid)) begin
-          ctx_ld_asm[req_anchor[r]][req_lane[r]*8 +: 8] <=
-              lsu_idu_wb_pipe3_wb_preg_data[7:0];
-          ctx_ld_pend[req_anchor[r]][req_lane[r]] <= 1'b0;
+          if (req_len[r] == 3'd4) begin
+            // 4B beat: LSU 回的是完整 32 位字, 按 little-endian 填进 4 个字节
+            ctx_ld_asm[req_anchor[r]][req_lane[r]*8 +: 32] <=
+                lsu_idu_wb_pipe3_wb_preg_data[31:0];
+            ctx_ld_pend[req_anchor[r]][req_lane[r] +: 4] <= 4'b0;
+          end
+          else begin
+            ctx_ld_asm[req_anchor[r]][req_lane[r]*8 +: 8] <=
+                lsu_idu_wb_pipe3_wb_preg_data[7:0];
+            ctx_ld_pend[req_anchor[r]][req_lane[r]] <= 1'b0;
+          end
         end
       end
     end
@@ -550,6 +643,7 @@ always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
   if (!cpurst_b) begin
     req_valid     <= '0;
     req_alloc_ptr <= 5'd0;
+    for (ri=0; ri<NUM_REQ; ri=ri+1) req_len[ri] <= 3'd0;
     for (ri=0; ri<4; ri=ri+1) sd_entry_data[ri] <= 32'd0;
   end
   else if (rtu_yy_xx_flush) begin
@@ -563,11 +657,13 @@ always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
       // LSU 流水里的 uop_idx 是 **request index** (beat 字段), 不是 core uop_index
       req_uop[beat_req]    <= beat_req;
       req_lane[beat_req]   <= beat_byte;
+      req_len[beat_req]    <= beat_len;
       req_store[beat_req]  <= !beat_is_load;
       req_alloc_ptr        <= beat_req + 5'd1;
-      // SDIQ 数据（store word 已放在 addr[1:0] 的字节道）
-      sd_entry_data[beat_sdiq] <=
-         {{24{1'b0}}, ctx_sdata[beat_sel][beat_byte*8 +: 8]} << (beat_addr[1:0]*8);
+      // SDIQ 数据: 1B beat 是放在 addr[1:0] 字节道的单字节; 4B beat 是
+      // 4B 对齐的完整字 (beat_addr[1:0]==0)。load 不占 SDIQ, 不能写。
+      if (!beat_is_load)
+        sd_entry_data[beat_sdiq] <= beat_sdata;
     end
     // load 写回: 释放
     if (lsu_idu_wb_pipe3_wb_preg_vec) begin
