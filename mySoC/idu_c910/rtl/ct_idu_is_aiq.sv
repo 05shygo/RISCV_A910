@@ -59,7 +59,13 @@ module ct_idu_is_aiq (
   input  logic         iu_idu_ex2_pipe2_wb_preg_vld_dupx,
   input  logic [5:0]   lsu_idu_wb_pipe3_wb_preg_dupx,
   input  logic         lsu_idu_wb_pipe3_wb_preg_vld_dupx,
-  input  logic         rtu_yy_xx_flush
+  input  logic         rtu_yy_xx_flush,
+
+  // 2026-10-18 新增: 下游执行端口占住时的**发射保持**。
+  //   stall=1 ⇒ 本拍既不发射、也不弹表项、也不改年龄向量; 队头留在原地,
+  //   stall 撤销后同一条照常发。AIQ0 恒接 0 (与参数化之前逐拍等价);
+  //   AIQ1 接 IU_alu_pipe 的 issue_stall (EX2 有结果但没拿到写回授权)。
+  input  logic         aiq_ctrl_stall
 );
 parameter AIQ_WIDTH             = 95;   // 2026-10-08: 64 → 96 (高 32 位给 PC)
 parameter AIQ_PC                = 94;   // 2026-10-08 新增: AUIPC 的 PC (高 32 位, 其余字段不动)
@@ -106,7 +112,8 @@ localparam int AIQ_CNT_W = $clog2(AIQ_ENTRY + 1);   // 计数位宽: 4→3, 8→
 
     logic [AIQ_ENTRY-1:0] aiq_entry_ready;
     logic [AIQ_ENTRY-1:0] aiq_older_entry_ready;
-    logic [AIQ_ENTRY-1:0] aiq_entry_issue_en;
+    logic [AIQ_ENTRY-1:0] aiq_entry_issue_en;   // 原始仲裁结果 (最老的就绪项)
+    logic [AIQ_ENTRY-1:0] aiq_entry_issue_go;   // 再过一道 aiq_ctrl_stall
     logic [AIQ_WIDTH-1:0] aiq_entry_read_data [AIQ_ENTRY];
     logic [AIQ_WIDTH-1:0] aiq_entry_read_data_sel;
 
@@ -160,16 +167,19 @@ assign aiq_ctrl_1_left_updt = (aiq_entry_cnt_next == (AIQ_ENTRY-1));
 // 同拍 create0 刚放进去的那一项 (它相对 create1 的项更老)。
 assign aiq_entry_create0_agevec[AIQ_ENTRY-1:0] = aiq_entry_vld[AIQ_ENTRY-1:0]
                                         & ~({AIQ_ENTRY{aiq_xx_issue_en}}
-                                           & aiq_entry_issue_en[AIQ_ENTRY-1:0]);
+                                           & aiq_entry_issue_go[AIQ_ENTRY-1:0]);
 
 assign aiq_entry_create1_agevec[AIQ_ENTRY-1:0] = aiq_entry_vld[AIQ_ENTRY-1:0]
                                         & ~({AIQ_ENTRY{aiq_xx_issue_en}}
-                                           & aiq_entry_issue_en[AIQ_ENTRY-1:0])
+                                           & aiq_entry_issue_go[AIQ_ENTRY-1:0])
                                         | aiq_entry_create0_in[AIQ_ENTRY-1:0];
 
 //------------------entry issue enable signals--------------
 //first find older ready entry, then not ready if older ready exists
-assign aiq_xx_issue_en = |aiq_entry_issue_en[AIQ_ENTRY-1:0];
+// ⚠️ 发射/弹表项/年龄向量一律用 `aiq_entry_issue_go` (已过 stall);
+//    读数据选择仍用原始的 `aiq_entry_issue_en` —— stall 时虽然不会发射,
+//    但保持"最老就绪项"的选择, 避免组合输出变成 X 污染波形。
+assign aiq_xx_issue_en = |aiq_entry_issue_go[AIQ_ENTRY-1:0];
 
 //-----------------issue data path selection----------------
 //issue data path will select oldest ready entry in issue queue
@@ -233,6 +243,8 @@ for (gi = 0; gi < AIQ_ENTRY; gi = gi + 1) begin : g_aiq_entry
     assign aiq_older_entry_ready[gi] = |(entry_agevec[AIQ_ENTRY-1:0]
                                          & aiq_entry_ready[AIQ_ENTRY-1:0]);
     assign aiq_entry_issue_en[gi]    = aiq_entry_ready[gi] & ~aiq_older_entry_ready[gi];
+    // 下游端口占住时保持: 不弹表项、不更新年龄向量、不计 pop
+    assign aiq_entry_issue_go[gi]    = aiq_entry_issue_en[gi] & ~aiq_ctrl_stall;
 
     //==========================================================
     //             ALU Issue Queue Entry Instance
@@ -259,9 +271,9 @@ for (gi = 0; gi < AIQ_ENTRY; gi = gi + 1) begin : g_aiq_entry
         .x_create_agevec                  (entry_create_agevec[AIQ_ENTRY-1:0]),
         .x_create_data                    (entry_create_data[AIQ_WIDTH-1:0] ),
         .x_create_en                      (aiq_entry_create_en[gi]          ),
-        .x_pop_cur_entry                  (aiq_entry_issue_en[gi]           ),
+        .x_pop_cur_entry                  (aiq_entry_issue_go[gi]           ),
         // 把自己那一位也连进去是无害的: 本项 agevec 的自屏蔽位恒 0, 清不动它
-        .x_pop_other_entry                (aiq_entry_issue_en[AIQ_ENTRY-1:0]),
+        .x_pop_other_entry                (aiq_entry_issue_go[AIQ_ENTRY-1:0]),
 
         .x_rdy                            (aiq_entry_ready[gi]              ),
         .x_agevec                         (entry_agevec[AIQ_ENTRY-1:0]       ),

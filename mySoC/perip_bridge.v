@@ -21,7 +21,11 @@
 //   0x8000_0000 - 0x8000_0007  MONITOR  (0x00 pass 标志, 0x04 fail 标志)
 //   0xFFFF_F000 - 0xFFFF_F003  DIG      (数码管)
 //   0xFFFF_F040 - 0xFFFF_F04F  TIMER    (mtime / mtimecmp)
+//   0x4000_0000 - 0x4000_0FFF  NPU      (CoralNPU 控制窗口, 见 npu_bridge.v)
 //   其余                        DRAM
+//
+// NPU 窗口只在这里做地址解码, 然后把 sel_npu 交给 npu_bridge ——
+// 与 DRAM/MONITOR 一样保持"解码只此一处"的口径.
 // ---------------------------------------------------------------------------
 module perip_bridge(
     input  wire        clk,
@@ -41,7 +45,13 @@ module perip_bridge(
 
     // 板级 / 中断
     output wire [31:0] seg_value,
-    output wire        timer_int_flag
+    output wire        timer_int_flag,
+
+    // NPU 控制窗口 (0x4000_0000-0x4000_0FFF)
+    // 由 npu_bridge 提供组合读数据; 未使能 NPU 时顶层把它接 0.
+    output wire        npu_sel,
+    output wire        npu_we,
+    input  wire [31:0] npu_rdata
 );
 
     // ---------------- 地址解码 ----------------
@@ -52,6 +62,13 @@ module perip_bridge(
     wire sel_monitor = (Bus_addr >= 32'h8000_0000) && (Bus_addr <= 32'h8000_0007);
     wire sel_dig     = (Bus_addr >= 32'hFFFF_F000) && (Bus_addr <= 32'hFFFF_F003);
     wire sel_timer   = (Bus_addr >= 32'hFFFF_F040) && (Bus_addr <= 32'hFFFF_F04F);
+    // NPU 控制窗口. 用 `PERI_ADDR_NPU 宏而不是字面量 —— 与 `ADDR_IN_MAP
+    // 和 golden model 的注册共用同一个数值, 避免三处各写一遍.
+    // (宏在 mySoC/*.vh, 由 Makefile 的 VHDR 列表跟踪)
+    wire sel_npu     = (Bus_addr >= `PERI_ADDR_NPU) && (Bus_addr <= `PERI_ADDR_NPU_END);
+
+    assign npu_sel = sel_npu;
+    assign npu_we  = Bus_wen & sel_npu;
 
     // 只有低 64KB 落 DRAM. 越界地址在这里就被挡住 —— 【绝不截断后照写】.
     // 访问异常本身由 mycpu.v 在 EX 级报(cause 5/7), 判据用的是同一个
@@ -128,6 +145,7 @@ module perip_bridge(
     assign Bus_rdata = {32{sel_monitor}} & monitor_rdata
                      | {32{sel_dig}}     & dig_reg
                      | {32{sel_timer}}   & timer_rdata
+                     | {32{sel_npu}}     & npu_rdata
                      | {32{sel_dram}}    & dram_rdata;
 
 endmodule

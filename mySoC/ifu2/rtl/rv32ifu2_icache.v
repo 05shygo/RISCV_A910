@@ -57,6 +57,23 @@
 // * **每路一片, 不合并成一行之外的东西。** 每路一片 ⇒ 每个例化点只有一个单位宽
 //   wr_en, 映射到厂商 IP 核最省事 (BRAM 的写使能是字节粒度, 24 位行不是 8 的倍数)。
 //
+// ---------------------------------------------------------------------------
+// 替换策略 (IC_REPL, 2026-10-16 参数化): 0 = LRU (默认), 1 = round-robin
+//
+// 两路共用同一个指针位 `lru_q[set]` (1 = 下一个牺牲者是 way1), 也都遵守
+// "无效路优先" (`alloc_way`) —— 指针只在两路都有效时才被采纳 (见 victim_way)。
+// **两种策略唯一的差别是"命中要不要改写指针"**:
+//
+//   LRU: 命中把指针推向另一路 ⇒ 牺牲最久没被碰到的那路。
+//   RR : 命中不动指针, 指针只由**回填**轮转 ⇒ 2 路下退化成 FIFO/轮转。
+//
+// 回填那句 `lru_q[rf_set] <= victim_way[0]` 的语义是"指向刚填那路的**另一路**",
+// 于是只要两路都有效 (指针被采纳), 它每次替换都翻向另一路 —— 这正是 round-robin
+// 要的行为, 所以 RR 什么都不用加, 只是**不写**命中那一句。
+// ⚠️ 别图省事把它写成 `lru_q[rf_set] <= ~lru_q[rf_set]` (纯翻转): 当 alloc_way 因为
+//    "另一路无效"而越过指针时, 翻转会把指针留在刚填满的那路上, 下一次 miss 立刻
+//    把它自己挤掉 —— 那不是轮转, 是自残 (2 路下表现为 miss 率反而高于 LRU)。
+//
 // ⚠️ 阵列地址寄存器在 rv32ifu2_spram 内部; 本模块的 `q_set_q` 是它的**影子**
 //    (用于配命中/捕获)。两者必须同步无条件加载 —— 谁要是给其中一个加了 enable,
 //   另一个也必须加, 否则会对着错的 set 判断。
@@ -69,7 +86,8 @@ module rv32ifu2_icache #(
     parameter IC_BYTES  = 2048,
     parameter IC_LINE   = 16,
     parameter IC_WAYS   = 2,         // 只实现了 2 路, 见下方断言
-    parameter ICACHE_EN = 1          // 0 = 每次访问都算 miss (等价"关缓存", 不复用)
+    parameter ICACHE_EN = 1,         // 0 = 每次访问都算 miss (等价"关缓存", 不复用)
+    parameter IC_REPL   = 0          // 0 = LRU (默认), 1 = round-robin。见文件头
 )(
     input  wire         clk,
     input  wire         rst,          // 高有效
@@ -339,8 +357,11 @@ always @(posedge clk) begin
 end
 
 // ---------------------------------------------------------------------------
-// LRU 更新。单块写, 不做 32 个 always 分别写那一个 packed 向量的某一位 ——
+// 替换指针 (lru_q) 更新。单块写, 不做 32 个 always 分别写那一个 packed 向量的某一位 ——
 // 那是一个变量多个过程驱动, 非法的写法。
+//
+// ⚠️ `IC_REPL == 0` 是常量条件: RR 档下命中那句被完全剪掉 (没有面积/时序代价),
+//    指针只由回填那一句轮转。两条的语义差别见文件头"替换策略"。
 //
 // 语义与原设计逐字一致:
 //   way0 命中 ⇒ 下一个牺牲者指 way1 (lru=1); 否则 (way1 命中) ⇒ 指 way0 (lru=0);
@@ -355,8 +376,8 @@ end
 // ---------------------------------------------------------------------------
 always @(posedge clk) begin
     if (init_done_q) begin
-        if (ram_hit)   lru_q[q_set_q] <= q_hit0;
-        if (refill_en) lru_q[rf_set]  <= victim_way[0];
+        if (IC_REPL == 0 && ram_hit) lru_q[q_set_q] <= q_hit0;   // LRU 才在命中时改写
+        if (refill_en)               lru_q[rf_set]  <= victim_way[0];
     end
 end
 
@@ -371,8 +392,11 @@ initial begin
     // 打印落地参数。**扫点前先看这一行** —— 原树 icache 参数化就踩过
     // "改的 define 没进到 RTL, 于是所有'不同配置'其实是同一个配置, 整张容量表作废"
     // (memory icache-geometry-bugs.md 缺陷 B)。这一行就是防那个的。
-    $display("[IFU2-ICACHE] BYTES=%0d LINE=%0d WAYS=%0d SETS=%0d SET_BITS=%0d TAG_BITS=%0d ROW_W=%0d",
-             IC_BYTES, IC_LINE, IC_WAYS, SETS, SET_BITS, TAG_BITS, ROW_W);
+    // 替换策略也在这行里 (REPL) —— 两档的周期差可能只有百分之几, **拿错档看不出来**,
+    // 所以"这轮跑的是哪一档"必须由 RTL 自己说, 不能靠跑的人记得。
+    $display("[IFU2-ICACHE] BYTES=%0d LINE=%0d WAYS=%0d SETS=%0d SET_BITS=%0d TAG_BITS=%0d ROW_W=%0d REPL=%0d(%0s)",
+             IC_BYTES, IC_LINE, IC_WAYS, SETS, SET_BITS, TAG_BITS, ROW_W,
+             IC_REPL, (IC_REPL == 0) ? "LRU" : "RR");
 end
 // synopsys translate_on
 

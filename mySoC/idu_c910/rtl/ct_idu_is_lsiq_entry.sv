@@ -1,4 +1,16 @@
-module ct_idu_is_lsiq_entry (
+// 队列深度: 编译期可用 `+define+LSIQ_ENTRY=N` 覆盖, 默认 12 (C910 原版 12 项,
+//   本树曾经在 commit 165dfd5 砍到 8、与当时 64 preg 的 LSU 对齐)。
+// ⚠️ 必须是 **ANSI 参数口** (#( ... )): 下面的 x_*_agevec / x_other_raw_rdy 端口
+//   位宽要用到 LSIQ_ENTRY, 而函数体里声明的 parameter 在 VCS 看来"还没声明"
+//   (Error-[IND])。父模块 ct_idu_is_lsiq 会显式传参下来, 这里的默认值只在被
+//   单独例化时才起作用。
+module ct_idu_is_lsiq_entry #(
+`ifdef LSIQ_ENTRY
+  parameter int LSIQ_ENTRY = `LSIQ_ENTRY
+`else
+  parameter int LSIQ_ENTRY = 12
+`endif
+) (
   input  logic         cpurst_b,
   input  logic         forever_cpuclk,
   input  logic [5:0]   iu_idu_ex2_pipe0_wb_preg_dupx,
@@ -15,16 +27,25 @@ module ct_idu_is_lsiq_entry (
   input  logic [5:0]   lsu_idu_wb_pipe3_wb_preg_dupx,
   input  logic         lsu_idu_wb_pipe3_wb_preg_vld_dupx,
   input  logic         rtu_yy_xx_flush,
-  input  logic [6:0]   x_create_agevec,
-  input  logic [6:0]   x_create_agevec_all,
+  //----------------------------------------------------------------------
+  // 2026-10-16 参数化 (LSIQ_ENTRY 项深): 年龄向量 agevec 的编码换成
+  //   **LSIQ_ENTRY 位自屏蔽**约定 —— 位 i 对应表项 i, 且自己那一位恒 0。
+  //   原版是 N-1 位紧凑约定 ("除自己外, 按表项序号降序"), 8 项时正好 7 位,
+  //   所以写死成 [6:0]; 泛化到任意 N 要么每项反复切片, 要么像这里自屏蔽。
+  //   两种约定在 N=8 时逐位等价: 原版 entry i 的第 j 位 ↔ 本版"除 i 外第 j 个"。
+  //   好处: older_entry_rdy_mask = |(agevec & x_other_raw_rdy) 一步到位 ——
+  //   自己那一位是 0, 不会把自己算成自己的年长项。
+  //----------------------------------------------------------------------
+  input  logic [LSIQ_ENTRY-1:0] x_create_agevec,
+  input  logic [LSIQ_ENTRY-1:0] x_create_agevec_all,
   input  logic [59:0]  x_create_data,
   input  logic         x_create_en,
   input  logic         x_issue_en,
   output logic         x_load,
   input  logic         x_lq_full_set,
-  input  logic [6:0]   x_other_raw_rdy,
+  input  logic [LSIQ_ENTRY-1:0] x_other_raw_rdy,   // 自己那一位被屏蔽 (父模块清过)
   input  logic         x_pop_cur_entry,
-  input  logic [6:0]   x_pop_other_entry,
+  input  logic [LSIQ_ENTRY-1:0] x_pop_other_entry, // 自己那一位 don't care (agevec 自屏蔽)
   output logic         x_raw_rdy,
   input  logic         x_rb_full_set,
   output logic         x_rdy,
@@ -59,8 +80,8 @@ parameter LSIQ_OPCODE            = 31;
 //==========================================================
 logic        vld;
 logic        frz;
-logic [6:0]  agevec;
-logic [6:0]  agevec_all;
+logic [LSIQ_ENTRY-1:0]  agevec;
+logic [LSIQ_ENTRY-1:0]  agevec_all;
 logic        lsu_frz_clr;
 logic [5:0]  dst_preg;
 logic [3:0]  sdiq_entry;
@@ -132,13 +153,13 @@ end
 always @(posedge forever_cpuclk or negedge cpurst_b)
 begin
   if(!cpurst_b)
-    agevec[6:0] <= 7'b0;
+    agevec[LSIQ_ENTRY-1:0] <= {LSIQ_ENTRY{1'b0}};
   else if(x_create_en)
-    agevec[6:0] <= x_create_agevec[6:0];
+    agevec[LSIQ_ENTRY-1:0] <= x_create_agevec[LSIQ_ENTRY-1:0];
   else if(lsu_idu_lsiq_pop_vld)
-    agevec[6:0] <= agevec[6:0] & ~x_pop_other_entry[6:0];
+    agevec[LSIQ_ENTRY-1:0] <= agevec[LSIQ_ENTRY-1:0] & ~x_pop_other_entry[LSIQ_ENTRY-1:0];
   else
-    agevec[6:0] <= agevec[6:0];
+    agevec[LSIQ_ENTRY-1:0] <= agevec[LSIQ_ENTRY-1:0];
 end
 
 // ⚠️ 原版还有一根"所有类型"的 agevec (ct_idu_is_lsiq_entry.v: agevec_all,
@@ -150,13 +171,13 @@ end
 always @(posedge forever_cpuclk or negedge cpurst_b)
 begin
   if(!cpurst_b)
-    agevec_all[6:0] <= 7'b0;
+    agevec_all[LSIQ_ENTRY-1:0] <= {LSIQ_ENTRY{1'b0}};
   else if(x_create_en)
-    agevec_all[6:0] <= x_create_agevec_all[6:0];
+    agevec_all[LSIQ_ENTRY-1:0] <= x_create_agevec_all[LSIQ_ENTRY-1:0];
   else if(lsu_idu_lsiq_pop_vld)
-    agevec_all[6:0] <= agevec_all[6:0] & ~x_pop_other_entry[6:0];
+    agevec_all[LSIQ_ENTRY-1:0] <= agevec_all[LSIQ_ENTRY-1:0] & ~x_pop_other_entry[LSIQ_ENTRY-1:0];
   else
-    agevec_all[6:0] <= agevec_all[6:0];
+    agevec_all[LSIQ_ENTRY-1:0] <= agevec_all[LSIQ_ENTRY-1:0];
 end
 
 //==========================================================
@@ -230,7 +251,7 @@ assign x_store                                         = store;
 //if all bits of age vec is 0, this entry is the oldest entry
 //⚠️ 必须用**所有类型**的 agevec_all (原版如此): 同类型的 agevec 里不含更老的 store,
 //   拿它判会把"前面只有更老 store"的 load 误判成 oldest。
-assign old  = !(|agevec_all[6:0]);
+assign old  = !(|agevec_all[LSIQ_ENTRY-1:0]);
 
 always @(posedge forever_cpuclk or negedge cpurst_b)
 begin
@@ -359,7 +380,7 @@ assign x_raw_rdy = vld && !frz
 
 //----------------------older ready-------------------------
 //if older entry of same type raw ready, mask cur entry ready
-assign older_entry_rdy_mask = |(agevec[6:0] & x_other_raw_rdy[6:0]);
+assign older_entry_rdy_mask = |(agevec[LSIQ_ENTRY-1:0] & x_other_raw_rdy[LSIQ_ENTRY-1:0]);
 
 //----------------------final ready-------------------------
 //if older entry is ready, mask current entry ready

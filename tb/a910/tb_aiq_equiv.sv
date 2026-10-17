@@ -52,7 +52,8 @@ module tb_aiq_equiv;
     .iu_idu_ex2_pipe2_wb_preg_vld_dupx (wbv2     ),
     .lsu_idu_wb_pipe3_wb_preg_dupx     (wbp3     ),
     .lsu_idu_wb_pipe3_wb_preg_vld_dupx (wbv3     ),
-    .rtu_yy_xx_flush                   (flush    )
+    .rtu_yy_xx_flush                   (flush    ),
+    .aiq_ctrl_stall                    (1'b0     )   // 等价口径: stall 恒 0
   );
 
   //--------------------------------------------------------------- 原版 DUT

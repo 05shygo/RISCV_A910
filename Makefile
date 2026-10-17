@@ -26,11 +26,18 @@ TESTHEX128 := $(PWD)/meminit128.hex
 HEX_ROWS ?= 16384
 
 RAM ?= ram.v
-# 取指级三选一:
+# 取指级选择:
 #   IFU=0  旧 PC/NPC/IROM 通路
 #   IFU=1  ifu_rv32i (C910 派生前端, 3 级, 41 文件 14,967 行)
 #   IFU=2  ifu2 (自研 2 级 3 发射前端, mySoC/ifu2/)
+#   IFU=3  ifu3 (FTQ + 3 级 IFU, mySoC/ifu3/) —— 目前只接 A910, 用 A910_IFU=3
 IFU ?= 1
+ifeq ($(filter $(IFU),0 1 2 3),)
+$(error IFU 只能是 0/1/2/3, 当前是 '$(IFU)')
+endif
+ifeq ($(IFU),3)
+$(error IFU=3 (ifu3) 目前只接 A910: 请用 make ... A910_IFU=3; miniRV 接入在后续阶段)
+endif
 # LBUF=1: 打开循环缓冲 (cp0_ifu_lbuf_en=1); LBUF=0: LBUF 状态机常驻 IDLE.
 # 只在 IFU=1 下有意义 (LBUF 属于 ifu_rv32i).
 LBUF ?= 0
@@ -138,6 +145,39 @@ else
 DEFINES += +define+DCACHE_2KB
 endif
 
+# A910 那几条规则原来把 `+define+DCACHE_2KB` **硬写死**了 (而 `lsu_top` 的
+# `DCACHE_SIZE` 参数又在 A910_cpu.sv 里写死 2048) ⇒ 换个 dcache 容量得改两处源码。
+# 这个变量让两边都跟 `DCACHE_SIZE` 走 (RTL 那侧见 A910_cpu.sv 的 `ifdef DCACHE_*)。
+DCACHE_DEF := $(if $(filter 1024,$(DCACHE_SIZE)),+define+DCACHE_1KB,\
+              $(if $(filter 4096,$(DCACHE_SIZE)),+define+DCACHE_4KB,+define+DCACHE_2KB))
+
+# ---------------------------------------------------------------------------
+# NPU 开关 (CoralNPU 集成, 见 mySoC/npu_bridge.v)
+#
+# NPU=1 时把 NPU 的 RTL 加进文件列表并定义 NPU_EN. 默认 0 ⇒ 默认的 48 项
+# difftest 构建完全看不见 NPU, 行为与集成前逐位相同.
+#
+# ⚠️ 这两个文件只在 NPU=1 时加入. npu_core_wrap.v 实例化生成的 RvvCoreMiniAxi,
+#    而那个文件不在仓库里 (由 bazel 产出后拷进 npu/core/). 无条件列入会让默认
+#    构建因为找不到模块而 elaborate 失败.
+#
+# ⚠️ 开关必须有**自己的 stamp**, 理由同 IFU_CFG (Makefile:294-297): 只改 NPU
+#    时源文件没变, make 会认为 simv 是最新的而跳过重编译, 静默沿用上一个配置.
+# ---------------------------------------------------------------------------
+NPU ?= 0
+NPU_SRC    := $(PWD)/npu/npu_core_wrap.v $(PWD)/npu/core/RvvCoreMiniAxi.sv
+NPU_TB_SRC := $(PWD)/tb/npu/tb_npu_loop.sv
+NPU_CFG    := $(BUILD_DIR)/.npu_cfg
+
+$(NPU_CFG): FORCE
+	@mkdir -p $(BUILD_DIR)
+	@echo "$(NPU)" | cmp -s - $@ || echo "$(NPU)" > $@
+
+ifeq ($(NPU),1)
+DEFINES += +define+NPU_EN
+VSRC    += $(NPU_SRC)
+endif
+
 # ---------------------------------------------------------------------------
 # Verdi / FSDB 自动检测
 #
@@ -230,7 +270,7 @@ CROSS     ?= riscv32-unknown-elf-
 ASM_SRCS  := $(wildcard $(PWD)/asm/*.S)
 ASM_BINS  := $(patsubst $(PWD)/asm/%.S,$(PWD)/bin/%.bin,$(ASM_SRCS))
 
-.PHONY: all build run run-all verdi clean help coremark asm muldiv-unit rtu-unit rtu-lsu-unit rtu-adapter-unit rtu-expt-unit iu-alu-unit iu-beu-unit iu-md-unit rtu-subsys-elab biu-unit a910-elab a910-run a910-difftest a910-difftest-all a910-difftest-all_wave a910-difftest-wave verdi-difftest aiq-equiv biq-equiv
+.PHONY: all build run run-all verdi clean help coremark asm muldiv-unit rtu-unit rtu-lsu-unit rtu-adapter-unit rtu-expt-unit iu-alu-unit iu-beu-unit iu-md-unit iu-wb-arb-unit rtu-subsys-elab biu-unit a910-elab a910-run a910-difftest a910-difftest-all a910-difftest-all_wave a910-difftest-wave verdi-difftest aiq-equiv biq-equiv lsiq-equiv ifu3-unit ifu3-ftq-unit ifu3-ras-unit ifu3-predcheck-unit ifu3-bpu-unit ifu3-ifu-unit
 
 asm: $(ASM_BINS)
 
@@ -243,6 +283,57 @@ $(PWD)/bin/%.bin: $(PWD)/asm/%.S
 	@$(TOOLCHAIN)/$(CROSS)objdump -D $(PWD)/asm/$*.elf > $(PWD)/asm/$*.dump
 	@$(TOOLCHAIN)/$(CROSS)objcopy -O binary $(PWD)/asm/$*.elf $@
 	@echo "Built bin/$*.bin"
+
+# ---------------------------------------------------------------------------
+# CoralNPU 侧测试程序 (npu/npu_prog.S) —— 里程碑 1 的被测对象
+#
+# 与上面的 asm/*.S 规则的区别: 这份不是给 myCPU 跑的, 是要**灌进 NPU 的
+# ITCM** 的. 所以:
+#   * 用 -Wl,-Ttext=0 且保持纯 .text (不用 coralnpu_tcm.ld.tpl —— 那份的
+#     .data 段会分配 _ret 槽位, 产出 ~64KB 稀疏镜像, 塞不进 8KB ITCM)
+#   * 只取 .text 段 (--only-section)
+#   * 产出一个 .inc 让 asm/npu_loop.S 用 .include 嵌进去 (CPU 程序要把这段
+#     二进制当数据搬到 NPU 的 ITCM)
+#
+# .inc 里同时导出 NPU_PROG_WORDS, 省得 CPU 程序自己算长度.
+# ---------------------------------------------------------------------------
+NPU_PROG_ELF  := $(PWD)/npu/build/npu_prog.elf
+NPU_PROG_BIN  := $(PWD)/npu/build/npu_prog.bin
+NPU_PROG_INC  := $(PWD)/npu/build/npu_prog.inc
+# 拆成两个文件是被逼的: GAS 的 `li` 是宏, 展开时要立刻知道立即数的值,
+# **不支持前向引用**. 而数据表又必须放在文件末尾 (否则占据地址 0, CPU 复位
+# 从 PC=0 取指会把数据当指令执行). 两件事凑一起 ⇒ 常数和得分开放.
+NPU_PROG_DEFS := $(PWD)/npu/build/npu_prog_defs.inc
+
+$(NPU_PROG_ELF): $(PWD)/npu/npu_prog.S
+	@mkdir -p $(PWD)/npu/build
+	@$(TOOLCHAIN)/$(CROSS)gcc -march=rv32im_zicsr -mabi=ilp32 -nostdlib -nostartfiles \
+	    -Wl,-Ttext=0 $< -o $@
+	@$(TOOLCHAIN)/$(CROSS)objdump -D $@ > $(PWD)/npu/build/npu_prog.dump
+
+$(NPU_PROG_BIN): $(NPU_PROG_ELF)
+	@$(TOOLCHAIN)/$(CROSS)objcopy -O binary --only-section=.text $< $@
+	@sz=$$(stat -c%s $@); \
+	 if [ $$sz -gt 8192 ]; then \
+	   echo "错误: NPU 程序 $$sz 字节, 超过 ITCM 的 8KB"; exit 1; \
+	 fi; \
+	 echo "Built npu_prog.bin ($$sz 字节, $$(( sz / 4 )) 条指令)"
+
+# ⚠️ od -An -tx4 在 x86 上按小端解释 4 字节组, 正好是 RV32 的字值 ——
+#    与上面 bin/*.hex 用的是同一个结论 (Makefile:250-252 有记录).
+$(NPU_PROG_DEFS) $(NPU_PROG_INC): $(NPU_PROG_BIN)
+	@mkdir -p $(PWD)/npu/build
+	@echo "/* 由 Makefile 从 npu/npu_prog.S 自动生成, 不要手改 */" > $(NPU_PROG_DEFS)
+	@echo "    .equ NPU_PROG_WORDS, $$(( $$(stat -c%s $<) / 4 ))" >> $(NPU_PROG_DEFS)
+	@echo "/* 由 Makefile 从 npu/npu_prog.S 自动生成, 不要手改 */" > $(NPU_PROG_INC)
+	@echo "npu_prog:" >> $(NPU_PROG_INC)
+	@od -An -tx4 -v $< | awk '{for (i=1;i<=NF;i++) printf "    .word 0x%s\n", $$i}' >> $(NPU_PROG_INC)
+	@echo "Built npu_prog.inc + npu_prog_defs.inc"
+
+# CPU 侧用例要 .include 这份 .inc, 但上面的模式规则不认识这个依赖 ——
+# 不显式声明就可能出现"先编 asm 后生成 inc"的顺序错乱.
+$(PWD)/bin/npu_loop.bin:  $(NPU_PROG_INC) $(NPU_PROG_DEFS)
+$(PWD)/bin/npu_smoke.bin: $(NPU_PROG_INC) $(NPU_PROG_DEFS)
 
 # ---------------------------------------------------------------------------
 # 十六进制镜像 (给可综合的存储原语 mySoC/sync_mem.v 的 $readmemh 用)
@@ -356,6 +447,24 @@ $(DCACHE_CFG): FORCE
 # ---------------------------------------------------------------------------
 ICACHE_BYTES      ?= 1024
 ICACHE_LINE_BYTES ?= 16
+# ---------------------------------------------------------------------------
+# ICACHE_REPL : i-cache 两路的替换策略 (只对 IFU=2 有意义)
+#   0 = LRU (**默认**)  命中改写指针 ⇒ 牺牲最久没被碰到的那路
+#   1 = round-robin     命中不动指针, 只由回填轮转 ⇒ 2 路下退化成 FIFO
+# 不需要自己的 stamp: 它在 BP_SIG 里 (那个 stamp 的用途就是"define 变了要重编")。
+#
+#   make run TEST=coremark IFU=2 ICACHE_REPL=1
+#
+# ⚠️ 这一档**只走 BP_DEFS**, 而 BP_DEFS 只进 miniRV 那条主流程 ——
+#    A910 的规则 (a910-elab / a910-run / a910-difftest) 用的是
+#    `$(VCS_FLAGS_EXTRA)`, 不挂 BP_DEFS (挂了会顺带把 BP_* 那堆 define 带进
+#    A910 构建, 改变已经定型的基线行为)。在 A910 上扫这一档照几何的先例自己传:
+#      make a910-difftest TEST=... A910_DT_BUILD=$PWD/obj_xxx \
+#           VCS_FLAGS_EXTRA="+define+AIQ_ENTRY=16 +define+ICACHE_REPL=1"
+# ⚠️ 落地与否看 RTL 自己打印的 `[IFU2-ICACHE] … REPL=1(RR)` 那一行 —— 两档的周期差
+#    只有百分之几, 拿错档看不出来 (memory icache-geometry-bugs.md 缺陷 B 那类事故)。
+# ---------------------------------------------------------------------------
+ICACHE_REPL       ?= 0
 BP_PRE_FOLD  ?= 1
 BP_PRE_AW    ?= 5
 BP_SEL_AW    ?= 4
@@ -434,6 +543,7 @@ BP_GHR_W     ?= $(if $(filter-out 0,$(BP_PRED)),16,8)
 BP_DEFS := $(if $(filter 16,$(ICACHE_LINE_BYTES)),+define+ICACHE_LINE_16B) \
            $(if $(ICACHE_BYTES),+define+ICACHE_BYTES=$(ICACHE_BYTES)) \
            $(if $(ICACHE_LINE_BYTES),+define+ICACHE_LINE_BYTES=$(ICACHE_LINE_BYTES)) \
+           $(if $(filter-out 0,$(ICACHE_REPL)),+define+ICACHE_REPL=$(ICACHE_REPL)) \
            $(if $(BP_PRE_FOLD),+define+BP_PRE_FOLD) \
            $(if $(BP_PRE_AW),+define+BP_PRE_AW=$(BP_PRE_AW)) \
            $(if $(BP_SEL_AW),+define+BP_SEL_AW=$(BP_SEL_AW)) \
@@ -464,7 +574,7 @@ BP_DEFS := $(if $(filter 16,$(ICACHE_LINE_BYTES)),+define+ICACHE_LINE_16B) \
            $(if $(BP_TAGE_RA4),+define+BP_TAGE_RA4=$(BP_TAGE_RA4))
 
 BP_CFG := $(BUILD_DIR)/.bp_cfg
-BP_SIG := $(BP_PRE_FOLD)-$(BP_PRE_AW)-$(BP_SEL_AW)-$(BP_BTB_ROW_W)-$(BP_L0_ENTRIES)-$(BP_IND_AW)-$(ICACHE_BYTES)-$(ICACHE_LINE_BYTES)-$(BP_BTB_ROW_AW)-$(BP_BHT_ROW_AW)-$(BP_GHR_W)-$(BP_RAS)-$(REDIRECT_PIPE)\
+BP_SIG := $(BP_PRE_FOLD)-$(BP_PRE_AW)-$(BP_SEL_AW)-$(BP_BTB_ROW_W)-$(BP_L0_ENTRIES)-$(BP_IND_AW)-$(ICACHE_BYTES)-$(ICACHE_LINE_BYTES)-$(ICACHE_REPL)-$(BP_BTB_ROW_AW)-$(BP_BHT_ROW_AW)-$(BP_GHR_W)-$(BP_RAS)-$(REDIRECT_PIPE)\
           -$(BP_PRED)-$(BP_T0_AW)-$(BP_T0_HIST)-$(BP_TAGE_AW)-$(BP_TAGE_N)-$(BP_TAGE_TAG_W)-$(BP_TAGE_L1)-$(BP_TAGE_L2)-$(BP_TAGE_L3)-$(BP_TAGE_L4)\
           -$(BP_TAGE_USEL_AW)-$(BP_TAGE_USEL_W)-$(BP_TAGE_USEL_GATE)\
           -$(BP_TAGE_RA1)-$(BP_TAGE_RA2)-$(BP_TAGE_RA3)-$(BP_TAGE_RA4)
@@ -475,7 +585,7 @@ $(BP_CFG): FORCE
 
 FORCE:
 
-$(SIMV): $(VSRC) $(VHDR) $(SVSRC) $(DPIC) $(CSRC_GM) $(IFU_CFG) $(LBUF_CFG) $(BP_CFG) $(ICACHE_CFG) $(BP_EN_CFG) $(DCACHE_CFG) $(PREG_CFG)
+$(SIMV): $(VSRC) $(VHDR) $(SVSRC) $(DPIC) $(CSRC_GM) $(IFU_CFG) $(LBUF_CFG) $(BP_CFG) $(ICACHE_CFG) $(BP_EN_CFG) $(DCACHE_CFG) $(PREG_CFG) $(NPU_CFG)
 	@mkdir -p $(BUILD_DIR)
 	$(VCS) $(VCS_FLAGS) $(VCS_FLAGS_EXTRA) $(INC) $(DEFINES) $(BP_DEFS) $(PREG_DEFS) $(FSDB_VCS) -CFLAGS -DVCS \
 	  -CFLAGS -I$(PWD)/golden_model/include \
@@ -614,6 +724,27 @@ $(IU_MD_SIMV): $(IU_MD_SRC) $(IU_MD_TB)
 	$(VCS) $(VCS_FLAGS) $(INC) -top tb_iu_md_pipe -o $(IU_MD_SIMV) \
 	  $(IU_MD_SRC) $(IU_MD_TB)
 
+# ---------------------------------------------------------------------------
+# IU 写回 round-robin 仲裁单元台 (2026-10-18 立): ALU1 与 MUL/DIV 共用 pipe2。
+# 守: 绝不双授权 / 无请求不授权 / 单请求每拍拿口 / 双请求严格交替 /
+#     请求保持到授权 / flush 后 RR 状态清回 A。
+#
+#   make iu-wb-arb-unit
+# ---------------------------------------------------------------------------
+IU_WB_ARB_BUILD := $(PWD)/obj_unit_iu_wb_arb
+IU_WB_ARB_SIMV  := $(IU_WB_ARB_BUILD)/simv
+IU_WB_ARB_SRC   := $(PWD)/mySoC/iu/rtl/IU_wb_arb.v
+IU_WB_ARB_TB    := $(PWD)/tb/unit/tb_iu_wb_arb.sv
+
+iu-wb-arb-unit: $(IU_WB_ARB_SIMV)
+	@$(IU_WB_ARB_SIMV) +vcs+lic+wait -exitstatus -l $(IU_WB_ARB_BUILD)/sim.log
+
+$(IU_WB_ARB_SIMV): $(IU_WB_ARB_SRC) $(IU_WB_ARB_TB)
+	@mkdir -p $(IU_WB_ARB_BUILD)
+	$(VCS) $(VCS_FLAGS) $(INC) -top tb_iu_wb_arb -o $(IU_WB_ARB_SIMV) \
+	  -Mdir=$(IU_WB_ARB_BUILD)/csrc -l $(IU_WB_ARB_BUILD)/compile.log \
+	  $(IU_WB_ARB_SRC) $(IU_WB_ARB_TB)
+
 # IU BEU 流水级单元台 (2026-10-08 立): IDU 的 BIQ 发射口 ↔ 老 BEU 的适配级。
 # 守: 操作数摆放 (BIQ 的 src1 是裸 PRF 读, JALR 要喂 br_imme) / 8 位独热编码 /
 #     **JALR 目标 & ~1** (老 BEU 原缺) / 重定向的两个门 / 完成与解析两条都要报。
@@ -632,6 +763,95 @@ $(IU_BEU_SIMV): $(IU_BEU_SRC) $(IU_BEU_TB)
 	@mkdir -p $(IU_BEU_BUILD)
 	$(VCS) $(VCS_FLAGS) $(INC) -top tb_iu_beu_pipe -o $(IU_BEU_SIMV) \
 	  $(IU_BEU_SRC) $(IU_BEU_TB)
+
+# ---------------------------------------------------------------------------
+# IFU3 单元/定向台 (2026-10-17 立)
+#
+#   make ifu3-unit            # 全部 5 个
+#   make ifu3-ftq-unit        # FTQ 指针/override/flush
+#   make ifu3-ras-unit        # RAS undo log + 回滚 + commit
+#   make ifu3-predcheck-unit  # JAL/ret/假 taken 修正
+#   make ifu3-bpu-unit        # BTB 训练 + PHR 精确恢复/气泡
+#   make ifu3-ifu-unit        # S0 back-to-back/skid/非对齐块
+#
+# ⚠️ 每个台都用独立 BUILD_DIR, 且运行必须带 -exitstatus (没有它 $fatal 也返回 0)。
+# ---------------------------------------------------------------------------
+IFU3_RTL := $(PWD)/mySoC/ifu3/rtl
+
+IFU3_FTQ_BUILD := $(PWD)/obj_unit_ifu3_ftq
+IFU3_FTQ_SIMV  := $(IFU3_FTQ_BUILD)/simv
+IFU3_FTQ_SRC   := $(IFU3_RTL)/rv32ifu3_ftq.v
+IFU3_FTQ_TB    := $(PWD)/tb/unit/tb_ifu3_ftq.sv
+
+ifu3-ftq-unit: $(IFU3_FTQ_SIMV)
+	@$(IFU3_FTQ_SIMV) +vcs+lic+wait -exitstatus -no_save -l $(IFU3_FTQ_BUILD)/sim.log
+
+$(IFU3_FTQ_SIMV): $(IFU3_FTQ_SRC) $(IFU3_FTQ_TB)
+	@mkdir -p $(IFU3_FTQ_BUILD)
+	$(VCS) $(VCS_FLAGS) $(INC) -top tb_ifu3_ftq -o $(IFU3_FTQ_SIMV) \
+	  -Mdir=$(IFU3_FTQ_BUILD)/csrc -l $(IFU3_FTQ_BUILD)/compile.log \
+	  $(IFU3_FTQ_SRC) $(IFU3_FTQ_TB)
+
+IFU3_RAS_BUILD := $(PWD)/obj_unit_ifu3_ras
+IFU3_RAS_SIMV  := $(IFU3_RAS_BUILD)/simv
+IFU3_RAS_SRC   := $(IFU3_RTL)/rv32ifu3_ras.v
+IFU3_RAS_TB    := $(PWD)/tb/unit/tb_ifu3_ras.sv
+
+ifu3-ras-unit: $(IFU3_RAS_SIMV)
+	@$(IFU3_RAS_SIMV) +vcs+lic+wait -exitstatus -no_save -l $(IFU3_RAS_BUILD)/sim.log
+
+$(IFU3_RAS_SIMV): $(IFU3_RAS_SRC) $(IFU3_RAS_TB)
+	@mkdir -p $(IFU3_RAS_BUILD)
+	$(VCS) $(VCS_FLAGS) $(INC) -top tb_ifu3_ras -o $(IFU3_RAS_SIMV) \
+	  -Mdir=$(IFU3_RAS_BUILD)/csrc -l $(IFU3_RAS_BUILD)/compile.log \
+	  $(IFU3_RAS_SRC) $(IFU3_RAS_TB)
+
+IFU3_PC_BUILD := $(PWD)/obj_unit_ifu3_pred
+IFU3_PC_SIMV  := $(IFU3_PC_BUILD)/simv
+IFU3_PC_SRC   := $(IFU3_RTL)/rv32ifu3_predcheck.v
+IFU3_PC_TB    := $(PWD)/tb/unit/tb_ifu3_predcheck.sv
+
+ifu3-predcheck-unit: $(IFU3_PC_SIMV)
+	@$(IFU3_PC_SIMV) +vcs+lic+wait -exitstatus -no_save -l $(IFU3_PC_BUILD)/sim.log
+
+$(IFU3_PC_SIMV): $(IFU3_PC_SRC) $(IFU3_PC_TB)
+	@mkdir -p $(IFU3_PC_BUILD)
+	$(VCS) $(VCS_FLAGS) $(INC) -top tb_ifu3_predcheck -o $(IFU3_PC_SIMV) \
+	  -Mdir=$(IFU3_PC_BUILD)/csrc -l $(IFU3_PC_BUILD)/compile.log \
+	  $(IFU3_PC_SRC) $(IFU3_PC_TB)
+
+IFU3_BPU_BUILD := $(PWD)/obj_unit_ifu3_bpu
+IFU3_BPU_SIMV  := $(IFU3_BPU_BUILD)/simv
+IFU3_BPU_SRC   := $(IFU3_RTL)/rv32ifu3_bpu.v $(IFU3_RTL)/rv32ifu3_btb.v \
+                  $(IFU3_RTL)/rv32ifu3_tage.v $(IFU3_RTL)/rv32ifu3_phr.v \
+                  $(IFU3_RTL)/rv32ifu3_ubtb.v
+IFU3_BPU_TB    := $(PWD)/tb/unit/tb_ifu3_bpu.sv
+
+ifu3-bpu-unit: $(IFU3_BPU_SIMV)
+	@$(IFU3_BPU_SIMV) +vcs+lic+wait -exitstatus -no_save -l $(IFU3_BPU_BUILD)/sim.log
+
+$(IFU3_BPU_SIMV): $(IFU3_BPU_SRC) $(IFU3_BPU_TB)
+	@mkdir -p $(IFU3_BPU_BUILD)
+	$(VCS) $(VCS_FLAGS) $(INC) -top tb_ifu3_bpu -o $(IFU3_BPU_SIMV) \
+	  -Mdir=$(IFU3_BPU_BUILD)/csrc -l $(IFU3_BPU_BUILD)/compile.log \
+	  $(IFU3_BPU_SRC) $(IFU3_BPU_TB)
+
+IFU3_IFU_BUILD := $(PWD)/obj_unit_ifu3_ifu
+IFU3_IFU_SIMV  := $(IFU3_IFU_BUILD)/simv
+IFU3_IFU_SRC   := $(IFU3_RTL)/rv32ifu3_ifu.v $(IFU3_RTL)/rv32ifu3_ras.v \
+                  $(IFU3_RTL)/rv32ifu3_predcheck.v
+IFU3_IFU_TB    := $(PWD)/tb/unit/tb_ifu3_ifu.sv
+
+ifu3-ifu-unit: $(IFU3_IFU_SIMV)
+	@$(IFU3_IFU_SIMV) +vcs+lic+wait -exitstatus -no_save -l $(IFU3_IFU_BUILD)/sim.log
+
+$(IFU3_IFU_SIMV): $(IFU3_IFU_SRC) $(IFU3_IFU_TB)
+	@mkdir -p $(IFU3_IFU_BUILD)
+	$(VCS) $(VCS_FLAGS) $(INC) -top tb_ifu3_ifu -o $(IFU3_IFU_SIMV) \
+	  -Mdir=$(IFU3_IFU_BUILD)/csrc -l $(IFU3_IFU_BUILD)/compile.log \
+	  $(IFU3_IFU_SRC) $(IFU3_IFU_TB)
+
+ifu3-unit: ifu3-ftq-unit ifu3-ras-unit ifu3-predcheck-unit ifu3-bpu-unit ifu3-ifu-unit
 
 # IU ALU 流水级单元台 (2026-10-08 立): IDU 的 AIQ 发射口 ↔ 老 ALU 的适配级。
 # 守三件事 (全在整核里只表现为"某条指令结果不对"、定位不到):
@@ -726,7 +946,7 @@ rtu-subsys-elab:
 #   * +define+RTU_PREG64 —— 适配层里有配置守卫, RTU_NUM_PREG != 64 时 elaborate
 #     直接失败; 而交付的 C910 IDU 的 PRF 是 64 项 / 6 位。
 #
-#   * +define+DCACHE_2KB —— lsu 的 dcache 阵列整个包在 `ifdef DCACHE_* 里, 一个
+#   * $(DCACHE_DEF) —— lsu 的 dcache 阵列整个包在 `ifdef DCACHE_* 里, 一个
 #     都不定义则阵列一片不例化, 输出悬空 (Z), 读出来全是 X 且不报错。与 lsu_top
 #     的 DCACHE_SIZE 默认值 (2048) 配套。
 #
@@ -734,13 +954,46 @@ rtu-subsys-elab:
 # ---------------------------------------------------------------------------
 A910_BUILD := $(PWD)/obj_a910
 A910_LOG   := $(A910_BUILD)/elab.log
+
+# A910 的前端二选一:
+#   A910_IFU=2  ifu2 (基线, 默认)
+#   A910_IFU=3  ifu3 (FTQ + 3 级 IFU; Phase 0 预测关闭)
+# ⚠️ A910 规则不认全局 IFU; 必须用 A910_IFU, 否则会静默沿用 ifu2。
+A910_IFU ?= 2
+ifeq ($(filter $(A910_IFU),2 3),)
+$(error A910_IFU 只能是 2 或 3, 当前是 '$(A910_IFU)')
+endif
+ifeq ($(A910_IFU),2)
+A910_IFU_SRC := $(wildcard $(PWD)/mySoC/ifu2/rtl/*.v)
+A910_IFU_DEF := +define+USE_IFU2
+else
+# 只复用 ICache/refill/spram/IBUF/BIU; ifu2 的 BTB/BHT/TAGE/RAS 不再参与编译。
+A910_IFU_SRC := $(filter-out \
+                  $(PWD)/mySoC/ifu2/rtl/rv32ifu2_top.v \
+                  $(PWD)/mySoC/ifu2/rtl/rv32ifu2_btb.v \
+                  $(PWD)/mySoC/ifu2/rtl/rv32ifu2_bht.v \
+                  $(PWD)/mySoC/ifu2/rtl/rv32ifu2_tage.v \
+                  $(PWD)/mySoC/ifu2/rtl/rv32ifu2_ras.v, \
+                  $(wildcard $(PWD)/mySoC/ifu2/rtl/*.v)) \
+                $(wildcard $(PWD)/mySoC/ifu3/rtl/*.v)
+A910_IFU_DEF := +define+USE_IFU3
+endif
+A910_DEFS := $(A910_IFU_DEF)
+
 A910_SRC   := $(PWD)/mySoC/A910_cpu.sv \
-              $(wildcard $(PWD)/mySoC/ifu2/rtl/*.v) \
+              $(A910_IFU_SRC) \
               $(wildcard $(PWD)/mySoC/rtu/rtl/*.v) \
               $(wildcard $(PWD)/mySoC/idu_c910/rtl/*.sv) \
               $(wildcard $(PWD)/mySoC/iu/rtl/*.v) \
               $(wildcard $(PWD)/mySoC/lsu/rtl/*.sv) \
               $(wildcard $(PWD)/mySoC/biu/rtl/*.sv)
+
+# A910_IFU 只改源列表/define ⇒ 必须有配置戳, 否则切档不会重编译。
+A910_CFG_SIG := $(A910_IFU)-$(BP_PRED)-$(BP_GHR_W)-$(ICACHE_BYTES)-$(ICACHE_LINE_BYTES)-$(ICACHE_REPL)
+A910_CFG     := $(A910_BUILD)/.a910_cfg
+$(A910_CFG): FORCE
+	@mkdir -p $(A910_BUILD)
+	@echo "$(A910_CFG_SIG)" | cmp -s - $@ || echo "$(A910_CFG_SIG)" > $@
 
 a910-elab:
 	@mkdir -p $(A910_BUILD)
@@ -749,7 +1002,7 @@ a910-elab:
 	#    于是下面的计数全是 0, 这个目标就成了永远绿的假检查。
 	#    (本机时钟偏移还会让 VCS 更爱走这条捷径, 见 memory `eda-env-csh-vcs`。)
 	@rm -rf $(A910_BUILD)/simv.daidir $(A910_BUILD)/simv
-	@$(VCS) $(VCS_FLAGS) $(INC) +define+RTU_PREG64 +define+DCACHE_2KB \
+	@$(VCS) $(VCS_FLAGS) $(INC) $(A910_DEFS) +define+RTU_PREG64 $(DCACHE_DEF) \
 	  -top A910_cpu -o $(A910_BUILD)/simv $(A910_SRC) > $(A910_LOG) 2>&1 || true
 	@E=$$(grep -cE 'Error-\[' $(A910_LOG) || true); \
 	 W=$$(grep -cE 'Warning-\[IWNF\]' $(A910_LOG) || true); \
@@ -815,10 +1068,10 @@ a910-run_smoke:
 	@echo "===================================================="
 	@$(MAKE) verdi
 
-$(A910_SIMV): $(A910_SRC) $(A910_TB_SRC)
+$(A910_SIMV): $(A910_SRC) $(A910_TB_SRC) $(A910_CFG)
 	@mkdir -p $(A910_SIM_BUILD)
 	$(VCS) $(VCS_FLAGS) $(VCS_FLAGS_EXTRA) $(INC) $(FSDB_VCS) \
-	  +define+RTU_PREG64 +define+DCACHE_2KB +define+FSDB \
+	  $(A910_DEFS) +define+RTU_PREG64 $(DCACHE_DEF) +define+FSDB \
 	  +define+PATH=$(TESTFILE) +define+PATHHEX=$(TESTHEX) +define+PATH128=$(TESTHEX128) \
 	  -top tb_a910_smoke -o $(A910_SIMV) -Mdir=$(A910_SIM_BUILD)/csrc \
 	  -l $(A910_SIM_BUILD)/compile.log \
@@ -848,6 +1101,12 @@ A910_DT_BUILD := $(PWD)/obj_a910_dt
 A910_DT_SIMV  := $(A910_DT_BUILD)/simv
 A910_DT_TB    := $(PWD)/tb/a910/tb_a910_difftest.sv $(PWD)/tb/a910/axi_slave_128.v
 A910_DT_ARGS  ?=
+# A/B 时用独立日志目录, 避免 IFU2/IFU3 的日志互相覆盖。
+A910_DT_LOGDIR ?= /tmp/a910_dt
+A910_DT_CFG   := $(A910_DT_BUILD)/.a910_cfg
+$(A910_DT_CFG): FORCE
+	@mkdir -p $(A910_DT_BUILD)
+	@echo "$(A910_CFG_SIG)" | cmp -s - $@ || echo "$(A910_CFG_SIG)" > $@
 # 顺序核的用例里跑得最久的也就几十万拍; 卡死的用例要快速暴露, 所以给个小上限。
 A910_DT_MAX_CYCLES ?= 200000
 
@@ -858,11 +1117,13 @@ a910-difftest: $(A910_DT_SIMV) $(PWD)/bin/$(TEST).bin $(PWD)/bin/$(TEST).hex $(P
 	@$(A910_DT_SIMV) +vcs+lic+wait -exitstatus +TEST=$(TEST) $(A910_DT_ARGS) \
 	  +MAX_CYCLES=$(A910_DT_MAX_CYCLES) -l $(A910_DT_BUILD)/sim.log
 
-$(A910_DT_SIMV): $(A910_SRC) $(A910_DT_TB) $(DPIC) $(CSRC_GM)
+# ⚠️ `$(DCACHE_CFG)` 必须进依赖: `DCACHE_SIZE` 只派生 `$(DCACHE_DEF)`, 源文件一个字节没变
+#    ⇒ 少了它 make 会认为 simv 是最新的、**静默沿用上一个容量** (本机时钟偏移还会加重)。
+$(A910_DT_SIMV): $(A910_SRC) $(A910_DT_TB) $(DPIC) $(CSRC_GM) $(DCACHE_CFG) $(A910_DT_CFG)
 	@mkdir -p $(A910_DT_BUILD)
 	$(VCS) $(VCS_FLAGS) $(VCS_FLAGS_EXTRA) $(INC) \
 	  -CFLAGS -DVCS -CFLAGS -I$(PWD)/golden_model/include \
-	  +define+RTU_PREG64 +define+DCACHE_2KB \
+	  $(A910_DEFS) +define+RTU_PREG64 $(DCACHE_DEF) \
 	  +define+PATH=$(TESTFILE) +define+PATHHEX=$(TESTHEX) +define+PATH128=$(TESTHEX128) \
 	  -top tb_a910_difftest -o $(A910_DT_SIMV) -Mdir=$(A910_DT_BUILD)/csrc \
 	  -l $(A910_DT_BUILD)/compile.log \
@@ -937,13 +1198,41 @@ $(BIQ_EQ_SIMV): $(PWD)/tb/a910/tb_biq_equiv.sv $(BIQ_EQ_REF) $(BIQ_EQ_NEW) \
 	  $(PWD)/tb/a910/tb_biq_equiv.sv $(BIQ_EQ_REF) $(BIQ_EQ_NEW) \
 	  $(PWD)/mySoC/idu_c910/rtl/ct_idu_dep_reg_entry.sv
 
+# ---------------------------------------------------------------------------
+# LSIQ 参数化等价自检 (2026-10-16): 与 aiq-equiv / biq-equiv 同一套做法。
+#   【为什么也要有】ct_idu_is_lsiq 原来是 8 项逐表项写死的 1058 行 (两个 casez
+#   优先级编码、8 份 agevec 旋转切片、8 个例化), 被改成 LSIQ_ENTRY 参数化的
+#   generate 通用版。改的是同事地盘上的文件, 光说"跑 difftest 没红"不够 —— 得能
+#   **逐拍证明** N=8 时与原版一模一样。
+#   台子把新版 ct_idu_is_lsiq(N=8) 与冻结的原版逐拍对拍 (全部输出 + cnt/vld/ready/
+#   issue_en + 每项的 agevec 与 agevec_all), 第一处分歧就停并打印现场, 退出码非 0。
+#   ⚠️ 参考版是 tb/a910/ref/ct_idu_is_lsiq{,_entry}_ref.sv, 不跟随 HEAD。
+#
+#   make lsiq-equiv
+# ---------------------------------------------------------------------------
+LSIQ_EQ_BUILD := $(PWD)/obj_lsiq_equiv
+LSIQ_EQ_SIMV  := $(LSIQ_EQ_BUILD)/simv
+LSIQ_EQ_REF   := $(PWD)/tb/a910/ref/ct_idu_is_lsiq_ref.sv $(PWD)/tb/a910/ref/ct_idu_is_lsiq_entry_ref.sv
+LSIQ_EQ_NEW   := $(PWD)/mySoC/idu_c910/rtl/ct_idu_is_lsiq.sv $(PWD)/mySoC/idu_c910/rtl/ct_idu_is_lsiq_entry.sv
+
+lsiq-equiv: $(LSIQ_EQ_SIMV)
+	@$(LSIQ_EQ_SIMV) -no_save -exitstatus
+
+$(LSIQ_EQ_SIMV): $(PWD)/tb/a910/tb_lsiq_equiv.sv $(LSIQ_EQ_REF) $(LSIQ_EQ_NEW) \
+                $(PWD)/mySoC/idu_c910/rtl/ct_idu_dep_reg_entry.sv
+	@mkdir -p $(LSIQ_EQ_BUILD)
+	$(VCS) $(VCS_FLAGS) -top tb_lsiq_equiv -o $(LSIQ_EQ_SIMV) -Mdir=$(LSIQ_EQ_BUILD)/csrc \
+	  -l $(LSIQ_EQ_BUILD)/compile.log \
+	  $(PWD)/tb/a910/tb_lsiq_equiv.sv $(LSIQ_EQ_REF) $(LSIQ_EQ_NEW) \
+	  $(PWD)/mySoC/idu_c910/rtl/ct_idu_dep_reg_entry.sv
+
 a910-difftest-all: $(A910_DT_SIMV)
-	@mkdir -p /tmp/a910_dt
+	@mkdir -p $(A910_DT_LOGDIR)
 	@pass=""; fail=""; \
 	for f in $(PWD)/bin/*.bin; do \
 	  t=$$(basename $$f .bin); \
 	  case " $(A910_DT_SKIP) " in *" $$t "*) continue;; esac; \
-	  $(MAKE) --no-print-directory a910-difftest TEST=$$t > /tmp/a910_dt/$$t.log 2>&1; \
+	  $(MAKE) --no-print-directory a910-difftest TEST=$$t > $(A910_DT_LOGDIR)/$$t.log 2>&1; \
 	  if [ $$? -eq 0 ]; then pass="$$pass $$t"; st="PASS"; else fail="$$fail $$t"; st="FAIL"; fi; \
 	  printf "  %-16s %s\n" "$$t" "$$st"; \
 	done; \
@@ -952,7 +1241,7 @@ a910-difftest-all: $(A910_DT_SIMV)
 	if [ -n "$$pass" ]; then echo "$$pass" | sed -e 's/^ //; s/ /, /g'; else echo "  (无)"; fi; \
 	echo "FAIL ($$(echo $$fail | wc -w)):"; \
 	if [ -n "$$fail" ]; then echo "$$fail" | sed -e 's/^ //; s/ /, /g'; else echo "  (无)"; fi; \
-	echo "日志: /tmp/a910_dt/<用例>.log"
+	echo "日志: $(A910_DT_LOGDIR)/<用例>.log"
 
 # ---------------------------------------------------------------------------
 # A910 difftest 带波形版本
@@ -979,11 +1268,11 @@ A910_DT_WAVE_LOG   := $(A910_DT_WAVE_BUILD)/logs
 A910_DT_WAVE_SIMV  := $(A910_DT_WAVE_BUILD)/simv
 
 # 带 FSDB 波形支持的 difftest simv
-$(A910_DT_WAVE_SIMV): $(A910_SRC) $(A910_DT_TB) $(DPIC) $(CSRC_GM)
+$(A910_DT_WAVE_SIMV): $(A910_SRC) $(A910_DT_TB) $(DPIC) $(CSRC_GM) $(A910_DT_CFG)
 	@mkdir -p $(A910_DT_WAVE_BUILD)
 	$(VCS) $(VCS_FLAGS) $(VCS_FLAGS_EXTRA) $(INC) $(FSDB_VCS) \
 	  -CFLAGS -DVCS -CFLAGS -I$(PWD)/golden_model/include \
-	  +define+RTU_PREG64 +define+DCACHE_2KB +define+FSDB \
+	  $(A910_DEFS) +define+RTU_PREG64 $(DCACHE_DEF) +define+FSDB \
 	  +define+PATH=$(TESTFILE) +define+PATHHEX=$(TESTHEX) +define+PATH128=$(TESTHEX128) \
 	  -top tb_a910_difftest -o $(A910_DT_WAVE_SIMV) -Mdir=$(A910_DT_WAVE_BUILD)/csrc \
 	  -l $(A910_DT_WAVE_BUILD)/compile.log \
@@ -1177,6 +1466,11 @@ run-all: build
 	pass=""; fail=""; \
 	for f in $$tests; do \
 	  t=$$(basename $$f .bin); \
+	  case $$t in npu_*) \
+	    if [ "$(NPU)" != "1" ]; then \
+	      echo "跳过 $$t (NPU=0; 需要 make NPU=1 或 make npu-run)"; continue; \
+	    fi ;; \
+	  esac; \
 	  mc=$(MAX_CYCLES); \
 	  if [ "$$t" = "coremark" ]; then mc=$(COREMARK_MAX_CYCLES); fi; \
 	  echo "==================== Running $$t (MAX_CYCLES=$$mc) ===================="; \
@@ -1204,14 +1498,48 @@ A910_VERDI_TOP := tb_a910_smoke
 #    但 Verdi 不带 define 时走 RTU_define.vh 的 else 分支拿 `RTU_PREG_W=7`,
 #    两边不一致)。
 #    缺 +incdir 还会让 `` `include "defines.vh" `` 找不到文件。
-A910_VERDI_DEFS := +define+RTU_PREG64 +define+DCACHE_2KB \
+A910_VERDI_DEFS := +define+RTU_PREG64 $(DCACHE_DEF) \
                    +incdir+$(PWD)/mySoC +incdir+$(PWD)/vsrc +incdir+$(PWD)/mySoC/rtu/rtl
 
 # a910-difftest 专用的 Verdi 配置（与 smoke 测试分开）
 A910_DT_VERDI_SRC := $(A910_SRC) $(A910_DT_TB)
 A910_DT_VERDI_TOP := tb_a910_difftest
-A910_DT_VERDI_DEFS := +define+RTU_PREG64 +define+DCACHE_2KB +define+FSDB \
+A910_DT_VERDI_DEFS := +define+RTU_PREG64 $(DCACHE_DEF) +define+FSDB \
                       +incdir+$(PWD)/mySoC +incdir+$(PWD)/vsrc +incdir+$(PWD)/mySoC/rtu/rtl
+
+# ---------------------------------------------------------------------------
+# NPU 专用 TB (tb/npu/tb_npu_loop.sv) —— 里程碑 1 的主判据
+#
+#   make npu-run TEST=npu_loop MAX_CYCLES=200000
+#
+# 为什么单开一套而不是走主 difftest 流程:
+#   黄金模型不知道 NPU 的存在, 而 NPU 的完成时刻又不可能被逐条指令比对的
+#   模型跟踪 —— 轮询循环在模型里第 1 圈就退出, 在 DUT 里要转 N 圈,
+#   pc 序列必然发散. 所以主判据用**专用 TB 直接看信号**, difftest 那条路
+#   留给 npu_smoke (见 asm/npu_smoke.S 的用法说明).
+#
+# 独立的 BUILD_DIR, 与主流程 obj_vcs 互不干扰; 且**不碰 meminit.bin** ——
+# 没有黄金模型, 不该污染 difftest 流程用的黄金镜像.
+# ---------------------------------------------------------------------------
+NPU_BUILD  := $(PWD)/obj_npu
+NPU_SIMV   := $(NPU_BUILD)/simv
+NPU_TOP    := tb_npu_loop
+NPU_DEFS   := +define+NPU_EN $(INC)
+
+.PHONY: npu-run
+
+npu-run: $(NPU_SIMV) $(PWD)/bin/$(TEST).hex $(PWD)/bin/$(TEST).hex128
+	@mkdir -p waveform
+	$(NPU_SIMV) +vcs+lic+wait -exitstatus +MAX_CYCLES=$(MAX_CYCLES) \
+	    -l $(NPU_BUILD)/sim.log
+
+$(NPU_SIMV): $(VSRC) $(VHDR) $(NPU_SRC) $(NPU_TB_SRC)
+	@mkdir -p $(NPU_BUILD)
+	@echo "⚠️  npu/core/RvvCoreMiniAxi.sv 是 bazel 生成的, 不入库; 缺它请先看 doc/npu_m1_zh.md"
+	$(VCS) $(VCS_FLAGS) $(VCS_FLAGS_EXTRA) $(NPU_DEFS) $(FSDB_VCS) \
+	  -top $(NPU_TOP) -o $(NPU_SIMV) \
+	  -Mdir=$(NPU_BUILD)/csrc -l $(NPU_BUILD)/compile.log \
+	  $(VSRC) $(NPU_TB_SRC)
 
 verdi:
 	# 如果没有指定 WAVE，自动找最新的波形文件

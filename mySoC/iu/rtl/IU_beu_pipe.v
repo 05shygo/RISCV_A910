@@ -53,6 +53,7 @@ module IU_beu_pipe (
     input  wire [31:0] idu_br_imme,      // 分支/跳转立即数 (B/J/I 型由译码选好)
     input  wire        idu_dst_vld,      // JAL/JALR 写 rd
     input  wire [5:0]  idu_dst_preg,
+    input  wire [24:0] idu_chk,          // 取指时随指令带来的 chk (含 PHR 快照)
 
     // ---------------- 与 RTU / IFU 的重定向握手 ----------------
     input  wire        redirect_in_progress, // RTU 本拍在发 trap/mret (优先级更高)
@@ -78,6 +79,11 @@ module IU_beu_pipe (
     output wire        beu_redirect_vld, // → RTU: 本拍真的发出了误预测重定向
     output wire        iu_chgflw_vld,    // → IFU: EX 级重定向 (与 RTU 的 trap 口并列)
     output wire [31:0] iu_chgflw_pc,     // → IFU: 真实目标
+    // → IFU: 重定向当拍的 chk/实际方向/类型 (PHR/RAS 修复用; 不是训练口)
+    output wire [24:0] iu_btb_chk,
+    output wire [31:0] iu_btb_pc,      // 分支自己的 PC (PHR hash 精确重算用)
+    output wire        iu_btb_taken,
+    output wire        iu_btb_is_cond,
 
     // ---------------- 异常源: 取指地址非对齐 (cause 0) ----------------
     output wire        expt_vld,
@@ -211,6 +217,12 @@ module IU_beu_pipe (
     assign iu_chgflw_vld    = red_req & (~mis_inflight_q | older);
     assign iu_chgflw_pc     = actual_npc;
     assign beu_redirect_vld = iu_chgflw_vld;
+
+    // 给 IFU 的 PHR/RAS 修复信息: 必须是**当拍 EX** 的值, 不能换成退休点那份
+    assign iu_btb_chk     = idu_chk;
+    assign iu_btb_pc      = idu_pc;
+    assign iu_btb_taken   = br_taken | is_jal | is_jalr;
+    assign iu_btb_is_cond = is_branch;
 
     // ==========================================================
     //  4) EX2: 完成 / 解析 / 写回

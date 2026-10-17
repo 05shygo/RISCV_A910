@@ -287,10 +287,19 @@
 // 数据侧: DRAM 只有低 64KB, 其余合法地址只有三个【已实现】的外设区间.
 // 取指侧: IROM 也只有 64KB, 别的地址一律 instruction access fault.
 // ---------------------------------------------------------------------------
+// NPU 控制窗口 (见 mySoC/npu_bridge.v). 这是【寄存器页】不是内存窗口:
+// CPU 通过它驱动一个 AXI 访问引擎去读写 CoralNPU 的 ITCM/DTCM/CSR.
+// ⚠️ 这个区间必须与 perip_bridge.v 的 sel_npu 解码、以及 golden_model 里
+//    注册的 NPU 外设**三处一致** —— 少改一处就会出现"RTL 放行但 golden
+//    model 报异常"(或反过来), 而这种分叉在 difftest 里表现为随机失败.
+`define PERI_ADDR_NPU   32'h4000_0000
+`define PERI_ADDR_NPU_END 32'h4000_0FFF
+
 `define ADDR_IN_MAP(a) ( ((a) <= 32'h0000_FFFF)                            \
                        || ((a) >= 32'h8000_0000 && (a) <= 32'h8000_0007) \
                        || ((a) >= 32'hFFFF_F000 && (a) <= 32'hFFFF_F003) \
-                       || ((a) >= 32'hFFFF_F040 && (a) <= 32'hFFFF_F04F) )
+                       || ((a) >= 32'hFFFF_F040 && (a) <= 32'hFFFF_F04F) \
+                       || ((a) >= 32'h4000_0000 && (a) <= 32'h4000_0FFF) )
 `define INST_ADDR_OK(a)  ((a) <= 32'h0000_FFFF)
 
 // 异常 cause (mcause[30:0]), 与规范编号一致

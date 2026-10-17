@@ -70,7 +70,7 @@
 需新增,LSU→RTU,sq_stall  (RTU 已声明),1,—（LSU 侧要产生）,—,【改 LSU 侧：产生这一根】存储队列满/下游忙 ⇒ 压退休宽度；现在恒接 0
 ## 约束（不是线，但接之前要知道）,
 约束（非端口）,RTU→LSU,(rtu_yy_xx_commit*_iid),7,(LSU 内部表项里存的 iid),7,"⚠️ 广播出去的 iid 必须与 LSU 表项里存的**是同一个号**（那个号追到源头就是 RTU 在派遣那拍发的 `rtu_disp_iid*`）⇒ **不许在适配层重编码、也不许偏一拍**，否则""段不匹配""的后果是静默的：store 永远等不到提交、或提前提交"
-约束（非端口）,IDU+LSU 队列深度,disp*_sq_id[2:0],3,SQ_ENTRY=6 / SDIQ_ENTRY=4 / LSIQ_ENTRY=8,—,"2026-10-08 核过的实际档位（`lsu_top.sv:3-5`）：`SQ_ENTRY = 6` ⇒ 槽号 0..5 正好 3 位，**与 RTU 的 `disp*_sq_id[2:0]` 严丝合缝**；`SDIQ_ENTRY = 4`（对 IDU 的 `idu_lsu_st_sdiq_entry[3:0]`）；`LSIQ_ENTRY = 8`（对 IDU 的 `idu_lsu_ld/st_lch_entry[7:0]`）。⚠️ **旧文档正文里写的 `LSIQ_ENTRY = 12` 已过期** —— 2026-10-08 的 commit 165dfd5 ""位宽对齐 64 preg / 8 LSIQ"" 已把它改成 8。RTU 只用 `sq_id`，与 LSIQ 深度无关"
+约束（非端口）,IDU+LSU 队列深度,disp*_sq_id[2:0],3,SQ_ENTRY=6 / SDIQ_ENTRY=4 / LSIQ_ENTRY=12,—,"`SQ_ENTRY = 6` ⇒ 槽号 0..5 正好 3 位，**与 RTU 的 `disp*_sq_id[2:0]` 严丝合缝**；`SDIQ_ENTRY = 4`（对 IDU 的 `idu_lsu_st_sdiq_entry[3:0]`）。⚠️ **`LSIQ_ENTRY` 的历史是 12 → 8 → 12**：2026-10-08 的 commit 165dfd5 ""位宽对齐 64 preg / 8 LSIQ"" 曾把它砍到 8；2026-10-16 按 C910 原版深度放回 **12**（`mySoC/lsiq_defines.vh` 是真源，IDU 的 `idu_lsu_ld/st_lch_entry` 现在是 `[11:0]`）。RTU 只用 `sq_id`，与 LSIQ 深度无关 —— 这条留着是提醒别再照抄旧数"
 
 ### 汇总
 分类口径,含义,RTU↔IDU,RTU↔LSU

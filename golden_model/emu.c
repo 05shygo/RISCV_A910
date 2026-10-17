@@ -7,6 +7,7 @@
 #include "peripheral/result_monitor.h"
 #include "peripheral/onboard.h"
 #include "peripheral/timer.h"
+#include "peripheral/npu.h"
 
 static const char *reg_name[33] = {
   "$0", "ra", "sp", "gp", "tp", "t0", "t1", "t2",
@@ -205,5 +206,10 @@ void init_cpu(const char *fname) {
     register_peripheral("MONITOR", 0x80000000, 0x8,   read_monitor,    write_monitor);
     register_peripheral("Digit",   0xFFFFF000, 0x4,   read_seven_seg,  write_seven_seg);
     register_peripheral("TIMER",   0xFFFFF040, 0x10,  read_timer,      write_timer);
+    // CoralNPU 控制窗口. 必须与 mySoC/defines.vh 的 `ADDR_IN_MAP 和
+    // mySoC/perip_bridge.v 的 sel_npu 解码**同时**存在或同时不存在 ——
+    // 三处口径不一致时, difftest 会表现为"随机失败": RTL 放行的地址模型报
+    // 异常 (或反过来), 而报错点到不了真正的病根.
+    register_peripheral("NPU",     0x40000000, 0x1000, read_npu,       write_npu);
     init_memory(fname);
 }

@@ -153,6 +153,21 @@ module miniRV_SoC (
       logic [31:0] seg_value;        // 数码管, 留给板级顶层
       logic        timer_int_flag;   // 已接入 myCPU.timer_irq_in (MTIP 中断源)
 
+      // -----------------------------------------------------------------------
+      // CoralNPU 控制窗口 (0x4000_0000-0x4000_0FFF)
+      //
+      // 整个 NPU 子系统由 `NPU_EN 开关控制: 未定义时下面两个模块都不存在,
+      // npu_rdata 接 0, 默认的 48 项 difftest 构建完全看不见 NPU.
+      // (与 USE_IFU 同一套路 —— Makefile 里 NPU=1 时定义)
+      // -----------------------------------------------------------------------
+      logic        npu_sel;
+      logic        npu_we;
+      logic [31:0] npu_rdata;
+      logic        npu_aresetn;      // 软件经 CTL[0] 控制
+      logic        npu_halted;
+      logic        npu_fault;
+      logic        npu_wfi;
+
       perip_bridge u_bridge (
           .clk            (cpu_clk),
           .rst            (fpga_rst),
@@ -165,8 +180,95 @@ module miniRV_SoC (
           .dram_wdata     (dram_wdata),
           .dram_rdata     (dram_rdata),
           .seg_value      (seg_value),
-          .timer_int_flag (timer_int_flag)
+          .timer_int_flag (timer_int_flag),
+          .npu_sel        (npu_sel),
+          .npu_we         (npu_we),
+          .npu_rdata      (npu_rdata)
       );
+
+`ifdef NPU_EN
+      // npu_bridge ↔ npu_core_wrap 之间的 AXI 主端 (32→128 单拍)
+      logic [31:0]  npu_m_awaddr;
+      logic         npu_m_awvalid, npu_m_awready;
+      logic [127:0] npu_m_wdata;
+      logic [15:0]  npu_m_wstrb;
+      logic         npu_m_wvalid, npu_m_wlast, npu_m_wready;
+      logic         npu_m_bvalid, npu_m_bready;
+      logic [1:0]   npu_m_bresp;
+      logic [5:0]   npu_m_bid;
+      logic [31:0]  npu_m_araddr;
+      logic         npu_m_arvalid, npu_m_arready;
+      logic         npu_m_rvalid, npu_m_rlast, npu_m_rready;
+      logic [127:0] npu_m_rdata;
+      logic [1:0]   npu_m_rresp;
+      logic [5:0]   npu_m_rid;
+
+      npu_bridge u_npu_bridge (
+          .clk         (cpu_clk),
+          .rst         (fpga_rst),      // 用 fpga_rst, 不是 rst_cpu
+          .Bus_addr    (Bus_addr),
+          .Bus_wdata   (Bus_wdata),
+          .Bus_wen     (Bus_wen),
+          .npu_sel     (npu_sel),
+          .npu_rdata   (npu_rdata),
+          .npu_aresetn (npu_aresetn),
+          .npu_halted  (npu_halted),
+          .npu_fault   (npu_fault),
+          .npu_wfi     (npu_wfi),
+          .m_awaddr    (npu_m_awaddr),
+          .m_awvalid   (npu_m_awvalid),
+          .m_awready   (npu_m_awready),
+          .m_wdata     (npu_m_wdata),
+          .m_wstrb     (npu_m_wstrb),
+          .m_wvalid    (npu_m_wvalid),
+          .m_wlast     (npu_m_wlast),
+          .m_wready    (npu_m_wready),
+          .m_bvalid    (npu_m_bvalid),
+          .m_bresp     (npu_m_bresp),
+          .m_bid       (npu_m_bid),
+          .m_bready    (npu_m_bready),
+          .m_araddr    (npu_m_araddr),
+          .m_arvalid   (npu_m_arvalid),
+          .m_arready   (npu_m_arready),
+          .m_rvalid    (npu_m_rvalid),
+          .m_rdata     (npu_m_rdata),
+          .m_rresp     (npu_m_rresp),
+          .m_rid       (npu_m_rid),
+          .m_rlast     (npu_m_rlast),
+          .m_rready    (npu_m_rready)
+      );
+
+      npu_core_wrap u_npu_core (
+          .clk         (cpu_clk),
+          .npu_aresetn (npu_aresetn),
+          .npu_halted  (npu_halted),
+          .npu_fault   (npu_fault),
+          .npu_wfi     (npu_wfi),
+          .m_awaddr    (npu_m_awaddr),
+          .m_awvalid   (npu_m_awvalid),
+          .m_awready   (npu_m_awready),
+          .m_wdata     (npu_m_wdata),
+          .m_wstrb     (npu_m_wstrb),
+          .m_wvalid    (npu_m_wvalid),
+          .m_wlast     (npu_m_wlast),
+          .m_wready    (npu_m_wready),
+          .m_bvalid    (npu_m_bvalid),
+          .m_bresp     (npu_m_bresp),
+          .m_bid       (npu_m_bid),
+          .m_bready    (npu_m_bready),
+          .m_araddr    (npu_m_araddr),
+          .m_arvalid   (npu_m_arvalid),
+          .m_arready   (npu_m_arready),
+          .m_rvalid    (npu_m_rvalid),
+          .m_rdata     (npu_m_rdata),
+          .m_rresp     (npu_m_rresp),
+          .m_rid       (npu_m_rid),
+          .m_rlast     (npu_m_rlast),
+          .m_rready    (npu_m_rready)
+      );
+`else
+      assign npu_rdata = 32'b0;
+`endif
 
       // -----------------------------------------------------------------------
       // 数据存储: 同步 1R1W (可综合, 落块 RAM)

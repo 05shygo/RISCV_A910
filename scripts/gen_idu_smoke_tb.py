@@ -43,6 +43,26 @@ TIE1_PORTS = {
 }
 
 
+# 2026-10-16: LSIQ 那几根"一位一项"的向量 (lq_full / sq_full / lsid / pop_entry …)
+#   的位宽改成了宏 `` `LSIQ_NUM-1:0 ``, 真源在 mySoC/lsiq_defines.vh —— 默认 12
+#   (C910 原版深度), 由 `+define+LSIQ_ENTRY=N` 覆盖。这个冒烟台**不挂**那个 define,
+#   所以按默认档生成 (12)。改默认值时这里要跟着改, 否则台子的线宽对不上端口。
+MACRO_W = {"`LSIQ_NUM": 12}
+
+
+def _parse_range(rng):
+    """把端口方括号里的内容算成位宽。认不出来的**直接报错**, 不许静默跳过 ——
+    旧版正则只认 [\\d+:\\d+], 宏位宽会整条端口被漏掉, 而 elaborate 只会报
+    "少接了一根线", 指不到这里。"""
+    m = re.fullmatch(r"(\d+):(\d+)", rng)
+    if m:
+        return int(m.group(1)) - int(m.group(2)) + 1
+    m = re.fullmatch(r"(`\w+)-1:0", rng)
+    if m and m.group(1) in MACRO_W:
+        return MACRO_W[m.group(1)]
+    raise SystemExit("端口位宽 [%s] 认不出来 —— 补进 MACRO_W 或改成数字" % rng)
+
+
 def parse_ports(path):
     """抠出 module ct_idu_top(...) 里的 (方向, 位宽, 名字)。
 
@@ -56,11 +76,16 @@ def parse_ports(path):
     ports = []
     for line in m.group(0).splitlines():
         line = line.split("//")[0].strip().rstrip(",")
-        mm = re.match(r"^(input|output)\s+logic\s+(?:\[(\d+):(\d+)\]\s+)?(\w+)$", line)
+        if not line:
+            continue
+        mm = re.match(r"^(input|output)\s+logic\s+(?:\[([^\]]+)\]\s+)?(\w+)$", line)
         if mm:
-            d, hi, lo, name = mm.groups()
-            w = (int(hi) - int(lo) + 1) if hi is not None else 1
+            d, rng, name = mm.groups()
+            w = _parse_range(rng) if rng is not None else 1
             ports.append(("in" if d == "input" else "out", w, name))
+        elif line.startswith(("input", "output")):
+            # 是端口声明但没被上面的正则吃下 —— 宁可炸, 不要静默少一根线
+            raise SystemExit("端口行认不出来: %r" % line)
     return ports
 
 

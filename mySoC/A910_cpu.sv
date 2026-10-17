@@ -80,6 +80,7 @@ module A910_cpu
   );
 
   `include "RTU_define.vh"          // 端口位宽随 PREG 档变 (见下面 preg 那几条)
+  `include "lsiq_defines.vh"        // LSIQ 那几根一位一项的向量随 LSIQ_ENTRY 变
 
   // ---------------------------------------------------------------------------
   //  Signal declarations
@@ -132,7 +133,7 @@ module A910_cpu
   logic         idu_lsu_ld_sign_extend;
   logic [  1:0] idu_lsu_ld_inst_size;
   logic         idu_lsu_ld_unalign_2nd;
-  logic [  7:0] idu_lsu_ld_lch_entry;
+  logic [`LSIQ_NUM-1:0] idu_lsu_ld_lch_entry;
   logic         idu_lsu_ld_oldest;
 
   logic         idu_lsu_st_sel;
@@ -142,7 +143,7 @@ module A910_cpu
   logic [ 12:0] idu_lsu_st_offset_plus;
   logic [  1:0] idu_lsu_st_inst_size;
   logic         idu_lsu_st_unalign_2nd;
-  logic [  7:0] idu_lsu_st_lch_entry;
+  logic [`LSIQ_NUM-1:0] idu_lsu_st_lch_entry;
   logic         idu_lsu_st_oldest;
   logic [  3:0] idu_lsu_st_sdiq_entry;
 
@@ -150,20 +151,20 @@ module A910_cpu
   logic [  3:0] idu_lsu_rf_pipe5_sdiq_entry;
   logic [ 31:0] idu_lsu_rf_pipe5_src0;
 
-  logic [  7:0] lsu_idu_lq_full;
+  logic [`LSIQ_NUM-1:0] lsu_idu_lq_full;
   logic         lsu_idu_lq_not_full;
-  logic [  7:0] lsu_idu_rb_full;
+  logic [`LSIQ_NUM-1:0] lsu_idu_rb_full;
   logic         lsu_idu_rb_not_full;
-  logic [  7:0] lsu_idu_sq_full;
+  logic [`LSIQ_NUM-1:0] lsu_idu_sq_full;
   logic         lsu_idu_sq_not_full;
-  logic [  7:0] lsu_idu_secd;
-  logic [  7:0] lsu_idu_imme_wakeup;
+  logic [`LSIQ_NUM-1:0] lsu_idu_secd;
+  logic [`LSIQ_NUM-1:0] lsu_idu_imme_wakeup;
   logic         lsu_idu_lsiq_pop_vld;
   logic         lsu_idu_lsiq_pop0_vld;
   logic         lsu_idu_lsiq_pop1_vld;
   // ⚠️ 交付侧两侧名字不一致: IDU 叫 `lsu_idu_lsiq_pop_entry`, LSU 叫 `lsu_idu_pop_entry`
   //    (少个 `lsiq_`), 位宽与语义一致。顶层用 IDU 那一侧的名字。
-  logic [  7:0] lsu_idu_lsiq_pop_entry;
+  logic [`LSIQ_NUM-1:0] lsu_idu_lsiq_pop_entry;
   logic [  3:0] lsu_idu_has_in_sq;
   logic [  5:0] lsu_idu_wb_pipe3_wb_preg;
   logic         lsu_idu_wb_pipe3_wb_preg_vld_dupx;
@@ -568,6 +569,7 @@ module A910_cpu
   logic [ 31:0] iu_chgflw_pc;      // 待接: BEU → IFU
   logic         iu_chgflw_vld;     // 待接: BEU → IFU
   logic [ 24:0] iu_btb_chk;        // 待接: BEU → IFU
+  logic [ 31:0] iu_btb_pc;         // 待接: BEU → IFU3 (PHR hash 精确重算)
   logic         iu_btb_taken;      // 待接: BEU → IFU
   logic         iu_btb_is_cond;    // 待接: BEU → IFU
 
@@ -816,6 +818,33 @@ module A910_cpu
   logic [ 31:0] idu_aiq_src0;
   logic [ 31:0] idu_aiq_src1;
   logic [ 12:0] idu_aiq_rslt_sel;
+
+  // ---- ALU1 发射口 (2026-10-18) ----
+  logic         idu_aiq1_sel;
+  logic [  6:0] idu_aiq1_iid;
+  logic         idu_aiq1_illegal;
+  logic [ 31:0] idu_aiq1_pc;
+  logic [  5:0] idu_aiq1_dst_preg;
+  logic [ 31:0] idu_aiq1_src0;
+  logic [ 31:0] idu_aiq1_src1;
+  logic [ 12:0] idu_aiq1_rslt_sel;
+  logic         aiq1_issue_stall;      // ALU1 写回保持 -> IDU (AIQ1 发射门)
+
+  // ---- ALU1 / MD 共用 pipe2 的中间线 (2026-10-18) ----
+  logic         alu1_wb_req, md_wb_req;
+  logic         alu1_wb_grant, md_wb_grant;
+  logic         alu1_wb_vld, alu1_wb_vld_dupx;
+  // ALU1 完成口先接独立网, 再显式赋给 RTU 的完成口 1 (排查端口连接用)
+  logic         alu1_cmplt_vld;
+  logic [  6:0] alu1_cmplt_iid;
+  logic [ 31:0] alu1_wb_data;
+  logic [ 63:0] alu1_wb_expand;
+  logic [  5:0] alu1_wb_dupx;
+  logic         md_wb_vld, md_wb_vld_dupx;
+  logic [ 31:0] md_wb_data;
+  logic [ 63:0] md_wb_expand;
+  logic [  5:0] md_wb_dupx;
+
   logic         idu_mult_sel;
   logic [  6:0] idu_mult_iid;
   logic [  5:0] idu_mult_dst_preg;
@@ -844,6 +873,59 @@ module A910_cpu
   // ============================================================
   // IFU
   // ============================================================
+`ifdef USE_IFU3
+  // FTQ + 3 级 IFU + 香山式 BTB/TAGE；Phase 2 起带 RAS/PredChecker。
+  // iu_btb_* 由 BEU 在 EX 重定向当拍驱动，用于 PHR/RAS 精确恢复。
+  rv32ifu3_top u_rv32ifu2_top (
+    .clk                (clk),
+    .rst                (rst),
+
+    .idu_inst0_vld      (ifu_inst0_vld),
+    .idu_inst0_data     (idu_inst0_data),
+    .idu_inst0_chk      (idu_inst0_chk),
+    .idu_inst1_vld      (ifu_inst1_vld),
+    .idu_inst1_data     (idu_inst1_data),
+    .idu_inst1_chk      (idu_inst1_chk),
+    .idu_inst2_vld      (ifu_inst2_vld),
+    .idu_inst2_data     (idu_inst2_data),
+    .idu_inst2_chk      (idu_inst2_chk),
+    .idu_flush          (ifu_idu_flush),
+    .idu_accept_num     (ifu_accept_num),
+
+    .iu_chgflw_vld      (iu_chgflw_vld),
+    .iu_chgflw_pc       (iu_chgflw_pc),
+    .rtu_flush          (rtu_ifu_flush),
+    .rtu_chgflw_vld     (rtu_ifu_chgflw_vld),
+    .rtu_chgflw_pc      (rtu_ifu_chgflw_pc),
+
+    .rtu_train_vld      (rtu_ifu_train_vld),
+    .rtu_train_pc       (rtu_ifu_train_pc),
+    .rtu_train_target   (rtu_ifu_train_target),
+    .rtu_train_chk      (rtu_ifu_train_chk),
+    .rtu_train_taken    (rtu_ifu_train_taken),
+    .rtu_train_is_cond  (rtu_ifu_train_is_cond),
+    .rtu_train_is_jal   (rtu_ifu_train_is_jal),
+    .rtu_train_is_jalr  (rtu_ifu_train_is_jalr),
+    .iu_btb_chk         (iu_btb_chk),
+    .iu_btb_pc          (iu_btb_pc),
+    .iu_btb_taken       (iu_btb_taken),
+    .iu_btb_is_cond     (iu_btb_is_cond),
+
+    .init_done          (ifu_init_done),
+
+    .biu_rd_req         (biu_rd_req),
+    .biu_rd_addr        (biu_rd_addr),
+    .biu_rd_id          (biu_rd_id),
+    .biu_rd_len         (biu_rd_len),
+    .biu_rd_grnt        (biu_rd_grnt),
+    .biu_rd_data_vld    (biu_rd_data_vld),
+    .biu_rd_data        (biu_rd_data),
+    .biu_rd_rid         (biu_rd_rid),
+    .biu_rd_last        (biu_rd_last),
+    .biu_rd_resp        (biu_rd_resp),
+    .biu_r_ready        (biu_r_ready)
+  );
+`else
   rv32ifu2_top u_rv32ifu2_top (
     .clk                (clk),
     .rst                (rst),
@@ -905,6 +987,7 @@ module A910_cpu
     .biu_rd_resp        (biu_rd_resp),
     .biu_r_ready        (biu_r_ready)
   );
+`endif
 
   // ---------------------------------------------------------------------------
   // IFU 交出的 128 位 → IDU 要的 97 位
@@ -1178,8 +1261,7 @@ module A910_cpu
   .lsu_sdiq_has_in_sq_sdiq        (lsu_idu_has_in_sq),
 
   //==========================================================
-  // Output to AIQ
-  // ⚠️ 待接: 消费侧是 3 个 ALU (mySoC/iu/rtl/IU_alu_pipe.v), 本文件还没例化。
+  // Output to AIQ0 (ALU0) / AIQ1 (ALU1, 2026-10-18)
   //==========================================================
   .idu_aiq_sel                    (idu_aiq_sel),
   .idu_aiq_iid                    (idu_aiq_iid),
@@ -1189,6 +1271,15 @@ module A910_cpu
   .idu_aiq_pc                     (idu_aiq_pc),
   .idu_aiq_rslt_sel               (idu_aiq_rslt_sel),
   .idu_aiq_illegal                (idu_aiq_illegal),
+
+  .idu_aiq1_sel                   (idu_aiq1_sel),
+  .idu_aiq1_iid                   (idu_aiq1_iid),
+  .idu_aiq1_dst_preg              (idu_aiq1_dst_preg),
+  .idu_aiq1_src0                  (idu_aiq1_src0),
+  .idu_aiq1_src1                  (idu_aiq1_src1),
+  .idu_aiq1_pc                    (idu_aiq1_pc),
+  .idu_aiq1_rslt_sel              (idu_aiq1_rslt_sel),
+  .idu_aiq1_illegal               (idu_aiq1_illegal),
 
   //==========================================================
   // Output to MULT
@@ -1333,17 +1424,33 @@ module A910_cpu
 
   //==========================================================
   // 执行单元的发射准入
-  // ⚠️ 待接: 源是 MUL/DIV wrapper 的 busy, 本文件还没例化。
+  // 源 = IU_md_pipe.md_unit_stall (已例化; 含 div_busy/div_hold/div_accept/skid 占用)。
   //==========================================================
-  .md_unit_stall                  (md_unit_stall)
+  .md_unit_stall                  (md_unit_stall),
+  // ALU1 的 EX2 有结果但没拿到 pipe2 授权 ⇒ AIQ1 本拍保持、弹表项
+  .iu_idu_aiq1_stall              (aiq1_issue_stall)
   );
 
   // ============================================================
   // LSU
   // ============================================================
   lsu_top #(
+    // ⚠️ 必须与 `+define+DCACHE_{1,2,4}KB` **同步** (dcache 阵列整个包在那些 ifdef 里,
+    //    两边不一致 ⇒ 阵列一片不例化 ⇒ 读出来是 X, 不报错但功能全错)。
+    //    Makefile 的 `DCACHE_DEF` 与这里都由 `DCACHE_SIZE` 派生, 改一处即可。
+    //    默认 (不传) = 2 KB, 与改动前的硬写值逐位一致。
+`ifdef DCACHE_4KB
+    .DCACHE_SIZE     (4096),
+`elsif DCACHE_1KB
+    .DCACHE_SIZE     (1024),
+`else
     .DCACHE_SIZE     (2048),
-    .LSIQ_ENTRY      (8),
+`endif
+    // ⚠️ 必须与 IDU 侧的 `ct_idu_is_lsiq` 项数**同步** —— 这两边靠同一个
+    //    `+define+LSIQ_ENTRY` 驱动 (`LSIQ_NUM` 来自 lsiq_defines.vh, 那边读同一个
+    //    define)。一边 12 一边 8 编得过、错得静默: lsid/lq_full/sq_full 这些
+    //    一位一项的向量高位被丢, 8 号以上的表项永远 pop 不出去 ⇒ 挂死。
+    .LSIQ_ENTRY      (`LSIQ_NUM),
     .SQ_ENTRY        (6),
     .SDIQ_ENTRY      (4),
     .WMB_ENTRY       (4),
@@ -1853,7 +1960,9 @@ module A910_cpu
     .disp2_sq_id                (disp2_sq_id),
 
     // ===================== §6.1 完成 (p = 0..6) =====================
-    // 口 5/6 = LSU 读/写, 来自适配层; 口 0..4 待接 (3×ALU + BEU + MUL/DIV)。
+    // 口 5/6 = LSU 读/写, 来自适配层;
+    // 口 0 = ALU0, 口 1 = ALU1 (2026-10-18), 口 3 = BEU, 口 4 = MUL/DIV;
+    // 口 2 无对应单元, RTL 里显式接 0。
     .cmplt_vld0                 (cmplt_vld0),
     .cmplt_iid0                 (cmplt_iid0),
     .cmplt_vld1                 (cmplt_vld1),
@@ -2054,10 +2163,11 @@ module A910_cpu
   // ============================================================
   // 执行单元 (IU)
   // ============================================================
-  // 当前配置 (2026-10-11):
-  //   - 例化 1 个 ALU (完成口 0)、1 个 BEU (完成口 3)、1 个 MD (完成口 4)
-  //   - 写回端口分配: ALU → pipe0, BEU → pipe1, MD → pipe2
-  //   - 完成口 1/2 暂时悬空 (后续若需要可再例化 ALU)
+  // 当前配置 (2026-10-18 双 ALU):
+  //   - 例化 2 个 ALU (完成口 0/1)、1 个 BEU (完成口 3)、1 个 MD (完成口 4)
+  //   - 写回端口分配: ALU0 → pipe0, BEU → pipe1, **ALU1 与 MD 共用 pipe2**
+  //   - pipe2 由 IU_wb_arb 做严格 round-robin; 两个 wrapper 各自保持结果直到授权
+  //   - 完成口 2 没有对应单元, 明确接 0
 
   // ------------------------------------------------------------
   // ALU (完成口 0, 写回 pipe0)
@@ -2088,6 +2198,49 @@ module A910_cpu
     .cmplt_vld          (cmplt_vld0),
     .cmplt_iid          (cmplt_iid0),
 
+    // 写回授权: ALU0 独占 pipe0 ⇒ 恒授权
+    .wb_grant           (1'b1),
+    .wb_req             (),
+    .issue_stall        (),
+
+    // 观察口
+    .o_alu_result       ()
+  );
+
+  // ------------------------------------------------------------
+  // ALU1 (完成口 1, 写回与 MD 共用 pipe2, 由 IU_wb_arb 做 RR)
+  // ------------------------------------------------------------
+  IU_alu_pipe u_iu_alu_pipe1 (
+    .cpu_clk            (clk),
+    .cpu_rst            (rst),
+    .idu_flush          (rtu_yy_xx_flush),
+
+    // IDU 发射口 (AIQ1)
+    .idu_sel            (idu_aiq1_sel),
+    .idu_iid            (idu_aiq1_iid),
+    .idu_dst_preg       (idu_aiq1_dst_preg),
+    .idu_src0           (idu_aiq1_src0),
+    .idu_src1           (idu_aiq1_src1),
+    .idu_pc             (idu_aiq1_pc),
+    .idu_rslt_sel       (idu_aiq1_rslt_sel),
+    .idu_illegal        (idu_aiq1_illegal),
+
+    // 写回先接中间线, 由仲裁器选源后进 pipe2
+    .wb_preg_vld        (alu1_wb_vld),
+    .wb_preg_data       (alu1_wb_data),
+    .wb_preg_expand     (alu1_wb_expand),
+    .wb_preg_dupx       (alu1_wb_dupx),
+    .wb_preg_vld_dupx   (alu1_wb_vld_dupx),
+
+    // 完成口 → RTU 口 1
+    .cmplt_vld          (alu1_cmplt_vld),
+    .cmplt_iid          (alu1_cmplt_iid),
+
+    // 写回授权 / 保持 / 反压 AIQ1
+    .wb_grant           (alu1_wb_grant),
+    .wb_req             (alu1_wb_req),
+    .issue_stall        (aiq1_issue_stall),
+
     // 观察口
     .o_alu_result       ()
   );
@@ -2112,6 +2265,7 @@ module A910_cpu
     .idu_br_imme        (idu_biq_br_imme),
     .idu_dst_vld        (idu_biq_dst_vld),
     .idu_dst_preg       (idu_biq_dst_preg),
+    .idu_chk            (idu_biq_chk),
 
     // 重定向握手
     .redirect_in_progress (rtu_ifu_chgflw_vld),  // RTU 本拍在发 trap/mret
@@ -2137,6 +2291,10 @@ module A910_cpu
     .beu_redirect_vld   (beu_redirect_vld),
     .iu_chgflw_vld      (iu_chgflw_vld),
     .iu_chgflw_pc       (iu_chgflw_pc),
+    .iu_btb_chk         (iu_btb_chk),
+    .iu_btb_pc          (iu_btb_pc),
+    .iu_btb_taken       (iu_btb_taken),
+    .iu_btb_is_cond     (iu_btb_is_cond),
 
     // 异常源: 取指地址非对齐
     .expt_vld           (other_expt_vld),
@@ -2174,14 +2332,14 @@ module A910_cpu
     .idu_div_src1       (idu_div_src1),
     .idu_div_rslt_sel   (idu_div_rslt_sel),
 
-    // 写回 IDU (pipe2)
-    .wb_preg_vld        (iu_idu_ex2_pipe2_wb_preg_vld),
-    .wb_preg_dupx       (iu_idu_ex2_pipe2_wb_preg_dupx),
-    .wb_preg_vld_dupx   (iu_idu_ex2_pipe2_wb_preg_vld_dupx),
-    .wb_preg_data       (iu_idu_ex2_pipe2_wb_preg_data),
-    .wb_preg_expand     (iu_idu_ex2_pipe2_wb_preg_expand),
+    // 写回先接中间线 (与 ALU1 一起进 RR 仲裁)
+    .wb_preg_vld        (md_wb_vld),
+    .wb_preg_dupx       (md_wb_dupx),
+    .wb_preg_vld_dupx   (md_wb_vld_dupx),
+    .wb_preg_data       (md_wb_data),
+    .wb_preg_expand     (md_wb_expand),
 
-    // 完成口 → RTU
+    // 完成口 → RTU 口 4 (wrapper 内部已用授权门过, 与写回同拍)
     .cmplt_vld          (cmplt_vld4),
     .cmplt_iid          (cmplt_iid4),
 
@@ -2189,8 +2347,43 @@ module A910_cpu
     .mul_ready          (),
     .div_busy           (),
     .resp_is_div        (),
-    .md_unit_stall      (md_unit_stall)
+    .md_unit_stall      (md_unit_stall),
+
+    // 写回授权 / 请求 (2026-10-18: 与 ALU1 共用 pipe2)
+    .md_wb_grant        (md_wb_grant),
+    .md_wb_req          (md_wb_req),
+    .md_skid_occ        ()
   );
+
+  // ------------------------------------------------------------
+  // ALU1 / MD 的 pipe2 写回仲裁 (严格 RR) + 共享写回 mux
+  // ------------------------------------------------------------
+  IU_wb_arb u_iu_wb_arb (
+    .cpu_clk    (clk),
+    .cpu_rst    (rst),
+    .flush      (rtu_yy_xx_flush),
+    .req_a      (alu1_wb_req),
+    .req_b      (md_wb_req),
+    .gnt_a      (alu1_wb_grant),
+    .gnt_b      (md_wb_grant),
+    .last_b     ()
+  );
+
+  // 两个 wrapper 已经各自把写回/完成用 grant 门过 ⇒ 这里按 md_wb_grant 选源。
+  // ⚠️ 五个字段必须同源: 混着来会造成"写 A 的格子、唤醒 B 的 preg"。
+  assign iu_idu_ex2_pipe2_wb_preg_vld      = md_wb_grant ? md_wb_vld      : alu1_wb_vld;
+  assign iu_idu_ex2_pipe2_wb_preg_vld_dupx = md_wb_grant ? md_wb_vld_dupx : alu1_wb_vld_dupx;
+  assign iu_idu_ex2_pipe2_wb_preg_dupx     = md_wb_grant ? md_wb_dupx     : alu1_wb_dupx;
+  assign iu_idu_ex2_pipe2_wb_preg_data     = md_wb_grant ? md_wb_data     : alu1_wb_data;
+  assign iu_idu_ex2_pipe2_wb_preg_expand   = md_wb_grant ? md_wb_expand   : alu1_wb_expand;
+
+  // ALU1 → RTU 完成口 1 (显式连接)
+  assign cmplt_vld1 = alu1_cmplt_vld;
+  assign cmplt_iid1 = alu1_cmplt_iid;
+
+  // 没有 ALU2: 完成口 2 明确接 0 (原来是悬空的 X 风险)
+  assign cmplt_vld2 = 1'b0;
+  assign cmplt_iid2 = 7'd0;
 
   // ============================================================
   // BIU
@@ -2359,8 +2552,10 @@ module A910_cpu
   // 之所以不接常量桩: 接了 0 就分不清"这个单元还没接"和"这个单元真的不会完成" ——
   // 前者等模块进来就好了, 后者是设计意图, 两者的调试路径完全不同。
   //
-  // ⚠️ 这一版不要拿去跑整核仿真: 完成口 0..4 没驱动, ROB 里的表项永远不会标完成,
-  //    一条都不会退休。跑到第一条指令就停, 得到的结论全是误导。
+  // ⚠️ 2026-10-18 更新: 完成口 0/1/3/4 已分别由 ALU0/ALU1/BEU/MUL-DIV 驱动,
+  //    口 2 显式接 0。**不要再在 TB 里 force 完成口 0/1/3/4** —— 双 ALU 集成时
+  //    difftest/smoke 台里遗留的 `force dut.cmplt_vld1 = 0` 曾把 ALU1 的完成
+  //    整个吞掉, 症状是 addi 只退休 2 条、ROB 填满后挂死。
   //
   // ---------------------------------------------------------------------------
   // A. 执行单元 → RTU / IDU   (源: mySoC/iu/rtl/IU_alu_pipe.v / IU_beu_pipe.v /

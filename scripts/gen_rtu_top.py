@@ -30,7 +30,7 @@ SRC = {
 # 例化时的参数覆盖 (LSU 的默认值就是这些, 显式写出来是为了"几何变了能看见")
 PARAMS = {
     "u_lsu": "\n    #(.DCACHE_SIZE (2048),\n"
-             "      .LSIQ_ENTRY  (8),\n"
+             "      .LSIQ_ENTRY  (12),\n"
              "      .SQ_ENTRY    (6),\n"
              "      .SDIQ_ENTRY  (4),\n"
              "      .WMB_ENTRY   (4),\n"
@@ -64,7 +64,11 @@ INTERNAL_FORCE = {"rtu_yy_xx_flush", "cpurst_b", "idu_lsu_ld_src0",
                   "lsu_idu_pop_entry", "lsu_idu_has_in_sq"}
 
 
-GEO = {"DCACHE_SIZE": 2048, "LSIQ_ENTRY": 8, "SQ_ENTRY": 6, "SDIQ_ENTRY": 4,
+# ⚠️ 2026-10-16: LSIQ 默认深度从 8 放回 C910 原版的 12 (见 mySoC/lsiq_defines.vh)。
+#    这一项与下面的 "LSIQ_NUM" 必须同步 —— 前者是子模块的参数值, 后者是
+#    ct_idu_top 端口上那个宏 (`LSIQ_NUM-1:0)。两个都改, 否则生成出来的
+#    RTU_subsys 会一边按 12 例化 lsu_top、一边把 IDU 那根线留成 12 位的宏。
+GEO = {"DCACHE_SIZE": 2048, "LSIQ_ENTRY": 12, "SQ_ENTRY": 6, "SDIQ_ENTRY": 4,
        "WMB_ENTRY": 4, "LFB_ADDR_ENTRY": 3, "LFB_DATA_ENTRY": 1,
        # ⚠️ 2026-10-12 补: **RTU 自己的宏也要在这里**。它原来不在表里 ⇒ 所有
        #    `` `RTU_PREG_W-1:0 `` 的网都落进 `width_num → None` 的兜底 ⇒
@@ -73,7 +77,11 @@ GEO = {"DCACHE_SIZE": 2048, "LSIQ_ENTRY": 8, "SQ_ENTRY": 6, "SDIQ_ENTRY": 4,
        #    实测: 不补这一项时 `make rtu-subsys-elab` 报 PCWM-W=26 (预期 5)。
        #    取值照本文件的配置 —— 见文件头"【配置】按 PREG=64 使用" (PREG_W = 6)。
        #    ⚠️ 以后真要支持 96 档, 这一项得跟着档走, 别写死。
-       "RTU_PREG_W": 6}
+       "RTU_PREG_W": 6,
+       # ct_idu_top 端口上 LSIQ 向量的宏 (mySoC/lsiq_defines.vh)。不放进来的话
+       # resolve_width 认不出 ⇒ 原样留成 `` `LSIQ_NUM-1:0 `` ⇒ 顶层端口引用了一个
+       # 自己没定义的宏。上面 GEO["LSIQ_ENTRY"] 与它必须同值。
+       "LSIQ_NUM": 12}
 
 
 def resolve_width(w):

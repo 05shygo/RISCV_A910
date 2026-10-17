@@ -1,3 +1,5 @@
+// LSIQ 深度驱动的端口位宽 (单一真源: +define+LSIQ_ENTRY, 默认 12) —— 见该文件头。
+`include "lsiq_defines.vh"
 module ct_idu_rf_dp (
   //==========================================================
   // 全局信号
@@ -21,6 +23,25 @@ module ct_idu_rf_dp (
   output logic [31:0]    idu_aiq_src1,
   output logic [12:0]    idu_aiq_rslt_sel,
   output logic           idu_aiq_illegal,
+
+  //==========================================================
+  // Pipe0b: AIQ1 (2026-10-18 新增)
+  //==========================================================
+  // 与 Pipe0 完全同构, 只是独立的发射口/PRF 读口/流水寄存器。
+  // ⚠️ 不占用 pipe1 —— 本树 pipe1 是 MULT。
+  input  logic [94:0]    aiq1_dp_issue_read_data,
+  input  logic           aiq1_xx_issue_en,
+  input  logic [31:0]    prf_dp_rf_aiq1_src0_data,
+  input  logic [31:0]    prf_dp_rf_aiq1_src1_data,
+  output logic [5:0]     dp_prf_rf_aiq1_src0_preg,
+  output logic [5:0]     dp_prf_rf_aiq1_src1_preg,
+  output logic [6:0]     idu_aiq1_iid,
+  output logic [5:0]     idu_aiq1_dst_preg,
+  output logic [31:0]    idu_aiq1_pc,
+  output logic [31:0]    idu_aiq1_src0,
+  output logic [31:0]    idu_aiq1_src1,
+  output logic [12:0]    idu_aiq1_rslt_sel,
+  output logic           idu_aiq1_illegal,
 
   //==========================================================
   // Pipe1: AIQ1 / MULT
@@ -59,7 +80,7 @@ module ct_idu_rf_dp (
   //==========================================================
   // Pipe3: LSIQ Load
   //==========================================================
-  input  logic [7:0]     lsiq_dp_pipe3_issue_entry,
+  input  logic [`LSIQ_NUM-1:0]     lsiq_dp_pipe3_issue_entry,
   input  logic [59:0]    lsiq_dp_pipe3_issue_read_data,
   input  logic           lsiq_xx_pipe3_issue_en,
   input  logic           lsiq_pipe3_entry_unalign_2nd,
@@ -74,13 +95,13 @@ module ct_idu_rf_dp (
   output logic           idu_lsu_ld_sign_extend,
   output logic [1:0]     idu_lsu_ld_inst_size,
   output logic           idu_lsu_ld_unalign_2nd,
-  output logic [7:0]     idu_lsu_ld_lch_entry,
+  output logic [`LSIQ_NUM-1:0]     idu_lsu_ld_lch_entry,
   output logic           idu_lsu_ld_oldest,
 
   //==========================================================
   // Pipe4: LSIQ Store
   //==========================================================
-  input  logic [7:0]     lsiq_dp_pipe4_issue_entry,
+  input  logic [`LSIQ_NUM-1:0]     lsiq_dp_pipe4_issue_entry,
   input  logic [59:0]    lsiq_dp_pipe4_issue_read_data,
   input  logic           lsiq_xx_pipe4_issue_en,
   input  logic           lsiq_pipe4_entry_unalign_2nd,
@@ -94,7 +115,7 @@ module ct_idu_rf_dp (
   output logic [12:0]    idu_lsu_st_offset_plus,
   output logic [1:0]     idu_lsu_st_inst_size,
   output logic           idu_lsu_st_unalign_2nd,
-  output logic [7:0]     idu_lsu_st_lch_entry,
+  output logic [`LSIQ_NUM-1:0]     idu_lsu_st_lch_entry,
   output logic           idu_lsu_st_oldest,
   output logic [3:0]     idu_lsu_st_sdiq_entry,
 
@@ -253,7 +274,7 @@ logic [31:0]           rf_pipe2_src1_data;
 //----------------------------------------------------------
 // Pipe3
 //----------------------------------------------------------
-logic [7:0]            rf_pipe3_iq_entry;
+logic [`LSIQ_NUM-1:0]            rf_pipe3_iq_entry;
 logic                  rf_pipe3_2nd;
 logic                  rf_pipe3_old;
 logic [LSIQ_WIDTH-1:0] rf_pipe3_data;
@@ -269,7 +290,7 @@ logic [31:0]           rf_pipe3_src0_data;
 //----------------------------------------------------------
 // Pipe4
 //----------------------------------------------------------
-logic [7:0]            rf_pipe4_iq_entry;
+logic [`LSIQ_NUM-1:0]            rf_pipe4_iq_entry;
 logic                  rf_pipe4_2nd;
 logic                  rf_pipe4_old;
 logic [LSIQ_WIDTH-1:0] rf_pipe4_data;
@@ -396,6 +417,89 @@ assign idu_aiq_src0[31:0]            = rf_pipe0_src0_data[31:0];
 assign idu_aiq_src1[31:0]            = rf_pipe0_src1_data[31:0];
 assign idu_aiq_rslt_sel[ALU_SEL-1:0] = pipe0_decd_sel[ALU_SEL-1:0];
 assign idu_aiq_illegal               = rf_pipe0_data[AIQ_ILLEGAL];
+
+//==========================================================
+//                AIQ1 Data Path (2026-10-18 新增)
+//==========================================================
+// 逐行照抄 Pipe0 的数据通路, 只换发射口/PRF 读口/输出名。
+// 数据/源 preg 寄存器在 aiq1_xx_issue_en 时装载; 当 IU_alu_pipe 的
+// issue_stall 把 issue_en 门掉时, 这两个寄存器自然保持 (rf_ctrl 的 valid
+// 由 aiq1_issue_stall 显式保持, 见那里的长注)。
+logic [AIQ_WIDTH-1:0]  rf_aiq1_data;
+logic                  rf_aiq1_prf_src0_preg_updt_vld;
+logic                  rf_aiq1_prf_src1_preg_updt_vld;
+logic [5:0]            rf_aiq1_prf_src0_preg;
+logic [5:0]            rf_aiq1_prf_src1_preg;
+logic [31:0]           aiq1_decd_opcode;
+logic [ALU_SEL-1:0]    aiq1_decd_sel;
+logic [31:0]           aiq1_decd_imm;
+logic [31:0]           rf_aiq1_src0_data;
+logic [31:0]           rf_aiq1_src1_data;
+
+always @(posedge forever_cpuclk or negedge cpurst_b)
+begin
+  if(!cpurst_b) begin
+    rf_aiq1_data[AIQ_WIDTH-1:0] <= {AIQ_WIDTH{1'b0}};
+  end
+  else if(aiq1_xx_issue_en) begin
+    rf_aiq1_data[AIQ_WIDTH-1:0] <= aiq1_dp_issue_read_data[AIQ_WIDTH-1:0];
+  end
+  else begin
+    rf_aiq1_data[AIQ_WIDTH-1:0] <= rf_aiq1_data[AIQ_WIDTH-1:0];
+  end
+end
+
+assign rf_aiq1_prf_src0_preg_updt_vld = aiq1_xx_issue_en;
+assign rf_aiq1_prf_src1_preg_updt_vld = aiq1_xx_issue_en;
+
+always @(posedge forever_cpuclk or negedge cpurst_b)
+begin
+  if(!cpurst_b)
+    rf_aiq1_prf_src0_preg[5:0] <= 6'b0;
+  else if(rf_aiq1_prf_src0_preg_updt_vld)
+    rf_aiq1_prf_src0_preg[5:0] <= aiq1_dp_issue_read_data[AIQ_SRC0_DATA:AIQ_SRC0_DATA-5];
+  else
+    rf_aiq1_prf_src0_preg[5:0] <= rf_aiq1_prf_src0_preg[5:0];
+end
+
+always @(posedge forever_cpuclk or negedge cpurst_b)
+begin
+  if(!cpurst_b)
+    rf_aiq1_prf_src1_preg[5:0] <= 6'b0;
+  else if(rf_aiq1_prf_src1_preg_updt_vld)
+    rf_aiq1_prf_src1_preg[5:0] <= aiq1_dp_issue_read_data[AIQ_SRC1_DATA:AIQ_SRC1_DATA-5];
+  else
+    rf_aiq1_prf_src1_preg[5:0] <= rf_aiq1_prf_src1_preg[5:0];
+end
+
+assign dp_prf_rf_aiq1_src0_preg[5:0] = rf_aiq1_prf_src0_preg[5:0];
+assign dp_prf_rf_aiq1_src1_preg[5:0] = rf_aiq1_prf_src1_preg[5:0];
+
+ct_idu_rf_pipe0_decd x_ct_idu_rf_pipe0_decd_aiq1 (
+  .pipe0_decd_opcode   (aiq1_decd_opcode  ),
+  .pipe0_decd_sel      (aiq1_decd_sel     ),
+  .pipe0_decd_imm      (aiq1_decd_imm     )
+);
+
+assign aiq1_decd_opcode[31:0] = rf_aiq1_data[AIQ_OPCODE:AIQ_OPCODE-31];
+
+assign rf_aiq1_src0_data[31:0] = prf_dp_rf_aiq1_src0_data[31:0];
+
+always @(*)
+begin
+  if(!rf_aiq1_data[AIQ_SRC1_VLD])
+    rf_aiq1_src1_data[31:0] = aiq1_decd_imm[31:0];
+  else
+    rf_aiq1_src1_data[31:0] = prf_dp_rf_aiq1_src1_data[31:0];
+end
+
+assign idu_aiq1_iid[6:0]              = rf_aiq1_data[AIQ_IID:AIQ_IID-6];
+assign idu_aiq1_dst_preg[5:0]         = rf_aiq1_data[AIQ_PREG:AIQ_PREG-5];
+assign idu_aiq1_pc[31:0]              = rf_aiq1_data[AIQ_PC:AIQ_PC-31];
+assign idu_aiq1_src0[31:0]            = rf_aiq1_src0_data[31:0];
+assign idu_aiq1_src1[31:0]            = rf_aiq1_src1_data[31:0];
+assign idu_aiq1_rslt_sel[ALU_SEL-1:0] = aiq1_decd_sel[ALU_SEL-1:0];
+assign idu_aiq1_illegal               = rf_aiq1_data[AIQ_ILLEGAL];
 
 //==========================================================
 //                    Pipe1 Data Path
@@ -566,19 +670,19 @@ assign idu_div_rslt_sel[3:0] = pipe2_decd_sel[3:0];
 always @(posedge forever_cpuclk or negedge cpurst_b)
 begin
   if(!cpurst_b) begin
-    rf_pipe3_iq_entry[7:0]        <= 8'b0;
+    rf_pipe3_iq_entry[`LSIQ_NUM-1:0]        <= {`LSIQ_NUM{1'b0}};
     rf_pipe3_2nd                  <= 1'b0;   
     rf_pipe3_old                  <= 1'b0;
     rf_pipe3_data[LSIQ_WIDTH-1:0] <= {LSIQ_WIDTH{1'b0}};
   end
   else if(lsiq_xx_pipe3_issue_en) begin
-    rf_pipe3_iq_entry[7:0]        <= lsiq_dp_pipe3_issue_entry[7:0];
+    rf_pipe3_iq_entry[`LSIQ_NUM-1:0]        <= lsiq_dp_pipe3_issue_entry[`LSIQ_NUM-1:0];
     rf_pipe3_2nd                  <= lsiq_pipe3_entry_unalign_2nd;
     rf_pipe3_old                  <= lsiq_pipe3_entry_old;
     rf_pipe3_data[LSIQ_WIDTH-1:0] <= lsiq_dp_pipe3_issue_read_data[LSIQ_WIDTH-1:0];
   end
   else begin
-    rf_pipe3_iq_entry[7:0]        <= rf_pipe3_iq_entry[7:0];
+    rf_pipe3_iq_entry[`LSIQ_NUM-1:0]        <= rf_pipe3_iq_entry[`LSIQ_NUM-1:0];
     rf_pipe3_2nd                  <= rf_pipe3_2nd;
     rf_pipe3_old                  <= rf_pipe3_old;
     rf_pipe3_data[LSIQ_WIDTH-1:0] <= rf_pipe3_data[LSIQ_WIDTH-1:0];
@@ -632,7 +736,7 @@ assign idu_lsu_ld_offset_plus[12:0] = pipe3_decd_offset_plus[12:0];
 assign idu_lsu_ld_sign_extend       = pipe3_decd_sign_extend;
 assign idu_lsu_ld_inst_size[1:0]    = pipe3_decd_inst_size[1:0];
 assign idu_lsu_ld_unalign_2nd       = rf_pipe3_2nd;
-assign idu_lsu_ld_lch_entry[7:0]    = rf_pipe3_iq_entry[7:0];
+assign idu_lsu_ld_lch_entry[`LSIQ_NUM-1:0]    = rf_pipe3_iq_entry[`LSIQ_NUM-1:0];
 assign idu_lsu_ld_oldest            = rf_pipe3_old;
 
 //==========================================================
@@ -644,19 +748,19 @@ assign idu_lsu_ld_oldest            = rf_pipe3_old;
 always @(posedge forever_cpuclk or negedge cpurst_b)
 begin
   if(!cpurst_b) begin
-    rf_pipe4_iq_entry[7:0]        <= 8'b0;
+    rf_pipe4_iq_entry[`LSIQ_NUM-1:0]        <= {`LSIQ_NUM{1'b0}};
     rf_pipe4_2nd                  <= 1'b0;   
     rf_pipe4_old                  <= 1'b0;
     rf_pipe4_data[LSIQ_WIDTH-1:0] <= {LSIQ_WIDTH{1'b0}};
   end
   else if(lsiq_xx_pipe4_issue_en) begin
-    rf_pipe4_iq_entry[7:0]        <= lsiq_dp_pipe4_issue_entry[7:0];
+    rf_pipe4_iq_entry[`LSIQ_NUM-1:0]        <= lsiq_dp_pipe4_issue_entry[`LSIQ_NUM-1:0];
     rf_pipe4_2nd                  <= lsiq_pipe4_entry_unalign_2nd;
     rf_pipe4_old                  <= lsiq_pipe4_entry_old;
     rf_pipe4_data[LSIQ_WIDTH-1:0] <= lsiq_dp_pipe4_issue_read_data[LSIQ_WIDTH-1:0];
   end
   else begin
-    rf_pipe4_iq_entry[7:0]        <= rf_pipe4_iq_entry[7:0];
+    rf_pipe4_iq_entry[`LSIQ_NUM-1:0]        <= rf_pipe4_iq_entry[`LSIQ_NUM-1:0];
     rf_pipe4_2nd                  <= rf_pipe4_2nd;
     rf_pipe4_old                  <= rf_pipe4_old;
     rf_pipe4_data[LSIQ_WIDTH-1:0] <= rf_pipe4_data[LSIQ_WIDTH-1:0];
@@ -708,7 +812,7 @@ assign idu_lsu_st_offset[11:0]      = pipe4_decd_offset[11:0];
 assign idu_lsu_st_offset_plus[12:0] = pipe4_decd_offset_plus[12:0];
 assign idu_lsu_st_inst_size[1:0]    = pipe4_decd_inst_size[1:0];
 assign idu_lsu_st_unalign_2nd       = rf_pipe4_2nd;
-assign idu_lsu_st_lch_entry[7:0]    = rf_pipe4_iq_entry[7:0];
+assign idu_lsu_st_lch_entry[`LSIQ_NUM-1:0]    = rf_pipe4_iq_entry[`LSIQ_NUM-1:0];
 assign idu_lsu_st_oldest            = rf_pipe4_old;
 assign idu_lsu_st_sdiq_entry[3:0]   = rf_pipe4_data[LSIQ_SDIQ_ENTRY:LSIQ_SDIQ_ENTRY-3];
 

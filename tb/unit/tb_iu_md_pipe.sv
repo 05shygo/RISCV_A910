@@ -39,6 +39,7 @@ module tb_iu_md_pipe;
   reg  [5:0]  d_preg = 0;
   reg  [31:0] d_s0 = 0, d_s1 = 0;
   reg  [3:0]  d_rs = 4'd1;
+  reg         md_grant = 1;       // 默认恒授权 (= 没人和 MD 抢口)
 
   wire        wb_vld;
   wire [5:0]  wb_dupx;
@@ -49,6 +50,8 @@ module tb_iu_md_pipe;
   wire [6:0]  cm_iid;
   wire        mul_ready, div_busy, resp_is_div;
   wire        md_unit_stall;
+  wire        md_req;
+  wire [2:0]  sk_occ;
 
   // 位序照 ct_idu_rf_pipe1_decd (乘) / pipe2_decd (除)
   localparam [3:0] M_MUL=4'd1<<0, M_MULH=4'd1<<1, M_MULHSU=4'd1<<2, M_MULHU=4'd1<<3;
@@ -65,10 +68,16 @@ module tb_iu_md_pipe;
     .wb_preg_data(wb_data), .wb_preg_expand(wb_expand),
     .cmplt_vld(cm_vld), .cmplt_iid(cm_iid),
     .mul_ready(mul_ready), .div_busy(div_busy), .resp_is_div(resp_is_div),
-    .md_unit_stall(md_unit_stall)
+    .md_unit_stall(md_unit_stall),
+    .md_wb_grant(md_grant), .md_wb_req(md_req), .md_skid_occ(sk_occ)
   );
 
   integer errs = 0, nchk = 0;
+
+  // skid 深度只有 2; 真出现 3 就说明防溢出证明被破坏了, 立即报死
+  always @(posedge clk)
+    if (!rst && sk_occ > 3'd2)
+      $fatal(1, "MD skid overflow: occ=%0d", sk_occ);
 
   // ---------------------------------------------------------------------
   // 写回计数器 —— 给下面"反压闭环"那一段用
@@ -331,6 +340,49 @@ module tb_iu_md_pipe;
         $display("  ❌ 被冲刷的乘法还报了 %0d 次写回 —— RTU 会收到一条不该有的完成", seen);
       end else $display("  ✅ 被冲刷的乘法没有写回");
     end
+
+    $display("---- 写回授权: 未授权时进 skid, 授权拍才写回/完成 ----");
+    @(negedge clk);
+    md_grant = 1'b0;
+    // 等乘法口能收 (skid 空 ⇒ mul_ready=1)
+    begin : wait_mul_ready2
+      integer g; g = 0;
+      while (mul_ready !== 1'b1 && g < 200) begin @(negedge clk); g = g + 1; end
+    end
+    m_iid=7'h66; m_preg=6'd33; m_s0=32'd7; m_s1=32'd5; m_rs=M_MUL;
+    m_sel = 1'b1;
+    @(negedge clk);
+    m_sel = 1'b0;
+    repeat (3) @(negedge clk);      // 乘法 T+2 出响应; 未授权 ⇒ 应进 skid
+    nchk = nchk + 1;
+    if (md_req !== 1'b1 || wb_vld !== 1'b0 || cm_vld !== 1'b0) begin
+      errs = errs + 1;
+      $display("  ❌ 未授权时应保持: req=%b wb=%b cmplt=%b occ=%0d",
+               md_req, wb_vld, cm_vld, sk_occ);
+    end
+    else
+      $display("  ✅ 未授权: 结果在 skid 里等 (occ=%0d)", sk_occ);
+    // 授权这一拍: 写回 + 完成必须同拍落地
+    md_grant = 1'b1;
+    #1;
+    nchk = nchk + 1;
+    if (wb_vld !== 1'b1 || wb_data !== 32'd35 ||
+        cm_vld !== 1'b1 || cm_iid !== 7'h66 || wb_dupx !== 6'd33) begin
+      errs = errs + 1;
+      $display("  ❌ 授权拍没落写回/完成 (wb=%b data=%h cmplt=%b iid=%h dupx=%0d)",
+               wb_vld, wb_data, cm_vld, cm_iid, wb_dupx);
+    end
+    else
+      $display("  ✅ 授权拍同拍写回+完成 (35)");
+    @(negedge clk);
+    repeat (2) @(negedge clk);
+    nchk = nchk + 1;
+    if (sk_occ !== 3'd0) begin
+      errs = errs + 1;
+      $display("  ❌ 授权后 skid 没排空 (occ=%0d)", sk_occ);
+    end
+    else
+      $display("  ✅ 授权后 skid 已排空");
 
     $display("---- 反压闭环: 按 IDU 语义驱动, 发出条数必须等于写回条数 ----");
     // 这三种是同一个洞的三个入口: div_hold_vld 已置起、而 div_pipe 还在 ST_IDLE

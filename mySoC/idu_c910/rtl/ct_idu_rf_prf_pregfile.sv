@@ -19,6 +19,9 @@ module ct_idu_rf_prf_pregfile (
   input  logic [5:0]   dp_prf_rf_pipe5_src0_preg,
   input  logic [5:0]   dp_prf_rf_pipe6_src0_preg,
   input  logic [5:0]   dp_prf_rf_pipe6_src1_preg,
+  // 2026-10-18: AIQ1 (第二个 ALU) 的两个源读口
+  input  logic [5:0]   dp_prf_rf_aiq1_src0_preg,
+  input  logic [5:0]   dp_prf_rf_aiq1_src1_preg,
 
   //==========================================================
   // 写端口（来自 IU/LSU，位宽适配 32bit 寄存器）
@@ -50,6 +53,9 @@ module ct_idu_rf_prf_pregfile (
   output logic [31:0]  prf_dp_rf_pipe5_src0_data,
   output logic [31:0]  prf_dp_rf_pipe6_src0_data,
   output logic [31:0]  prf_dp_rf_pipe6_src1_data,
+  // 2026-10-18: AIQ1 的两个源读口
+  output logic [31:0]  prf_dp_rf_aiq1_src0_data,
+  output logic [31:0]  prf_dp_rf_aiq1_src1_data,
 
   //==========================================================
   // 【2026-10-08 新增】RTU 的访问口 —— 退休级要**按物理号**取数
@@ -214,6 +220,14 @@ assign prf_dp_rf_pipe6_src0_data = preg_reg_dout[dp_prf_rf_pipe6_src0_preg];
 //                 Read Port 11: pipe6 src1
 //----------------------------------------------------------
 assign prf_dp_rf_pipe6_src1_data = preg_reg_dout[dp_prf_rf_pipe6_src1_preg];
+
+//----------------------------------------------------------
+//           Read Port 11b/11c: AIQ1 src0/src1 (2026-10-18)
+//----------------------------------------------------------
+// 纯组合读, 与上面同款。写口不变: ALU1 与 MUL/DIV 共用 pipe2 写口,
+// 由 A910 顶层的 RR 仲裁保证每拍只有一个来源。
+assign prf_dp_rf_aiq1_src0_data = preg_reg_dout[dp_prf_rf_aiq1_src0_preg];
+assign prf_dp_rf_aiq1_src1_data = preg_reg_dout[dp_prf_rf_aiq1_src1_preg];
 
 //----------------------------------------------------------
 //   Read Port 12~15 (2026-10-08 新增): RTU 的退休读口

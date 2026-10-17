@@ -30,7 +30,7 @@ module ct_lsu_st_dc #(
     input  logic [3:0]   st_ag_dc_rot_sel,
     input  logic [6:0]   st_ag_iid,
     input  logic         st_ag_inst_vld,
-    input  logic [7:0]  st_ag_lsid,
+    input  logic [LSIQ_ENTRY-1:0]  st_ag_lsid,
     input  logic         st_ag_old,
     input  logic         st_ag_expt,
     input  logic [3:0]  st_ag_sdid_oh,
@@ -41,7 +41,7 @@ module ct_lsu_st_dc #(
     output logic         st_dc_borrow_vld,
     output logic         st_dc_secd,
     output logic [6:0]   st_dc_iid,
-    output logic [7:0]  st_dc_lsid,
+    output logic [LSIQ_ENTRY-1:0]  st_dc_lsid,
     output logic [3:0]  st_dc_sdid_oh,
     output logic         st_dc_old,
     output logic         st_dc_expt,
@@ -62,7 +62,7 @@ module ct_lsu_st_dc #(
     output logic [4:0]   st_dc_da_dcache_dirty_array,
     output logic         st_dc_da_tag0_hit,
     output logic         st_dc_da_tag1_hit,
-    output logic [7:0]  st_dc_idu_sq_full,
+    output logic [LSIQ_ENTRY-1:0]  st_dc_idu_sq_full,
     output logic         st_dc_dcwp_hit_idx,
     output logic         st_dc_get_dcache_tag_dirty,
     output logic         st_dc_spec_fail,
@@ -73,7 +73,7 @@ module ct_lsu_st_dc #(
     //                 Internal signals
     //==========================================================
     logic [7:0]  st_dc_data_rot_sel;
-    logic [7:0] st_dc_mask_lsid;
+    logic [LSIQ_ENTRY-1:0] st_dc_mask_lsid;
     logic        st_dc_sq_full_vld;
     logic        st_dc_restart_vld;
 

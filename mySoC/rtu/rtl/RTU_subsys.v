@@ -76,6 +76,14 @@ module RTU_subsys (
   output wire dbg_commit_vld2                       ,
   input  wire forever_cpuclk                        ,
   output wire [1:0] idu_accept_num                        ,
+  output wire [5:0] idu_aiq1_dst_preg                     ,
+  output wire [6:0] idu_aiq1_iid                          ,
+  output wire idu_aiq1_illegal                      ,
+  output wire [31:0] idu_aiq1_pc                           ,
+  output wire [12:0] idu_aiq1_rslt_sel                     ,
+  output wire idu_aiq1_sel                          ,
+  output wire [31:0] idu_aiq1_src0                         ,
+  output wire [31:0] idu_aiq1_src1                         ,
   output wire [5:0] idu_aiq_dst_preg                      ,
   output wire [6:0] idu_aiq_iid                           ,
   output wire idu_aiq_illegal                       ,
@@ -120,6 +128,7 @@ module RTU_subsys (
   input  wire [24:0] ifu_idu_if_inst1_chk                  ,
   input  wire [24:0] ifu_idu_if_inst2_chk                  ,
   input  wire int_pending                           ,
+  input  wire iu_idu_aiq1_stall                     ,
   input  wire [31:0] iu_idu_ex2_pipe0_wb_preg_data         ,
   input  wire [5:0] iu_idu_ex2_pipe0_wb_preg_dupx         ,
   input  wire [63:0] iu_idu_ex2_pipe0_wb_preg_expand       ,
@@ -168,7 +177,7 @@ module RTU_subsys (
   output wire lsu_biu_w_vict_last                   ,
   output wire [15:0] lsu_biu_w_vict_strb                   ,
   output wire lsu_biu_w_vict_vld                    ,
-  input  wire [7:0] lsu_idu_lsiq_pop_entry                ,
+  input  wire [11:0] lsu_idu_lsiq_pop_entry                ,
   output wire [5:0] lsu_idu_wb_pipe3_wb_preg              ,
   input  wire [5:0] lsu_idu_wb_pipe3_wb_preg_dupx         ,
   output wire [6:0] lsu_idu_wb_pipe3_wb_preg_iid          ,
@@ -295,7 +304,7 @@ module RTU_subsys (
     wire expt_st_vld                           ;   // 内部
     wire [6:0] idu_lsu_ld_iid                        ;   // 内部
     wire [1:0] idu_lsu_ld_inst_size                  ;   // 内部
-    wire [7:0] idu_lsu_ld_lch_entry                  ;   // 内部
+    wire [11:0] idu_lsu_ld_lch_entry                  ;   // 内部
     wire [11:0] idu_lsu_ld_offset                     ;   // 内部
     wire [12:0] idu_lsu_ld_offset_plus                ;   // 内部
     wire idu_lsu_ld_oldest                     ;   // 内部
@@ -309,7 +318,7 @@ module RTU_subsys (
     wire idu_lsu_sdiq_sel                      ;   // 内部
     wire [6:0] idu_lsu_st_iid                        ;   // 内部
     wire [1:0] idu_lsu_st_inst_size                  ;   // 内部
-    wire [7:0] idu_lsu_st_lch_entry                  ;   // 内部
+    wire [11:0] idu_lsu_st_lch_entry                  ;   // 内部
     wire [11:0] idu_lsu_st_offset                     ;   // 内部
     wire [12:0] idu_lsu_st_offset_plus                ;   // 内部
     wire idu_lsu_st_oldest                     ;   // 内部
@@ -358,17 +367,17 @@ module RTU_subsys (
     wire idu_rtu_ir_preg2_alloc_vld            ;   // 内部
     wire [63:0] idu_rtu_pst_preg_dealloc_mask         ;   // 内部
     wire [3:0] lsu_idu_has_in_sq                     ;   // 内部
-    wire [7:0] lsu_idu_imme_wakeup                   ;   // 内部
-    wire [7:0] lsu_idu_lq_full                       ;   // 内部
+    wire [11:0] lsu_idu_imme_wakeup                   ;   // 内部
+    wire [11:0] lsu_idu_lq_full                       ;   // 内部
     wire lsu_idu_lq_not_full                   ;   // 内部
     wire lsu_idu_lsiq_pop0_vld                 ;   // 内部
     wire lsu_idu_lsiq_pop1_vld                 ;   // 内部
     wire lsu_idu_lsiq_pop_vld                  ;   // 内部
-    wire [7:0] lsu_idu_pop_entry                     ;   // 内部
-    wire [7:0] lsu_idu_rb_full                       ;   // 内部
+    wire [11:0] lsu_idu_pop_entry                     ;   // 内部
+    wire [11:0] lsu_idu_rb_full                       ;   // 内部
     wire lsu_idu_rb_not_full                   ;   // 内部
-    wire [7:0] lsu_idu_secd                          ;   // 内部
-    wire [7:0] lsu_idu_sq_full                       ;   // 内部
+    wire [11:0] lsu_idu_secd                          ;   // 内部
+    wire [11:0] lsu_idu_sq_full                       ;   // 内部
     wire lsu_idu_sq_not_full                   ;   // 内部
     wire [31:0] lsu_idu_wb_pipe3_wb_preg_data         ;   // 内部
     wire [63:0] lsu_idu_wb_pipe3_wb_preg_expand       ;   // 内部
@@ -692,6 +701,14 @@ module RTU_subsys (
     .idu_aiq_pc                         (idu_aiq_pc                        ),
     .idu_aiq_rslt_sel                   (idu_aiq_rslt_sel                  ),
     .idu_aiq_illegal                    (idu_aiq_illegal                   ),
+    .idu_aiq1_sel                       (idu_aiq1_sel                      ),
+    .idu_aiq1_iid                       (idu_aiq1_iid                      ),
+    .idu_aiq1_dst_preg                  (idu_aiq1_dst_preg                 ),
+    .idu_aiq1_src0                      (idu_aiq1_src0                     ),
+    .idu_aiq1_src1                      (idu_aiq1_src1                     ),
+    .idu_aiq1_pc                        (idu_aiq1_pc                       ),
+    .idu_aiq1_rslt_sel                  (idu_aiq1_rslt_sel                 ),
+    .idu_aiq1_illegal                   (idu_aiq1_illegal                  ),
     .idu_mult_sel                       (idu_mult_sel                      ),
     .idu_mult_iid                       (idu_mult_iid                      ),
     .idu_mult_dst_preg                  (idu_mult_dst_preg                 ),
@@ -788,7 +805,8 @@ module RTU_subsys (
     .rtu_preg_rdata1                    (rtu_preg_rdata1                   ),
     .rtu_preg_rdata2                    (rtu_preg_rdata2                   ),
     .rtu_csr_src_rdata                  (rtu_csr_src_rdata                 ),
-    .md_unit_stall                      (md_unit_stall                     )
+    .md_unit_stall                      (md_unit_stall                     ),
+    .iu_idu_aiq1_stall                  (iu_idu_aiq1_stall                 )
     );
 
     // ============================================================
@@ -796,7 +814,7 @@ module RTU_subsys (
     // ============================================================
     lsu_top
     #(.DCACHE_SIZE (2048),
-      .LSIQ_ENTRY  (8),
+      .LSIQ_ENTRY  (12),
       .SQ_ENTRY    (6),
       .SDIQ_ENTRY  (4),
       .WMB_ENTRY   (4),

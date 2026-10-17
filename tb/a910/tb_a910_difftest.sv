@@ -457,14 +457,14 @@ module tb_a910_difftest;
         dut.u_ct_idu_top.x_ct_idu_is_lsiq.lsiq_entry_vld,
         dut.u_ct_idu_top.x_ct_idu_is_lsiq.lsiq_entry_store,
         dut.u_ct_idu_top.x_ct_idu_is_lsiq.unalign_2nd,
-        {dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry7.frz,
-         dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry6.frz,
-         dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry5.frz,
-         dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry4.frz,
-         dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry3.frz,
-         dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry2.frz,
-         dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry1.frz,
-         dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry0.frz},
+        {dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[7].u_ct_idu_is_lsiq_entry.frz,
+         dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[6].u_ct_idu_is_lsiq_entry.frz,
+         dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[5].u_ct_idu_is_lsiq_entry.frz,
+         dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[4].u_ct_idu_is_lsiq_entry.frz,
+         dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[3].u_ct_idu_is_lsiq_entry.frz,
+         dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[2].u_ct_idu_is_lsiq_entry.frz,
+         dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[1].u_ct_idu_is_lsiq_entry.frz,
+         dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[0].u_ct_idu_is_lsiq_entry.frz},
         dut.lsu_idu_secd, dut.u_ct_idu_top.lsu_idu_lsiq_pop_vld,
         dut.u_ct_idu_top.lsu_idu_lsiq_pop_entry,
         dut.u_ct_idu_top.lsu_idu_imme_wakeup,
@@ -1678,11 +1678,16 @@ module tb_a910_difftest;
     force dut.csr_trap_vector = 32'b0;
     force dut.csr_mepc        = 32'b0;
     force dut.csr_rdata       = 32'b0;
+`ifndef USE_IFU3
+    // IFU2 的 GHR 恢复沿用旧基线；IFU3 必须看到 BEU 真实 EX 值
+    // (RAS/PHR 精确恢复)，否则真实路径永远测不到。
     force dut.iu_btb_chk      = 25'b0;
     force dut.iu_btb_taken    = 1'b0;
     force dut.iu_btb_is_cond  = 1'b0;
-    force dut.cmplt_vld1      = 1'b0;
-    force dut.cmplt_iid1      = 7'b0;
+`endif
+    // 2026-10-18: 完成口 1 现在由 ALU1 真正驱动 (双 ALU), **不能再 force 0**
+    //   —— 否则 RTU 永远看不到 ALU1 的完成, ROB 队头卡死 (addi 只退 2 条就是它)。
+    //   口 2 仍无单元, RTL 里已显式接 0; force 保留只为波形干净。
     force dut.cmplt_vld2      = 1'b0;
     force dut.cmplt_iid2      = 7'b0;
   end
@@ -2092,16 +2097,16 @@ module tb_a910_difftest;
     if (!rst && $test$plusargs("PROBE_FRZ") && cycles >= stl_lo && cycles <= stl_hi)
       $display("  [FRZ] T%0d e7: vld=%b frz=%b src0_rdy=%b raw_rdy=%b rdy=%b iss_en=%b create_en=%b iid=%0d | src0=%07b agevec=%07b | pop_vld=%b pop_entry=%b imme_wk=%b | ld_sel=%b ld_iid=%0d | LSU ag_vld=%b ag_iid=%0d ag_lsid=%b da_vld=%b da_iid=%0d",
                cycles,
-               dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry7.vld,
-               dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry7.frz,
-               dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry7.read_src0_data[0],
-               dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry7.x_raw_rdy,
-               dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry7.x_rdy,
+               dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[7].u_ct_idu_is_lsiq_entry.vld,
+               dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[7].u_ct_idu_is_lsiq_entry.frz,
+               dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[7].u_ct_idu_is_lsiq_entry.read_src0_data[0],
+               dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[7].u_ct_idu_is_lsiq_entry.x_raw_rdy,
+               dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[7].u_ct_idu_is_lsiq_entry.x_rdy,
                dut.u_ct_idu_top.x_ct_idu_is_lsiq.lsiq_entry_issue_en[7],
-               dut.u_ct_idu_top.x_ct_idu_is_lsiq.lsiq_entry7_create_en,
-               dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry7.iid,
-               dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry7.read_src0_data[6:0],
-               dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry7.agevec[6:0],
+               dut.u_ct_idu_top.x_ct_idu_is_lsiq.lsiq_entry_create_en[7],
+               dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[7].u_ct_idu_is_lsiq_entry.iid,
+               dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[7].u_ct_idu_is_lsiq_entry.read_src0_data[6:0],
+               dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[7].u_ct_idu_is_lsiq_entry.agevec[6:0],
                dut.lsu_idu_lsiq_pop_vld, dut.lsu_idu_lsiq_pop_entry,
                dut.lsu_idu_imme_wakeup[0],
                dut.idu_lsu_ld_sel, dut.idu_lsu_ld_iid,
@@ -2123,31 +2128,31 @@ module tb_a910_difftest;
                dut.lsu_idu_imme_wakeup,
                dut.idu_lsu_ld_sel, dut.idu_lsu_ld_iid);
       $display("       e0 v=%b f=%b iid=%0d rdy=%b raw=%b av=%07b | e1 v=%b f=%b iid=%0d rdy=%b raw=%b av=%07b",
-               dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry0.vld,
-               dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry0.frz,
-               dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry0.iid,
-               dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry0.x_rdy,
-               dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry0.x_raw_rdy,
-               dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry0.agevec,
-               dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry1.vld,
-               dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry1.frz,
-               dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry1.iid,
-               dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry1.x_rdy,
-               dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry1.x_raw_rdy,
-               dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry1.agevec);
+               dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[0].u_ct_idu_is_lsiq_entry.vld,
+               dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[0].u_ct_idu_is_lsiq_entry.frz,
+               dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[0].u_ct_idu_is_lsiq_entry.iid,
+               dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[0].u_ct_idu_is_lsiq_entry.x_rdy,
+               dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[0].u_ct_idu_is_lsiq_entry.x_raw_rdy,
+               dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[0].u_ct_idu_is_lsiq_entry.agevec,
+               dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[1].u_ct_idu_is_lsiq_entry.vld,
+               dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[1].u_ct_idu_is_lsiq_entry.frz,
+               dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[1].u_ct_idu_is_lsiq_entry.iid,
+               dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[1].u_ct_idu_is_lsiq_entry.x_rdy,
+               dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[1].u_ct_idu_is_lsiq_entry.x_raw_rdy,
+               dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[1].u_ct_idu_is_lsiq_entry.agevec);
       $display("       e2 v=%b f=%b iid=%0d rdy=%b raw=%b av=%07b | e3 v=%b f=%b iid=%0d rdy=%b raw=%b av=%07b",
-               dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry2.vld,
-               dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry2.frz,
-               dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry2.iid,
-               dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry2.x_rdy,
-               dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry2.x_raw_rdy,
-               dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry2.agevec,
-               dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry3.vld,
-               dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry3.frz,
-               dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry3.iid,
-               dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry3.x_rdy,
-               dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry3.x_raw_rdy,
-               dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry3.agevec);
+               dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[2].u_ct_idu_is_lsiq_entry.vld,
+               dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[2].u_ct_idu_is_lsiq_entry.frz,
+               dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[2].u_ct_idu_is_lsiq_entry.iid,
+               dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[2].u_ct_idu_is_lsiq_entry.x_rdy,
+               dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[2].u_ct_idu_is_lsiq_entry.x_raw_rdy,
+               dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[2].u_ct_idu_is_lsiq_entry.agevec,
+               dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[3].u_ct_idu_is_lsiq_entry.vld,
+               dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[3].u_ct_idu_is_lsiq_entry.frz,
+               dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[3].u_ct_idu_is_lsiq_entry.iid,
+               dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[3].u_ct_idu_is_lsiq_entry.x_rdy,
+               dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[3].u_ct_idu_is_lsiq_entry.x_raw_rdy,
+               dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[3].u_ct_idu_is_lsiq_entry.agevec);
       $display("       WK: ld_dc=%b st_ag_re=%b ld_ag_re=%b sq_data=%b sq_glob=%b lfb=%b | fren=%b",
                dut.u_lsu_top.ld_dc_imme_wakeup,
                dut.u_lsu_top.st_ag_stall_restart_entry,
@@ -2167,8 +2172,8 @@ module tb_a910_difftest;
 
   // 【临时诊断】LSIQ 8 个表项 `frz` 的每次跳变 + 当时的 wakeup 向量 —— `+PROBE_FZ`
   // 盯 entry2: 每次 "被冻住" 的上升沿后连打 12 拍, 看有没有 wakeup 来解
-  wire e2_vf = dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry2.vld
-             & dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry2.frz;
+  wire e2_vf = dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[2].u_ct_idu_is_lsiq_entry.vld
+             & dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[2].u_ct_idu_is_lsiq_entry.frz;
   reg  e2_vf_q;
   integer e2_dump, fz_lines;
   integer e2_stuck, e2_reported;
@@ -2185,10 +2190,10 @@ module tb_a910_difftest;
         fz_lines = fz_lines + 1;
         $display("  [FZ] T%0d e2 连续冻住 %0d 拍 vld=%b iid=%0d rawrdy=%b ldAgRdy=%b | ld_sel=%b lch=%b agstallvld=%b aginstvld=%b ldAGre=%b | st_sel=%b slch=%b stAGre=%b | ldDCwk=%b immeWK=%b issEN=%b | src0=%07b av2=%07b lq=%b rb=%b sq=%b",
                  cycles, e2_stuck,
-                 dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry2.vld,
-                 dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry2.iid,
-                 dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry2.x_raw_rdy,
-                 dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry2.read_src0_data[0],
+                 dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[2].u_ct_idu_is_lsiq_entry.vld,
+                 dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[2].u_ct_idu_is_lsiq_entry.iid,
+                 dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[2].u_ct_idu_is_lsiq_entry.x_raw_rdy,
+                 dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[2].u_ct_idu_is_lsiq_entry.read_src0_data[0],
                  dut.idu_lsu_ld_sel, dut.idu_lsu_ld_lch_entry,
                  dut.u_lsu_top.u_lsu_ld_ag.ld_ag_stall_vld,
                  dut.u_lsu_top.u_lsu_ld_ag.ld_ag_inst_vld,
@@ -2198,11 +2203,11 @@ module tb_a910_difftest;
                  dut.u_lsu_top.ld_dc_imme_wakeup,
                  dut.lsu_idu_imme_wakeup,
                  dut.u_ct_idu_top.x_ct_idu_is_lsiq.lsiq_entry_issue_en,
-                 dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry2.read_src0_data[6:0],
-                 dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry2.agevec[6:0],
-                 dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry2.lq_full,
-                 dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry2.rb_full,
-                 dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry2.sq_full);
+                 dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[2].u_ct_idu_is_lsiq_entry.read_src0_data[6:0],
+                 dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[2].u_ct_idu_is_lsiq_entry.agevec[6:0],
+                 dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[2].u_ct_idu_is_lsiq_entry.lq_full,
+                 dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[2].u_ct_idu_is_lsiq_entry.rb_full,
+                 dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[2].u_ct_idu_is_lsiq_entry.sq_full);
       end
     end
   end
@@ -2244,6 +2249,11 @@ module tb_a910_difftest;
   //   fe_idle_nf —— 其中"不在冲刷冻结窗里"的拍数 ⇒ **真正的供给饥饿**
   // -------------------------------------------------------------------------
   integer perf_mispred = 0, perf_flush = 0, perf_rob_sum = 0, perf_rob_max = 0;
+  // 分支预测准确率 (退休点, 按控制转移类型)
+  integer p_br_tot = 0, p_br_mis = 0;
+  integer p_cnd_tot = 0, p_cnd_mis = 0;
+  integer p_jal_tot = 0, p_jal_mis = 0;
+  integer p_jlr_tot = 0, p_jlr_mis = 0;
   integer perf_rob_zero = 0, perf_fe_idle = 0, perf_fe_idle_nf = 0, perf_cyc = 0;
   // 派遣/退休的宽度直方图 —— 3 发射到底发几条? `disp_vld` 是**前缀有效**
   // (`RTU.v:525` `disp_acc[1] = disp_acc[0] & disp1_vld`), 所以按位求和 = 条数。
@@ -2278,6 +2288,12 @@ module tb_a910_difftest;
   //   注意 `mispred_pend` 是多拍锁存 (RTU_flush.v:222), 而 `redirect` 是脉冲,
   //   两者覆盖的窗口不同, 分开记。
   integer perf_idle_red = 0, perf_idle_mpp = 0, perf_idle_oth = 0;
+`ifdef USE_IFU3
+  // IFU3: 把"其它真·供给不上"按 IFU 阶段拆开 (非冻结、地址命中、无 redirect/mispred_pend)
+  integer oth_ftq_empty = 0, oth_s2 = 0, oth_s1 = 0, oth_s0b = 0, oth_s0r = 0, oth_idle = 0;
+  integer oth_ftqfull = 0, oth_bpustall = 0;
+  integer oth_ifuovr = 0, oth_bpuovr = 0;
+`endif
   // ---- 误预测冻结窗拆解: 4.87 拍到底花在哪一段 ----
   //   闸门就是 `A910_cpu.sv:968` 的 `mispred_hold_q` (它和 rtu_yy_xx_flush 一起
   //   进 idu_hold, 决定 IDU 看不看得到 IFU 交来的指令)。窗口分四段:
@@ -2290,6 +2306,12 @@ module tb_a910_difftest;
   //     没有 ⇒ 还要再加重新取指的时间
   integer fz_n = 0, fz_s1 = 0, fz_s2 = 0, fz_s3 = 0, fz_s4 = 0, fz_tot = 0;
   integer fz_gate_vs_ife = 0;      // 开闸时 IBUF 还没货的次数
+  // 开闸当拍 IFU 阶段快照 (只在 idu_inst0_vld=0 的事件里统计)
+  integer fz_ge_n = 0, fz_ge_icmiss = 0, fz_ge_refill = 0, fz_ge_pushsame = 0;
+`ifdef USE_IFU3
+  integer fz_ge_ftq0 = 0, fz_ge_alloc = 0, fz_ge_bpq = 0;
+  integer fz_ge_s2 = 0, fz_ge_s1 = 0, fz_ge_s0b = 0, fz_ge_s0r = 0;
+`endif
   integer fz_hist [17];
   integer fz_st = 0, fz_cnt = 0, fz_ev = 0;
   integer fz_in_f1 = 0, fz_blocked = 0;   // ① 里: 处于 F1 的拍数 / blocked 拍数
@@ -2303,11 +2325,37 @@ module tb_a910_difftest;
   //   `+define` —— 免得 TB 和 RTL 各拿一个数, 悄悄对不上还算出一张假表。
   localparam int PERF_AIQ_N = $bits(dut.u_ct_idu_top.x_ct_idu_is_aiq.aiq_entry_vld);
   integer perf_aiq_occ_sum = 0, perf_aiq_issue = 0, perf_aiq_full = 0;
+  // ---- 双 ALU / pipe2 仲裁 (2026-10-18) ----
+  //   用来证明 ALU1 真的在发射/完成, 以及 ALU1 与 MD 同拍抢口是否真的发生。
+  integer perf_alu1_issue = 0, perf_alu1_cmplt = 0;
+  integer perf_alu1_stall = 0, perf_alu1_md_conf = 0;
   integer perf_aiq_full_ready = 0, perf_aiq_full_noready = 0, perf_aiq_issue_full = 0;
   always @(posedge clk) begin
     if (!rst && $test$plusargs("PROBE_PERF")) begin
       perf_cyc = perf_cyc + 1;
       if (dut.u_rtu.u_commit.mispred_hit) perf_mispred = perf_mispred + 1;
+      // 按退休槽统计控制转移: 分母 tr, 分子同槽 mis (含当拍解析的 mis_now)
+      if (dut.u_rtu.u_commit.tr[0]) begin
+        p_br_tot = p_br_tot + 1;
+        if (dut.u_rtu.u_commit.mis0) p_br_mis = p_br_mis + 1;
+      end
+      if (dut.u_rtu.u_commit.tr[1]) begin
+        p_br_tot = p_br_tot + 1;
+        if (dut.u_rtu.u_commit.mis1) p_br_mis = p_br_mis + 1;
+      end
+      if (dut.u_rtu.u_commit.tr[2]) begin
+        p_br_tot = p_br_tot + 1;
+        if (dut.u_rtu.u_commit.mis2) p_br_mis = p_br_mis + 1;
+      end
+      if (dut.u_rtu.u_commit.tr_cnd[0]) begin p_cnd_tot = p_cnd_tot + 1; if (dut.u_rtu.u_commit.mis0) p_cnd_mis = p_cnd_mis + 1; end
+      if (dut.u_rtu.u_commit.tr_cnd[1]) begin p_cnd_tot = p_cnd_tot + 1; if (dut.u_rtu.u_commit.mis1) p_cnd_mis = p_cnd_mis + 1; end
+      if (dut.u_rtu.u_commit.tr_cnd[2]) begin p_cnd_tot = p_cnd_tot + 1; if (dut.u_rtu.u_commit.mis2) p_cnd_mis = p_cnd_mis + 1; end
+      if (dut.u_rtu.u_commit.tr_jal[0]) begin p_jal_tot = p_jal_tot + 1; if (dut.u_rtu.u_commit.mis0) p_jal_mis = p_jal_mis + 1; end
+      if (dut.u_rtu.u_commit.tr_jal[1]) begin p_jal_tot = p_jal_tot + 1; if (dut.u_rtu.u_commit.mis1) p_jal_mis = p_jal_mis + 1; end
+      if (dut.u_rtu.u_commit.tr_jal[2]) begin p_jal_tot = p_jal_tot + 1; if (dut.u_rtu.u_commit.mis2) p_jal_mis = p_jal_mis + 1; end
+      if (dut.u_rtu.u_commit.tr_jalr[0]) begin p_jlr_tot = p_jlr_tot + 1; if (dut.u_rtu.u_commit.mis0) p_jlr_mis = p_jlr_mis + 1; end
+      if (dut.u_rtu.u_commit.tr_jalr[1]) begin p_jlr_tot = p_jlr_tot + 1; if (dut.u_rtu.u_commit.mis1) p_jlr_mis = p_jlr_mis + 1; end
+      if (dut.u_rtu.u_commit.tr_jalr[2]) begin p_jlr_tot = p_jlr_tot + 1; if (dut.u_rtu.u_commit.mis2) p_jlr_mis = p_jlr_mis + 1; end
       if (dut.u_rtu.u_commit.flush_trig)  perf_flush    = perf_flush + 1;
       perf_rob_sum = perf_rob_sum + dut.u_rtu.u_rob.occ;
       if (dut.u_rtu.u_rob.occ > perf_rob_max) perf_rob_max = dut.u_rtu.u_rob.occ;
@@ -2326,7 +2374,29 @@ module tb_a910_difftest;
         2: begin fz_cnt = fz_cnt + 1; fz_ev = fz_ev + 1;
              if (!dut.mispred_hold_q) begin
                fz_s2 = fz_s2 + fz_cnt;
-               if (!dut.idu_inst0_vld) fz_gate_vs_ife = fz_gate_vs_ife + 1;
+               if (!dut.idu_inst0_vld) begin
+                 fz_gate_vs_ife = fz_gate_vs_ife + 1;
+                 fz_ge_n = fz_ge_n + 1;
+                 if (!dut.u_rv32ifu2_top.q_hit)      fz_ge_icmiss   = fz_ge_icmiss + 1;
+                 if (dut.u_rv32ifu2_top.refill_busy) fz_ge_refill   = fz_ge_refill + 1;
+                 if (|dut.u_rv32ifu2_top.push_mask)  fz_ge_pushsame = fz_ge_pushsame + 1;
+`ifdef USE_IFU3
+                 if (dut.u_rv32ifu2_top.ifu_inflight == 3'd0)
+                     fz_ge_ftq0 = fz_ge_ftq0 + 1;
+                 if (dut.u_rv32ifu2_top.u_ftq.alloc_valid)
+                     fz_ge_alloc = fz_ge_alloc + 1;
+                 if (dut.u_rv32ifu2_top.u_bpu.bp_q_valid)
+                     fz_ge_bpq = fz_ge_bpq + 1;
+                 if (dut.u_rv32ifu2_top.u_ifu.s2_valid)
+                     fz_ge_s2 = fz_ge_s2 + 1;
+                 if (dut.u_rv32ifu2_top.u_ifu.s1_valid)
+                     fz_ge_s1 = fz_ge_s1 + 1;
+                 if (dut.u_rv32ifu2_top.u_ifu.s0_busy)
+                     fz_ge_s0b = fz_ge_s0b + 1;
+                 if (dut.u_rv32ifu2_top.u_ifu.s0_resp_valid)
+                     fz_ge_s0r = fz_ge_s0r + 1;
+`endif
+               end
                fz_st = 3; fz_cnt = 0;
              end
            end
@@ -2358,7 +2428,31 @@ module tb_a910_difftest;
             perf_ic_idle_hit  = perf_ic_idle_hit  + 1;
             if (dut.u_rv32ifu2_top.redirect)      perf_idle_red = perf_idle_red + 1;
             else if (dut.u_rtu.mispred_pend)      perf_idle_mpp = perf_idle_mpp + 1;
-            else                                  perf_idle_oth = perf_idle_oth + 1;
+            else begin
+              perf_idle_oth = perf_idle_oth + 1;
+`ifdef USE_IFU3
+              if (!dut.u_rv32ifu2_top.u_ifu.ftq_rd_valid)
+                  oth_ftq_empty = oth_ftq_empty + 1;
+              else if (dut.u_rv32ifu2_top.u_ifu.s2_valid)
+                  oth_s2 = oth_s2 + 1;
+              else if (dut.u_rv32ifu2_top.u_ifu.s1_valid)
+                  oth_s1 = oth_s1 + 1;
+              else if (dut.u_rv32ifu2_top.u_ifu.s0_busy)
+                  oth_s0b = oth_s0b + 1;
+              else if (dut.u_rv32ifu2_top.u_ifu.s0_resp_valid)
+                  oth_s0r = oth_s0r + 1;
+              else
+                  oth_idle = oth_idle + 1;
+              if (!dut.u_rv32ifu2_top.u_ftq.alloc_ready)
+                  oth_ftqfull = oth_ftqfull + 1;
+              if (dut.u_rv32ifu2_top.u_bpu.stall)
+                  oth_bpustall = oth_bpustall + 1;
+              if (dut.u_rv32ifu2_top.ifu_ovr_valid)
+                  oth_ifuovr = oth_ifuovr + 1;
+              if (dut.u_rv32ifu2_top.u_bpu.ovr_valid)
+                  oth_bpuovr = oth_bpuovr + 1;
+`endif
+            end
           end
         end
       end
@@ -2387,6 +2481,12 @@ module tb_a910_difftest;
         if (dut.u_ct_idu_top.x_ct_idu_is_ctrl.ctrl_is_mult_full_updt) perf_blk_mult = perf_blk_mult + 1;
         if (dut.u_ct_idu_top.x_ct_idu_is_ctrl.ctrl_is_div_full_updt)  perf_blk_div  = perf_blk_div  + 1;
       end
+      // ---- 双 ALU / pipe2 仲裁 ----
+      if (dut.u_ct_idu_top.aiq1_xx_issue_en) perf_alu1_issue  = perf_alu1_issue  + 1;
+      if (dut.cmplt_vld1)                    perf_alu1_cmplt  = perf_alu1_cmplt  + 1;
+      if (dut.aiq1_issue_stall)              perf_alu1_stall  = perf_alu1_stall  + 1;
+      if (dut.alu1_wb_req && dut.md_wb_req)  perf_alu1_md_conf = perf_alu1_md_conf + 1;
+
       // ---- AIQ 深挖 ----
       perf_aiq_occ_sum = perf_aiq_occ_sum + dut.u_ct_idu_top.x_ct_idu_is_aiq.aiq_entry_cnt;
       if (dut.u_ct_idu_top.x_ct_idu_is_aiq.aiq_xx_issue_en) perf_aiq_issue = perf_aiq_issue + 1;
@@ -2407,6 +2507,18 @@ module tb_a910_difftest;
                retired, perf_cyc ? retired * 1.0 / perf_cyc : 0.0);
       $display("  误预测 (mispred)  : %0d 次  ⇒ 每 %0.1f 拍一次",
                perf_mispred, perf_mispred ? perf_cyc * 1.0 / perf_mispred : 0.0);
+      $display("  分支预测准确率    : 条件 %0d 条 / 误 %0d / %0.2f%%",
+               p_cnd_tot, p_cnd_mis,
+               p_cnd_tot ? (p_cnd_tot - p_cnd_mis) * 100.0 / p_cnd_tot : 0.0);
+      $display("                      JAL %0d / 误 %0d / %0.2f%%   JALR %0d / 误 %0d / %0.2f%%",
+               p_jal_tot, p_jal_mis,
+               p_jal_tot ? (p_jal_tot - p_jal_mis) * 100.0 / p_jal_tot : 0.0,
+               p_jlr_tot, p_jlr_mis,
+               p_jlr_tot ? (p_jlr_tot - p_jlr_mis) * 100.0 / p_jlr_tot : 0.0);
+      $display("                      合计 %0d / 误 %0d / %0.2f%%  (mispred_hit=%0d)",
+               p_br_tot, p_br_mis,
+               p_br_tot ? (p_br_tot - p_br_mis) * 100.0 / p_br_tot : 0.0,
+               perf_mispred);
       $display("  冲刷 (flush_trig) : %0d 次", perf_flush);
       $display("  ROB 占用          : 均值 %0.1f / 64, 峰值 %0d, 空 %0d 拍 (%.1f%%)",
                perf_cyc ? perf_rob_sum * 1.0 / perf_cyc : 0.0, perf_rob_max,
@@ -2426,6 +2538,11 @@ module tb_a910_difftest;
       $display("      └ 其它(真·供给不上)     : %0d 拍 (%.1f%% of 非冻结窗)",
                perf_idle_oth,
                perf_fe_idle_nf ? perf_idle_oth * 100.0 / perf_fe_idle_nf : 0.0);
+`ifdef USE_IFU3
+      $display("        IFU3 其它拆解: ftq_empty=%0d s2=%0d s1=%0d s0b=%0d s0r=%0d idle=%0d | ftq_full=%0d bpu_stall=%0d | ifu_ovr=%0d bpu_ovr=%0d",
+               oth_ftq_empty, oth_s2, oth_s1, oth_s0b, oth_s0r, oth_idle,
+               oth_ftqfull, oth_bpustall, oth_ifuovr, oth_bpuovr);
+`endif
       $display("  ---- 误预测冻结窗拆解 (%0d 次) ----", fz_n);
       if (fz_n > 0) begin
         $display("    ① EX重定向→冲刷脉冲 : %0.2f 拍", fz_s1 * 1.0 / fz_n);
@@ -2437,6 +2554,13 @@ module tb_a910_difftest;
         $display("    合计                 : %0.2f 拍/次", fz_tot * 1.0 / fz_n);
         $display("    ⚠️ 开闸时 IBUF 还没货 : %0d 次 (%.1f%%) ⇒ 这部分是重取慢, 其余是冲刷慢",
                  fz_gate_vs_ife, fz_gate_vs_ife * 100.0 / fz_n);
+        $display("      开闸当拍: ic_miss=%0d refill=%0d push_same=%0d (共 %0d)",
+                 fz_ge_icmiss, fz_ge_refill, fz_ge_pushsame, fz_ge_n);
+`ifdef USE_IFU3
+        $display("      IFU3 阶段 : inflight0=%0d alloc=%0d bpq=%0d s2=%0d s1=%0d s0b=%0d s0r=%0d",
+                 fz_ge_ftq0, fz_ge_alloc, fz_ge_bpq,
+                 fz_ge_s2, fz_ge_s1, fz_ge_s0b, fz_ge_s0r);
+`endif
         $display("    窗口直方图 (拍:次数) :");
         for (int k = 0; k <= 16; k = k + 1)
           if (fz_hist[k] != 0)
@@ -2482,6 +2606,12 @@ module tb_a910_difftest;
                perf_blk_wait ? perf_blk_mult * 100.0 / perf_blk_wait : 0.0);
       $display("    DIV 满   : %8d 拍 (%5.1f%%)", perf_blk_div,
                perf_blk_wait ? perf_blk_div  * 100.0 / perf_blk_wait : 0.0);
+      $display("  ---- 双 ALU / pipe2 仲裁 (2026-10-18) ----");
+      $display("    ALU1 发射 %0d 次 (%.3f 次/拍) / 完成 %0d 次 / 发射停顿 %0d 拍",
+               perf_alu1_issue, perf_cyc ? perf_alu1_issue * 1.0 / perf_cyc : 0.0,
+               perf_alu1_cmplt, perf_alu1_stall);
+      $display("    ALU1 与 MD 同拍请求 %0d 次 (%.2f%% of 拍)",
+               perf_alu1_md_conf, perf_cyc ? perf_alu1_md_conf * 100.0 / perf_cyc : 0.0);
       $display("  ---- AIQ 深挖 (%0d 项): 满 = 深度不够 还是 排空到顶? ----", PERF_AIQ_N);
       $display("    AIQ 占用均值   : %0.2f / %0d",
                perf_cyc ? perf_aiq_occ_sum * 1.0 / perf_cyc : 0.0, PERF_AIQ_N);

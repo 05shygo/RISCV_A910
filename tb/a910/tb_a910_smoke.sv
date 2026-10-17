@@ -147,17 +147,18 @@ module tb_a910_smoke;
   //  它是 Z ⇒ `rtu_retire_cnt` / `dbg_commit_vld1,2` 从第一条退休起恒 X ⇒ 本台报废。
   //  `iu_btb_*` 进 GHR 恢复 (`rv32ifu2_top.v:740-742`), 第一次 EX 重定向就把 X 灌进
   //  GHR ⇒ 预测 PC 变 X。
-  //  `csr_*` 是 trap/mret 的目标; `cmplt_vld1/2` 只脏波形。
+  //  `csr_*` 是 trap/mret 的目标; 完成口 2 (无单元) 钉 0 只为波形干净。
   initial begin
     force dut.int_pending     = 1'b0;
     force dut.csr_trap_vector = 32'b0;
     force dut.csr_mepc        = 32'b0;
     force dut.csr_rdata       = 32'b0;
+`ifndef USE_IFU3
     force dut.iu_btb_chk      = 25'b0;
     force dut.iu_btb_taken    = 1'b0;
     force dut.iu_btb_is_cond  = 1'b0;
-    force dut.cmplt_vld1      = 1'b0;
-    force dut.cmplt_iid1      = 7'b0;
+`endif
+    // 2026-10-18: 口 1 由 ALU1 驱动 (双 ALU), 不能再 force 0; 口 2 仍无单元。
     force dut.cmplt_vld2      = 1'b0;
     force dut.cmplt_iid2      = 7'b0;
   end
@@ -484,10 +485,30 @@ module tb_a910_smoke;
     $display("  ✅ IFU 初始化完成 (cycles=%0d)", cycles);
     trace_on = 1;
 
-    // 跑到退出序列, 或超时
-    while (!exit_seen && cycles < max_cycles) @(posedge clk);
+    // 跑到退出序列, 或 CoreMark 的 MONITOR pass/fail 魔数, 或超时
+    // (CoreMark 没有 ecall, 靠写 0x8000_0000 的 BEEF/DEAD 收尾; AXI 从机已解码)
+    while (!exit_seen && !u_mem.mon_pass_r && !u_mem.mon_fail_r && cycles < max_cycles)
+      @(posedge clk);
 
-    if (exit_seen) begin
+    if (u_mem.mon_pass_r || u_mem.mon_fail_r) begin
+      repeat (20) @(posedge clk);
+      $display("");
+      $display("==================================================");
+      if (u_mem.mon_pass_r && !u_mem.mon_fail_r) begin
+        $display("  === A910 SMOKE: PASS (MONITOR) ===");
+        $display("  累计退休 %0d 条, 用了 %0d 拍", retired, cycles);
+        $display("==================================================");
+        $finish;
+      end
+      else begin
+        $display("  === A910 SMOKE: FAIL (MONITOR) ===");
+        $display("  累计退休 %0d 条, 用了 %0d 拍, mon_pass=%b mon_fail=%b",
+                 retired, cycles, u_mem.mon_pass_r, u_mem.mon_fail_r);
+        $display("==================================================");
+        $fatal(1, "a910 smoke failed (monitor)");
+      end
+    end
+    else if (exit_seen) begin
       // 退出序列已看到, 再放几拍让后面的退休排空
       repeat (20) @(posedge clk);
       $display("");

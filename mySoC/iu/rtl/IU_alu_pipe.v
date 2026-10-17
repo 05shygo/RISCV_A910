@@ -36,6 +36,18 @@
 // 【与 RTU 完成口的关系】
 //   `cmplt_vld/iid` 报的是"这条在 EX2 完成了"。RTU 按 iid 找表项标完成。
 //   ⚠️ 非法指令**也报完成** —— 它占着 ROB 表项, 要能退休才能陷入; 但不写 PRF。
+//
+// 【写回授权 (2026-10-18 新增, ALU1 与 MUL/DIV 共用 pipe2 时用)】
+//   ALU0 恒 `.wb_grant(1'b1)` ⇒ 行为与原来逐拍一致 (issue_stall 恒 0)。
+//   ALU1 的 wb_grant 来自 IU_wb_arb:
+//     * EX2 有结果但没拿到授权 ⇒ `issue_stall=1`, EX2 保持 (不覆盖、不写回、不报完成);
+//     * 拿到授权的那拍才落 PRF/唤醒/完成, 三者同拍。
+//
+//   ⚠️ `issue_stall` 必须同时喂给 **AIQ 的发射门** 和 **ct_idu_rf_ctrl 的 valid
+//      保持**: AIQ1 的发射要经过 rf_ctrl/rf_dp 一级流水才变成 `idu_sel`。只挡
+//      AIQ 而不保持 rf_ctrl 的 valid 寄存器的话, 已经进了 RF 流水的那条会在
+//      stall 拍被清掉 valid ⇒ 指令凭空消失。rf_dp 的数据寄存器因为 load enable
+//      就是被门掉的 issue_en, 天然保持, 不需要额外处理。
 // ---------------------------------------------------------------------------
 module IU_alu_pipe (
     input  wire        cpu_clk,
@@ -62,6 +74,11 @@ module IU_alu_pipe (
     // ---------------- 完成回报给 RTU ----------------
     output wire        cmplt_vld,
     output wire [6:0]  cmplt_iid,
+
+    // ---------------- 写回授权 (与 MD 共用 pipe2 时的仲裁接口) ----------------
+    input  wire        wb_grant,         // 授权; ALU0 恒接 1
+    output wire        wb_req,           // EX2 有结果、在等授权
+    output wire        issue_stall,      // = wb_req & ~wb_grant; 见文件头的说明
 
     // ---------------- 观察口 ----------------
     output wire [31:0] o_alu_result      // 未打拍的结果 (调试用)
@@ -153,13 +170,16 @@ module IU_alu_pipe (
             ex2_vld  <= 1'b0;
             ex2_wr   <= 1'b0;
         end
-        else begin
+        else if (!ex2_vld || wb_grant) begin
+            // EX2 空 / 旧结果本拍被授权拿走 ⇒ 可以接收新一条。
+            // 否则保持 (旧结果和它的 iid/preg/data 都不动), 等授权。
             ex2_vld  <= idu_sel;
             ex2_iid  <= idu_iid;
             ex2_preg <= idu_dst_preg;
             ex2_data <= result;
             ex2_wr   <= idu_sel & ~idu_illegal;
         end
+        // else: hold —— EX2 有结果但没拿到写回口
     end
 
     // ==========================================================
@@ -167,15 +187,19 @@ module IU_alu_pipe (
     // ==========================================================
     // PRF 写口: vld 与独热 expand 成对 (PRF 用 expand 当写使能)。
     // ⚠️ 非法指令**不写 PRF** (没有结果可言), 但完成照样报 —— 它要能退休才能陷入。
-    assign wb_preg_vld      = ex2_wr;
+    // 新增: 写口/唤醒/完成**都只在拿到 wb_grant 的那一拍**有效 (ALU0 恒 1)。
+    assign wb_req      = ex2_vld;
+    assign issue_stall = ex2_vld & ~wb_grant;
+
+    assign wb_preg_vld      = ex2_wr & wb_grant;
     assign wb_preg_data     = ex2_data;
-    assign wb_preg_expand   = 64'd1 << ex2_preg;
+    assign wb_preg_expand   = {64{ex2_wr & wb_grant}} & (64'd1 << ex2_preg);
     // 依赖唤醒: 与写回同拍同条件 (发射队列拿它置对应 preg 的 rdy 位)。
     assign wb_preg_dupx     = ex2_preg;
-    assign wb_preg_vld_dupx = ex2_wr;
+    assign wb_preg_vld_dupx = ex2_wr & wb_grant;
 
-    // 完成回报: **非法指令也报** (见上)。
-    assign cmplt_vld = ex2_vld;
+    // 完成回报: **非法指令也报** (见上), 与写回同拍。
+    assign cmplt_vld = ex2_vld & wb_grant;
     assign cmplt_iid = ex2_iid;
 
 endmodule

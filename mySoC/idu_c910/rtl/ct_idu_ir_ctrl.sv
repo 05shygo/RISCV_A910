@@ -30,10 +30,12 @@ module ct_idu_ir_ctrl (
   output logic         ctrl_ir_pipedown_inst0_vld,
   output logic         ctrl_ir_pipedown_inst1_vld,
   output logic         ctrl_ir_pipedown_inst2_vld,
-  output logic         ctrl_ir_pre_dis_aiq_create0_en,
-  output logic [1:0]   ctrl_ir_pre_dis_aiq_create0_sel,
-  output logic         ctrl_ir_pre_dis_aiq_create1_en,
-  output logic [1:0]   ctrl_ir_pre_dis_aiq_create1_sel,
+  // 2026-10-18: AIQ 拆成两个 (各 8 项), 每个队列每拍最多 1 个 create。
+  // 同拍 2 条 ALU: 一队一条; 只有 1 条: RR 位轮流选队。
+  output logic         ctrl_ir_pre_dis_aiq0_create0_en,
+  output logic [1:0]   ctrl_ir_pre_dis_aiq0_create0_sel,
+  output logic         ctrl_ir_pre_dis_aiq1_create0_en,
+  output logic [1:0]   ctrl_ir_pre_dis_aiq1_create0_sel,
   output logic         ctrl_ir_pre_dis_biq_create0_en,
   output logic [1:0]   ctrl_ir_pre_dis_biq_create0_sel,
   output logic         ctrl_ir_pre_dis_biq_create1_en,
@@ -104,9 +106,6 @@ logic             ctrl_ir_inst3_sdiq;
 logic             ctrl_ir_pipedown_stall;
 logic             ctrl_ir_pre_dis_3_biq_inst;
 logic             ctrl_ir_pre_dis_3_lsiq_inst;
-logic             ctrl_ir_pre_dis_aiq_create0_sel_inst0;
-logic             ctrl_ir_pre_dis_aiq_create0_sel_inst1;
-logic             ctrl_ir_pre_dis_aiq_create1_sel_inst1;
 logic             ctrl_ir_pre_dis_biq_create1_sel_inst1;
 logic             ctrl_ir_pre_dis_inst0_biq;
 logic             ctrl_ir_pre_dis_inst0_lsiq;
@@ -131,6 +130,7 @@ logic             ir_pipedown_inst2_vld;
 logic [12:0]      ir_pipedown_inst3_ctrl_info;
 
 // 新增缺失的内部信号声明
+reg               aiq_disp_rr_q;      // 0: 下一条单 ALU 进 AIQ0; 1: 进 AIQ1
 logic             ctrl_ir_inst0_aiq;
 logic             ctrl_ir_inst1_aiq;
 logic             ctrl_ir_inst2_aiq;
@@ -153,7 +153,6 @@ logic             ctrl_ir_pre_dis_al_2_mult_inst;
 logic             ctrl_ir_pre_dis_al_1_div_inst;
 logic             ctrl_ir_pre_dis_al_2_div_inst;
 
-logic [1:0]       ctrl_ir_pre_dis_aiq0_create1_sel;
 //logic             ctrl_ir_pre_dis_mult_create0_en;
 //logic [1:0]       ctrl_ir_pre_dis_mult_create0_sel;
 //logic [1:0]       ctrl_ir_pre_dis_mult_create1_sel;
@@ -439,53 +438,61 @@ assign ctrl_ir_pre_dis_inst2_sdiq       = ctrl_ir_pre_dis_inst2_vld
                                           && ctrl_ir_inst2_sdiq;
 
 //----------------------------------------------------------
-//           AIQ0 and AIQ1 create enable prepare
+//           AIQ0 / AIQ1 create enable prepare
 //----------------------------------------------------------
 assign ctrl_ir_pre_dis_al_1_aiq_inst = ctrl_ir_pre_dis_inst0_aiq
                                      || ctrl_ir_pre_dis_inst1_aiq
                                      || ctrl_ir_pre_dis_inst2_aiq;
 
-assign ctrl_ir_pre_dis_al_2_aiq_inst = 
+assign ctrl_ir_pre_dis_al_2_aiq_inst =
             ctrl_ir_pre_dis_inst0_aiq && ctrl_ir_pre_dis_inst1_aiq
          || ctrl_ir_pre_dis_inst0_aiq && ctrl_ir_pre_dis_inst2_aiq
          || ctrl_ir_pre_dis_inst1_aiq && ctrl_ir_pre_dis_inst2_aiq;
 
 //----------------------------------------------------------
-//               AIQ0 and AIQ1 create enable
+//        AIQ0 / AIQ1 create enable  (平衡轮转)
 //----------------------------------------------------------
-assign ctrl_ir_pre_dis_aiq_create0_en = ctrl_ir_pre_dis_al_1_aiq_inst;
-assign ctrl_ir_pre_dis_aiq_create1_en = ctrl_ir_pre_dis_al_2_aiq_inst;
+// 每条 AIQ 只有**一个 create 口** (每拍最多进 1 条):
+//   * 本组有 2 条 ALU ⇒ 较老的进 AIQ0、较新的进 AIQ1;
+//   * 本组只有 1 条   ⇒ 按 aiq_disp_rr_q 轮流进 AIQ0/AIQ1;
+//   * 3 条一组会被 `ctrl_ir_pre_dis_3_aiq_inst` 的整组停顿挡住 (见上面
+//     type_stall 那段) —— 两个队列每拍一共也只能收 2 条。
+wire        aiq_single = ctrl_ir_pre_dis_al_1_aiq_inst
+                       & ~ctrl_ir_pre_dis_al_2_aiq_inst;
+wire        aiq_dual   = ctrl_ir_pre_dis_al_2_aiq_inst;
 
-//----------------------------------------------------------
-//                  AIQ create 0 select
-//----------------------------------------------------------
-assign ctrl_ir_pre_dis_aiq_create0_sel_inst0 =
-              ctrl_ir_pre_dis_inst0_aiq;
-assign ctrl_ir_pre_dis_aiq_create0_sel_inst1 =
-              ctrl_ir_pre_dis_inst1_aiq & !ctrl_ir_pre_dis_inst0_aiq;
+// 第一条 (最老) ALU 所在 lane: 0 > 1 > 2
+wire [1:0]  aiq_first_lane = ctrl_ir_pre_dis_inst0_aiq ? 2'd0 :
+                             ctrl_ir_pre_dis_inst1_aiq ? 2'd1 : 2'd2;
+// 第二条 ALU 所在 lane: {0,1}->1, {0,2}->2, {1,2}->2
+wire [1:0]  aiq_second_lane = (ctrl_ir_pre_dis_inst0_aiq
+                               && ctrl_ir_pre_dis_inst1_aiq) ? 2'd1 : 2'd2;
 
-always @(*)
+assign ctrl_ir_pre_dis_aiq0_create0_en = aiq_dual | (aiq_single & ~aiq_disp_rr_q);
+assign ctrl_ir_pre_dis_aiq1_create0_en = aiq_dual | (aiq_single &  aiq_disp_rr_q);
+
+assign ctrl_ir_pre_dis_aiq0_create0_sel = aiq_dual ? aiq_first_lane
+                                        : (aiq_single & ~aiq_disp_rr_q) ? aiq_first_lane
+                                        : 2'd0;
+assign ctrl_ir_pre_dis_aiq1_create0_sel = aiq_dual ? aiq_second_lane
+                                        : (aiq_single &  aiq_disp_rr_q) ? aiq_first_lane
+                                        : 2'd0;
+
+// RR 位只在本组**确实被 IS 收下**时翻转:
+//   * 单条组才需要换边 (双条组本来就一队一条);
+//   * ctrl_is_stall=1 时这组会被重试, 不翻 (否则同一个组可能换目标)。
+wire        aiq_single_accept = aiq_single & ~ctrl_is_stall;
+
+always @(posedge forever_cpuclk or negedge cpurst_b)
 begin
-  if(ctrl_ir_pre_dis_aiq_create0_sel_inst0)
-    ctrl_ir_pre_dis_aiq_create0_sel[1:0] = 2'd0;
-  else if(ctrl_ir_pre_dis_aiq_create0_sel_inst1)
-    ctrl_ir_pre_dis_aiq_create0_sel[1:0] = 2'd1;
-  else 
-    ctrl_ir_pre_dis_aiq_create0_sel[1:0] = 2'd2;
-end
-
-//----------------------------------------------------------
-//                  AIQ create 1 select
-//----------------------------------------------------------
-assign ctrl_ir_pre_dis_aiq_create1_sel_inst1 = 
-              ctrl_ir_pre_dis_inst1_aiq & ctrl_ir_pre_dis_inst0_aiq;
-
-always @(*)
-begin
-  if(ctrl_ir_pre_dis_aiq_create1_sel_inst1)
-    ctrl_ir_pre_dis_aiq_create1_sel[1:0] = 2'd1;
+  if(!cpurst_b)
+    aiq_disp_rr_q <= 1'b0;
+  else if(rtu_yy_xx_flush)
+    aiq_disp_rr_q <= 1'b0;
+  else if(aiq_single_accept)
+    aiq_disp_rr_q <= ~aiq_disp_rr_q;
   else
-    ctrl_ir_pre_dis_aiq_create1_sel[1:0] = 2'd2;
+    aiq_disp_rr_q <= aiq_disp_rr_q;
 end
 
 //----------------------------------------------------------

@@ -1,6 +1,7 @@
 #include <cpu.h>
 #include <bin.h>
 #include <csr.h>
+#include <profile.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -341,6 +342,7 @@ ID2EX ID(IF2ID inst) {
         ret.exc_valid = 1;
         ret.exc_cause = EXC_INST_ACCESS;
         ret.exc_tval  = inst.pc;
+        gm_profile_count(&ret);   // 指令画像 (见 include/profile.h), 只数不算
         return ret;
     }
 
@@ -396,6 +398,10 @@ ID2EX ID(IF2ID inst) {
         ret.exc_valid = 1;
         ret.exc_cause = EXC_BREAKPOINT;
     }
+
+    // 指令画像: 每个提交恰好经过这里一次 ⇒ 计的就是退休指令流.
+    // 放在**所有** exc_* 都定完之后, ILLEGAL 的分类才准.
+    gm_profile_count(&ret);
     return ret;
 }
 

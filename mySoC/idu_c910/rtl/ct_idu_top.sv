@@ -1,3 +1,5 @@
+// LSIQ 深度驱动的端口位宽 (单一真源: +define+LSIQ_ENTRY, 默认 12) —— 见该文件头。
+`include "lsiq_defines.vh"
 module ct_idu_top(
   //==========================================================
   // Global signals
@@ -70,18 +72,18 @@ module ct_idu_top(
   //==========================================================
   // Interface with LSU - LSIQ control
   //==========================================================
-  input  logic [7:0]   lsu_idu_lq_full,
+  input  logic [`LSIQ_NUM-1:0]   lsu_idu_lq_full,
   input  logic         lsu_idu_lq_not_full,
-  input  logic [7:0]   lsu_idu_rb_full,
+  input  logic [`LSIQ_NUM-1:0]   lsu_idu_rb_full,
   input  logic         lsu_idu_rb_not_full,
-  input  logic [7:0]   lsu_idu_sq_full,
+  input  logic [`LSIQ_NUM-1:0]   lsu_idu_sq_full,
   input  logic         lsu_idu_sq_not_full,
-  input  logic [7:0]   lsu_idu_secd,
-  input  logic [7:0]   lsu_idu_imme_wakeup,
+  input  logic [`LSIQ_NUM-1:0]   lsu_idu_secd,
+  input  logic [`LSIQ_NUM-1:0]   lsu_idu_imme_wakeup,
   input  logic         lsu_idu_lsiq_pop_vld,
   input  logic         lsu_idu_lsiq_pop0_vld,
   input  logic         lsu_idu_lsiq_pop1_vld,
-  input  logic [7:0]   lsu_idu_lsiq_pop_entry,
+  input  logic [`LSIQ_NUM-1:0]   lsu_idu_lsiq_pop_entry,
 
   //==========================================================
   // Interface with LSU - SDIQ control
@@ -100,6 +102,18 @@ module ct_idu_top(
   output logic [31:0]  idu_aiq_pc,        // 2026-10-08 新增: AUIPC 要用 (见 rf_dp 的说明)
   output logic [12:0]  idu_aiq_rslt_sel,
   output logic         idu_aiq_illegal,
+
+  //==========================================================
+  // Output to AIQ1 (第二个 ALU 发射队列, 2026-10-18 新增)
+  //==========================================================
+  output logic         idu_aiq1_sel,
+  output logic [6:0]   idu_aiq1_iid,
+  output logic [5:0]   idu_aiq1_dst_preg,
+  output logic [31:0]  idu_aiq1_src0,
+  output logic [31:0]  idu_aiq1_src1,
+  output logic [31:0]  idu_aiq1_pc,
+  output logic [12:0]  idu_aiq1_rslt_sel,
+  output logic         idu_aiq1_illegal,
 
   //==========================================================
   // Output to MULT (Multiply Unit)
@@ -134,7 +148,7 @@ module ct_idu_top(
   output logic         idu_lsu_ld_sign_extend,
   output logic [1:0]   idu_lsu_ld_inst_size,
   output logic         idu_lsu_ld_unalign_2nd,
-  output logic [7:0]   idu_lsu_ld_lch_entry,
+  output logic [`LSIQ_NUM-1:0]   idu_lsu_ld_lch_entry,
   output logic         idu_lsu_ld_oldest,
 
   //==========================================================
@@ -148,7 +162,7 @@ module ct_idu_top(
   output logic [12:0]  idu_lsu_st_offset_plus,
   output logic [1:0]   idu_lsu_st_inst_size,
   output logic         idu_lsu_st_unalign_2nd,
-  output logic [7:0]   idu_lsu_st_lch_entry,
+  output logic [`LSIQ_NUM-1:0]   idu_lsu_st_lch_entry,
   output logic         idu_lsu_st_oldest,
   output logic [3:0]   idu_lsu_st_sdiq_entry,
 
@@ -266,7 +280,14 @@ module ct_idu_top(
   // 那条指令永远不完成 ⇒ 死等 (见 ct_idu_is_md 端口表的说明)。
   // ⚠️ 乘、除是**两条独立的 MD 队列** (x_ct_idu_is_mult / x_ct_idu_is_div), 但共用
   //    MUL_DIV 的一个请求口 ⇒ 这根 stall **两个队列都要接**。
-  input  logic         md_unit_stall
+  input  logic         md_unit_stall,
+
+  //==========================================================
+  // AIQ1 发射保持 (2026-10-18 新增)
+  //==========================================================
+  // 来自 IU_alu_pipe (ALU1) 的 `issue_stall`: EX2 里有结果但没拿到 pipe2
+  // 写回授权。此时 AIQ1 不能发新指令 (发了会在 RF 流水里被覆盖掉), 队头原地等。
+  input  logic         iu_idu_aiq1_stall
 );
 
 //==========================================================
@@ -294,9 +315,10 @@ module ct_idu_top(
 //    (与各自消费侧 rf_dp 的端口位宽对齐)
 //==========================================================
 logic [94:0] aiq_dp_issue_read_data;      // ★ 由 [94:0] 减 1 → [93:0]
+logic [94:0] aiq1_dp_issue_read_data;     // AIQ1 (2026-10-18)
 logic [151:0] biq_dp_issue_read_data;
-logic [1:0] ctrl_dp_is_dis_aiq_create0_sel;
-logic [1:0] ctrl_dp_is_dis_aiq_create1_sel;
+logic [1:0] ctrl_dp_is_dis_aiq0_create0_sel;
+logic [1:0] ctrl_dp_is_dis_aiq1_create0_sel;
 logic [1:0] ctrl_dp_is_dis_biq_create0_sel;
 logic [1:0] ctrl_dp_is_dis_biq_create1_sel;
 logic [1:0] ctrl_dp_is_dis_div_create0_sel;
@@ -307,8 +329,8 @@ logic [1:0] ctrl_dp_is_dis_mult_create0_sel;
 logic [1:0] ctrl_dp_is_dis_mult_create1_sel;
 logic [1:0] ctrl_dp_is_dis_sdiq_create0_sel;
 logic [1:0] ctrl_dp_is_dis_sdiq_create1_sel;
-logic [1:0] ctrl_ir_pre_dis_aiq_create0_sel;
-logic [1:0] ctrl_ir_pre_dis_aiq_create1_sel;
+logic [1:0] ctrl_ir_pre_dis_aiq0_create0_sel;
+logic [1:0] ctrl_ir_pre_dis_aiq1_create0_sel;
 logic [1:0] ctrl_ir_pre_dis_biq_create0_sel;
 logic [1:0] ctrl_ir_pre_dis_biq_create1_sel;
 logic [1:0] ctrl_ir_pre_dis_div_create0_sel;
@@ -321,10 +343,10 @@ logic [1:0] ctrl_ir_pre_dis_sdiq_create0_sel;
 logic [1:0] ctrl_ir_pre_dis_sdiq_create1_sel;
 logic [61:0] div_dp_issue_read_data;      // ★ 由 [62:0] 减 1 → [61:0]
 logic [59:0] lsiq_dp_pipe3_entry_read_data;
-logic [7:0] lsiq_dp_pipe3_issue_entry;
+logic [`LSIQ_NUM-1:0] lsiq_dp_pipe3_issue_entry;
 //logic [59:0] lsiq_dp_pipe3_issue_read_data;
 logic [59:0] lsiq_dp_pipe4_entry_read_data;
-logic [7:0] lsiq_dp_pipe4_issue_entry;
+logic [`LSIQ_NUM-1:0] lsiq_dp_pipe4_issue_entry;
 //logic [59:0] lsiq_dp_pipe4_issue_read_data;
 logic [61:0] mult_dp_issue_read_data;     // ★ 由 [62:0] 减 1 → [61:0]
 logic [3:0] sdiq_create0_entry;
@@ -354,7 +376,6 @@ logic        ctrl_ir_stall;
 logic        ctrl_ir_pipedown;
 //logic        ctrl_ir_inst2_vld;
 logic        ctrl_ir_pre_dis_aiq0_create0_en;
-logic        ctrl_ir_pre_dis_aiq0_create1_en;
 logic        ctrl_ir_pre_dis_aiq1_create0_en;
 logic        ctrl_ir_pre_dis_biq_create0_en;
 logic        ctrl_ir_pre_dis_biq_create1_en;
@@ -459,10 +480,8 @@ logic [1:0]  ctrl_xx_is_inst0_sel;
 //   ctrl_id_inst_sel        —— ID→IR 那一级 (已按 IR.lane2 满 门控)
 logic [1:0]  ctrl_id_ifu_pipedown_sel;
 logic [1:0]  ctrl_id_inst_sel;
-logic        ctrl_aiq_create0_en;
-logic        ctrl_aiq_create1_en;
-logic [1:0]  ctrl_aiq_create0_sel;
-logic [1:0]  ctrl_aiq_create1_sel;
+logic        ctrl_aiq0_create0_en;
+logic        ctrl_aiq1_create0_en;
 logic        ctrl_mult_create0_en;
 logic [1:0]  ctrl_mult_create0_sel;
 logic        ctrl_div_create0_en;
@@ -487,8 +506,8 @@ logic [1:0]  ctrl_sdiq_create1_sel;
 logic [1:0]  ctrl_sdiq_create2_sel;
 
 // IS Stage create data signals
-logic [94:0]  dp_aiq_create0_data;   // 64 → 96 (2026-10-08 加 PC)
-logic [94:0]  dp_aiq_create1_data;
+logic [94:0]  dp_aiq0_create0_data;   // 64 → 96 (2026-10-08 加 PC)
+logic [94:0]  dp_aiq1_create0_data;   // AIQ1 (2026-10-18)
 logic [151:0] dp_biq_create0_data;
 logic [151:0] dp_biq_create1_data;
 logic [59:0]  dp_lsiq_create0_data;
@@ -519,13 +538,15 @@ logic         ctrl_dp_dis_inst0_vld;
 logic         ctrl_dp_dis_inst1_vld;
 logic         ctrl_dp_dis_inst2_vld;
 
-// AIQ (ALU Issue Queue) signals
-logic        ctrl_aiq_rf_pop_vld;
+// AIQ (ALU Issue Queue) signals —— 2026-10-18 拆成 AIQ0/AIQ1 两份。
+// ⚠️ 全部显式声明: `aiq_xx_issue_en` / `aiq_ctrl_full_updt` / 两个 create en
+//    原来是靠**隐式 1 位线网**连上的 (见文件头"38 根缺失声明"那段)。
+logic        aiq_xx_issue_en;         // AIQ0 发射 (保留原名: difftest PERF 探针)
+logic        aiq1_xx_issue_en;
 logic        aiq_ctrl_1_left_updt;
-logic        aiq_ctrl_empty;
-logic [6:0]  aiq_ctrl_entry_cnt;
-logic        rf_aiq_issue_en;
-logic [80:0] aiq_rf_issue_read_data;
+logic        aiq_ctrl_full_updt;
+logic        aiq1_ctrl_1_left_updt;
+logic        aiq1_ctrl_full_updt;
 
 // MULT Issue Queue signals
 logic        ctrl_mult_rf_pop_vld;
@@ -581,6 +602,8 @@ logic [5:0]  dp_prf_rf_pipe4_src0_preg;
 logic [5:0]  dp_prf_rf_pipe5_src0_preg;
 logic [5:0]  dp_prf_rf_pipe6_src0_preg;
 logic [5:0]  dp_prf_rf_pipe6_src1_preg;
+logic [5:0]  dp_prf_rf_aiq1_src0_preg;   // 2026-10-18: AIQ1 的两个源读口
+logic [5:0]  dp_prf_rf_aiq1_src1_preg;
 logic [31:0] prf_dp_rf_pipe0_src0_data;
 logic [31:0] prf_dp_rf_pipe0_src1_data;
 logic [31:0] prf_dp_rf_pipe1_src0_data;
@@ -592,6 +615,8 @@ logic [31:0] prf_dp_rf_pipe4_src0_data;
 logic [31:0] prf_dp_rf_pipe5_src0_data;
 logic [31:0] prf_dp_rf_pipe6_src0_data;
 logic [31:0] prf_dp_rf_pipe6_src1_data;
+logic [31:0] prf_dp_rf_aiq1_src0_data;
+logic [31:0] prf_dp_rf_aiq1_src1_data;
 
 //==========================================================
 // Module Instantiations
@@ -690,10 +715,10 @@ ct_idu_ir_ctrl x_ct_idu_ir_ctrl (
   .ctrl_ir_pipedown_inst0_vld            (ctrl_ir_pipedown_inst0_vld),
   .ctrl_ir_pipedown_inst1_vld            (ctrl_ir_pipedown_inst1_vld),
   .ctrl_ir_pipedown_inst2_vld            (ctrl_ir_pipedown_inst2_vld),
-  .ctrl_ir_pre_dis_aiq_create0_en        (ctrl_ir_pre_dis_aiq_create0_en),
-  .ctrl_ir_pre_dis_aiq_create0_sel       (ctrl_ir_pre_dis_aiq_create0_sel),
-  .ctrl_ir_pre_dis_aiq_create1_en        (ctrl_ir_pre_dis_aiq_create1_en),
-  .ctrl_ir_pre_dis_aiq_create1_sel       (ctrl_ir_pre_dis_aiq_create1_sel),
+  .ctrl_ir_pre_dis_aiq0_create0_en       (ctrl_ir_pre_dis_aiq0_create0_en),
+  .ctrl_ir_pre_dis_aiq0_create0_sel      (ctrl_ir_pre_dis_aiq0_create0_sel),
+  .ctrl_ir_pre_dis_aiq1_create0_en       (ctrl_ir_pre_dis_aiq1_create0_en),
+  .ctrl_ir_pre_dis_aiq1_create0_sel      (ctrl_ir_pre_dis_aiq1_create0_sel),
   .ctrl_ir_pre_dis_biq_create0_en        (ctrl_ir_pre_dis_biq_create0_en),
   .ctrl_ir_pre_dis_biq_create0_sel       (ctrl_ir_pre_dis_biq_create0_sel),
   .ctrl_ir_pre_dis_biq_create1_en        (ctrl_ir_pre_dis_biq_create1_en),
@@ -866,17 +891,19 @@ ct_idu_is_ctrl x_ct_idu_is_ctrl (
   // Inputs
   .forever_clk                           (forever_cpuclk),   // 该模块端口名就是 forever_clk
   .cpurst_b                              (cpurst_b),
-  .aiq_ctrl_1_left_updt                  (aiq_ctrl_1_left_updt),
-  .aiq_ctrl_full_updt                    (aiq_ctrl_full_updt),
+  .aiq0_ctrl_1_left_updt                 (aiq_ctrl_1_left_updt),
+  .aiq0_ctrl_full_updt                   (aiq_ctrl_full_updt),
+  .aiq1_ctrl_1_left_updt                 (aiq1_ctrl_1_left_updt),
+  .aiq1_ctrl_full_updt                   (aiq1_ctrl_full_updt),
   .biq_ctrl_1_left_updt                  (biq_ctrl_1_left_updt),
   .biq_ctrl_full_updt                    (biq_ctrl_full_updt),
   .ctrl_ir_pipedown_inst0_vld            (ctrl_ir_pipedown_inst0_vld),
   .ctrl_ir_pipedown_inst1_vld            (ctrl_ir_pipedown_inst1_vld),
   .ctrl_ir_pipedown_inst2_vld            (ctrl_ir_pipedown_inst2_vld),
-  .ctrl_ir_pre_dis_aiq_create0_en        (ctrl_ir_pre_dis_aiq_create0_en),
-  .ctrl_ir_pre_dis_aiq_create0_sel       (ctrl_ir_pre_dis_aiq_create0_sel),
-  .ctrl_ir_pre_dis_aiq_create1_en        (ctrl_ir_pre_dis_aiq_create1_en),
-  .ctrl_ir_pre_dis_aiq_create1_sel       (ctrl_ir_pre_dis_aiq_create1_sel),
+  .ctrl_ir_pre_dis_aiq0_create0_en       (ctrl_ir_pre_dis_aiq0_create0_en),
+  .ctrl_ir_pre_dis_aiq0_create0_sel      (ctrl_ir_pre_dis_aiq0_create0_sel),
+  .ctrl_ir_pre_dis_aiq1_create0_en       (ctrl_ir_pre_dis_aiq1_create0_en),
+  .ctrl_ir_pre_dis_aiq1_create0_sel      (ctrl_ir_pre_dis_aiq1_create0_sel),
   .ctrl_ir_pre_dis_biq_create0_en        (ctrl_ir_pre_dis_biq_create0_en),
   .ctrl_ir_pre_dis_biq_create0_sel       (ctrl_ir_pre_dis_biq_create0_sel),
   .ctrl_ir_pre_dis_biq_create1_en        (ctrl_ir_pre_dis_biq_create1_en),
@@ -915,8 +942,8 @@ ct_idu_is_ctrl x_ct_idu_is_ctrl (
   .sdiq_ctrl_1_left_updt                 (sdiq_ctrl_1_left_updt),
   .sdiq_ctrl_full_updt                   (sdiq_ctrl_full_updt),
   // Outputs
-  .ctrl_aiq_create0_en                   (ctrl_aiq_create0_en),
-  .ctrl_aiq_create1_en                   (ctrl_aiq_create1_en),
+  .ctrl_aiq0_create0_en                  (ctrl_aiq0_create0_en),
+  .ctrl_aiq1_create0_en                  (ctrl_aiq1_create0_en),
   .ctrl_biq_create0_en                   (ctrl_biq_create0_en),
   .ctrl_biq_create1_en                   (ctrl_biq_create1_en),
   .ctrl_lsiq_create0_en                  (ctrl_lsiq_create0_en),
@@ -931,8 +958,8 @@ ct_idu_is_ctrl x_ct_idu_is_ctrl (
   .ctrl_dp_dis_inst1_preg_vld            (ctrl_dp_dis_inst1_preg_vld),
   .ctrl_dp_dis_inst2_preg_vld            (ctrl_dp_dis_inst2_preg_vld),
   //.ctrl_dp_dis_inst3_preg_vld            (ctrl_dp_dis_inst3_preg_vld),
-  .ctrl_dp_is_dis_aiq_create0_sel        (ctrl_dp_is_dis_aiq_create0_sel),
-  .ctrl_dp_is_dis_aiq_create1_sel        (ctrl_dp_is_dis_aiq_create1_sel),
+  .ctrl_dp_is_dis_aiq0_create0_sel       (ctrl_dp_is_dis_aiq0_create0_sel),
+  .ctrl_dp_is_dis_aiq1_create0_sel       (ctrl_dp_is_dis_aiq1_create0_sel),
   .ctrl_dp_is_dis_biq_create0_sel        (ctrl_dp_is_dis_biq_create0_sel),
   .ctrl_dp_is_dis_biq_create1_sel        (ctrl_dp_is_dis_biq_create1_sel),
   .ctrl_dp_is_dis_lsiq_create0_sel       (ctrl_dp_is_dis_lsiq_create0_sel),
@@ -994,8 +1021,8 @@ ct_idu_is_dp x_ct_idu_is_dp (
   .sdiq_create1_entry                              (sdiq_create1_entry),//in
   .ctrl_sdiq_create0_en                              (ctrl_sdiq_create0_en),
   .ctrl_sdiq_create1_en                              (ctrl_sdiq_create1_en),
-  .ctrl_dp_is_dis_aiq_create0_sel        (ctrl_dp_is_dis_aiq_create0_sel),
-  .ctrl_dp_is_dis_aiq_create1_sel        (ctrl_dp_is_dis_aiq_create1_sel),
+  .ctrl_dp_is_dis_aiq0_create0_sel       (ctrl_dp_is_dis_aiq0_create0_sel),
+  .ctrl_dp_is_dis_aiq1_create0_sel       (ctrl_dp_is_dis_aiq1_create0_sel),
   .ctrl_dp_is_dis_biq_create0_sel        (ctrl_dp_is_dis_biq_create0_sel),
   .ctrl_dp_is_dis_biq_create1_sel        (ctrl_dp_is_dis_biq_create1_sel),
   .ctrl_dp_is_dis_lsiq_create0_sel       (ctrl_dp_is_dis_lsiq_create0_sel),
@@ -1006,8 +1033,8 @@ ct_idu_is_dp x_ct_idu_is_dp (
   .ctrl_dp_is_dis_mult_create1_sel       (ctrl_dp_is_dis_mult_create1_sel),
   .ctrl_dp_is_dis_div_create0_sel        (ctrl_dp_is_dis_div_create0_sel),
   .ctrl_dp_is_dis_div_create1_sel        (ctrl_dp_is_dis_div_create1_sel),
-  .dp_aiq_create0_data                              (dp_aiq_create0_data),
-  .dp_aiq_create1_data                              (dp_aiq_create1_data),
+  .dp_aiq0_create0_data                             (dp_aiq0_create0_data),
+  .dp_aiq1_create0_data                             (dp_aiq1_create0_data),
   .dp_biq_create0_data                   (dp_biq_create0_data),
   .dp_biq_create1_data                   (dp_biq_create1_data),
   .dp_ctrl_is_inst0_dst_vld                              (dp_ctrl_is_inst0_dst_vld),
@@ -1033,17 +1060,19 @@ ct_idu_is_dp x_ct_idu_is_dp (
   .dp_is_dis_inst2_chk                   (dp_is_dis_inst2_chk)
 );
 
-// Instance 4: ct_idu_is_aiq
+// Instance 4: ct_idu_is_aiq —— AIQ0 (供给 ALU0)
+// ⚠️ 实例名保持 `x_ct_idu_is_aiq`: tb_a910_difftest 的 PERF 探针层次引用它。
+//    每个 AIQ 只用 create0 口 (每拍最多进 1 条), create1_en 恒 0。
 ct_idu_is_aiq x_ct_idu_is_aiq (
   .aiq_ctrl_1_left_updt                              (aiq_ctrl_1_left_updt),
   .aiq_ctrl_full_updt                              (aiq_ctrl_full_updt),
   .aiq_xx_issue_en                              (aiq_xx_issue_en),
   .aiq_dp_issue_read_data               (aiq_dp_issue_read_data),
   .cpurst_b                              (cpurst_b),
-  .ctrl_aiq_create0_en                              (ctrl_aiq_create0_en),
-  .ctrl_aiq_create1_en                              (ctrl_aiq_create1_en),
-  .dp_aiq_create0_data                              (dp_aiq_create0_data),
-  .dp_aiq_create1_data                              (dp_aiq_create1_data),
+  .ctrl_aiq_create0_en                              (ctrl_aiq0_create0_en),
+  .ctrl_aiq_create1_en                              (1'b0),
+  .dp_aiq_create0_data                              (dp_aiq0_create0_data),
+  .dp_aiq_create1_data                              (95'd0),
   .forever_cpuclk                      (forever_cpuclk),   // 原接 .forever_clk, 但该模块端口是 forever_cpuclk
   .iu_idu_ex2_pipe0_wb_preg_dupx                              (iu_idu_ex2_pipe0_wb_preg_dupx),
   .iu_idu_ex2_pipe0_wb_preg_vld_dupx                              (iu_idu_ex2_pipe0_wb_preg_vld_dupx),
@@ -1053,7 +1082,33 @@ ct_idu_is_aiq x_ct_idu_is_aiq (
   .iu_idu_ex2_pipe2_wb_preg_vld_dupx                              (iu_idu_ex2_pipe2_wb_preg_vld_dupx),
   .lsu_idu_wb_pipe3_wb_preg_dupx                              (lsu_idu_wb_pipe3_wb_preg_dupx),
   .lsu_idu_wb_pipe3_wb_preg_vld_dupx                              (lsu_idu_wb_pipe3_wb_preg_vld_dupx),
-  .rtu_yy_xx_flush                              (rtu_yy_xx_flush)
+  .rtu_yy_xx_flush                              (rtu_yy_xx_flush),
+  .aiq_ctrl_stall                                (1'b0)
+);
+
+// Instance 4b: ct_idu_is_aiq1 —— AIQ1 (供给 ALU1, 2026-10-18 新增)
+// stall 来自 ALU1 的写回保持: EX2 有结果但没抢到 pipe2 时, 本拍不发射。
+ct_idu_is_aiq x_ct_idu_is_aiq1 (
+  .aiq_ctrl_1_left_updt                              (aiq1_ctrl_1_left_updt),
+  .aiq_ctrl_full_updt                              (aiq1_ctrl_full_updt),
+  .aiq_xx_issue_en                              (aiq1_xx_issue_en),
+  .aiq_dp_issue_read_data               (aiq1_dp_issue_read_data),
+  .cpurst_b                              (cpurst_b),
+  .ctrl_aiq_create0_en                              (ctrl_aiq1_create0_en),
+  .ctrl_aiq_create1_en                              (1'b0),
+  .dp_aiq_create0_data                              (dp_aiq1_create0_data),
+  .dp_aiq_create1_data                              (95'd0),
+  .forever_cpuclk                      (forever_cpuclk),
+  .iu_idu_ex2_pipe0_wb_preg_dupx                              (iu_idu_ex2_pipe0_wb_preg_dupx),
+  .iu_idu_ex2_pipe0_wb_preg_vld_dupx                              (iu_idu_ex2_pipe0_wb_preg_vld_dupx),
+  .iu_idu_ex2_pipe1_wb_preg_dupx                              (iu_idu_ex2_pipe1_wb_preg_dupx),
+  .iu_idu_ex2_pipe1_wb_preg_vld_dupx                              (iu_idu_ex2_pipe1_wb_preg_vld_dupx),
+  .iu_idu_ex2_pipe2_wb_preg_dupx                              (iu_idu_ex2_pipe2_wb_preg_dupx),
+  .iu_idu_ex2_pipe2_wb_preg_vld_dupx                              (iu_idu_ex2_pipe2_wb_preg_vld_dupx),
+  .lsu_idu_wb_pipe3_wb_preg_dupx                              (lsu_idu_wb_pipe3_wb_preg_dupx),
+  .lsu_idu_wb_pipe3_wb_preg_vld_dupx                              (lsu_idu_wb_pipe3_wb_preg_vld_dupx),
+  .rtu_yy_xx_flush                              (rtu_yy_xx_flush),
+  .aiq_ctrl_stall                                (iu_idu_aiq1_stall)
 );
 
 ct_idu_is_md x_ct_idu_is_mult (
@@ -1209,6 +1264,8 @@ ct_idu_rf_ctrl x_ct_idu_rf_ctrl (
   .cpurst_b                              (cpurst_b),
   .forever_cpuclk                      (forever_cpuclk),   // 原接 .forever_clk, 但该模块端口是 forever_cpuclk
   .aiq_xx_issue_en                              (aiq_xx_issue_en),
+  .aiq1_xx_issue_en                             (aiq1_xx_issue_en),
+  .aiq1_issue_stall                             (iu_idu_aiq1_stall),
   .mult_xx_issue_en                              (mult_xx_issue_en),
   .div_xx_issue_en                              (div_xx_issue_en),
   .lsiq_xx_pipe3_issue_en                              (lsiq_xx_pipe3_issue_en),
@@ -1217,6 +1274,7 @@ ct_idu_rf_ctrl x_ct_idu_rf_ctrl (
   .biq_xx_issue_en                              (biq_xx_issue_en),
   .rtu_yy_xx_flush                              (rtu_yy_xx_flush),
   .idu_aiq_sel                           (idu_aiq_sel),//out
+  .idu_aiq1_sel                          (idu_aiq1_sel),//out
   .idu_mult_sel                          (idu_mult_sel),//out
   .idu_div_sel                           (idu_div_sel),//out
   .idu_lsu_ld_sel                        (idu_lsu_ld_sel),//out
@@ -1242,6 +1300,20 @@ ct_idu_rf_dp x_ct_idu_rf_dp (
   .idu_aiq_pc(idu_aiq_pc),
   .idu_aiq_rslt_sel                      (idu_aiq_rslt_sel),//out
   .idu_aiq_illegal                       (idu_aiq_illegal),//out
+  // ---- AIQ1 (2026-10-18) ----
+  .aiq1_dp_issue_read_data               (aiq1_dp_issue_read_data),
+  .aiq1_xx_issue_en                      (aiq1_xx_issue_en),
+  .prf_dp_rf_aiq1_src0_data              (prf_dp_rf_aiq1_src0_data),
+  .prf_dp_rf_aiq1_src1_data              (prf_dp_rf_aiq1_src1_data),
+  .dp_prf_rf_aiq1_src0_preg              (dp_prf_rf_aiq1_src0_preg),
+  .dp_prf_rf_aiq1_src1_preg              (dp_prf_rf_aiq1_src1_preg),
+  .idu_aiq1_iid                          (idu_aiq1_iid),
+  .idu_aiq1_dst_preg                     (idu_aiq1_dst_preg),
+  .idu_aiq1_pc                           (idu_aiq1_pc),
+  .idu_aiq1_src0                         (idu_aiq1_src0),
+  .idu_aiq1_src1                         (idu_aiq1_src1),
+  .idu_aiq1_rslt_sel                     (idu_aiq1_rslt_sel),
+  .idu_aiq1_illegal                      (idu_aiq1_illegal),
     .mult_dp_issue_read_data             (mult_dp_issue_read_data),
     .mult_xx_issue_en                    (mult_xx_issue_en),
   .prf_dp_rf_pipe1_src0_data                              (prf_dp_rf_pipe1_src0_data),
@@ -1340,6 +1412,8 @@ ct_idu_rf_prf_pregfile x_ct_idu_rf_prf_pregfile (
   .dp_prf_rf_pipe5_src0_preg                              (dp_prf_rf_pipe5_src0_preg),
   .dp_prf_rf_pipe6_src0_preg                              (dp_prf_rf_pipe6_src0_preg),
   .dp_prf_rf_pipe6_src1_preg                              (dp_prf_rf_pipe6_src1_preg),
+  .dp_prf_rf_aiq1_src0_preg                               (dp_prf_rf_aiq1_src0_preg),
+  .dp_prf_rf_aiq1_src1_preg                               (dp_prf_rf_aiq1_src1_preg),
   .iu_idu_ex2_pipe0_wb_preg_data                              (iu_idu_ex2_pipe0_wb_preg_data),//in
   .iu_idu_ex2_pipe0_wb_preg_expand                              (iu_idu_ex2_pipe0_wb_preg_expand),//in
   .iu_idu_ex2_pipe0_wb_preg_vld                              (iu_idu_ex2_pipe0_wb_preg_vld),//in
@@ -1363,6 +1437,8 @@ ct_idu_rf_prf_pregfile x_ct_idu_rf_prf_pregfile (
   .prf_dp_rf_pipe5_src0_data                              (prf_dp_rf_pipe5_src0_data),
   .prf_dp_rf_pipe6_src0_data                              (prf_dp_rf_pipe6_src0_data),
   .prf_dp_rf_pipe6_src1_data                              (prf_dp_rf_pipe6_src1_data),
+  .prf_dp_rf_aiq1_src0_data                               (prf_dp_rf_aiq1_src0_data),
+  .prf_dp_rf_aiq1_src1_data                               (prf_dp_rf_aiq1_src1_data),
   // ---- RTU 的访问口 (2026-10-08 新增, 4 读 1 写) ----
   .rtu_preg_raddr0                       (rtu_preg_raddr0),
   .rtu_preg_raddr1                       (rtu_preg_raddr1),

@@ -1300,7 +1300,8 @@ ct_lsu_cache_buffer u_ct_lsu_cache_buffer (
 // Store Address Generation
 //----------------------------------------------------------
 ct_lsu_st_ag #(
-  .DCACHE_SIZE(DCACHE_SIZE)
+  .DCACHE_SIZE(DCACHE_SIZE),
+  .LSIQ_ENTRY(LSIQ_ENTRY)
 ) u_lsu_st_ag (
   .cpurst_b(cpurst_b),
   .forever_cpuclk(forever_cpuclk),
@@ -1342,7 +1343,9 @@ ct_lsu_st_ag #(
 //----------------------------------------------------------
 // Store Data Cache
 //----------------------------------------------------------
-ct_lsu_st_dc u_lsu_st_dc (
+ct_lsu_st_dc #(
+  .LSIQ_ENTRY(LSIQ_ENTRY)
+) u_lsu_st_dc (
   .cpurst_b(cpurst_b),
   .forever_cpuclk(forever_cpuclk),
   .dcache_arb_st_dc_borrow_vld(dcache_arb_st_dc_borrow_vld),

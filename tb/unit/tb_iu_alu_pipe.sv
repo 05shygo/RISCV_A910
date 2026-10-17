@@ -27,6 +27,7 @@ module tb_iu_alu_pipe;
   reg  [31:0] src0 = 0, src1 = 0, pc = 0;
   reg  [12:0] rslt_sel = 13'd1;   // 默认 ADD
   reg         illegal = 0;
+  reg         wb_grant = 1;       // 默认恒授权 (= ALU0 的接法)
 
   wire        wb_vld;
   wire [31:0] wb_data;
@@ -35,6 +36,8 @@ module tb_iu_alu_pipe;
   wire        wb_vld_dupx;
   wire        cmplt_vld;
   wire [6:0]  cmplt_iid;
+  wire        wb_req;
+  wire        issue_stall;
   wire [31:0] o_result;
 
   // 13 位独热的位序 (照 ct_idu_rf_pipe0_decd.sv)
@@ -52,6 +55,7 @@ module tb_iu_alu_pipe;
     .wb_preg_vld(wb_vld), .wb_preg_data(wb_data), .wb_preg_expand(wb_expand),
     .wb_preg_dupx(wb_dupx), .wb_preg_vld_dupx(wb_vld_dupx),
     .cmplt_vld(cmplt_vld), .cmplt_iid(cmplt_iid),
+    .wb_grant(wb_grant), .wb_req(wb_req), .issue_stall(issue_stall),
     .o_alu_result(o_result)
   );
 
@@ -137,6 +141,49 @@ module tb_iu_alu_pipe;
     end
     else
       $display("  ✅ 非法指令: 报完成、不写 PRF");
+    @(negedge clk);
+
+    $display("---- 写回授权: 未授权时保持, 授权拍才写回/完成 ----");
+    @(negedge clk);
+    wb_grant = 1'b0;
+    sel = 1; iid = 7'h55; dst_preg = 6'd21;
+    src0 = 32'd10; src1 = 32'd20; rslt_sel = S_ADD; illegal = 0;
+    @(negedge clk);              // 结果已进 EX2; 此刻 grant=0
+    sel = 0;
+    repeat (2) begin
+      nchk = nchk + 1;
+      if (wb_req !== 1'b1 || issue_stall !== 1'b1 ||
+          wb_vld !== 1'b0 || cmplt_vld !== 1'b0) begin
+        errs = errs + 1;
+        $display("  ❌ 未授权拍应保持: req=%b stall=%b wb=%b cmplt=%b",
+                 wb_req, issue_stall, wb_vld, cmplt_vld);
+      end
+      @(negedge clk);
+    end
+    // 授权: 结果必须在这一拍落写回 + 完成 (不能等到下一拍)
+    wb_grant = 1'b1;
+    #1;
+    nchk = nchk + 1;
+    if (wb_vld !== 1'b1 || wb_data !== 32'd30 ||
+        cmplt_vld !== 1'b1 || cmplt_iid !== 7'h55) begin
+      errs = errs + 1;
+      $display("  ❌ 授权拍没落写回/完成 (wb=%b data=%h cmplt=%b iid=%h)",
+               wb_vld, wb_data, cmplt_vld, cmplt_iid);
+    end
+    else
+      $display("  ✅ 未授权两拍保持, 授权拍同拍写回+完成 (30)");
+    @(negedge clk);
+    // EX2 空时不应误挡发射
+    wb_grant = 1'b0;
+    #1;
+    nchk = nchk + 1;
+    if (issue_stall !== 1'b0) begin
+      errs = errs + 1;
+      $display("  ❌ EX2 空时 issue_stall 应为 0 (=%b)", issue_stall);
+    end
+    else
+      $display("  ✅ EX2 空时不挡发射");
+    wb_grant = 1'b1;
     @(negedge clk);
 
     $display("---- 冲刷: EX2 里的在途结果必须被清掉 ----");

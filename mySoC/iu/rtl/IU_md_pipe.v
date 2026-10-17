@@ -86,7 +86,20 @@ module IU_md_pipe (
     // 代价是除法那 ~35 拍里乘法不发射 (M 扩展占比小, 先保正确)。
     // 想细粒度的话: 让顶层按 MD 队头 opcode 判断是不是除法再决定要不要挡 ——
     // ⚠️ 但做之前**必须先把 `MUL_DIV` 的写回保持补上**, 理由见那里。
-    output wire        md_unit_stall
+    output wire        md_unit_stall,
+
+    // ---------------- 写回授权 (2026-10-18: 与 ALU1 共用 pipe2 时的仲裁接口) ----
+    // ALU1 与 MD 抢 IDU 的 pipe2 写回口。MD 侧在 MUL_DIV 输出后加了一个 **2 项
+    // skid FIFO**: 空时旁路 (resp_valid 当拍直接输出, 不增加常规延迟), 非空时
+    // 先入队、等授权再写出。写回/完成都由 `md_out_* & md_wb_grant` 产生, 保持
+    // "完成与真正落 PRF 的写回同拍" 这条硬契约。
+    //
+    // ⚠️ 本模块的 `wb_grant` 不再恒 1: 回送 MUL_DIV 的授权是 `(skid 为空)`。
+    //   它同时门住 `mul_ready` (FIFO 非空时不再收新乘法) 和 `div_resp_gnt`
+    //   (除法在 ST_RESP 举着等)。深度 2 的溢出安全性见下面 FIFO 段的长注。
+    input  wire        md_wb_grant,
+    output wire        md_wb_req,
+    output wire [2:0]  md_skid_occ       // 观察口: 0..2
 );
 
     localparam TAG_W = 13;               // {iid[6:0], dst_preg[5:0]}
@@ -135,6 +148,31 @@ module IU_md_pipe (
     wire [31:0]      resp_data;
     wire [TAG_W-1:0] resp_tag;
     wire             div_resp_vld = resp_valid & resp_is_div;
+
+    // ==========================================================
+    //  输出 skid FIFO (深度 2) —— 见端口处与下面 FIFO 段的说明
+    // ==========================================================
+    // ⚠️ 这些声明必须在 MUL_DIV 例化之前: `.wb_grant(mdiv_wb_grant)` 要用它。
+    //    (本仓栽过多次"先用后声明 ⇒ 隐式 1 位线网"的坑, 见 eda-env-csh-vcs)
+    reg              sk_vld   [0:1];
+    reg  [31:0]      sk_data  [0:1];
+    reg  [TAG_W-1:0] sk_tag   [0:1];
+    reg              sk_is_div[0:1];
+    reg  [2:0]       sk_cnt;            // 0..2
+
+    wire             sk_empty = (sk_cnt == 3'd0);
+    wire             mdiv_wb_grant = sk_empty;
+
+    wire             md_out_vld  = sk_empty ? resp_valid  : sk_vld[0];
+    wire [31:0]      md_out_data = sk_empty ? resp_data   : sk_data[0];
+    wire [TAG_W-1:0] md_out_tag  = sk_empty ? resp_tag    : sk_tag[0];
+    wire             md_out_is_div = sk_empty ? resp_is_div : sk_is_div[0];
+
+    wire             md_out_take = md_out_vld & md_wb_grant;
+    // 空时若本拍授权, 响应直接旁路 (不写 FIFO); 否则有响应就入队。
+    wire             sk_push = resp_valid & ~(sk_empty & md_wb_grant);
+    wire             sk_pop  = md_wb_grant & ~sk_empty;
+    wire [2:0]       sk_cnt_nxt = sk_cnt + {2'd0, sk_push} - {2'd0, sk_pop};
 
     reg              div_hold_vld;
     reg  [2:0]       div_hold_idx;
@@ -209,9 +247,10 @@ module IU_md_pipe (
         .resp_data   (resp_data),
         .resp_tag    (resp_tag),
         .resp_is_div (resp_is_div),
-        // 写回口: 单元内部已经做了 mul > div 的仲裁 (MUL_DIV.v:126),
-        // 所以这里**恒授权** —— 来了就收, 不让单元攒着。
-        .wb_grant    (1'b1),
+        // 写回口: 单元内部已经做了 mul > div 的仲裁 (MUL_DIV.v:126)。
+        // 授权 = skid 为空: 非空时 MUL_DIV 不再收新乘法 (mul_ready=0),
+        // 除法则在 ST_RESP 举着结果等 (div_resp_gnt=0) —— 这正是防溢出的闸门。
+        .wb_grant    (mdiv_wb_grant),
         // 冲刷: 全清。**为什么"全清"在这里是对的** —— 重定向那条指令能退休,
         // 就意味着所有比它老的都已经退了; 而还"在飞"的乘法/除法必然比它年轻
         // (老的若还在飞, 它就没退, 重定向那条也就退不了)。所以冲刷时刻在飞的
@@ -222,22 +261,101 @@ module IU_md_pipe (
     );
 
     // ==========================================================
-    //  3) 写回 + 完成 (拆 tag)
+    //  3) 输出 skid FIFO + 写回/完成
     // ==========================================================
-    // ⚠️ 写回**不打拍**: `resp_valid` 已经是单元寄存输出的; 再打一拍的话,
-    //    `cmplt` 就比 PRF 写晚 —— 而 RTU 可能在写回落地前就让那条退休 ⇒
-    //    difftest 读到旧值 (与 IU_alu_pipe 里"cmplt 与写回必须同拍"同一个理由)。
-    wire [5:0] resp_preg = resp_tag[5:0];
-    wire [6:0] resp_iid  = resp_tag[12:6];
+    // 【为什么必须缓冲】原来 resp_valid 直接就是写回; 现在 pipe2 要与 ALU1
+    // 共用, 乘法结果没有输出缓冲 (定延迟 2 拍), 抢不到口就会丢。skid 空时
+    // 仍然是**组合旁路** (resp_valid 当拍写回, 零额外延迟), 只有抢输时才入队。
+    //
+    // 【深度 2 为什么够】乘/除请求口严格时分复用; FIFO 一旦非空, 回送
+    // MUL_DIV 的 wb_grant=0 ⇒ 不再收新乘法、除法在 ST_RESP 举着。在飞的乘法
+    // 最多 2 条 (M1/M2, 包括 div_accept 同拍收下的那条)。纯 RR 又保证: 只要
+    // MD 有请求 (FIFO 非空就一定有), 它至少每两拍拿到一次授权 ⇒ 两次 push
+    // 之间必有一次 pop。所以占用只会是 0→1→2→(pop/push 维持)→…, 不会到 3。
+    always @(posedge cpu_clk or posedge cpu_rst) begin
+        if (cpu_rst) begin
+            sk_cnt    <= 3'd0;
+            sk_vld[0] <= 1'b0;
+            sk_vld[1] <= 1'b0;
+        end
+        else if (idu_flush) begin
+            // 在飞的乘/除会被 MUL_DIV 的 flush 清掉; FIFO 里存的是更老的结果,
+            // 但它们同样属于被冲刷的错误路径 (顺序核重定向即全清)。
+            sk_cnt    <= 3'd0;
+            sk_vld[0] <= 1'b0;
+            sk_vld[1] <= 1'b0;
+        end
+        else begin
+            case ({sk_pop, sk_push})
+                2'b10: begin // 只出
+                    if (sk_cnt == 3'd2) begin
+                        sk_vld[0]    <= sk_vld[1];
+                        sk_data[0]   <= sk_data[1];
+                        sk_tag[0]    <= sk_tag[1];
+                        sk_is_div[0] <= sk_is_div[1];
+                        sk_vld[1]    <= 1'b0;
+                    end
+                    else begin
+                        sk_vld[0] <= 1'b0;
+                    end
+                    sk_cnt <= sk_cnt - 3'd1;
+                end
+                2'b01: begin // 只进
+                    if (sk_cnt == 3'd0) begin
+                        sk_vld[0]    <= 1'b1;
+                        sk_data[0]   <= resp_data;
+                        sk_tag[0]    <= resp_tag;
+                        sk_is_div[0] <= resp_is_div;
+                    end
+                    else begin
+                        sk_vld[1]    <= 1'b1;
+                        sk_data[1]   <= resp_data;
+                        sk_tag[1]    <= resp_tag;
+                        sk_is_div[1] <= resp_is_div;
+                    end
+                    sk_cnt <= sk_cnt + 3'd1;
+                end
+                2'b11: begin // 同拍进出
+                    if (sk_cnt == 3'd1) begin
+                        // 队头被取走, 新响应直接占队头
+                        sk_vld[0]    <= 1'b1;
+                        sk_data[0]   <= resp_data;
+                        sk_tag[0]    <= resp_tag;
+                        sk_is_div[0] <= resp_is_div;
+                    end
+                    else begin // sk_cnt == 2
+                        sk_vld[0]    <= sk_vld[1];
+                        sk_data[0]   <= sk_data[1];
+                        sk_tag[0]    <= sk_tag[1];
+                        sk_is_div[0] <= sk_is_div[1];
+                        sk_vld[1]    <= 1'b1;
+                        sk_data[1]   <= resp_data;
+                        sk_tag[1]    <= resp_tag;
+                        sk_is_div[1] <= resp_is_div;
+                    end
+                    // sk_cnt 不变
+                end
+                default: ;
+            endcase
+        end
+    end
 
-    assign wb_preg_vld      = resp_valid;
-    assign wb_preg_data     = resp_data;
-    assign wb_preg_expand   = 64'd1 << resp_preg;
-    assign wb_preg_dupx     = resp_preg;
-    assign wb_preg_vld_dupx = resp_valid;
+    // 写回 + 完成: 都只在真正拿到授权的那一拍有效, 而且同拍。
+    // ⚠️ 改成寄存/入队后依然保持 "cmplt 与 PRF 写同拍" —— 未授权时完成不提前。
+    wire [5:0] md_out_preg = md_out_tag[5:0];
+    wire [6:0] md_out_iid  = md_out_tag[12:6];
 
-    assign cmplt_vld        = resp_valid;
-    assign cmplt_iid        = resp_iid;
+    assign md_wb_req        = md_out_vld;
+    assign md_skid_occ      = sk_cnt;
+
+    assign wb_preg_vld      = md_out_take;
+    assign wb_preg_data     = md_out_data;
+    assign wb_preg_expand   = {64{md_out_take}} & (64'd1 << md_out_preg);
+    assign wb_preg_dupx     = md_out_preg;
+    assign wb_preg_vld_dupx = md_out_take;
+
+    assign cmplt_vld        = md_out_take;
+    assign cmplt_iid        = md_out_iid;
 
     // ==========================================================
     //  4) 发射准入门控 —— **必须把 div_hold_vld 一起算进去**
@@ -300,6 +418,14 @@ module IU_md_pipe (
     //   所以"收下那一拍"就必须把队列挡住。三项并起来覆盖 [A, R] 整段。
     //   不影响"同拍一乘一除": 那一拍 div_accept=1 ⇒ stall=1 ⇒ **两条队列都不发**,
     //   下一个空闲拍才发 (除法先被收进保持寄存器、乘法上共用口), 顺序不变、只晚一拍。
-    assign md_unit_stall    = div_busy | div_hold_vld | div_accept;
+    // ⚠️ 2026-10-18 补: skid 占用也要算进来, 而且要用**下一拍的占用**
+    //   `sk_cnt_nxt = sk_cnt + push - pop`。理由与上面的 `div_accept` 完全同型:
+    //   队列在第 T 拍看到 stall、第 T+1 拍才把请求摆到 `idu_*_sel` 上。若只看
+    //   `sk_cnt` (本拍), FIFO 会在 T+1 拍变非空 ⇒ MUL_DIV 的 `mul_ready=0`,
+    //   而请求已经摆出来了 ⇒ **静默丢一条乘法**。用 occ_nxt 才是 IDU 视角。
+    //   对除法口这个项偏保守 (div_accept 本身不受 skid 影响), 但 M 扩展占比小,
+    //   统一挡住更简单、也不会丢指令。
+    assign md_unit_stall    = div_busy | div_hold_vld | div_accept
+                            | (sk_cnt_nxt != 3'd0);
 
 endmodule

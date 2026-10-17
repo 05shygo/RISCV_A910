@@ -58,8 +58,8 @@ module ct_idu_is_dp (
   input  logic         ctrl_sdiq_create1_en,
 
   // Queue create select signals
-  input  logic [1:0]   ctrl_dp_is_dis_aiq_create0_sel,
-  input  logic [1:0]   ctrl_dp_is_dis_aiq_create1_sel,
+  input  logic [1:0]   ctrl_dp_is_dis_aiq0_create0_sel,
+  input  logic [1:0]   ctrl_dp_is_dis_aiq1_create0_sel,
   input  logic [1:0]   ctrl_dp_is_dis_biq_create0_sel,
   input  logic [1:0]   ctrl_dp_is_dis_biq_create1_sel,
   input  logic [1:0]   ctrl_dp_is_dis_lsiq_create0_sel,
@@ -75,8 +75,8 @@ module ct_idu_is_dp (
   // Outputs
   //----------------------------------------------------------------------------
   output logic [6:0]   dp_ctrl_is_dis_inst2_ctrl_info,
-  output logic [94:0]  dp_aiq_create0_data,
-  output logic [94:0]  dp_aiq_create1_data,
+  output logic [94:0]  dp_aiq0_create0_data,
+  output logic [94:0]  dp_aiq1_create0_data,
   output logic [151:0] dp_biq_create0_data,
   output logic [151:0] dp_biq_create1_data,
   output logic         dp_ctrl_is_inst0_dst_vld,
@@ -433,36 +433,36 @@ assign ctrl_is_sdiq_create1_entry[3:0] = {4{ctrl_sdiq_create1_en}} & sdiq_create
 //----------------------------------------------------------
 //                  Create Data for AIQ
 //----------------------------------------------------------
-logic [31:0]         is_aiq_create0_pc;    // 2026-10-08: AIQ 表项的 PC
-logic [31:0]         is_aiq_create1_pc;
-logic [IS_WIDTH-1:0] is_aiq_create0_data;
-logic [6:0]          is_aiq_create0_iid;
-logic [IS_WIDTH-1:0] is_aiq_create1_data;
-logic [6:0]          is_aiq_create1_iid;
+logic [31:0]         is_aiq0_create0_pc;    // 2026-10-08: AIQ 表项的 PC
+logic [31:0]         is_aiq1_create0_pc;
+logic [IS_WIDTH-1:0] is_aiq0_create0_data;
+logic [6:0]          is_aiq0_create0_iid;
+logic [IS_WIDTH-1:0] is_aiq1_create0_data;
+logic [6:0]          is_aiq1_create0_iid;
 
 // &CombBeg; @2720
 always @(*)
 begin
-  case(ctrl_dp_is_dis_aiq_create0_sel[1:0])
+  case(ctrl_dp_is_dis_aiq0_create0_sel[1:0])
     2'd0: begin
-          is_aiq_create0_data[IS_WIDTH-1:0] = is_inst0_read_data[IS_WIDTH-1:0];
-          is_aiq_create0_pc[31:0]           = is_inst0_read_pc[31:0];   // 2026-10-08
-          is_aiq_create0_iid[6:0]           = is_inst0_iid[6:0];
+          is_aiq0_create0_data[IS_WIDTH-1:0] = is_inst0_read_data[IS_WIDTH-1:0];
+          is_aiq0_create0_pc[31:0]           = is_inst0_read_pc[31:0];   // 2026-10-08
+          is_aiq0_create0_iid[6:0]           = is_inst0_iid[6:0];
           end
     2'd1: begin
-          is_aiq_create0_data[IS_WIDTH-1:0] = is_inst1_read_data[IS_WIDTH-1:0];
-          is_aiq_create0_pc[31:0]           = is_inst1_read_pc[31:0];   // 2026-10-08
-          is_aiq_create0_iid[6:0]           = is_inst1_iid[6:0];
+          is_aiq0_create0_data[IS_WIDTH-1:0] = is_inst1_read_data[IS_WIDTH-1:0];
+          is_aiq0_create0_pc[31:0]           = is_inst1_read_pc[31:0];   // 2026-10-08
+          is_aiq0_create0_iid[6:0]           = is_inst1_iid[6:0];
           end
     2'd2: begin
-          is_aiq_create0_data[IS_WIDTH-1:0] = is_inst2_read_data[IS_WIDTH-1:0];
-          is_aiq_create0_pc[31:0]           = is_inst2_read_pc[31:0];   // 2026-10-08
-          is_aiq_create0_iid[6:0]           = is_inst2_iid[6:0];
+          is_aiq0_create0_data[IS_WIDTH-1:0] = is_inst2_read_data[IS_WIDTH-1:0];
+          is_aiq0_create0_pc[31:0]           = is_inst2_read_pc[31:0];   // 2026-10-08
+          is_aiq0_create0_iid[6:0]           = is_inst2_iid[6:0];
           end
     default: begin
-          is_aiq_create0_data[IS_WIDTH-1:0] = {IS_WIDTH{1'bx}};
-          is_aiq_create0_pc[31:0]           = {32{1'bx}};   // 2026-10-08
-          is_aiq_create0_iid[6:0]           = {7{1'bx}};
+          is_aiq0_create0_data[IS_WIDTH-1:0] = {IS_WIDTH{1'bx}};
+          is_aiq0_create0_pc[31:0]           = {32{1'bx}};   // 2026-10-08
+          is_aiq0_create0_iid[6:0]           = {7{1'bx}};
           end
   endcase
 // &CombEnd; @2773
@@ -471,26 +471,26 @@ end
 // &CombBeg; @2775
 always @(*)
 begin
-  case(ctrl_dp_is_dis_aiq_create1_sel[1:0])
+  case(ctrl_dp_is_dis_aiq1_create0_sel[1:0])
     2'd0: begin
-          is_aiq_create1_data[IS_WIDTH-1:0] = is_inst0_read_data[IS_WIDTH-1:0];
-          is_aiq_create1_pc[31:0]           = is_inst0_read_pc[31:0];   // 2026-10-08
-          is_aiq_create1_iid[6:0]           = is_inst0_iid[6:0];
+          is_aiq1_create0_data[IS_WIDTH-1:0] = is_inst0_read_data[IS_WIDTH-1:0];
+          is_aiq1_create0_pc[31:0]           = is_inst0_read_pc[31:0];   // 2026-10-08
+          is_aiq1_create0_iid[6:0]           = is_inst0_iid[6:0];
           end
     2'd1: begin
-          is_aiq_create1_data[IS_WIDTH-1:0] = is_inst1_read_data[IS_WIDTH-1:0];
-          is_aiq_create1_pc[31:0]           = is_inst1_read_pc[31:0];   // 2026-10-08
-          is_aiq_create1_iid[6:0]           = is_inst1_iid[6:0];
+          is_aiq1_create0_data[IS_WIDTH-1:0] = is_inst1_read_data[IS_WIDTH-1:0];
+          is_aiq1_create0_pc[31:0]           = is_inst1_read_pc[31:0];   // 2026-10-08
+          is_aiq1_create0_iid[6:0]           = is_inst1_iid[6:0];
           end
     2'd2: begin
-          is_aiq_create1_data[IS_WIDTH-1:0] = is_inst2_read_data[IS_WIDTH-1:0];
-          is_aiq_create1_pc[31:0]           = is_inst2_read_pc[31:0];   // 2026-10-08
-          is_aiq_create1_iid[6:0]           = is_inst2_iid[6:0];
+          is_aiq1_create0_data[IS_WIDTH-1:0] = is_inst2_read_data[IS_WIDTH-1:0];
+          is_aiq1_create0_pc[31:0]           = is_inst2_read_pc[31:0];   // 2026-10-08
+          is_aiq1_create0_iid[6:0]           = is_inst2_iid[6:0];
           end
     default: begin
-          is_aiq_create1_data[IS_WIDTH-1:0] = {IS_WIDTH{1'bx}};
-          is_aiq_create1_pc[31:0]           = {32{1'bx}};   // 2026-10-08
-          is_aiq_create1_iid[6:0]           = {7{1'bx}};
+          is_aiq1_create0_data[IS_WIDTH-1:0] = {IS_WIDTH{1'bx}};
+          is_aiq1_create0_pc[31:0]           = {32{1'bx}};   // 2026-10-08
+          is_aiq1_create0_iid[6:0]           = {7{1'bx}};
           end
   endcase
 // &CombEnd; @2828
@@ -499,35 +499,35 @@ end
 //----------------------------------------------------------
 //                Reorganize for AIQ create
 //----------------------------------------------------------
-logic [AIQ_WIDTH-1:0] aiq_create0_data;
-logic [AIQ_WIDTH-1:0] aiq_create1_data;
+logic [AIQ_WIDTH-1:0] aiq0_create0_data;
+logic [AIQ_WIDTH-1:0] aiq1_create0_data;
 
 // 2026-10-08: PC 放在高 32 位 (AIQ_PC=95), 原有字段位置一位不动
-assign aiq_create0_data[AIQ_PC:AIQ_PC-31]                     = is_aiq_create0_pc[31:0];
-assign aiq_create1_data[AIQ_PC:AIQ_PC-31]                     = is_aiq_create1_pc[31:0];
+assign aiq0_create0_data[AIQ_PC:AIQ_PC-31]                     = is_aiq0_create0_pc[31:0];
+assign aiq1_create0_data[AIQ_PC:AIQ_PC-31]                     = is_aiq1_create0_pc[31:0];
 
-assign dp_aiq_create0_data[AIQ_WIDTH-1:0] = aiq_create0_data[AIQ_WIDTH-1:0];
-assign dp_aiq_create1_data[AIQ_WIDTH-1:0] = aiq_create1_data[AIQ_WIDTH-1:0];
+assign dp_aiq0_create0_data[AIQ_WIDTH-1:0] = aiq0_create0_data[AIQ_WIDTH-1:0];
+assign dp_aiq1_create0_data[AIQ_WIDTH-1:0] = aiq1_create0_data[AIQ_WIDTH-1:0];
 
-assign aiq_create0_data[AIQ_ILLEGAL]                          = is_aiq_create0_data[IS_ILLEGAL];
-assign aiq_create0_data[AIQ_PREG:AIQ_PREG-5]                  = is_aiq_create0_data[IS_DST_PREG:IS_DST_PREG-5];
-assign aiq_create0_data[AIQ_SRC1_DATA:AIQ_SRC1_DATA-6]        = is_aiq_create0_data[IS_SRC1_DATA:IS_SRC1_DATA-6];
-assign aiq_create0_data[AIQ_SRC0_DATA:AIQ_SRC0_DATA-6]        = is_aiq_create0_data[IS_SRC0_DATA:IS_SRC0_DATA-6];
-assign aiq_create0_data[AIQ_DST_VLD]                          = is_aiq_create0_data[IS_DST_VLD];
-assign aiq_create0_data[AIQ_SRC1_VLD]                         = is_aiq_create0_data[IS_SRC1_VLD];
-assign aiq_create0_data[AIQ_SRC0_VLD]                         = is_aiq_create0_data[IS_SRC0_VLD];
-assign aiq_create0_data[AIQ_IID:AIQ_IID-6]                    = is_aiq_create0_iid[6:0];
-assign aiq_create0_data[AIQ_OPCODE:AIQ_OPCODE-31]             = is_aiq_create0_data[IS_OPCODE:IS_OPCODE-31];
+assign aiq0_create0_data[AIQ_ILLEGAL]                          = is_aiq0_create0_data[IS_ILLEGAL];
+assign aiq0_create0_data[AIQ_PREG:AIQ_PREG-5]                  = is_aiq0_create0_data[IS_DST_PREG:IS_DST_PREG-5];
+assign aiq0_create0_data[AIQ_SRC1_DATA:AIQ_SRC1_DATA-6]        = is_aiq0_create0_data[IS_SRC1_DATA:IS_SRC1_DATA-6];
+assign aiq0_create0_data[AIQ_SRC0_DATA:AIQ_SRC0_DATA-6]        = is_aiq0_create0_data[IS_SRC0_DATA:IS_SRC0_DATA-6];
+assign aiq0_create0_data[AIQ_DST_VLD]                          = is_aiq0_create0_data[IS_DST_VLD];
+assign aiq0_create0_data[AIQ_SRC1_VLD]                         = is_aiq0_create0_data[IS_SRC1_VLD];
+assign aiq0_create0_data[AIQ_SRC0_VLD]                         = is_aiq0_create0_data[IS_SRC0_VLD];
+assign aiq0_create0_data[AIQ_IID:AIQ_IID-6]                    = is_aiq0_create0_iid[6:0];
+assign aiq0_create0_data[AIQ_OPCODE:AIQ_OPCODE-31]             = is_aiq0_create0_data[IS_OPCODE:IS_OPCODE-31];
 
-assign aiq_create1_data[AIQ_ILLEGAL]                          = is_aiq_create1_data[IS_ILLEGAL]; // 修正：源信号由 create0 改为 create1
-assign aiq_create1_data[AIQ_PREG:AIQ_PREG-5]                  = is_aiq_create1_data[IS_DST_PREG:IS_DST_PREG-5];
-assign aiq_create1_data[AIQ_SRC1_DATA:AIQ_SRC1_DATA-6]        = is_aiq_create1_data[IS_SRC1_DATA:IS_SRC1_DATA-6];
-assign aiq_create1_data[AIQ_SRC0_DATA:AIQ_SRC0_DATA-6]        = is_aiq_create1_data[IS_SRC0_DATA:IS_SRC0_DATA-6];
-assign aiq_create1_data[AIQ_DST_VLD]                          = is_aiq_create1_data[IS_DST_VLD];
-assign aiq_create1_data[AIQ_SRC1_VLD]                         = is_aiq_create1_data[IS_SRC1_VLD];
-assign aiq_create1_data[AIQ_SRC0_VLD]                         = is_aiq_create1_data[IS_SRC0_VLD];
-assign aiq_create1_data[AIQ_IID:AIQ_IID-6]                    = is_aiq_create1_iid[6:0];
-assign aiq_create1_data[AIQ_OPCODE:AIQ_OPCODE-31]             = is_aiq_create1_data[IS_OPCODE:IS_OPCODE-31];
+assign aiq1_create0_data[AIQ_ILLEGAL]                          = is_aiq1_create0_data[IS_ILLEGAL]; // 修正：源信号由 create0 改为 create1
+assign aiq1_create0_data[AIQ_PREG:AIQ_PREG-5]                  = is_aiq1_create0_data[IS_DST_PREG:IS_DST_PREG-5];
+assign aiq1_create0_data[AIQ_SRC1_DATA:AIQ_SRC1_DATA-6]        = is_aiq1_create0_data[IS_SRC1_DATA:IS_SRC1_DATA-6];
+assign aiq1_create0_data[AIQ_SRC0_DATA:AIQ_SRC0_DATA-6]        = is_aiq1_create0_data[IS_SRC0_DATA:IS_SRC0_DATA-6];
+assign aiq1_create0_data[AIQ_DST_VLD]                          = is_aiq1_create0_data[IS_DST_VLD];
+assign aiq1_create0_data[AIQ_SRC1_VLD]                         = is_aiq1_create0_data[IS_SRC1_VLD];
+assign aiq1_create0_data[AIQ_SRC0_VLD]                         = is_aiq1_create0_data[IS_SRC0_VLD];
+assign aiq1_create0_data[AIQ_IID:AIQ_IID-6]                    = is_aiq1_create0_iid[6:0];
+assign aiq1_create0_data[AIQ_OPCODE:AIQ_OPCODE-31]             = is_aiq1_create0_data[IS_OPCODE:IS_OPCODE-31];
 
 //----------------------------------------------------------
 //                  Create Data for BIQ

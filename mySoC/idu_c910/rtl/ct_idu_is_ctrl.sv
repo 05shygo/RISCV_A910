@@ -20,8 +20,13 @@ module ct_idu_is_ctrl (
   input  logic         forever_clk,
   input  logic         cpurst_b,
 
-  input  logic         aiq_ctrl_1_left_updt,
-  input  logic         aiq_ctrl_full_updt,
+  // 2026-10-18: AIQ 拆成两个。`1_left` 在"每队列每拍 ≤1 create"下不再参与
+  // 判满 (那个信号是给"一个队列一拍能收两条"的旧结构用的), 端口保留只为
+  // 少改顶层; 满判只用 full_updt。
+  input  logic         aiq0_ctrl_1_left_updt,
+  input  logic         aiq0_ctrl_full_updt,
+  input  logic         aiq1_ctrl_1_left_updt,
+  input  logic         aiq1_ctrl_full_updt,
   input  logic         biq_ctrl_1_left_updt,
   input  logic         biq_ctrl_full_updt,
 
@@ -29,10 +34,10 @@ module ct_idu_is_ctrl (
   input  logic         ctrl_ir_pipedown_inst1_vld,
   input  logic         ctrl_ir_pipedown_inst2_vld,
 
-  input  logic         ctrl_ir_pre_dis_aiq_create0_en,
-  input  logic [1:0]   ctrl_ir_pre_dis_aiq_create0_sel,
-  input  logic         ctrl_ir_pre_dis_aiq_create1_en,
-  input  logic [1:0]   ctrl_ir_pre_dis_aiq_create1_sel,
+  input  logic         ctrl_ir_pre_dis_aiq0_create0_en,
+  input  logic [1:0]   ctrl_ir_pre_dis_aiq0_create0_sel,
+  input  logic         ctrl_ir_pre_dis_aiq1_create0_en,
+  input  logic [1:0]   ctrl_ir_pre_dis_aiq1_create0_sel,
 
   input  logic         ctrl_ir_pre_dis_biq_create0_en,
   input  logic [1:0]   ctrl_ir_pre_dis_biq_create0_sel,
@@ -90,8 +95,8 @@ module ct_idu_is_ctrl (
   //----------------------------------------------------------------------------
   // Outputs
   //----------------------------------------------------------------------------
-  output logic         ctrl_aiq_create0_en,
-  output logic         ctrl_aiq_create1_en,
+  output logic         ctrl_aiq0_create0_en,
+  output logic         ctrl_aiq1_create0_en,
 
   output logic         ctrl_biq_create0_en,
   output logic         ctrl_biq_create1_en,
@@ -113,8 +118,8 @@ module ct_idu_is_ctrl (
   output logic         ctrl_dp_dis_inst2_preg_vld,
  // output logic         ctrl_dp_dis_inst3_preg_vld,
 
-  output logic [1:0]   ctrl_dp_is_dis_aiq_create0_sel,
-  output logic [1:0]   ctrl_dp_is_dis_aiq_create1_sel,
+  output logic [1:0]   ctrl_dp_is_dis_aiq0_create0_sel,
+  output logic [1:0]   ctrl_dp_is_dis_aiq1_create0_sel,
   output logic [1:0]   ctrl_dp_is_dis_biq_create0_sel,
   output logic [1:0]   ctrl_dp_is_dis_biq_create1_sel,
   output logic [1:0]   ctrl_dp_is_dis_lsiq_create0_sel,
@@ -162,10 +167,10 @@ logic        is_dis_inst2_vld;
 logic        is_dis_inst3_vld;
 logic        is_dis_pipedown2;
 
-logic        is_dis_aiq_create0_en;
-logic [1:0]  is_dis_aiq_create0_sel;
-logic        is_dis_aiq_create1_en;
-logic [1:0]  is_dis_aiq_create1_sel;
+logic        is_dis_aiq0_create0_en;
+logic [1:0]  is_dis_aiq0_create0_sel;
+logic        is_dis_aiq1_create0_en;
+logic [1:0]  is_dis_aiq1_create0_sel;
 
 logic        is_dis_biq_create0_en;
 logic [1:0]  is_dis_biq_create0_sel;
@@ -193,8 +198,8 @@ logic        is_dis_div_create1_en;
 logic [1:0]  is_dis_div_create1_sel;
 
 // Updated create enable（用于 IQ full 预判）
-logic        is_dis_aiq_create0_en_updt;
-logic        is_dis_aiq_create1_en_updt;
+logic        is_dis_aiq0_create0_en_updt;
+logic        is_dis_aiq1_create0_en_updt;
 logic        is_dis_biq_create0_en_updt;
 logic        is_dis_biq_create1_en_updt;
 logic        is_dis_lsiq_create0_en_updt;
@@ -206,7 +211,9 @@ logic        is_dis_mult_create1_en_updt;
 logic        is_dis_div_create0_en_updt;
 logic        is_dis_div_create1_en_updt;
 
-logic        ctrl_is_aiq_full_updt;
+logic        ctrl_is_aiq0_full_updt;
+logic        ctrl_is_aiq1_full_updt;
+logic        ctrl_is_aiq_full_updt;       // 两队列的 OR; 保留此名给 PERF 探针
 logic        ctrl_is_biq_full_updt;
 logic        ctrl_is_lsiq_full_updt;
 logic        ctrl_is_sdiq_full_updt;
@@ -261,10 +268,10 @@ begin
     is_dis_inst1_vld <= 1'b0;
     is_dis_inst2_vld <= 1'b0;
     is_dis_pipedown2 <= 1'b0;
-    is_dis_aiq_create0_en   <= 1'b0;
-    is_dis_aiq_create0_sel  <= 2'b0;
-    is_dis_aiq_create1_en   <= 1'b0;
-    is_dis_aiq_create1_sel  <= 2'b0;
+    is_dis_aiq0_create0_en  <= 1'b0;
+    is_dis_aiq0_create0_sel <= 2'b0;
+    is_dis_aiq1_create0_en  <= 1'b0;
+    is_dis_aiq1_create0_sel <= 2'b0;
 
     is_dis_biq_create0_en   <= 1'b0;
     is_dis_biq_create0_sel  <= 2'b0;
@@ -297,10 +304,10 @@ begin
     is_dis_inst2_vld <= 1'b0;
     is_dis_pipedown2 <= 1'b0;
 
-    is_dis_aiq_create0_en   <= 1'b0;
-    is_dis_aiq_create0_sel  <= 2'b0;
-    is_dis_aiq_create1_en   <= 1'b0;
-    is_dis_aiq_create1_sel  <= 2'b0;
+    is_dis_aiq0_create0_en  <= 1'b0;
+    is_dis_aiq0_create0_sel <= 2'b0;
+    is_dis_aiq1_create0_en  <= 1'b0;
+    is_dis_aiq1_create0_sel <= 2'b0;
 
     is_dis_biq_create0_en   <= 1'b0;
     is_dis_biq_create0_sel  <= 2'b0;
@@ -333,10 +340,10 @@ begin
     is_dis_inst2_vld <= ctrl_ir_pre_dis_inst2_vld;
     is_dis_pipedown2 <= ctrl_ir_pre_dis_pipedown2;
 
-    is_dis_aiq_create0_en   <= ctrl_ir_pre_dis_aiq_create0_en;
-    is_dis_aiq_create0_sel  <= ctrl_ir_pre_dis_aiq_create0_sel;
-    is_dis_aiq_create1_en   <= ctrl_ir_pre_dis_aiq_create1_en;
-    is_dis_aiq_create1_sel  <= ctrl_ir_pre_dis_aiq_create1_sel;
+    is_dis_aiq0_create0_en  <= ctrl_ir_pre_dis_aiq0_create0_en;
+    is_dis_aiq0_create0_sel <= ctrl_ir_pre_dis_aiq0_create0_sel;
+    is_dis_aiq1_create0_en  <= ctrl_ir_pre_dis_aiq1_create0_en;
+    is_dis_aiq1_create0_sel <= ctrl_ir_pre_dis_aiq1_create0_sel;
 
     is_dis_biq_create0_en   <= ctrl_ir_pre_dis_biq_create0_en;
     is_dis_biq_create0_sel  <= ctrl_ir_pre_dis_biq_create0_sel;
@@ -369,10 +376,10 @@ begin
     is_dis_inst2_vld <= is_dis_inst2_vld;
     is_dis_pipedown2 <= is_dis_pipedown2;
 
-    is_dis_aiq_create0_en   <= is_dis_aiq_create0_en;
-    is_dis_aiq_create0_sel  <= is_dis_aiq_create0_sel;
-    is_dis_aiq_create1_en   <= is_dis_aiq_create1_en;
-    is_dis_aiq_create1_sel  <= is_dis_aiq_create1_sel;
+    is_dis_aiq0_create0_en  <= is_dis_aiq0_create0_en;
+    is_dis_aiq0_create0_sel <= is_dis_aiq0_create0_sel;
+    is_dis_aiq1_create0_en  <= is_dis_aiq1_create0_en;
+    is_dis_aiq1_create0_sel <= is_dis_aiq1_create0_sel;
 
     is_dis_biq_create0_en   <= is_dis_biq_create0_en;
     is_dis_biq_create0_sel  <= is_dis_biq_create0_sel;
@@ -432,11 +439,11 @@ assign ctrl_dp_dis_inst2_vld = is_dis_inst2_vld && !ctrl_is_dis_stall;
 //              Issue Queue Dispatch Control
 //==========================================================
 //------------------------- AIQ ----------------------------
-assign ctrl_aiq_create0_en = is_dis_aiq_create0_en && !ctrl_is_dis_stall;
-assign ctrl_aiq_create1_en = is_dis_aiq_create1_en && !ctrl_is_dis_stall;
+assign ctrl_aiq0_create0_en = is_dis_aiq0_create0_en && !ctrl_is_dis_stall;
+assign ctrl_aiq1_create0_en = is_dis_aiq1_create0_en && !ctrl_is_dis_stall;
 
-assign ctrl_dp_is_dis_aiq_create0_sel = is_dis_aiq_create0_sel;
-assign ctrl_dp_is_dis_aiq_create1_sel = is_dis_aiq_create1_sel;
+assign ctrl_dp_is_dis_aiq0_create0_sel = is_dis_aiq0_create0_sel;
+assign ctrl_dp_is_dis_aiq1_create0_sel = is_dis_aiq1_create0_sel;
 
 //------------------------- BIQ ----------------------------
 assign ctrl_biq_create0_en = is_dis_biq_create0_en && !ctrl_is_dis_stall;
@@ -479,8 +486,8 @@ assign ctrl_dp_is_dis_div_create1_sel = is_dis_div_create1_sel;
 always_comb
 begin
   if(!ctrl_is_dis_stall) begin
-    is_dis_aiq_create0_en_updt  = ctrl_ir_pre_dis_aiq_create0_en;
-    is_dis_aiq_create1_en_updt  = ctrl_ir_pre_dis_aiq_create1_en;
+    is_dis_aiq0_create0_en_updt = ctrl_ir_pre_dis_aiq0_create0_en;
+    is_dis_aiq1_create0_en_updt = ctrl_ir_pre_dis_aiq1_create0_en;
 
     is_dis_biq_create0_en_updt  = ctrl_ir_pre_dis_biq_create0_en;
     is_dis_biq_create1_en_updt  = ctrl_ir_pre_dis_biq_create1_en;
@@ -498,8 +505,8 @@ begin
     is_dis_div_create1_en_updt  = ctrl_ir_pre_dis_div_create1_en;
   end
   else begin
-    is_dis_aiq_create0_en_updt  = is_dis_aiq_create0_en;
-    is_dis_aiq_create1_en_updt  = is_dis_aiq_create1_en;
+    is_dis_aiq0_create0_en_updt = is_dis_aiq0_create0_en;
+    is_dis_aiq1_create0_en_updt = is_dis_aiq1_create0_en;
 
     is_dis_biq_create0_en_updt  = is_dis_biq_create0_en;
     is_dis_biq_create1_en_updt  = is_dis_biq_create1_en;
@@ -521,9 +528,13 @@ end
 //==========================================================
 //                Issue Queue Full Update
 //==========================================================
-assign ctrl_is_aiq_full_updt =
-          (is_dis_aiq_create0_en_updt && aiq_ctrl_full_updt)
-       || (is_dis_aiq_create1_en_updt && aiq_ctrl_1_left_updt);
+// 每个 AIQ 每拍最多 1 个 create ⇒ 判满只需 full_updt (不用 1_left)。
+assign ctrl_is_aiq0_full_updt =
+          (is_dis_aiq0_create0_en_updt && aiq0_ctrl_full_updt);
+assign ctrl_is_aiq1_full_updt =
+          (is_dis_aiq1_create0_en_updt && aiq1_ctrl_full_updt);
+// 保留旧名: 供 ctrl_is_iq_full_updt 与 difftest 的 PERF 探针使用。
+assign ctrl_is_aiq_full_updt = ctrl_is_aiq0_full_updt || ctrl_is_aiq1_full_updt;
 
 assign ctrl_is_biq_full_updt =
           (is_dis_biq_create0_en_updt && biq_ctrl_full_updt)

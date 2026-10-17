@@ -591,20 +591,179 @@ ln -sf $PWD/bin/coremark.{bin,hex,hex128} → meminit.{bin,hex,128hex}   # 三�
 （"可移植 flag" = `-O3 -funroll-all-loops -finline-limit=500 -fgcse-sm -fno-schedule-insns`，
 即 C910 `tests/lib/Makefile:43` 那条命令里**不带 `-m*`** 的部分。）
 
+> ⚠️ **2026-10-16 晚更正**：上面那串**少写了一个 `-fno-code-hoisting`**（GCC 标准选项，
+> 不是 THead 专有）。`coremark/build_match` 的真实旗号（从 DWARF 的 `DW_AT_producer` 读的）是
+> `-O3 -funroll-all-loops -finline-limit=500 -fgcse-sm -fno-schedule-insns -fno-code-hoisting`。
+> **它一个人值 −6.0% 指令**（30 迭代 7,575,584 → 7,121,321）。照着缺一项的那串重建，
+> 会得到 7,575,584 而不是 7,121,321 —— 我这次就踩了，别照抄本文的旗号，**照 DWARF 读**：
+>
+> ```bash
+> riscv32-unknown-elf-readelf --debug-dump=info <build>/core_main.o | grep -m1 DW_AT_producer
+> ```
+
 **结论**：
 
 1. **1.64× 的主因就是编法** —— 换成 C910 的思路，1.64× 直接收到 **1.32×**（314,644→237,377）。
 2. **换工具链没有用**：玄铁 10.4 在同 flag 下反而比 GCC 14.2 多 15%（273,449 vs 237,377）
    ⇒ 别为了"跟 C910 一样"退工具链。
-3. **剩下的 1.24× 在 C910 专有开关里**：`-mtune=c910 -msignedness-cmpiv -mno-thread-jumps1
-   -mno-iv-adjust-addr-cost -mno-expand-split-imm`（还有 `--param max-rtl-if-conversion-...`）。
-   实测**用玄铁工具链把它们全打开编出来的镜像，我们的模型跑不动**（200M 条不落 ecall，
-   多半是编出了我们/GM 不支持的编码）⇒ 这条差价要么得在 C910 核上量，要么放弃。
+3. ~~**剩下的 1.24× 在 C910 专有开关里**~~ ⇒ **见 §8.2：这条差价不成立，已作废。**
+   原话是"用玄铁工具链把它们全打开编出来的镜像，我们的模型跑不动（200M 条不落 ecall，
+   多半是编出了我们/GM 不支持的编码）"——**后半句错了**（指令集是标准 RV32IM），
+   真因是**非对齐访问**，而且补上 `-mstrict-align` 之后反而更差。
 4. ⚠️ 想把这个 24.5% 换成分数**不能直接换 flag**：分数 = `30e6/ticks`，指令少了就跑得快，
    而 `core_main.c:415` 要求 ticks ≥ 10,000,000（§1 已经只剩 1.9% 余量）⇒ **必须先把
    ITERATIONS 加上去**，那会替换入库的 `bin/coremark.bin`，历史分数将不可比（口径要先定）。
-5. ⚠️ **而且现在换不了**：`-O3`/展开版的镜像在 A910 上会挂（§10.4 那条 SDIQ 孤儿，
-   T256.8K 处冻结）—— 修完那个才谈得上换编法。
+5. ~~⚠️ **而且现在换不了**：`-O3`/展开版的镜像在 A910 上会挂（§10.4 那条 SDIQ 孤儿）~~
+   ⇒ **已经修好了（§10.4.3）**，两份 -O3 镜像现在都能跑到 ecall。
+
+### 8.2 ★ 收口：1.64× 停在 **1.32×**，C910 专有开关这条路走不通（2026-10-16 晚）
+
+§8.1 第 3 条猜"剩下的 1.24× 在 C910 专有 `-m*` 开关里"，**本轮证伪**。
+
+**先把"跑不动"查清楚。** `coremark/build_xt`（玄铁 10.4 + 全部 C910 专有开关）在**独立黄金模型**
+里跑 8e9 条仍不落 ecall。逐层排除：
+
+1. **不是编码问题**：把整份 `.text` 反汇编、`sort -u` 全部助记符 —— 只有
+   `add/addi/and/beq/bge/blt/div/divu/jal/jalr/lb/lbu/lh/lhu/lui/lw/mul/or/rem/sb/sh/sll/slt/sub/sw/xor`
+   加伪指令（`li/mv/beqz/j/ret/neg/not/zext.b`），**纯 RV32IM**，没有我们/GM 不认识的编码。
+2. **不是 ITERATIONS 太大**：`seed4_volatile`（`= ITERATIONS`）是初始化数据，
+   直接从 ELF 读出来 —— `build_xt = 30`，与入库那份一样。
+3. **不是死循环**：PC 直方图是散的；`core_bench_list` 的调用密度与能跑通的那份**完全一致**
+   （每 13.4 万条指令一次）。
+4. **是"反复重启"**：程序每 **8,020,804** 条指令**重新进一次 `_start`（PC=0）**，
+   400M 条里进了 50 次。抓那一刻的 CSR：
+
+       pc 0x000083b4 -> 0   mcause=6(Store/AMO address misaligned)
+                            mepc=0x000083b4  mtval=0x0000f565  mtvec=0x00000000
+
+   `0x83b4` 是 `ee_printf` 里的 **`sh t2, 0(a5)`**，`a5 = 0xF565`（**奇数**）。
+   **玄铁工具链在 `-mtune=c910` 下默认走 `-mno-strict-align`**（C910 硬件支持非对齐访问），
+   于是编出非对齐的半字存储；我们的核（和 GM）按标准 RV32I 报 store-address-misaligned，
+   而 `mtvec=0` ⇒ PC 跳 0 ⇒ `_start` 从头再来 ⇒ 永远跑不完。
+
+   > 这也解释了"200M 条不落 ecall"这个观测：不是卡住，是**在反复跑同一段前程**。
+
+**然后把它变成能跑的，再比。** 给 C910 全开关那套补上 `-mstrict-align`，就能跑了：
+
+| 编法（同 port / 同源 / ITERATIONS=30，**全部都能在我们核上跑**） | 总指令 | **每迭代** | 相对最优 |
+|---|---|---|---|
+| GCC 14.2 `-O2`（入库现役） | 9,439,310 | 314,644 | +32.6% |
+| **GCC 14.2 + 可移植 C910 flag** | **7,121,321** | **237,377** | **—（最优）** |
+| GCC 14.2 + 可移植 + `-mtune=thead-c906 -mstrict-align` | 7,575,586 | 252,520 | +6.4% |
+| 玄铁 10.4 `-O2` | 9,232,225 | 307,741 | +29.6% |
+| 玄铁 10.4 + 可移植 flag | 8,203,461 | 273,449 | +15.2% |
+| 玄铁 10.4 + **C910 专有 flag** + `-mstrict-align` | 8,026,866 | 267,562 | **+12.7%** |
+
+**结论：**
+
+* **C910 专有开关那 1.24× 拿不到**。补上 `-mstrict-align` 之后它比 GCC 14.2 + 可移植 flag
+  **还差 12.7%** —— 专有开关的收益全被"不能再用非对齐访问"吃掉了，还倒亏。
+  （顺带：`-mstrict-align` 对"可移植 flag"那套**完全无影响**：`build_xt3s` 与 `build_xt3`
+   **逐条指令数一模一样 8,203,461** ⇒ 那套本来就没编出非对齐访问。）
+* **GCC 14.2 的 `-mtune=thead-c906` 也帮不上**（+6.4%）。它同样默认 `-mno-strict-align`
+  （不加 `-mstrict-align` 一样撞同样的 `mcause=6`）。
+* ⇒ **1.64× 这条线收在 1.32×**（314,644 → **237,377**）。最优可跑配置 =
+  **GCC 14.2 + `-O3 -funroll-all-loops -finline-limit=500 -fgcse-sm -fno-schedule-insns`**。
+* ⚠️ 顺带更正 §8.1 表里"**C910 自己 191,899**"当参照的用法：那条是 C910 自带
+  `tests/lib/Makefile` 编的，`-march=rv64imafdcvxtheadc` —— **RV64 + V + xtheadc**，
+  与我们的 RV32IM 不同 ISA/ABI，**不是同口径**，差额里有多少是编法、多少是 ISA 都不知道。
+  拿它当"还差 39%"的分母不严谨。
+
+**§8.2 续：换编法在**整场**上到底值多少（2026-10-16 晚，AIQ=16+BIQ=8）**
+
+指令少 24.5% ≠ 周期少 24.5%。实测（同一颗核、同一配置、都 ITERATIONS=30、
+`+PROBE_POOL`、`GM_MONITOR=1`）：
+
+| 镜像 | 每迭代指令 | **Average cycles/iteration** | CPI |
+|---|---|---|---|
+| `-O2`（入库现役） | 314,644 | 335,895 | 1.068 |
+| **`-O3` + C910 可移植 flag** | 237,377 | **297,311** | 1.252 |
+
+⇒ **换编法实测省 11.5% 周期**（335,895 → 297,311），**不是 24.5%** ——
+因为 CPI 从 1.068 涨到 1.252（展开+inline 之后指令流更长、分支/局部性更差）。
+指令红利被吃掉一半多，剩下这 11.5% 才是能换成钱的部分。
+
+```bash
+# -O3 那份镜像: coremark/build_match/ (7,121,321 条 = 30 迭代)
+ln -sf $PWD/coremark/build_match/coremark.{bin,hex,hex128} 三个软链   # ⚠️ 第三个叫 meminit128.hex
+GM_MONITOR=1 ./obj_a910_dt_a16/simv +vcs+lic+wait -no_save -exitstatus \
+   +TEST=coremark +PROBE_POOL +MAX_CYCLES=20000000 -l /tmp/cm_o3_30.log
+```
+
+* **0 失配**（全程逐条比对通过）；CoreMark 自报 `Total ticks 8919379` /
+  `Average cycles/iteration 297311` / `CoreMark Score: 3.363` + `Errors detected`
+  —— 那个 3.363 **不能引用**：ticks 8.92M < 10M 地板，正是口径改 cycles/iteration 的原因
+  （见 §8.1 第 4 条 / 本次口径决定）。
+* ⚠️ `coremark/build_match/coremark.{hex,hex128}` 是本轮现生成的（原来只有 `.bin`），
+  生成法照抄 Makefile 的两条模式规则（`od -An -tx4 [-w16]` + 补零到 16384 字 / 4096 块）。
+
+复现（都能 1 分钟内跑完，纯黄金模型数指令，不用起核）：
+
+```bash
+XT=/x2025/GPrj1/IC1/riscv/RISCV_CPU/tools/riscv32-xuantie-shim
+BASE="-march=rv32im -mabi=ilp32 -g -nostdlib -nostartfiles -fno-builtin -Iriscv-port -I. \
+      -DITERATIONS=30 -DPERFORMANCE_RUN=1 -DCOREMARK_CONTEXTS=1"
+C910="-O3 -mtune=c910 -msignedness-cmpiv -fno-code-hoisting -mno-thread-jumps1 \
+      -mno-iv-adjust-addr-cost -mno-expand-split-imm \
+      --param=max-rtl-if-conversion-unpredictable-cost=100 \
+      -funroll-all-loops -finline-limit=500 -fgcse-sm -fno-schedule-insns -mstrict-align"
+make -s -C coremark -f Makefile.coremark TOOLCHAIN_PATH=$XT CROSS_COMPILE=riscv64-unknown-elf- \
+     BUILD_DIR=build_xt4 CFLAGS="$BASE $C910" BIN_TARGET=build_xt4/coremark.bin
+# 数指令: 见 §8.1 那段 30 行 main (gmcount.c)
+```
+
+⚠️ **查"镜像跑不动"时的一个大坑**：独立黄金模型计数时 `cpu_set_cycle(n)` **只设 `cur_cycle`**，
+**不驱动 TIMER 外设**（那要靠 TB 的 `gm_set_timer`）。所以任何依赖计时器的收尾逻辑
+在独立计数里都是死的（`time_in_secs()` 恒 0）。CoreMark 的 auto-iteration 模式
+（`core_main.c:283`，`iterations==0` 时按 `while(secs_passed < 1) iterations *= 10`）
+在这种计数下**必然死循环** —— 以后见到"数不完"先怀疑这里。
+
+### 10.7 ★ 当前瓶颈剖面（2026-10-16 晚，`+PROBE_PERF` 实测）
+
+配置 = **当前最快可跑那份**：`-O3 + 可移植 flag` 镜像 + AIQ=16 + BIQ=8。
+**8,948,854 拍 / 退休 7,122,824 条 ⇒ IPC 0.796。**
+
+**谁在挡**（"有指令等着派"共 7,315,270 拍；右列是 AIQ 扫描那轮 = BIQ 4/-O2 镜像）：
+
+| 谁在挡 | 现在 | 旧 |
+|---|---|---|
+| **LSIQ 满** | **21.7%** | 11.1% ⇒ **涨到第一** |
+| **未决重定向**（前端） | **17.4%** | 15.9% |
+| SDIQ 满 | 7.1% | 6.5% |
+| 冲刷恢复窗 | 7.0% | 4.9% |
+| AIQ 满 | 2.0% | 9.4%（4 项时 39.8%）⇒ **吃干净** |
+| BIQ 满 | 1.1% | 16.3% ⇒ **吃干净** |
+| ROB 真满 / CSR / DIV | **0 / 0 / 0** | 同 |
+| MUL 满 | 0.1% | — |
+
+* AIQ 深挖：占用均值 3.97/16，发射率 0.534 次/拍，满 184,644 拍里 **99.0% 有就绪项**
+  ⇒ AIQ=16 已经够，**不是深度问题**。
+* ⚠️ **机制**（探针注释）：`ctrl_is_dis_stall = rob_full || iq_full`，
+  `iq_full = aiq|biq|lsiq|sdiq|mult|div` **相或** ⇒ **任意一个队列满就堵死整个派遣口
+  （3 条车道全停）**，哪怕等的是 ALU 指令。所以 LSIQ 那 21.7% 是**整机级**损失。
+
+**另一条独立的大账：误预测**
+
+* **264,810 次，每 33.8 拍一次**；冻结窗 **9.15 拍/次 ⇒ ≈2.42M 拍 ≈ 27% 总拍**。
+* 拆解（拍/次）：① EX重定向→冲刷脉冲 **5.01**（其中 F1 等闸门 1.00、**LSU blocked 0.00**）
+  ② 脉冲→开闸 2.00 ③ 开闸→IBUF 被写 1.11 ④ 写入→交货 1.02。
+* 直方图：**7 拍占 137,229 次（52%）**，16+ 拍 14,686 次 ⇒ 均值被长尾拖高。
+
+**前端 / 缓存**
+
+* 前端无货 2,137,009 拍（23.9% 全拍），非冻结窗 1,872,166 拍（20.9%）。
+* 非冻结窗成因：i-cache miss **26.0%** / 命中 74.0%（其中重定向当拍 216,483、
+  未决重定向窗口 925,212、其它 244,255）。
+* **i-cache miss 271,934 次 ⇒ 每 26.2 条指令一次**；回填在途 818,168 拍（9.1% 全拍），
+  平均 3.0 拍/次（16B 行一拍回填，单次不贵但次数多）。
+* ⚠️ **i-cache 只有 1 KB、d-cache 2 KB，而 -O3 镜像代码 55,392 B = -O2 那版
+  (14,056 B) 的 3.9 倍** ⇒ 高度怀疑 -O3 的 CPI（1.252 vs 1.068，差 17%）是缓存在挨饿，
+  而不是指令数本身。**验证中**：`ICACHE_BYTES=4096`（Makefile 旋钮，不用改 RTL）。
+  ⚠️ d-cache 那条旋钮在 A910 路径上**是硬写死的**（`A910_cpu.sv:1345` `.DCACHE_SIZE(2048)`
+  + 规则里 `+define+DCACHE_2KB`），要测 d-cache 得先加开关。
+
+复现：`./obj_a910_dt_a16/simv ... +TEST=coremark +PROBE_PERF +NOVALID`
+（⚠️ `+PROBE_PERF` 有每拍计数，仿真约慢 20%：这轮 CPU 2721 秒。）
 
 ### 10.6 最强配置（AIQ=16 + BIQ=8）整场跑分 —— **2.977**（2026-10-16 晚，含丢写修复）
 
@@ -740,3 +899,110 @@ store **既建了一张 SQ 表项、又被 wakeup 重新发射再建一张** = �
 | 周期代价（AB 对拍，`coremark_i1` -O2 代理） | **384,440 拍 → 384,440 拍，逐拍零代价**（改动只删掉重复派发） |
 
 窗口复核：`iid=109@0xf75c` 现在**只建一张 SQ 表项**（T260179），T260176 那拍 `create=0`。
+
+---
+
+## 13. ★ LSIQ 8 → 12：参数化落地 + 实测**不赚**（2026-10-16 晚）
+
+§10.7 的剖面把 LSIQ 满 顶成第一大挡路者（21.7%），本轮把它按 C910 原版深度放回 12
+（本树在 commit 165dfd5「位宽对齐 64 preg / 8 LSIQ」时砍到 8）。**结论：结构性目标达成，
+但周期反涨 0.72%** —— 这是 §1/§7 那条「满率下降 ≠ 收益」规律的第二次复现，幅度比 BIQ 那次更小。
+
+### 13.1 改了什么
+
+| 文件 | 改动 |
+|---|---|
+| `mySoC/idu_c910/rtl/ct_idu_is_lsiq.sv` | 1058 行 8 项**逐表项写死** → `LSIQ_ENTRY` 参数化 + generate（照 `ct_idu_is_aiq.sv` 模板） |
+| `mySoC/idu_c910/rtl/ct_idu_is_lsiq_entry.sv` | 加 ANSI 参数口；agevec 从 N−1 位紧凑约定换成 **N 位自屏蔽** |
+| `mySoC/lsiq_defines.vh`（新） | 端口位宽的**单一真源**：`+define+LSIQ_ENTRY=N`，默认 12 |
+| `ct_idu_top.sv` / `ct_idu_rf_dp.sv` / `A910_cpu.sv` | 那 10 根「一位一项」的向量改随宏走 |
+| `lsu_st_dc.sv` / `lsu_sq.sv` / `lsu_top.sv` | **补了 3 个既有漏子**，见 13.2 |
+| `scripts/gen_rtu_top.py` / `gen_idu_smoke_tb.py` / `gen_rtu_if_xlsx.py` | 同步生成物（RTU_subsys / idu 冒烟台 / 接口表） |
+
+三处刻意的语义等价改写（等价台逐位证过）：① 两个建表 `casez` 优先级编码 → 掩码+与归约；
+② full / 1_left 从枚举组合 → `cnt + create − pop` 比较（`1_left` 必须带 `~pop0_vld&pop1_vld`）；
+③ 发射数据选择保留原版的 **非 one-hot ⇒ X** 行为（照 AIQ 那样只取"最高位"会分叉，
+`tb_lsiq_equiv` 第 39 拍抓到过）。
+
+### 13.2 顺带挖出的 3 个既有 bug（与本次无关，但都是静默的）
+
+1. **`lsu_st_dc.sv` / `lsu_sq.sv` 的 lsid 类端口硬写 `[7:0]`** —— 而它们自身有 `LSIQ_ENTRY`
+   参数。8 档下看不出来；一上 12 就是"12 位表达式接 8 位端口"，8~11 号表项 pop/full 全丢 ⇒ 挂死。
+2. **`ct_lsu_st_ag` / `ct_lsu_st_dc` 两个例化没传 `LSIQ_ENTRY`** —— 各自落到模块默认 8。
+   同上，8 档下是隐形的。`lsu_top.sv` 里其余 4 个（st_da/sq/lfb/ld_*）都传了。
+3. **`lsu_sq.sv` 的 `sq_entry_data_depd_wakeup[0:SQ_ENTRY-1]` 数组硬写 `[7:0]`**，
+   而接的端口是 `[LSIQ_ENTRY-1:0]`。
+
+判据：`make a910-elab` 的 **PCWM-W 从 0 变 3**（都是 `u_lsu_st_ag`/`u_lsu_st_dc`），补完参数回 0。
+
+### 13.3 等价证明（两层）
+
+* **单元层**：`make lsiq-equiv`（`tb/a910/tb_lsiq_equiv.sv` + `tb/a910/ref/` 冻结原版）
+  N=8 逐拍对拍 20 万拍，比全部输出 + `cnt`/`vld`/`ready`/`issue_en` + 每项的 `agevec`
+  与 `agevec_all` —— **0 处分歧**（覆盖：发射 79,725 拍 / full 5,197 / 1_left 10,929 /
+  建表 109,987 / 冲刷 1,357 / pop 115,819，双 pop 24,527）。
+  变异自检：把 `1_left` 判据改成 `LSIQ_ENTRY-2` ⇒ 第 22 拍报 MISMATCH **且 make 退出码 2**。
+* **整机层**：**改动前那棵树**（`obj_a910_dt_b_lru`）与新版 `LSIQ_ENTRY=8` 跑同一个 B 配置
+  镜像整场 30 迭代 —— **周期 8,723,584 逐位相同、退休 7,227,219 逐条相同、[PERF] 整段逐字相同**。
+
+回归：`make a910-difftest-all` = **46 PASS / 2 FAIL**（`coremark_c4` 第 50911 条 / T60303
+与本轮无关，改动前后**同点同因**；`coremark_i1` 是 200K 预算超时）；`make idu-unit` PASS；
+`make rtu-subsys-elab` PCWM-W 顺带从 8 清到 **0**。
+
+### 13.4 整场实测（B 配置镜像 `coremark/build_w_B_sched`，30 迭代，AIQ=16）
+
+```bash
+ln -sfn $PWD/coremark/build_w_B_sched/coremark.bin     meminit.bin
+ln -sfn $PWD/coremark/build_w_B_sched/coremark.hex     meminit.hex
+ln -sfn $PWD/coremark/build_w_B_sched/coremark.hex128  meminit128.hex
+# ⚠️ 第三根叫 meminit128.hex, **不是** meminit.hex128 —— 写成循环会静默漏掉它,
+#    取指 ROM 留上一个用例 ⇒ 第 1 条退休就失配 (本轮又踩了一次)。
+GM_MONITOR=1 ./obj_a910_dt_b_lsiq{8,12}/simv +vcs+lic+wait -no_save -exitstatus \
+    +NOVALID +TEST=coremark +PROBE_PERF +MAX_CYCLES=20000000 -l /tmp/lsiq/full_B{8,12}.log
+```
+
+| 档 | 拍数 | 退休 | IPC | cycles/iteration | Score | 合法性 |
+|---|---|---|---|---|---|---|
+| **LSIQ=8**（改动前那棵树） | 8,723,584 | 7,227,219 | 0.828 | **289,818** | 3.450 | ticks 8,694,583 ⇒ **不合法**(<10s) |
+| **LSIQ=8**（新参数化 RTL） | 8,723,584 | 7,227,219 | 0.828 | **289,818** | 3.450 | 同上，**逐位相同** |
+| **LSIQ=12** | 8,786,815 | 7,227,219 | 0.823 | **291,918** | 3.425 | ticks 8,757,578 ⇒ 不合法 |
+
+⇒ **+63,231 拍 = +0.72%**（分数 3.450 → 3.425）。快代理（前 1.5M 拍）给的是 **+1.13%** ——
+同号、偏大，与 `memory/iter1-proxy-unreliable` 那条"方向可信、绝对值要整场定案"一致。
+⚠️ `Average cycles/iteration` 是 CoreMark 自己打的、只包住 `iterate()` 循环，是本轮该引的那一行；
+`Total time (secs): 8` / `Iterations/Sec: 3` 是 `core_portme.c:47` 整数截断的假象，别引。
+
+### 13.5 为什么"挡路的少了却更慢"
+
+**整场瓶颈剖面**（占"有指令等着派"的拍）：
+
+| 谁在挡 | LSIQ=8 | LSIQ=12 | 变化 |
+|---|---|---|---|
+| **LSIQ 满** | 21.0% | **9.8%** | **−11.2pp**（相对 −53%） |
+| **SDIQ 满** | 6.1% | **9.9%** | **+3.8pp**（瓶颈搬到这里） |
+| 未决重定向 | 17.5% | 17.9% | +0.4pp |
+| 冲刷恢复窗 | 7.1% | 7.2% | 持平 |
+| AIQ 满 / BIQ 满 | 1.7% / 0.9% | 1.8% / 1.0% | 持平 |
+| ROB 真满 / CSR | 0% / 0% | 0% / 0% | 持平 |
+
+两条彼此独立的账：
+
+1. **`iq_full` 是六个队列相或**（`ct_idu_is_ctrl.sv`）⇒ 放开一个不等于解堵。整场
+   LSIQ 满降了 808,333 拍，但 SDIQ 满涨了 258,905 拍、其余与别的阻塞源重叠 ⇒
+   净收益远小于 11.2pp 这个数。**这正是 §1/§7 记过两次的规律**（BIQ 那次满率掉 14pp 只换 0.82%）。
+2. **多派的指令全被冲掉**：派遣 10,859,007 → 11,007,881（**+1.4%**），退休**一条不多**
+   （都是 7,227,219）⇒ 多出的 ≈148,900 条全在误预测的冲刷里作废。误预测
+   261,804 → 265,743（**+1.50%**），冻结窗 9.26 拍/次 ⇒ ≈36,500 拍，占那 +63,231 拍的 **58%**。
+   机制：队列变深 ⇒ 机器沿推测路径跑得更远 ⇒ 前端多派、后面多冲。
+
+⚠️ 那 +3,939 次误预测是**时序扰动**引起的（两臂只在首次 LSIQ 满之后才分叉），
+不能直接说成"LSIQ 变深导致"；但"派得多、退休不多"这条是直接的、可复算的。
+
+### 13.6 下一步（按证据排序）
+
+1. **SDIQ（9.9%）+ SQ_ENTRY=6 / LQ_ENTRY=8** —— LSIQ 放开后store 侧顶上来，而这两个
+   **写死且未参数化**（`lsu_lq.sv:46` / `lsu_top.sv:5`，`ct_lsu_lq.sv` 内部位宽也是硬写的 8 位）。
+   计划里那条"LQ=8 是隐性天花板"的猜测与这批数据一致。
+2. **前端**：未决重定向 17.9% + 冲刷恢复窗 7.2% ≈ **25%**，已是最大的一块。
+3. ⚠️ **要不要把默认档留在 12** —— 12 是 C910 原版深度、结构上更"对"，但实测**慢 0.72%**。
+   保留 `+define+LSIQ_ENTRY=8` 可一键回退；**本轮不改默认的结论需要用户拍板**（默认已是 12）。

@@ -44,6 +44,16 @@ module rv32ifu2_top #(
     parameter IC_LINE   = 16,
 `endif
     parameter IC_WAYS   = 2,
+    // ---- i-cache 替换策略 (Makefile 的 ICACHE_REPL) ----
+    //   0 = LRU (默认), 1 = round-robin。
+    // ⚠️ 与几何参数不同, 这一档**不影响面积/功能, 只影响 miss 率** (两档的周期差
+    //    是百分之几量级) ⇒ 落地与否只能看 icache 自己打印的那行 `[IFU2-ICACHE] … REPL=`。
+    //    语义与"为什么 RR 只差一个 if"见 rv32ifu2_icache.v 的替换策略注释。
+`ifdef ICACHE_REPL
+    parameter IC_REPL   = `ICACHE_REPL,
+`else
+    parameter IC_REPL   = 0,
+`endif
     // ---- 方向预测器二选一 (Makefile 的 BP_PRED) ----
     //   1 = TAGE   (rv32ifu2_tage, 按 TAGE_branch_predi.md, **默认**)
     //   0 = gshare (rv32ifu2_bht, 旧默认, 留做 A/B 与回归基线)
@@ -350,7 +360,8 @@ rv32ifu2_icache #(
     .IC_BYTES  (IC_BYTES),
     .IC_LINE   (IC_LINE),
     .IC_WAYS   (IC_WAYS),
-    .ICACHE_EN (ICACHE_EN)
+    .ICACHE_EN (ICACHE_EN),
+    .IC_REPL   (IC_REPL)
 ) u_icache (
     .clk         (clk),
     .rst         (rst),
