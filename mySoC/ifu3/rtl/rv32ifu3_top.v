@@ -274,50 +274,18 @@ wire [ 31:0] ifu_ovr_target;
 wire [  3:0] ifu_ovr_btb_cond;
 wire [ 15:0] ifu_ovr_phr;
 
-// ⚠️ IFU override 必须打一拍再进 FTQ/BPU。
-// 原实现里 s1_data → PredChecker → ifu_ovr_target 直接接 FTQ 的 ent_target 写口
-// 和 BPU 的 btb_rd_pc/alloc_valid, 是 Vivado 里 24~25 级、87% 走线的跨模块锥。
-// IFU 内部仍然用当拍的 ifu_ovr_valid 闸住 s1_fire (RAS 动作必须按修正后的
-// end_slot 应用), 但对外只发 registered 脉冲: FTQ 重写/BPU 重启晚一拍,
-// 功能上等价 (FTQ override 会丢弃年轻项, BPU 下一拍从修正 target 重启)。
-reg         ifu_ovr_valid_q;
-reg [  3:0] ifu_ovr_idx_q;
-reg         ifu_ovr_taken_q;
-reg [  1:0] ifu_ovr_taken_slot_q;
-reg [ 31:0] ifu_ovr_target_q;
-reg [  3:0] ifu_ovr_btb_cond_q;
-reg [ 15:0] ifu_ovr_phr_q;
-
-always @(posedge clk) begin
-    if (rst) begin
-        ifu_ovr_valid_q      <= 1'b0;
-        ifu_ovr_idx_q        <= 4'd0;
-        ifu_ovr_taken_q      <= 1'b0;
-        ifu_ovr_taken_slot_q <= 2'd0;
-        ifu_ovr_target_q     <= 32'd0;
-        ifu_ovr_btb_cond_q   <= 4'd0;
-        ifu_ovr_phr_q        <= 16'd0;
-    end else begin
-        ifu_ovr_valid_q <= ifu_ovr_valid;
-        if (ifu_ovr_valid) begin
-            ifu_ovr_idx_q        <= ifu_ovr_idx;
-            ifu_ovr_taken_q      <= ifu_ovr_taken;
-            ifu_ovr_taken_slot_q <= ifu_ovr_taken_slot;
-            ifu_ovr_target_q     <= ifu_ovr_target;
-            ifu_ovr_btb_cond_q   <= ifu_ovr_btb_cond;
-            ifu_ovr_phr_q        <= ifu_ovr_phr;
-        end
-    end
-end
-
-// 优先级: IFU (真实译码) > BPU (TAGE/BP2)。IFU 用 registered 版本。
-wire         ftq_ovr_valid = ifu_ovr_valid_q | bpu_ovr_valid;
-wire [  3:0] ftq_ovr_idx   = ifu_ovr_valid_q ? ifu_ovr_idx_q : bpu_ovr_idx;
-wire         ftq_ovr_taken = ifu_ovr_valid_q ? ifu_ovr_taken_q : bpu_ovr_taken;
-wire [  1:0] ftq_ovr_taken_slot = ifu_ovr_valid_q ? ifu_ovr_taken_slot_q : bpu_ovr_taken_slot;
-wire [ 31:0] ftq_ovr_target = ifu_ovr_valid_q ? ifu_ovr_target_q : bpu_ovr_target;
-wire [  3:0] ftq_ovr_btb_cond = ifu_ovr_valid_q ? ifu_ovr_btb_cond_q : bpu_ovr_btb_cond;
-wire [ 15:0] ftq_ovr_phr = ifu_ovr_valid_q ? ifu_ovr_phr_q : bpu_ovr_phr;
+// IFU 的 PredChecker 结果已经在 IFU 内部打拍 (S0 计算 -> S1 寄存)。
+// 这里直接用 IFU 的寄存器输出, 不再加一级: FTQ override 必须和 IFU 的
+// S1/S2 停拍同拍, 否则 S2 finish 被 FTQ 忽略而 IFU 的 inflight 照减,
+// 同一个 entry 会被取两次。BPU 重启也同一拍。
+// 优先级: IFU (真实译码) > BPU (TAGE/BP2)。
+wire         ftq_ovr_valid = ifu_ovr_valid | bpu_ovr_valid;
+wire [  3:0] ftq_ovr_idx   = ifu_ovr_valid ? ifu_ovr_idx : bpu_ovr_idx;
+wire         ftq_ovr_taken = ifu_ovr_valid ? ifu_ovr_taken : bpu_ovr_taken;
+wire [  1:0] ftq_ovr_taken_slot = ifu_ovr_valid ? ifu_ovr_taken_slot : bpu_ovr_taken_slot;
+wire [ 31:0] ftq_ovr_target = ifu_ovr_valid ? ifu_ovr_target : bpu_ovr_target;
+wire [  3:0] ftq_ovr_btb_cond = ifu_ovr_valid ? ifu_ovr_btb_cond : bpu_ovr_btb_cond;
+wire [ 15:0] ftq_ovr_phr = ifu_ovr_valid ? ifu_ovr_phr : bpu_ovr_phr;
 
 rv32ifu3_ftq #(
     .DEPTH      (FTQ_DEPTH),
@@ -379,9 +347,9 @@ rv32ifu3_bpu #(
     .iu_btb_pc        (iu_btb_pc_r),
     .iu_btb_taken     (iu_btb_taken_r),
     .iu_btb_is_cond   (iu_btb_is_cond_r),
-    .ifu_ovr_valid    (ifu_ovr_valid_q),
-    .ifu_ovr_target   (ifu_ovr_target_q),
-    .ifu_ovr_phr      (ifu_ovr_phr_q),
+    .ifu_ovr_valid    (ifu_ovr_valid),
+    .ifu_ovr_target   (ifu_ovr_target),
+    .ifu_ovr_phr      (ifu_ovr_phr),
     .upd_vld          (rtu_train_vld),
     .upd_pc           (rtu_train_pc),
     .upd_target       (rtu_train_target),
@@ -534,9 +502,9 @@ wire unused_phase1 = rtu_train_chk[0] ^ iu_btb_chk[0] ^ iu_btb_taken ^
 // 临时: +IFU3_DBG 时打印 FTQ/IFU/override 指针, 用于定位重复交付
 always @(posedge clk) begin
     if ($test$plusargs("IFU3_DBG") && !rst) begin
-        $display("[IFU3-TOP] t=%0t rdpc=%h rdptr=%0d head=%0d cnt=%0d inf=%0d fin=%b iovr=%b/%b bovr=%b fovr=%b oidx=%0d otgt=%h alloc=%b apc=%h atgt=%h",
+        $display("[IFU3-TOP] t=%0t rdpc=%h rdptr=%0d head=%0d cnt=%0d inf=%0d fin=%b iovr=%b bovr=%b fovr=%b oidx=%0d otgt=%h alloc=%b apc=%h atgt=%h",
                  $time, ftq_rd_start_pc, ftq_rd_ptr, ftq_head_idx, u_ftq.count_q,
-                 ifu_inflight, ifu_ftq_finish, ifu_ovr_valid, ifu_ovr_valid_q,
+                 ifu_inflight, ifu_ftq_finish, ifu_ovr_valid,
                  bpu_ovr_valid, ftq_ovr_valid, ftq_ovr_idx, ftq_ovr_target,
                  ftq_alloc_valid, ftq_alloc_start_pc, ftq_alloc_target);
     end

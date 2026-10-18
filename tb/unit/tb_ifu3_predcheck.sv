@@ -15,15 +15,12 @@ reg  [  1:0] pc_ofs;
 reg          pred_taken;
 reg  [  1:0] pred_slot;
 reg  [ 31:0] pred_target;
-reg  [  3:0] ras_top_vld;
-reg  [127:0] ras_top;
 
 wire [  7:0] pd_action;
 wire [127:0] pd_link;
 wire [127:0] pd_jal_tgt;
 wire [  3:0] pd_is_cfi;
 wire [  3:0] pd_is_jal;
-wire [  3:0] pd_is_ret;
 
 // 预译码 (S0) 与 PredChecker (S1) 分开; TB 把两者组合起来对拍,
 // dec_action/dec_link 现在由预译码产生。
@@ -34,7 +31,6 @@ rv32ifu3_predecode u_pd (
     .lane_jal_tgt (pd_jal_tgt),
     .lane_is_cfi  (pd_is_cfi),
     .lane_is_jal  (pd_is_jal),
-    .lane_is_ret  (pd_is_ret),
     .lane_action  (pd_action)
 );
 
@@ -50,15 +46,12 @@ wire [  1:0] corr_end_slot;
 rv32ifu3_predcheck dut (
     .lane_is_cfi   (pd_is_cfi),
     .lane_is_jal   (pd_is_jal),
-    .lane_is_ret   (pd_is_ret),
     .lane_jal_tgt  (pd_jal_tgt),
     .line_pc       (line_pc),
     .pc_ofs        (pc_ofs),
     .pred_taken    (pred_taken),
     .pred_slot     (pred_slot),
     .pred_target   (pred_target),
-    .ras_top_vld   (ras_top_vld),
-    .ras_top       (ras_top),
     .corr_valid    (corr_valid),
     .corr_taken    (corr_taken),
     .corr_slot     (corr_slot),
@@ -142,7 +135,6 @@ initial begin
     line_pc = PC;
     pc_ofs = 0;
     pred_taken = 0; pred_slot = 0; pred_target = 0;
-    ras_top_vld = 0; ras_top = 0;
 
     // 1) JAL 在 slot1, 未预测 taken -> 修到 slot1 target
     set_line(NOP, JAL1_8, NOP, NOP);
@@ -154,27 +146,18 @@ initial begin
     pred_taken = 1; pred_slot = 2; pred_target = 32'hDEAD_0000;
     chk("false-taken", 0, 0, 0, 0, 1, 0, 3, PC+16, 3);
 
-    // 3) ret 未预测 taken, RAS 有效 -> 修到 RAS top
+    // 3) ret 未预测 taken -> 香山式: IFU 不碰 RAS top, 不修
     set_line(RET, NOP, NOP, NOP);
     pred_taken = 0;
-    ras_top_vld = 4'b0001;
-    ras_top[31:0] = 32'hA000_0000;
-    chk("ret-ras", 2, 0, 0, 0, 1, 1, 0, 32'hA000_0000, 0);
-
-    // 4) ret 未预测 taken, RAS 无效 -> 不修
-    ras_top_vld = 4'b0000;
     chk("ret-no-ras", 2, 0, 0, 0, 0, 0, 0, 0, 0);
 
-    // 5) ret 预测 taken, target 错, RAS 有效 -> 修 target
+    // 4) ret 预测 taken, target 不可知 -> 不修 (交给后端)
     pred_taken = 1; pred_slot = 0; pred_target = 32'hB000_0000;
-    ras_top_vld = 4'b0001;
-    ras_top[31:0] = 32'hC000_0000;
-    chk("ret-wrong-target", 2, 0, 0, 0, 1, 1, 0, 32'hC000_0000, 0);
+    chk("ret-wrong-target", 2, 0, 0, 0, 0, 0, 0, 0, 0);
 
     // 6) 更早的 JAL 在 slot1, 预测 taken 在 slot2 -> 修到 slot1
     set_line(NOP, JAL1_8, NOP, NOP);
     pred_taken = 1; pred_slot = 2; pred_target = 32'hD000_0000;
-    ras_top_vld = 0;
     chk("early-jal", 0, 1, 0, 0, 1, 1, 1, PC+4+8, 1);
 
     // 7) cond 在前, JAL 在后, 未预测 taken -> 不修
@@ -194,7 +177,6 @@ initial begin
     // 10) pc_ofs=2, slot2 的 JAL 未预测 -> 修到 slot2
     set_line(JAL1_8, RET, JAL5_8, NOP);
     pc_ofs = 2; pred_taken = 0;
-    ras_top_vld = 0;
     chk("pcofs2-jal", 1, 2, 1, 0, 1, 1, 2, PC+8+8, 2);
     pc_ofs = 0;
 
@@ -203,17 +185,14 @@ initial begin
     pred_taken = 1; pred_slot = 1; pred_target = PC+4+8;
     chk("jal-correct", 0, 1, 0, 0, 0, 1, 1, PC+4+8, 1);
 
-    // 12) pop_push -> action=3, ret target 用 RAS top
+    // 12) pop_push -> action=3, ret target 不修
     set_line(PP, NOP, NOP, NOP);
     pred_taken = 0;
-    ras_top_vld = 4'b0001;
-    ras_top[31:0] = 32'hF000_0000;
-    chk("pop-push", 3, 0, 0, 0, 1, 1, 0, 32'hF000_0000, 0);
+    chk("pop-push", 3, 0, 0, 0, 0, 0, 0, 0, 0);
 
     // 13) 假 taken 在非 CFI, 但更早有 JAL -> 规则 1 优先
     set_line(JAL1_8, ADDI1, NOP, NOP);
     pred_taken = 1; pred_slot = 1; pred_target = 32'hDEAD_0000;
-    ras_top_vld = 0;
     chk("false-after-jal", 1, 0, 0, 0, 1, 1, 0, PC+8, 0);
 
     // 14) 假 taken 在非 CFI, 更早是 cond -> fall-through

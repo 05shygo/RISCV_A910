@@ -27,7 +27,6 @@ module rv32ifu3_predecode (
     output wire [127:0] lane_jal_tgt,
     output wire [  3:0] lane_is_cfi,
     output wire [  3:0] lane_is_jal,
-    output wire [  3:0] lane_is_ret,
     output wire [  7:0] lane_action
 );
 
@@ -69,7 +68,6 @@ for (g = 0; g < 4; g = g + 1) begin : g_lane
 
     assign lane_is_cfi[g] = is_branch | is_jal | is_jalr;
     assign lane_is_jal[g] = is_jal;
-    assign lane_is_ret[g] = is_ret;
 
     assign lane_link[g*32 +: 32]    = pc + 32'd4;
     assign lane_jal_tgt[g*32 +: 32] = pc + jal_imm(inst);
