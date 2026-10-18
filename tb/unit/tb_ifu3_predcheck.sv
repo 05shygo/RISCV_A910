@@ -18,8 +18,29 @@ reg  [ 31:0] pred_target;
 reg  [  3:0] ras_top_vld;
 reg  [127:0] ras_top;
 
-wire [  7:0] dec_action;
-wire [127:0] dec_link;
+wire [  7:0] pd_action;
+wire [127:0] pd_link;
+wire [127:0] pd_jal_tgt;
+wire [  3:0] pd_is_cfi;
+wire [  3:0] pd_is_jal;
+wire [  3:0] pd_is_ret;
+
+// 预译码 (S0) 与 PredChecker (S1) 分开; TB 把两者组合起来对拍,
+// dec_action/dec_link 现在由预译码产生。
+rv32ifu3_predecode u_pd (
+    .line         (line),
+    .start_pc     (line_pc),
+    .lane_link    (pd_link),
+    .lane_jal_tgt (pd_jal_tgt),
+    .lane_is_cfi  (pd_is_cfi),
+    .lane_is_jal  (pd_is_jal),
+    .lane_is_ret  (pd_is_ret),
+    .lane_action  (pd_action)
+);
+
+wire [  7:0] dec_action = pd_action;
+wire [127:0] dec_link   = pd_link;
+
 wire         corr_valid;
 wire         corr_taken;
 wire [  1:0] corr_slot;
@@ -27,21 +48,22 @@ wire [ 31:0] corr_target;
 wire [  1:0] corr_end_slot;
 
 rv32ifu3_predcheck dut (
-    .line         (line),
-    .line_pc      (line_pc),
-    .pc_ofs       (pc_ofs),
-    .pred_taken   (pred_taken),
-    .pred_slot    (pred_slot),
-    .pred_target  (pred_target),
-    .ras_top_vld  (ras_top_vld),
-    .ras_top      (ras_top),
-    .dec_action   (dec_action),
-    .dec_link     (dec_link),
-    .corr_valid   (corr_valid),
-    .corr_taken   (corr_taken),
-    .corr_slot    (corr_slot),
-    .corr_target  (corr_target),
-    .corr_end_slot(corr_end_slot)
+    .lane_is_cfi   (pd_is_cfi),
+    .lane_is_jal   (pd_is_jal),
+    .lane_is_ret   (pd_is_ret),
+    .lane_jal_tgt  (pd_jal_tgt),
+    .line_pc       (line_pc),
+    .pc_ofs        (pc_ofs),
+    .pred_taken    (pred_taken),
+    .pred_slot     (pred_slot),
+    .pred_target   (pred_target),
+    .ras_top_vld   (ras_top_vld),
+    .ras_top       (ras_top),
+    .corr_valid    (corr_valid),
+    .corr_taken    (corr_taken),
+    .corr_slot     (corr_slot),
+    .corr_target   (corr_target),
+    .corr_end_slot (corr_end_slot)
 );
 
 localparam [31:0] NOP   = 32'h00000013;   // addi x0,x0,0

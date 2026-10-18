@@ -808,7 +808,7 @@ $(IFU3_RAS_SIMV): $(IFU3_RAS_SRC) $(IFU3_RAS_TB)
 
 IFU3_PC_BUILD := $(PWD)/obj_unit_ifu3_pred
 IFU3_PC_SIMV  := $(IFU3_PC_BUILD)/simv
-IFU3_PC_SRC   := $(IFU3_RTL)/rv32ifu3_predcheck.v
+IFU3_PC_SRC   := $(IFU3_RTL)/rv32ifu3_predcheck.v $(IFU3_RTL)/rv32ifu3_predecode.v
 IFU3_PC_TB    := $(PWD)/tb/unit/tb_ifu3_predcheck.sv
 
 ifu3-predcheck-unit: $(IFU3_PC_SIMV)
@@ -839,7 +839,8 @@ $(IFU3_BPU_SIMV): $(IFU3_BPU_SRC) $(IFU3_BPU_TB)
 IFU3_IFU_BUILD := $(PWD)/obj_unit_ifu3_ifu
 IFU3_IFU_SIMV  := $(IFU3_IFU_BUILD)/simv
 IFU3_IFU_SRC   := $(IFU3_RTL)/rv32ifu3_ifu.v $(IFU3_RTL)/rv32ifu3_ras.v \
-                  $(IFU3_RTL)/rv32ifu3_predcheck.v
+                  $(IFU3_RTL)/rv32ifu3_predcheck.v \
+                  $(IFU3_RTL)/rv32ifu3_predecode.v
 IFU3_IFU_TB    := $(PWD)/tb/unit/tb_ifu3_ifu.sv
 
 ifu3-ifu-unit: $(IFU3_IFU_SIMV)

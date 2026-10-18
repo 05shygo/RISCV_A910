@@ -1,27 +1,30 @@
 `timescale 1ns / 1ps
 
 // ===========================================================================
-// rv32ifu3_ras — IFU3 的推测返回地址栈 + 精确 undo log
+// rv32ifu3_ras — 推测返回地址栈 + per-FTQ-entry 快照
 //
-// 与 ifu2 的 pointer-only RAS 不同: 这里把每次 push/pop 都记进 undo log,
-// 误预测恢复时按 log 逆序撤销, 连**被覆盖的栈内容**一起恢复, 不是只拨指针。
+// 为什么不再用 undo log:
+//   旧实现是 64×32 log + 每块最多 8 路动态索引写 (log_idx_t[0..7]) + 4 路
+//   push。综合到 FPGA 上, 8 个 64 选 1 的 33-bit 写 mux 占了 ~22k LUT
+//   (u_ras 比整个 IDU 还大), 而 RS 里真正有状态的栈只有 16×32。
 //
-// 数据流:
-//   * S1 组合译码 4 条指令 -> dec_action/dec_link
-//   * 本模块组合算出每条 lane 的 top/top_vld/ckpt/eff_action
-//   * S1 fire 时一次性应用 0..4 条动作 (最多 8 条 log)
-//   * chk 携带 {ckpt[5:0], eff_action[2:0]} 随指令走
-//   * IU 重定向: 按 chk 的 ckpt 回滚, 再重放该分支的实际动作
-//   * BPU override: 按 S2 块的 start_ckpt 回滚 (不重放)
-//   * RTU 重定向: 无 chk, 清空 (与 PHR 清 0 同口径)
-//   * 退休: 用 chk 的 eff_action 推进 log 的 commit 指针
+//   新结构: 每个 FTQ entry 保存一份"该块动作之前"的完整推测栈快照
+//     {stk[16][32], sp, eff_action[4], start_pc, pc_ofs}
+//   = 559 bit × 16 项 ≈ 8.9 kbit, 用 1R1W 分布式 RAM (LUTRAM) 实现:
+//     * 公共路径每块只写一个口 (s1_idx), 没有 8 路动态写;
+//     * 恢复时读一个快照 (1 拍), 再按 lane 回放最多 4 条动作 (1 条/拍);
+//     * 不需要 commit 指针 / live window / full 反压。
 //
-// log 满 (占用 >= 63) 时 full=1, IFU 闸住 S1 fire; 退休独立前进, 不会死锁。
-// rollback 是多拍 FSM; busy 期间 IFU 闸住 S1 fire, PredChecker 视为 RAS 无效。
+// chk 的 ckpt 字段 (6 bit) 现在是 {snap_id[3:0], lane[1:0]}, snap_id = FTQ idx。
+//   * IU redirect: rec_replay=1 —— 恢复快照, 回放 pc_ofs..lane 的动作;
+//   * BPU override: rec_replay=0 —— 只恢复快照, 不回放 (整块丢弃)。
+//   * RTU redirect: clr_valid=1 —— 清空推测状态。
+//
+// 恢复是多拍 FSM; busy 期间 IFU 闸住 S1 fire, top_vld=0。
+// 公共路径 (每块 0..4 条 push/pop) 仍在一拍内用并行前缀完成, 与旧版一致。
 // ===========================================================================
 module rv32ifu3_ras #(
-    parameter DEPTH     = 16,
-    parameter LOG_DEPTH = 64
+    parameter DEPTH = 16
 )(
     input  wire         clk,
     input  wire         rst,           // 高有效
@@ -31,175 +34,165 @@ module rv32ifu3_ras #(
     input  wire [  1:0] s1_pc_ofs,
     input  wire [  1:0] s1_end_slot,   // 修正后的交付终点 (含)
     input  wire         s1_fire,
+    input  wire [  3:0] s1_idx,        // 本块的 FTQ entry index = 快照 id
+    input  wire [ 31:0] s1_start_pc,   // 本块起始 PC (可非 16 B 对齐)
     input  wire [  7:0] dec_action,    // 2b/lane: 0=none 1=push 2=pop 3=pop_push
     input  wire [127:0] dec_link,      // 32b/lane: call 的 pc+4
 
     // ---- 组合读: 每条 lane 动作之前的状态 ----
     output wire [  3:0] top_vld,
     output wire [127:0] top,           // 32b/lane
-    output wire [ 23:0] ckpt,          // 6b/lane: 该 lane 动作前的 log 写指针
-    output wire [  7:0] eff_action,    // 2b/lane: 实际生效的动作 (栈空/满会退化)
+    output wire [ 23:0] ckpt,          // 6b/lane: {snap_id, lane}
+    output wire [  7:0] eff_action,    // 2b/lane: 实际生效的动作
     output wire         busy,
-    output wire         full,
+    output wire         full,          // 恒 0 (快照没有 live-window 上限)
 
     // ---- 恢复 ----
-    input  wire         rec_valid,     // IU redirect 或 BPU override
-    input  wire [  5:0] rec_ckpt,
-    input  wire [  2:0] rec_action,    // 0..3, 回滚后重放该动作
-    input  wire [ 31:0] rec_link,
-    input  wire         clr_valid,     // RTU redirect: 清空
-
-    // ---- 退休 ----
-    input  wire         cmt_valid,
-    input  wire [  2:0] cmt_action,  // chk[18:16], 当前编码 0..3
-    input  wire [  5:0] cmt_ckpt     // chk[24:19], 必须等于 log 里最老未提交动作的指针
+    input  wire         rec_valid,
+    input  wire [  5:0] rec_ckpt,      // {snap_id[3:0], lane[1:0]}
+    input  wire         rec_replay,    // 1 = IU redirect 回放; 0 = BPU override
+    input  wire [  2:0] rec_action,    // 0..3, 回放该分支的实际动作
+    input  wire [ 31:0] rec_link,      // 分支的 link (pc+4)
+    input  wire         clr_valid      // RTU redirect: 清空
 );
 
-localparam SP_W = $clog2(DEPTH + 1);   // 16 -> 5
-localparam CW   = $clog2(LOG_DEPTH);   // 64 -> 6
+localparam SP_W   = 5;                 // DEPTH=16 -> 0..16
+localparam SW_STK = 0;
+localparam SW_SP  = DEPTH * 32;        // 512
+localparam SW_EFF = SW_SP + SP_W;      // 517
+localparam SW_PC  = SW_EFF + 8;        // 525
+localparam SW_OFS = SW_PC + 32;        // 557
+localparam SNAP_W = SW_OFS + 2;        // 559
 
+localparam ST_IDLE    = 2'd0;
+localparam ST_RESTORE = 2'd1;
+localparam ST_REPLAY  = 2'd2;
+
+// ---------------------------------------------------------------------------
+// 推测栈 + 快照 RAM
+// ---------------------------------------------------------------------------
 reg [31:0] stk_q [0:DEPTH-1];
-reg [SP_W-1:0] sp_q;                    // 0..DEPTH
+reg [SP_W-1:0] sp_q;
 
-reg [LOG_DEPTH-1:0] log_op_q;           // 1=push, 0=pop
-reg [31:0]          log_data_q [0:LOG_DEPTH-1];
-reg [CW-1:0]        wr_q;
-reg [CW-1:0]        cmt_q;
+(* ram_style = "distributed" *)
+reg [SNAP_W-1:0] snap_mem [0:DEPTH-1];
+reg [DEPTH-1:0]  snap_valid_q;
 
-reg                 busy_q;
-reg [CW-1:0]        rec_target_q;
-reg [2:0]           rec_action_q;
-reg [31:0]          rec_link_q;
+reg [1:0]  state_q;
+reg        busy_q;
+
+reg [1:0]  rec_lane_q;
+reg        rec_replay_q;
+reg [2:0]  rec_action_q;
+reg [31:0] rec_link_q;
+reg [3:0]  rec_snap_q;
+reg [1:0]  replay_lane_q;
+reg [1:0]  replay_end_q;
+
+// 分布式 RAM 的异步读口: 恢复时直接按 rec_snap_q 读快照 (不在公共路径上)。
+wire [SNAP_W-1:0] snap_sel = snap_mem[rec_snap_q];
 
 assign busy = busy_q;
+assign full = 1'b0;
 
 // ---------------------------------------------------------------------------
-// 组合链: 逐 slot 推演 0..4 条动作
+// 组合链: 4 lane 并行前缀 (公共路径, 每块 0..4 条动作)
 // ---------------------------------------------------------------------------
-reg [SP_W-1:0] sp_t;
-reg [CW-1:0]   wr_t;
-reg [31:0]     stk_t [0:DEPTH-1];
+reg [SP_W-1:0] sp_v          [0:4];
+reg [SP_W-1:0] sp_after_pop  [0:3];
+reg            do_push_t     [0:3];
+reg            do_pop_t      [0:3];
+reg [SP_W-1:0] push_idx_t    [0:3];
+reg [1:0]      eff_i         [0:3];
+reg [31:0]     top_val       [0:3];
 
-reg [31:0]     log_data_t [0:7];
-reg [CW-1:0]   log_idx_t  [0:7];
-reg            log_op_t   [0:7];
-reg            log_en_t   [0:7];
-reg [3:0]      nlog_t;
-
-reg            push_en_t   [0:3];
-reg [SP_W-1:0] push_idx_t  [0:3];
-reg [31:0]     push_data_t [0:3];
+reg            push_en_t     [0:3];
+reg [31:0]     push_data_t   [0:3];
 
 reg [3:0]      top_vld_c;
 reg [127:0]    top_c;
 reg [23:0]     ckpt_c;
 reg [7:0]      eff_c;
 reg [SP_W-1:0] sp_next;
-reg [CW-1:0]   wr_next;
+
+// lane i 动作前的栈顶: 原栈 + 更早 lane 的 push 旁路 (高 lane 的 push 覆盖低的)
+function [31:0] stack_peek;
+    input [3:0]      lane;
+    input [SP_W-1:0] idx;
+    integer j;
+    reg [31:0] v;
+    begin
+        v = stk_q[idx];
+        for (j = 0; j < 4; j = j + 1)
+            if ((j < lane) && do_push_t[j] && (push_idx_t[j] == idx))
+                v = dec_link[j*32 +: 32];
+        stack_peek = v;
+    end
+endfunction
 
 integer i, k;
+reg [1:0] act_i;
+reg       en_i;
 always @(*) begin
-    sp_t = sp_q;
-    wr_t = wr_q;
-    for (i = 0; i < DEPTH; i = i + 1)
-        stk_t[i] = stk_q[i];
-
-    nlog_t = 4'd0;
-    for (k = 0; k < 8; k = k + 1) begin
-        log_en_t[k]   = 1'b0;
-        log_op_t[k]   = 1'b0;
-        log_data_t[k] = 32'd0;
-        log_idx_t[k]  = {CW{1'b0}};
-    end
     for (i = 0; i < 4; i = i + 1) begin
         push_en_t[i]   = 1'b0;
         push_idx_t[i]  = {SP_W{1'b0}};
         push_data_t[i] = 32'd0;
+        do_push_t[i]   = 1'b0;
+        do_pop_t[i]    = 1'b0;
+        eff_i[i]       = 2'd0;
+        top_val[i]     = 32'd0;
     end
-
     top_vld_c = 4'd0;
     top_c     = 128'd0;
     ckpt_c    = 24'd0;
     eff_c     = 8'd0;
 
+    sp_v[0] = sp_q;
+
+    // ---- 第一遍: 栈指针 / 有效动作 ----
     for (i = 0; i < 4; i = i + 1) begin
-        ckpt_c[i*6 +: 6] = wr_t;
-        top_vld_c[i]     = (sp_t != 0);
-        top_c[i*32 +: 32] = (sp_t != 0) ? stk_t[sp_t - 1'b1] : 32'd0;
+        en_i  = s1_valid && (i >= s1_pc_ofs) && (i <= s1_end_slot);
+        act_i = dec_action[i*2 +: 2];
 
-        // 只有 [pc_ofs, end_slot] 内的 lane 才真正推进 RAS
-        if (s1_valid && (i >= s1_pc_ofs) && (i <= s1_end_slot)) begin
-            case (dec_action[i*2 +: 2])
-                2'd1: begin // push
-                    if (sp_t < DEPTH) begin
-                        push_en_t[i]   = 1'b1;
-                        push_idx_t[i]  = sp_t;
-                        push_data_t[i] = dec_link[i*32 +: 32];
-                        stk_t[sp_t]    = dec_link[i*32 +: 32];
+        do_pop_t[i]     = en_i && ((act_i == 2'd2) || (act_i == 2'd3)) &&
+                          (sp_v[i] != 0);
+        sp_after_pop[i] = sp_v[i] - {4'd0, do_pop_t[i]};
+        do_push_t[i]    = en_i && ((act_i == 2'd1) || (act_i == 2'd3)) &&
+                          (sp_after_pop[i] < DEPTH);
+        push_idx_t[i]   = sp_after_pop[i];
+        push_en_t[i]    = do_push_t[i];
+        push_data_t[i]  = dec_link[i*32 +: 32];
+        sp_v[i+1]       = sp_after_pop[i] + {4'd0, do_push_t[i]};
 
-                        log_en_t[nlog_t]   = 1'b1;
-                        log_op_t[nlog_t]   = 1'b1;
-                        log_data_t[nlog_t] = dec_link[i*32 +: 32];
-                        log_idx_t[nlog_t]  = wr_t;
-                        nlog_t = nlog_t + 4'd1;
-                        wr_t   = wr_t + 1'b1;
-                        sp_t   = sp_t + 1'b1;
-                        eff_c[i*2 +: 2] = 2'd1;
-                    end
-                end
-                2'd2: begin // pop
-                    if (sp_t != 0) begin
-                        log_en_t[nlog_t]   = 1'b1;
-                        log_op_t[nlog_t]   = 1'b0;
-                        log_data_t[nlog_t] = stk_t[sp_t - 1'b1];
-                        log_idx_t[nlog_t]  = wr_t;
-                        nlog_t = nlog_t + 4'd1;
-                        wr_t   = wr_t + 1'b1;
-                        sp_t   = sp_t - 1'b1;
-                        eff_c[i*2 +: 2] = 2'd2;
-                    end
-                end
-                2'd3: begin // pop_push: 先 pop 再 push
-                    if (sp_t != 0) begin
-                        log_en_t[nlog_t]   = 1'b1;
-                        log_op_t[nlog_t]   = 1'b0;
-                        log_data_t[nlog_t] = stk_t[sp_t - 1'b1];
-                        log_idx_t[nlog_t]  = wr_t;
-                        nlog_t = nlog_t + 4'd1;
-                        wr_t   = wr_t + 1'b1;
-                        sp_t   = sp_t - 1'b1;
-                        eff_c[i*2 +: 2] = 2'd2;
-                    end
-                    if (sp_t < DEPTH) begin
-                        push_en_t[i]   = 1'b1;
-                        push_idx_t[i]  = sp_t;
-                        push_data_t[i] = dec_link[i*32 +: 32];
-                        stk_t[sp_t]    = dec_link[i*32 +: 32];
-
-                        log_en_t[nlog_t]   = 1'b1;
-                        log_op_t[nlog_t]   = 1'b1;
-                        log_data_t[nlog_t] = dec_link[i*32 +: 32];
-                        log_idx_t[nlog_t]  = wr_t;
-                        nlog_t = nlog_t + 4'd1;
-                        wr_t   = wr_t + 1'b1;
-                        sp_t   = sp_t + 1'b1;
-                        eff_c[i*2 +: 2] = (eff_c[i*2 +: 2] == 2'd2) ? 2'd3 : 2'd1;
-                    end
-                end
-                default: ;
-            endcase
-        end
+        if (!en_i) eff_i[i] = 2'd0;
+        else case (act_i)
+            2'd1: eff_i[i] = do_push_t[i] ? 2'd1 : 2'd0;
+            2'd2: eff_i[i] = do_pop_t[i]  ? 2'd2 : 2'd0;
+            2'd3: eff_i[i] = do_pop_t[i] ? (do_push_t[i] ? 2'd3 : 2'd2) :
+                                            (do_push_t[i] ? 2'd1 : 2'd0);
+            default: eff_i[i] = 2'd0;
+        endcase
     end
 
-    sp_next = sp_t;
-    wr_next = wr_t;
-end
+    // ---- 第二遍: top ----
+    for (i = 0; i < 4; i = i + 1)
+        top_val[i] = (sp_v[i] != 0) ?
+                     stack_peek(i[3:0],
+                                (sp_v[i] != 0) ? (sp_v[i] - 1'b1) : {SP_W{1'b0}}) :
+                     32'd0;
 
-// 本块最多还要 8 条 log; 必须把当前块的 nlog 也算进去, 否则可能在
-// “占用 60、块要 8 条”时覆盖最老的未提交项。
-wire [6:0] occ_need = {1'b0, wr_q - cmt_q} + {3'b0, nlog_t};
-assign full = s1_valid ? (occ_need > (LOG_DEPTH - 1)) :
-                         ((wr_q - cmt_q) == (LOG_DEPTH - 1));
+    // ---- 输出 ----
+    for (i = 0; i < 4; i = i + 1) begin
+        top_vld_c[i]      = (sp_v[i] != 0);
+        top_c[i*32 +: 32] = top_val[i];
+        // 快照 id 就是 FTQ entry index; lane 用绝对 slot。
+        ckpt_c[i*6 +: 6]  = {s1_idx, i[1:0]};
+        eff_c[i*2 +: 2]   = eff_i[i];
+    end
+
+    sp_next = sp_v[4];
+end
 
 assign top_vld    = busy_q ? 4'b0 : top_vld_c;
 assign top        = top_c;
@@ -207,193 +200,152 @@ assign ckpt       = ckpt_c;
 assign eff_action = eff_c;
 
 // ---------------------------------------------------------------------------
-// 顺序: S1 应用 / rollback / 清空
+// 快照写数据 (动作之前的栈 + 本块动作/PC)
 // ---------------------------------------------------------------------------
-wire [5:0] occ_q      = wr_q - cmt_q;
-wire [5:0] rec_dist_q = wr_q - rec_ckpt;
-wire       rec_ok     = (rec_dist_q <= occ_q);
-// checkpoint 无效 (log 回绕/快照过期) 时整颗 RAS 清掉, 保持指针一致。
-wire       invalid_rec = rec_valid && !rec_ok;
+wire [DEPTH*32-1:0] stk_flat;
+genvar g;
+generate
+for (g = 0; g < DEPTH; g = g + 1) begin : g_flat
+    assign stk_flat[g*32 +: 32] = stk_q[g];
+end
+endgenerate
 
+wire [SNAP_W-1:0] snap_wdata = {s1_pc_ofs, s1_start_pc, eff_c, sp_q, stk_flat};
+
+// 快照写: 每块一个写口。与主状态机的 push 写同拍, 但地址/数据独立。
+always @(posedge clk) begin
+    if (s1_fire)
+        snap_mem[s1_idx] <= snap_wdata;
+end
+
+// ---------------------------------------------------------------------------
+// 恢复回放
+// ---------------------------------------------------------------------------
+wire [31:0] snap_start_pc = snap_sel[SW_PC +: 32];
+wire [31:0] snap_line_pc  = {snap_start_pc[31:4], 4'b0};
+// 分支 lane 用 redirect 送来的实际 link; 更早的 lane 用快照块 PC 重算 pc+4。
+wire [31:0] replay_link   = (replay_lane_q == rec_lane_q) ? rec_link_q :
+                            (snap_line_pc + {replay_lane_q, 2'b00} + 32'd4);
+wire [2:0]  replay_act    = (replay_lane_q == rec_lane_q) ? rec_action_q :
+                            {1'b0, snap_sel[SW_EFF + replay_lane_q*2 +: 2]};
+
+// ---------------------------------------------------------------------------
+// 顺序
+// ---------------------------------------------------------------------------
 integer j;
 always @(posedge clk) begin
     if (rst) begin
-        sp_q          <= {SP_W{1'b0}};
-        wr_q          <= {CW{1'b0}};
-        busy_q        <= 1'b0;
-        rec_target_q  <= {CW{1'b0}};
-        rec_action_q  <= 3'd0;
-        rec_link_q    <= 32'd0;
+        sp_q           <= {SP_W{1'b0}};
+        snap_valid_q   <= {DEPTH{1'b0}};
+        state_q        <= ST_IDLE;
+        busy_q         <= 1'b0;
+        rec_lane_q     <= 2'd0;
+        rec_replay_q   <= 1'b0;
+        rec_action_q   <= 3'd0;
+        rec_link_q     <= 32'd0;
+        rec_snap_q     <= 4'd0;
+        replay_lane_q  <= 2'd0;
+        replay_end_q   <= 2'd0;
         for (j = 0; j < DEPTH; j = j + 1)
             stk_q[j] <= 32'd0;
-        log_op_q <= {LOG_DEPTH{1'b0}};
-        for (j = 0; j < LOG_DEPTH; j = j + 1)
-            log_data_q[j] <= 32'd0;
     end else if (clr_valid) begin
-        // RTU 重定向: 没有 chk, 丢掉全部推测状态 (栈内容不清理, 指针归零即可)
-        sp_q     <= {SP_W{1'b0}};
-        wr_q     <= {CW{1'b0}};
-        busy_q   <= 1'b0;
+        sp_q           <= {SP_W{1'b0}};
+        snap_valid_q   <= {DEPTH{1'b0}};
+        state_q        <= ST_IDLE;
+        busy_q         <= 1'b0;
     end else if (rec_valid) begin
-        if (rec_ok) begin
-            rec_target_q <= rec_ckpt;
-            rec_action_q <= rec_action;
-            rec_link_q   <= rec_link;
-            busy_q       <= 1'b1;
+        if (snap_valid_q[rec_ckpt[5:2]]) begin
+            rec_lane_q    <= rec_ckpt[1:0];
+            rec_replay_q  <= rec_replay;
+            rec_action_q  <= rec_action;
+            rec_link_q    <= rec_link;
+            rec_snap_q    <= rec_ckpt[5:2];
+            state_q       <= ST_RESTORE;
+            busy_q        <= 1'b1;
         end else begin
-            // checkpoint 不在 live window (log 回绕/无效快照): 丢掉 RAS, 保正确性
-            sp_q     <= {SP_W{1'b0}};
-            wr_q     <= {CW{1'b0}};
-            busy_q   <= 1'b0;
-            // cmt_q 由下面的独立 always 用 invalid_rec 清 0
+            // 无效快照: 丢掉推测栈和全部快照 id, 保持正确性
+            sp_q          <= {SP_W{1'b0}};
+            snap_valid_q  <= {DEPTH{1'b0}};
+            state_q       <= ST_IDLE;
+            busy_q        <= 1'b0;
         end
-    end else if (busy_q) begin
-        if (wr_q != rec_target_q) begin
-            // 逆序撤销一条
-            wr_q <= wr_q - 1'b1;
-            if (log_op_q[wr_q - 1'b1]) begin
-                if (sp_q != 0)
-                    sp_q <= sp_q - 1'b1;                // undo push
-            end else begin
-                if (sp_q < DEPTH) begin
-                    stk_q[sp_q] <= log_data_q[wr_q - 1'b1]; // undo pop
-                    sp_q        <= sp_q + 1'b1;
+    end else begin
+        // ---- 公共路径: 应用本块动作 + 写快照 ----
+        if (s1_fire) begin
+            snap_valid_q[s1_idx] <= 1'b1;
+            for (k = 0; k < 4; k = k + 1)
+                if (push_en_t[k])
+                    stk_q[push_idx_t[k]] <= push_data_t[k];
+            sp_q <= sp_next;
+        end
+
+        // ---- 恢复 FSM ----
+        case (state_q)
+            ST_RESTORE: begin
+                for (j = 0; j < DEPTH; j = j + 1)
+                    stk_q[j] <= snap_sel[j*32 +: 32];
+                sp_q <= snap_sel[SW_SP +: SP_W];
+                if (rec_replay_q && (snap_sel[SW_OFS +: 2] <= rec_lane_q)) begin
+                    replay_lane_q <= snap_sel[SW_OFS +: 2];
+                    replay_end_q  <= rec_lane_q;
+                    state_q       <= ST_REPLAY;
+                end else begin
+                    state_q <= ST_IDLE;
+                    busy_q  <= 1'b0;
                 end
             end
-        end else begin
-            // 回到了块首/分支前, 重放该分支的实际动作
-            case (rec_action_q)
-                3'd1: begin // push
-                    if (sp_q < DEPTH) begin
-                        stk_q[sp_q]        <= rec_link_q;
-                        log_op_q[wr_q]     <= 1'b1;
-                        log_data_q[wr_q]   <= rec_link_q;
-                        sp_q               <= sp_q + 1'b1;
-                        wr_q               <= wr_q + 1'b1;
+            ST_REPLAY: begin
+                case (replay_act)
+                    3'd1: begin // push
+                        if (sp_q < DEPTH) begin
+                            stk_q[sp_q] <= replay_link;
+                            sp_q        <= sp_q + 1'b1;
+                        end
                     end
-                end
-                3'd2: begin // pop
-                    if (sp_q != 0) begin
-                        log_op_q[wr_q]   <= 1'b0;
-                        log_data_q[wr_q] <= stk_q[sp_q - 1'b1];
-                        sp_q             <= sp_q - 1'b1;
-                        wr_q             <= wr_q + 1'b1;
+                    3'd2: begin // pop
+                        if (sp_q != 0)
+                            sp_q <= sp_q - 1'b1;
                     end
-                end
-                3'd3: begin // pop_push
-                    if (sp_q != 0) begin
-                        log_op_q[wr_q]     <= 1'b0;
-                        log_data_q[wr_q]   <= stk_q[sp_q - 1'b1];
-                        log_op_q[wr_q+1'b1]   <= 1'b1;
-                        log_data_q[wr_q+1'b1] <= rec_link_q;
-                        stk_q[sp_q - 1'b1] <= rec_link_q;
-                        wr_q               <= wr_q + 2'd2;
-                    end else begin
-                        log_op_q[wr_q]   <= 1'b1;
-                        log_data_q[wr_q] <= rec_link_q;
-                        stk_q[0]         <= rec_link_q;
-                        sp_q             <= 1'b1;
-                        wr_q             <= wr_q + 1'b1;
+                    3'd3: begin // pop_push
+                        if (sp_q != 0)
+                            stk_q[sp_q - 1'b1] <= replay_link;
+                        else begin
+                            stk_q[0] <= replay_link;
+                            sp_q     <= 1'b1;
+                        end
                     end
+                    default: ;
+                endcase
+
+                if (replay_lane_q == replay_end_q) begin
+                    state_q <= ST_IDLE;
+                    busy_q  <= 1'b0;
+                end else begin
+                    replay_lane_q <= replay_lane_q + 1'b1;
                 end
-                default: ;
-            endcase
-            busy_q <= 1'b0;
-        end
-    end else if (s1_fire) begin
-        for (k = 0; k < 8; k = k + 1) begin
-            if (log_en_t[k]) begin
-                log_op_q[log_idx_t[k]]   <= log_op_t[k];
-                log_data_q[log_idx_t[k]] <= log_data_t[k];
             end
-        end
-        for (k = 0; k < 4; k = k + 1) begin
-            if (push_en_t[k])
-                stk_q[push_idx_t[k]] <= push_data_t[k];
-        end
-        sp_q <= sp_next;
-        wr_q <= wr_next;
+            default: begin
+                state_q <= ST_IDLE;
+                busy_q  <= 1'b0;
+            end
+        endcase
     end
-end
-
-// 退休: 只推进 commit 指针, 不改栈。cmt_action: 0=0 条, 1/2=1 条, 3=2 条。
-wire [2:0]    cmt_inc3 = (cmt_action == 3'd3) ? 3'd2 :
-                         (cmt_action != 3'd0) ? 3'd1 : 3'd0;
-wire [CW-1:0] cmt_inc  = {{(CW-3){1'b0}}, cmt_inc3};
-
-// RTU 重定向会清空 RAS, 但 RTU 的训练 FIFO 不会清; 已经退休的 call/ret
-// 训练事件可能在 clear 之后才到。此时 log 是空的, 没有可提交的动作, 忽略。
-// ckpt 用来诊断: 正常情况下应等于 log 里最老未提交动作的指针。训练 FIFO 的
-// 延迟/clear 可能让它对不上; 对不上只告警一次, 不能因此停止推进 commit
-// (否则 log 会满, S1 永久停顿)。
-wire cmt_do = cmt_valid && (cmt_inc != {CW{1'b0}}) && (wr_q != cmt_q);
-
-always @(posedge clk) begin
-    if (rst || clr_valid || invalid_rec)
-        cmt_q <= {CW{1'b0}};
-    else if (cmt_do)
-        cmt_q <= cmt_q + cmt_inc;
 end
 
 // ---------------------------------------------------------------------------
 // 断言
 // ---------------------------------------------------------------------------
 // synopsys translate_off
-reg late_warned;
-initial late_warned = 1'b0;
-reg mismatch_warned;
-initial mismatch_warned = 1'b0;
-integer dj;
-integer dbg_cmt_n;
-initial dbg_cmt_n = 0;
 always @(posedge clk) begin
-    if ($test$plusargs("IFU3_DBG") && !rst && cmt_valid &&
-        (cmt_inc != {CW{1'b0}}) && (dbg_cmt_n < 300)) begin
-        $display("[RAS-CMT] t=%0t cmt=%0d ckpt=%0d act=%0d wr=%0d sp=%0d",
-                 $time, cmt_q, cmt_ckpt, cmt_action, wr_q, sp_q);
-        dbg_cmt_n <= dbg_cmt_n + 1;
-    end
-end
-always @(posedge clk) begin
-    if (!rst && !clr_valid && cmt_valid && (cmt_inc != {CW{1'b0}})) begin
-        if (wr_q == cmt_q) begin
-            if (!late_warned) begin
-                late_warned <= 1'b1;
-                $display("[IFU3-RAS] WARN: clear 之后的迟到训练事件 (action=%0d), 后续静默", cmt_action);
-            end
-        end else if ((wr_q - cmt_q) < cmt_inc) begin
-            $display("[IFU3-RAS] ERROR: commit 越过未提交 log (cmt=%0d inc=%0d wr=%0d)",
-                     cmt_q, cmt_inc, wr_q);
-            $fatal;
-        end
-        if ((cmt_ckpt != cmt_q) && !mismatch_warned) begin
-            mismatch_warned <= 1'b1;
-            $display("[IFU3-RAS] DBG ckpt=%0d cmt=%0d wr=%0d action=%0d sp=%0d",
-                     cmt_ckpt, cmt_q, wr_q, cmt_action, sp_q);
-            for (dj = 0; dj < 8; dj = dj + 1)
-                $display("[IFU3-RAS]   log[%0d] op=%b data=%h",
-                         (cmt_q + dj[5:0]) & 6'h3F,
-                         log_op_q[(cmt_q + dj[5:0]) & 6'h3F],
-                         log_data_q[(cmt_q + dj[5:0]) & 6'h3F]);
-        end
-    end
-    if (!rst && rec_valid && !rec_ok) begin
-        $display("[IFU3-RAS] WARN: 无效 checkpoint (wr=%0d ckpt=%0d cmt=%0d), 丢 RAS",
-                 wr_q, rec_ckpt, cmt_q);
+    if (!rst && (state_q == ST_REPLAY) &&
+        (replay_lane_q > replay_end_q) && (replay_lane_q != 2'd0)) begin
+        $display("[IFU3-RAS] ERROR: replay lane %0d > end %0d",
+                 replay_lane_q, replay_end_q);
+        $fatal;
     end
     if (!rst && busy_q && (sp_q > DEPTH)) begin
         $display("[IFU3-RAS] ERROR: sp=%0d > DEPTH", sp_q);
         $fatal;
-    end
-    if (!rst && busy_q && (wr_q != rec_target_q)) begin
-        if ( log_op_q[wr_q - 1'b1] && (sp_q == 0)) begin
-            $display("[IFU3-RAS] ERROR: undo push at sp=0 (wr=%0d)", wr_q);
-            $fatal;
-        end
-        if (!log_op_q[wr_q - 1'b1] && (sp_q >= DEPTH)) begin
-            $display("[IFU3-RAS] ERROR: undo pop at sp=%0d (wr=%0d)", sp_q, wr_q);
-            $fatal;
-        end
     end
 end
 // synopsys translate_on

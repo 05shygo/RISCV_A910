@@ -53,71 +53,67 @@ for (gi = 0; gi < ENTRIES; gi = gi + 1) begin : g_cmp
 end
 endgenerate
 
-function [1:0] pick_pos;
-    input [ENTRIES-1:0] hv;
-    integer i;
-    begin
-        pick_pos = 2'd0;
-        for (i = 0; i < ENTRIES; i = i + 1) begin
-            if (hv[i]) pick_pos = pos_q[i];
+// 命中向量是 one-hot。下面不再用 `for + if (hv[i]) x = data[i]` —— 那种写法
+// 带优先级语义, 综合出来是 32 级串行 mux, 训练口 u_idx 的 CE 也挂在同一锥上
+// (Vivado 的 u_ubtb/tgt_q CE 44 条违例就来自这里)。
+//
+// 注意: 也不能写成 `reg acc; for (...) acc = acc | ...;` —— Yosys/Vivado 会
+// 保留成一条串行 OR 链 (结构分析里仍是 33 级)。这里每个输出 bit 单独做
+// unary reduction, 综合工具才能生成平衡树。
+genvar gb, gg;
+generate
+    for (gb = 0; gb < 32; gb = gb + 1) begin : g_tgt
+        wire [ENTRIES-1:0] term;
+        for (gg = 0; gg < ENTRIES; gg = gg + 1) begin : g_t
+            assign term[gg] = tgt_q[gg][gb] & hit_vec[gg];
         end
+        assign target[gb] = |term;
     end
-endfunction
 
-function [31:0] pick_tgt;
-    input [ENTRIES-1:0] hv;
-    integer i;
-    begin
-        pick_tgt = 32'd0;
-        for (i = 0; i < ENTRIES; i = i + 1) begin
-            if (hv[i]) pick_tgt = tgt_q[i];
+    for (gb = 0; gb < 2; gb = gb + 1) begin : g_pos
+        wire [ENTRIES-1:0] term;
+        for (gg = 0; gg < ENTRIES; gg = gg + 1) begin : g_p
+            assign term[gg] = pos_q[gg][gb] & hit_vec[gg];
         end
+        assign pos[gb] = |term;
     end
-endfunction
+endgenerate
 
-function pick_cond;
-    input [ENTRIES-1:0] hv;
-    integer i;
-    begin
-        pick_cond = 1'b0;
-        for (i = 0; i < ENTRIES; i = i + 1) begin
-            if (hv[i]) pick_cond = cond_q[i];
-        end
+wire [ENTRIES-1:0] cond_term;
+generate
+    for (gg = 0; gg < ENTRIES; gg = gg + 1) begin : g_cond
+        assign cond_term[gg] = cond_q[gg] & hit_vec[gg];
     end
-endfunction
-
-function [IDX_W-1:0] pick_idx;
-    input [ENTRIES-1:0] hv;
-    integer i;
-    begin
-        pick_idx = {IDX_W{1'b0}};
-        for (i = 0; i < ENTRIES; i = i + 1) begin
-            if (hv[i]) pick_idx = i[IDX_W-1:0];
-        end
-    end
-endfunction
-
-function [IDX_W-1:0] pick_alloc_idx;
-    input [ENTRIES-1:0] vld;
-    input [IDX_W-1:0]   rr;
-    integer i;
-    reg found;
-    begin
-        pick_alloc_idx = rr;
-        found = 1'b0;
-        for (i = 0; i < ENTRIES; i = i + 1) begin
-            if (!found && !vld[i]) begin
-                pick_alloc_idx = i[IDX_W-1:0];
-                found = 1'b1;
-            end
-        end
-    end
-endfunction
+endgenerate
 
 assign hit     = |hit_vec;
-assign pos     = pick_pos(hit_vec);
-assign is_cond = pick_cond(hit_vec);
-assign target  = pick_tgt(hit_vec);
+assign is_cond = |cond_term;
+
+// one-hot → index。每个 index bit = 一个常量掩码的 unary reduction,
+// 没有优先级链; 调用点保证输入 one-hot。
+function [IDX_W-1:0] oh_to_idx;
+    input [ENTRIES-1:0] oh;
+    integer i, b;
+    reg [ENTRIES-1:0] mask;
+    begin
+        for (b = 0; b < IDX_W; b = b + 1) begin
+            mask = {ENTRIES{1'b0}};
+            for (i = 0; i < ENTRIES; i = i + 1)
+                if (((i >> b) & 1) != 0)
+                    mask[i] = 1'b1;
+            oh_to_idx[b] = |(oh & mask);
+        end
+    end
+endfunction
+
+// 分配: 原来是从 0 开始串行找第一个空项, 找不到才回退 rr_q。
+// `free_vec & -free_vec` 直接取出最低位的空闲项 (综合成 CARRY 链/优先级树),
+// 语义与"从 0 扫第一个 0"完全一致。rr_q 仍只作为全满时的兜底。
+wire [ENTRIES-1:0] free_vec   = ~vld_q;
+wire [ENTRIES-1:0] first_free = free_vec & (~free_vec + 1'b1);
+wire               has_free   = |free_vec;
+wire [IDX_W-1:0]   free_idx   = oh_to_idx(first_free);
+wire [IDX_W-1:0]   alloc_idx  = has_free ? free_idx : rr_q;
 
 wire [TAG_W-1:0] u_tag = upd_pc[15:4];
 wire [1:0]       u_pos = upd_pc[3:2];
@@ -135,7 +131,8 @@ end
 endgenerate
 
 wire u_hit = |u_hit_vec;
-wire [IDX_W-1:0] u_idx = u_hit ? pick_idx(u_hit_vec) : pick_alloc_idx(vld_q, rr_q);
+wire [IDX_W-1:0] u_hit_idx = oh_to_idx(u_hit_vec);
+wire [IDX_W-1:0] u_idx = u_hit ? u_hit_idx : alloc_idx;
 
 integer i;
 always @(posedge clk) begin

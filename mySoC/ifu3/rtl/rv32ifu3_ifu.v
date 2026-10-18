@@ -153,10 +153,21 @@ wire [31:0] ftq_rd_line_pc = {ftq_rd_start_pc[31:4], 4'b0};
 wire        s0_hit   = s0_busy && ic_q_hit;   // 本拍 ICache 返回当前请求
 wire        s1_ready;                         // = !s1_valid || s1_fire (下面赋值)
 // 1 块/拍: 响应可以直接旁路进 S1, 同拍再发下一块; S1 接不走时落 skid。
+// IFU override 对外打了一拍 (top 里的 ifu_ovr_*_q)。FTQ 的 count 截断/BPU 重启
+// 因此晚一拍, S0 也必须晚一拍再发新块, 否则会在 N+1 把将要被 override 丢弃的
+// 年轻块先读进来, 而 IFU 自己不会丢弃它。hold 只闸 s0_issue; S1 仍用当拍
+// ifu_ovr_valid 闸 fire, 保证 RAS 动作按修正后的 end_slot 应用。
+reg ifu_ovr_hold_q;
+always @(posedge clk) begin
+    if (rst || redirect) ifu_ovr_hold_q <= 1'b0;
+    else if (ifu_ovr_valid) ifu_ovr_hold_q <= 1'b1;
+    else ifu_ovr_hold_q <= 1'b0;
+end
+
 wire        s0_issue = !s0_resp_valid &&
                        (!s0_busy || (s0_hit && s1_ready)) &&
                        ftq_rd_valid && init_done && !redirect &&
-                       !ovr_valid && !ifu_ovr_valid;
+                       !ovr_valid && !ifu_ovr_valid && !ifu_ovr_hold_q;
 
 assign ic_rd_addr     = s0_issue ? ftq_rd_line_pc :
                         (s0_busy ? s0_req_addr : 32'd0);
@@ -177,10 +188,45 @@ reg [127:0] s1_data;
 reg [  3:0] s1_idx;
 reg         s1_corr_done;
 
+// S0 预译码结果 (与 s1_data 同拍打进来)
+reg [127:0] s1_pd_link;
+reg [127:0] s1_pd_jal_tgt;
+reg [  3:0] s1_pd_is_cfi;
+reg [  3:0] s1_pd_is_jal;
+reg [  3:0] s1_pd_is_ret;
+reg [  7:0] s1_pd_action;
+
 wire [1:0] s1_pc_ofs    = s1_start_pc[3:2];
 wire       s1_eff_taken = s1_taken && (s1_taken_slot >= s1_pc_ofs);
 wire [1:0] s1_end_slot  = s1_eff_taken ? s1_taken_slot : 2'd3;
 wire [31:0] s1_line_pc  = {s1_start_pc[31:4], 4'b0};
+
+// ---------------------------------------------------------------------------
+// S0 -> S1 预译码
+// 数据源必须与 s1_data 的选择一致: skid 优先, 否则用本拍 ICache 旁路。
+// 这一步和 s1_data 的寄存同拍完成, 但结果单独打拍; S1 的控制锥 (PredChecker/
+// RAS) 只看到已译码字段, 不再从 128-bit s1_data 起头。
+// ---------------------------------------------------------------------------
+wire [127:0] s1_data_next     = s0_resp_valid ? s0_resp_data : ic_q_data;
+wire [ 31:0] s1_start_pc_next = s0_resp_valid ? s0_resp_start_pc : s0_req_start_pc;
+
+wire [127:0] pd_lane_link;
+wire [127:0] pd_lane_jal_tgt;
+wire [  3:0] pd_lane_is_cfi;
+wire [  3:0] pd_lane_is_jal;
+wire [  3:0] pd_lane_is_ret;
+wire [  7:0] pd_lane_action;
+
+rv32ifu3_predecode u_predecode (
+    .line         (s1_data_next),
+    .start_pc     (s1_start_pc_next),
+    .lane_link    (pd_lane_link),
+    .lane_jal_tgt (pd_lane_jal_tgt),
+    .lane_is_cfi  (pd_lane_is_cfi),
+    .lane_is_jal  (pd_lane_is_jal),
+    .lane_is_ret  (pd_lane_is_ret),
+    .lane_action  (pd_lane_action)
+);
 
 // ---------------------------------------------------------------------------
 // S2: 组包/推 IBUF
@@ -197,15 +243,13 @@ reg [127:0] s2_data;
 reg [  1:0] s2_end_slot;
 reg [  2:0] s2_cur_slot;
 reg [  3:0] s2_idx;
-reg [ 23:0] s2_ras_ckpt;      // 6b/lane, 该 lane 动作前的 RAS log 指针
+reg [ 23:0] s2_ras_ckpt;      // 6b/lane, {快照 id, lane}
 reg [  7:0] s2_ras_eff;       // 2b/lane, 实际生效的 RAS 动作
-reg [  5:0] s2_start_ras_ckpt; // 本块动作前的 log 指针 (BPU override 回滚用)
+reg [  5:0] s2_start_ras_ckpt; // 本块快照 id (BPU override 恢复用)
 
 // ---------------------------------------------------------------------------
 // PredChecker / RAS 连线
 // ---------------------------------------------------------------------------
-wire [  7:0] pc_dec_action;
-wire [127:0] pc_dec_link;
 wire         pc_corr_valid;
 wire         pc_corr_taken;
 wire [  1:0] pc_corr_slot;
@@ -252,7 +296,10 @@ assign ifu_ovr_btb_cond   = s1_btb_cond;
 assign ifu_ovr_phr        = s1_phr;
 
 rv32ifu3_predcheck u_predcheck (
-    .line          (s1_data),
+    .lane_is_cfi   (s1_pd_is_cfi),
+    .lane_is_jal   (s1_pd_is_jal),
+    .lane_is_ret   (s1_pd_is_ret),
+    .lane_jal_tgt  (s1_pd_jal_tgt),
     .line_pc       (s1_line_pc),
     .pc_ofs        (s1_pc_ofs),
     .pred_taken    (s1_eff_taken),
@@ -260,8 +307,6 @@ rv32ifu3_predcheck u_predcheck (
     .pred_target   (s1_target),
     .ras_top_vld   (ras_top_vld),
     .ras_top       (ras_top),
-    .dec_action    (pc_dec_action),
-    .dec_link      (pc_dec_link),
     .corr_valid    (pc_corr_valid),
     .corr_taken    (pc_corr_taken),
     .corr_slot     (pc_corr_slot),
@@ -270,8 +315,7 @@ rv32ifu3_predcheck u_predcheck (
 );
 
 rv32ifu3_ras #(
-    .DEPTH     (16),
-    .LOG_DEPTH (64)
+    .DEPTH (16)
 ) u_ras (
     .clk         (clk),
     .rst         (rst),
@@ -279,8 +323,10 @@ rv32ifu3_ras #(
     .s1_pc_ofs   (s1_pc_ofs),
     .s1_end_slot (s1_end_slot),
     .s1_fire     (s1_fire),
-    .dec_action  (pc_dec_action),
-    .dec_link    (pc_dec_link),
+    .s1_idx      (s1_idx),
+    .s1_start_pc (s1_start_pc),
+    .dec_action  (s1_pd_action),
+    .dec_link    (s1_pd_link),
     .top_vld     (ras_top_vld),
     .top         (ras_top),
     .ckpt        (ras_ckpt),
@@ -289,12 +335,10 @@ rv32ifu3_ras #(
     .full        (ras_full),
     .rec_valid   (ras_rec_valid),
     .rec_ckpt    (ras_rec_ckpt),
+    .rec_replay  (ras_rec_iu),
     .rec_action  (ras_rec_action),
     .rec_link    (ras_rec_link),
-    .clr_valid   (ras_clr_valid),
-    .cmt_valid   (rtu_train_vld),
-    .cmt_action  (rtu_train_chk[18:16]),
-    .cmt_ckpt    (rtu_train_chk[24:19])
+    .clr_valid   (ras_clr_valid)
 );
 
 reg [  2:0] inflight_q;
@@ -316,8 +360,10 @@ wire [3:0] s2_push_mask = (4'd1 << s2_push_n) - 4'd1;
 // (要省这一拍, 必须让 FTQ override 同时处理 finish 并调整 count, 见 Phase 3。)
 assign ovr_dist     = ovr_idx - ftq_head_idx;
 
-assign ib_push_mask = (s2_valid && !ovr_valid && !ifu_ovr_valid) ? s2_push_mask : 4'h0;
-assign ftq_finish   = s2_finish && !redirect && !ovr_valid && !ifu_ovr_valid;
+assign ib_push_mask = (s2_valid && !ovr_valid && !ifu_ovr_valid &&
+                       !ifu_ovr_hold_q) ? s2_push_mask : 4'h0;
+assign ftq_finish   = s2_finish && !redirect && !ovr_valid && !ifu_ovr_valid &&
+                      !ifu_ovr_hold_q;
 assign ftq_inflight = inflight_q;
 
 // 四个 push lane 的打包
@@ -417,7 +463,7 @@ assign ib_push_data3 = {s2_chk3, s2_pkt3};
 // ---------------------------------------------------------------------------
 assign s2_ready = !s2_valid || s2_finish;
 assign s1_fire  = s1_valid && s2_ready && !redirect && !ifu_ovr_valid &&
-                  !ovr_valid && !ras_busy && !ras_full;
+                  !ifu_ovr_hold_q && !ovr_valid && !ras_busy && !ras_full;
 assign s1_ready      = !s1_valid || s1_fire;
 assign s1_load_skid  = s0_resp_valid && s1_ready;
 assign s1_load_direct= s0_hit && s1_ready && !s0_resp_valid;
@@ -458,7 +504,7 @@ always @(posedge clk) begin
         s2_start_ras_ckpt <= 6'd0;
     end else if (ifu_ovr_valid) begin
         // PredChecker 修正当前 S1 块: 保留 S1/S2, 只丢弃年轻 S0, 闸一拍。
-        // FTQ 重写同一项、BPU 从修正 target 重启由 top 完成。
+        // FTQ 重写同一项、BPU 从修正 target 重启由 top 完成 (下一拍)。
         s0_busy        <= 1'b0;
         s0_resp_valid  <= 1'b0;
         inflight_q     <= (s1_dist >= 4'd7) ? 3'd7 : (s1_dist[2:0] + 3'd1);
@@ -466,6 +512,14 @@ always @(posedge clk) begin
         s1_taken_slot  <= pc_corr_slot;
         s1_target      <= pc_corr_target;
         s1_corr_done   <= 1'b1;
+    end else if (ifu_ovr_hold_q) begin
+        // top 的 registered IFU override 在本拍进 FTQ/BPU。FTQ 的 override
+        // 分支会忽略同拍 finish/alloc, 所以这里也必须把 S0/S1/S2 整条停住:
+        // 不 fire、不 push、不 finish、不推进 cur_slot、不改 inflight。
+        // (否则 S2 finish 被 FTQ 忽略, 而 IFU 的 inflight 照减, 指针立刻错位,
+        //  表现为同一个 FTQ entry 被取两次。)
+        s0_busy       <= 1'b0;
+        s0_resp_valid <= 1'b0;
     end else if (ovr_valid) begin
         // S2 override: 本拍 IFU 不推进 (推入/finish 已在外面门控);
         // 若 override 项已经被 IFU 取走, 丢弃它和它的年轻项; 更老的项保留。
@@ -532,6 +586,12 @@ always @(posedge clk) begin
             s1_meta_id       <= s0_resp_valid ? s0_resp_meta_id  : s0_req_meta_id;
             s1_data          <= s0_resp_valid ? s0_resp_data     : ic_q_data;
             s1_idx           <= s0_resp_valid ? s0_resp_idx      : s0_req_idx;
+            s1_pd_link       <= pd_lane_link;
+            s1_pd_jal_tgt    <= pd_lane_jal_tgt;
+            s1_pd_is_cfi     <= pd_lane_is_cfi;
+            s1_pd_is_jal     <= pd_lane_is_jal;
+            s1_pd_is_ret     <= pd_lane_is_ret;
+            s1_pd_action     <= pd_lane_action;
             s1_corr_done     <= 1'b0;
         end
 
@@ -582,7 +642,7 @@ always @(posedge clk) begin
             $display("[IFU3-IFU] ERROR: push_n=%0d > remain=%0d", s2_push_n, s2_remain);
             $fatal;
         end
-        if (!ovr_valid && !ifu_ovr_valid && s2_valid &&
+        if (!ovr_valid && !ifu_ovr_valid && !ifu_ovr_hold_q && s2_valid &&
             (s2_push_n > ib_push_accept) && (s2_push_n != 0)) begin
             $display("[IFU3-IFU] ERROR: push_n=%0d > ib_push_accept=%0d", s2_push_n, ib_push_accept);
             $fatal;
@@ -603,7 +663,7 @@ always @(posedge clk) begin
         if (s1_fire)
             $display("[IFU3-FIRE] t=%0t pc=%h ofs=%0d end=%0d act=%b eff=%b ckpt=%b",
                      $time, s1_start_pc, s1_pc_ofs, s1_end_slot,
-                     pc_dec_action, ras_eff, ras_ckpt);
+                     s1_pd_action, ras_eff, ras_ckpt);
         if (ib_push_mask[0])
             $display("[IFU3-CHK] t=%0t blk=%h cur=%0d slot=%0d pc=%h act=%0d ckpt=%0d effreg=%b ckreg=%b",
                      $time, s2_start_pc, s2_cur_slot, s2_slot0, s2_pc0,
