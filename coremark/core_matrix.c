@@ -126,6 +126,7 @@ core_bench_matrix(mat_params *p, ee_s16 seed, ee_u16 crc)
 
         After the last step, matrix A is back to original contents.
 */
+CM_NO_VECTORIZE
 ee_s16
 matrix_test(ee_u32 N, MATRES *C, MATDAT *A, MATDAT *B, MATDAT val)
 {
@@ -177,6 +178,7 @@ matrix_test(ee_u32 N, MATRES *C, MATDAT *A, MATDAT *B, MATDAT val)
         The seed parameter MUST be supplied from a source that cannot be
    determined at compile time
 */
+CM_NO_VECTORIZE
 ee_u32
 core_init_matrix(ee_u32 blksize, void *memblk, ee_s32 seed, mat_params *p)
 {
@@ -299,6 +301,7 @@ matrix_add_const(ee_u32 N, MATDAT *A, MATDAT val)
         This is common in many simple filters (e.g. fir where a vector of
    coefficients is applied to the matrix.)
 */
+CM_NO_VECTORIZE
 void
 matrix_mul_vect(ee_u32 N, MATRES *C, MATDAT *A, MATDAT *B)
 {
@@ -318,6 +321,7 @@ matrix_mul_vect(ee_u32 N, MATRES *C, MATDAT *A, MATDAT *B)
         Basic code is used in many algorithms, mostly with minor changes such as
    scaling.
 */
+CM_NO_VECTORIZE
 void
 matrix_mul_matrix(ee_u32 N, MATRES *C, MATDAT *A, MATDAT *B)
 {
@@ -340,6 +344,7 @@ matrix_mul_matrix(ee_u32 N, MATRES *C, MATDAT *A, MATDAT *B)
         Basic code is used in many algorithms, mostly with minor changes such as
    scaling.
 */
+CM_NO_VECTORIZE
 void
 matrix_mul_matrix_bitextract(ee_u32 N, MATRES *C, MATDAT *A, MATDAT *B)
 {

@@ -58,6 +58,41 @@ typedef struct {
 #define EXC_ECALL_M          11
 #define INTR_MTIP_CAUSE      0x80000007u
 
+// ---- RVV 架构参数 (与 Makefile 的 +define+VLEN_128 一致) ----
+#define RVV_VLEN             128
+#define RVV_VLENB            (RVV_VLEN / 8)
+#define RVV_NUM_REGS         32
+#define RVV_MAX_DEST_REGS    8   // 一条指令最多写 8 个向量寄存器 (EMUL<=8)
+
+// vtype 字段位置 (与 RvvFrontEnd.sv 的 bits[20:13] 一致)
+#define RVV_VTYPE_LMUL_SHIFT 0
+#define RVV_VTYPE_SEW_SHIFT  3
+#define RVV_VTYPE_TA_BIT     6
+#define RVV_VTYPE_MA_BIT     7
+#define RVV_VTYPE_VILL_BIT   8
+
+// SEW / LMUL 编码 (与 rvv_backend.svh 的 RVVSEW / RVVLMUL 一致)
+#define RVV_SEW8             0
+#define RVV_SEW16            1
+#define RVV_SEW32            2
+#define RVV_LMUL1            0
+#define RVV_LMUL2            1
+#define RVV_LMUL4            2
+#define RVV_LMUL8            3
+#define RVV_LMULRESERVED     4
+#define RVV_LMUL1_8          5
+#define RVV_LMUL1_4          6
+#define RVV_LMUL1_2          7
+
+typedef struct {
+  uint8_t  vreg[RVV_NUM_REGS][RVV_VLENB];  // 小端字节
+  uint32_t vtype;   // (vill<<8)|(vma<<7)|(vta<<6)|(sew<<3)|lmul
+  uint32_t vl;
+  uint32_t vstart;  // 本 SoC 固定 0
+  uint32_t vxrm;    // 本 SoC 固定 0 = RNU
+  uint32_t vxsat;   // sticky; 本 SoC 没有读回 CSR 的通路
+} riscv_vector_state;
+
 typedef struct {
   uint32_t gpr[32];
   uint32_t pc;
@@ -77,6 +112,7 @@ typedef struct {
   // 已寄存的定时器中断电平, 由 TB 经 gm_set_irq() 推入;
   // golden model 自己【不重算】它 —— 自己算必然和 DUT 差拍.
   uint32_t irq_timer;
+  riscv_vector_state vec;
 } riscv32_CPU_state;
 
 typedef struct {
@@ -102,7 +138,7 @@ typedef struct {
     __uint32_t wb_ena;
 } WB_info;
 
-typedef enum { OP_ADD, OP_SLT, OP_SLTU, OP_AND, OP_OR, OP_XOR, OP_SLL, OP_SRL, OP_SUB, OP_SRA, OP_MUL, OP_MULH, OP_MULHSU, OP_MULHU, OP_DIV, OP_DIVU, OP_REM, OP_REMU, OP_INVALID, OP_ECALL, OP_EBREAK, OP_MRET, OP_CSR } alu_op_t;
+typedef enum { OP_ADD, OP_SLT, OP_SLTU, OP_AND, OP_OR, OP_XOR, OP_SLL, OP_SRL, OP_SUB, OP_SRA, OP_MUL, OP_MULH, OP_MULHSU, OP_MULHU, OP_DIV, OP_DIVU, OP_REM, OP_REMU, OP_INVALID, OP_ECALL, OP_EBREAK, OP_MRET, OP_CSR, OP_VECTOR } alu_op_t;
 // CSR 子操作
 typedef enum { CSR_OP_NONE, CSR_OP_RW, CSR_OP_RS, CSR_OP_RC } csr_op_t;
 typedef enum { MEM_LB, MEM_LBU, MEM_LH, MEM_LHU, MEM_LW, MEM_SB, MEM_SH, MEM_SW } mem_op_t;
@@ -134,6 +170,7 @@ typedef struct {
     uint32_t exc_valid;    // 该指令产生同步异常
     uint32_t exc_cause;
     uint32_t exc_tval;
+    uint32_t is_vec;       // 0x57/0x07/0x27: 由 rvv_execute 执行
 } ID2EX;
 
 typedef struct {
@@ -152,6 +189,7 @@ typedef struct {
     uint32_t exc_cause;
     uint32_t exc_tval;
     uint32_t is_mret;
+    uint32_t is_vec;
 } EX2MEM;
 
 typedef struct {
@@ -168,6 +206,7 @@ typedef struct {
     uint32_t exc_cause;
     uint32_t exc_tval;
     uint32_t is_mret;
+    uint32_t is_vec;
 } MEM2WB;
 
 #endif

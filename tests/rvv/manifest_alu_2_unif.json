@@ -1,0 +1,131 @@
+{
+ "group": "alu",
+ "test": "alu_2",
+ "n": 20,
+ "progress_addr": 8800,
+ "phase_addr": 8804,
+ "status_addr": 8812,
+ "a0_addr": 8808,
+ "cases": [
+  {
+   "id": 0,
+   "name": "vxor.vv e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 1,
+   "name": "vxor.vx e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 2,
+   "name": "vxor.vi e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 3,
+   "name": "vsll.vv e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 4,
+   "name": "vsll.vx e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 5,
+   "name": "vsll.vi e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 6,
+   "name": "vsrl.vv e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 7,
+   "name": "vsrl.vx e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 8,
+   "name": "vsrl.vi e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 9,
+   "name": "vsra.vv e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 10,
+   "name": "vsra.vx e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 11,
+   "name": "vsra.vi e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 12,
+   "name": "vssrl.vv e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 13,
+   "name": "vssrl.vx e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 14,
+   "name": "vssrl.vi e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 15,
+   "name": "vssra.vv e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 16,
+   "name": "vssra.vx e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 17,
+   "name": "vssra.vi e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 18,
+   "name": "vsaddu.vv e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 19,
+   "name": "vsaddu.vx e32",
+   "kind": "vreg",
+   "bytes": 16
+  }
+ ]
+}

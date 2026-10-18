@@ -37,6 +37,27 @@ Original Author: Shay Gal-on
 
 #include "core_portme.h"
 
+/* ---------------------------------------------------------------------------
+ * CoreMark RVV bring-up（编译器规避路线, 2026-10-18）
+ *
+ * GCC 14 自动向量化会把少数函数编成 A910 向量融合层不支持的形态:
+ *   vmv.x.s / vmv.s.x（归约回标量）、vid.v、vrgather、整寄存器 spill
+ *   (vs1r/vl1r/vl1re*) 以及被 RvvFrontEnd 判 vill 的 e16,mf4 / e8,mf8 vset。
+ * 相应函数在这里逐个关掉向量化, 其余函数保留自动向量化。
+ *
+ * ⚠️ 只有 RVV 构建定义 COREMARK_RVV。标量构建下宏展开为空, 源码语义与
+ *    代码生成都不变 —— bin/coremark.bin 必须逐位一致（用 cmp 验证）。
+ * ------------------------------------------------------------------------- */
+#if defined(COREMARK_RVV) && COREMARK_RVV
+/* ⚠️ optimize 属性会把该函数的编译选项切到"命令行基线 + 这里列出的项",
+ *    且**不接受 -fno-builtin**。对 number()（ee_printf.c）这种含清零循环的
+ *    函数, 这会把它改写成 memset 而本 port 是 -nostdlib ⇒ 该文件改用整文件
+ *    -fno-tree-vectorize（见 Makefile.coremark_rvv）, 不用这个属性。 */
+#define CM_NO_VECTORIZE __attribute__((optimize("no-tree-vectorize")))
+#else
+#define CM_NO_VECTORIZE
+#endif
+
 #if HAS_STDIO
 #include <stdio.h>
 #endif

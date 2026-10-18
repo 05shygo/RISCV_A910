@@ -239,7 +239,13 @@ begin
   begin
     ld_wb_data_addr[31:0] <=  ld_wb_pre_data_addr[31:0];
     ld_wb_data_iid[6:0]   <=  ld_wb_pre_data_iid[6:0];
-    ld_wb_data_vec        <=  ld_da_vec;       // 只可能来自 DA (RB 通路恒标量)
+    // ⚠️ 2026-10-18: vec 必须跟着**数据来源**走, 不能无条件取当拍的 ld_da_vec。
+    // RB (dcache miss 回填) 这条通路恒为标量 load; 而它写回的那一拍 DA 可能
+    // 恰好在处理一个**向量** beat (ld_da_vec=1, 但它没有 data_req, 所以不会
+    // 抢到数据源)。原写法会把标量 load 标成 vec ⇒ lsu_idu_wb_pipe3_wb_preg_vld
+    // 被 `~ld_wb_data_vec` 清 0 ⇒ 等这个 load 结果的标量指令永远不唤醒 ⇒ 死锁。
+    // (实测: alu_0 卡在 vmseq 用例之后的第一段标量自检 lw 的消费者上)
+    ld_wb_data_vec        <=  ld_wb_da_data_grnt ? ld_da_vec : 1'b0;  // RB 通路恒标量
     ld_wb_data_uop_idx[4:0] <= ld_da_uop_idx[4:0];
   end
 end

@@ -1,5 +1,6 @@
 #include <cpu.h>
 #include <csr.h>
+#include <rvv.h>
 #include <debug.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -20,6 +21,20 @@ riscv32_CPU_state cpu;
 peripheral_descr peripherals[MAX_PERIPHERAL];
 uint32_t num_peripherals = 0;
 uint32_t memory[MEM_SZ / sizeof(uint32_t)];
+
+#ifdef GM_TRACE_COREMARK
+/* 临时调试（2026-10-18）: 记录每个字的最后一个写者 (pc/inst/写后值).
+   只在本文件 + MEM.c + rvv_mem.c 里用; VCS 构建不定义该宏. */
+uint32_t gm_tr_pc[MEM_SZ / sizeof(uint32_t)];
+uint32_t gm_tr_inst[MEM_SZ / sizeof(uint32_t)];
+uint32_t gm_tr_val[MEM_SZ / sizeof(uint32_t)];
+void gm_trace_store(uint32_t addr, uint32_t pc, uint32_t inst) {
+    uint32_t i = (addr & (MEM_SZ - 1)) >> 2;
+    gm_tr_pc[i]   = pc;
+    gm_tr_inst[i] = inst;
+    gm_tr_val[i]  = memory[i];
+}
+#endif
 
 extern IF2ID IF(uint32_t);
 extern ID2EX ID(IF2ID);
@@ -120,12 +135,18 @@ uint32_t cpu_get_irq(void) { return cpu.irq_timer; }
 WB_info cpu_run_once() {
     WB_info empty = {0};
 
+    // 只有在真的执行了一条指令时才置 executed; 停机/中断提前返回时保持 0,
+    // DPI 侧据此区分"没执行"和"执行了一条标量指令".
+    cpu_last_executed = 0;
+    rvv_last.valid = 0;
+
     if (cpu_poll_halt()) return empty;
 
     IF2ID inst = IF(cpu.npc);
     ID2EX decode_info = ID(inst);
     EX2MEM ex_info = EX(decode_info);
     MEM2WB mem_info = MEM(ex_info);
+    cpu_last_executed = 1;
     return WB(mem_info);
 }
 
@@ -202,6 +223,7 @@ void init_cpu(const char *fname) {
     cpu.mcycle       = 0;
     cpu.minstret     = 0;
     cpu.irq_timer    = 0;
+    rvv_reset();
     register_peripheral("MONITOR", 0x80000000, 0x8,   read_monitor,    write_monitor);
     register_peripheral("Digit",   0xFFFFF000, 0x4,   read_seven_seg,  write_seven_seg);
     register_peripheral("TIMER",   0xFFFFF040, 0x10,  read_timer,      write_timer);

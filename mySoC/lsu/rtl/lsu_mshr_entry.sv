@@ -464,7 +464,11 @@ always @( rb_entry_state[3:0]
        or rb_entry_wait_resp_to_req_merge
        or rb_entry_biu_r_resp_set
        or rb_entry_req_wb_success
-       or rb_entry_ld_merge_vld)
+       or rb_entry_ld_merge_vld
+       // 2026-10-18: VEC_RSP 的出口条件, 漏在敏感表外 ⇒ 向量 no-fill 表项
+       // 收到数据后 rb_entry_vec_rsp 永远不撤 (grant 一直为 1 也没用) ⇒
+       // fill 只消费第一笔, 后面的向量 load 全部等死。
+       or rb_entry_vec_rsp_grnt_x)
 begin
 rb_entry_next_state[3:0]  = IDLE;
 case(rb_entry_state[3:0])

@@ -595,7 +595,10 @@ assign ld_da_rb_create_vld_unmask = ld_da_inst_vld
 assign ld_da_discard_from_rb_req = !ld_da_vec && ld_da_rb_create_vld_unmask && rb_ld_da_hit_idx;
                                    //|| ld_da_rb_merge_vld_unmask && rb_ld_da_merge_fail;
 
-assign ld_da_discard_from_lfb_req = !ld_da_vec && ld_da_rb_create_vld_unmask
+// 2026-10-18: 向量 load 也要走 LFB 冲突 discard —— 命中正在回填的 LFB 表项时
+// 不另建 no-fill MSHR，而是把 fill_id 记进 LFB 的唤醒队列，等 linefill 数据回来
+// 再唤醒 fill 重发 (见 lsu_lfb.sv 的 lfb_vec_wk_*)。
+assign ld_da_discard_from_lfb_req = ld_da_rb_create_vld_unmask
                                     //|| ld_da_rb_merge_vld_unmask && !ld_da_rb_data_vld
                                    && lfb_ld_da_hit_idx;
 
@@ -701,13 +704,25 @@ assign ld_da_vec_rsp_data     = ld_da_data_unrot[127:0];
 assign ld_da_vec_mshr_created = ld_da_rb_create_vld && !rb_ld_da_full && ld_da_vec;
 assign ld_da_vec_miss         = ld_da_inst_vld && ld_da_vec && !ld_da_vec_nop_q &&
                                 !ld_da_data_vld && !ld_da_restart_vld && !ld_da_expt;
-assign ld_da_vec_restart      = ld_da_inst_vld && ld_da_vec && ld_da_restart_vld;
+// 2026-10-18: 向量 load 被 SQ data/global discard 或 rb/flb 冲突 discard 时
+// **不能立刻 restart** —— 请求要一直挂在 fill 里，等 SQ/LFB 的专用唤醒队列
+// 拿到数据后再用 fill_id 唤醒。这里把这几类事件从 vec_restart/vec_restart_imme
+// 里摘掉，DA 这拍既不 done 也不 restart (fill 的 outstanding 保持)。
+wire vec_wait_sq_data   = ld_da_inst_vld && ld_da_vec && ld_da_data_discard_sq_req;
+wire vec_wait_sq_global = ld_da_inst_vld && ld_da_vec &&
+                          (ld_da_other_discard_sq_req || ld_da_fwd_sq_multi_final);
+wire vec_wait_hit_idx   = ld_da_inst_vld && ld_da_vec && ld_da_hit_idx_discard_req;
+wire vec_wait_wakeup    = vec_wait_sq_data || vec_wait_sq_global || vec_wait_hit_idx;
+
+assign ld_da_vec_restart      = ld_da_inst_vld && ld_da_vec && ld_da_restart_vld
+                                && !vec_wait_wakeup;
 
 // 2026-10-18: DA 通过请求下一 beat; restart 原因 + fill_id 给前端。
 assign ld_da_vec_done              = ld_da_inst_vld && ld_da_vec && !ld_da_restart_vld;
 assign ld_da_vec_restart_rb_full   = ld_da_inst_vld && ld_da_vec && ld_da_rb_full_req;
 assign ld_da_vec_restart_imme      = ld_da_inst_vld && ld_da_vec &&
-                                     ld_da_restart_vld && !ld_da_rb_full_req;
+                                     ld_da_restart_vld && !ld_da_rb_full_req
+                                     && !vec_wait_wakeup;
 assign ld_da_vec_restart_fill_id   = ld_da_fill_id;
 
 // 2026-10-15 停用: 非对齐第二半请求唤醒 IDU, 已摘

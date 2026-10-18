@@ -525,10 +525,15 @@ assign rb_biu_ar_req = rb_biu_req_unmask
                        && (lfb_rb_ca_rready_grnt || rb_biu_req_vec_q);
 
 assign rb_biu_ar_addr[31:0] = {rb_biu_req_addr[31:4],4'b0};
-// 2026-10-18: vector no-fill 用 2'b10 前缀的独立 BIU ID (LFB=00, WMB=01),
+// 2026-10-18: vector no-fill 用独立 BIU ID: {2'b01, 槽号}。
+// ⚠️ 前缀**不能用 2'b10** —— ct_biu_read_channel 按 `rid[3]` 分流:
+//    rid[3]=1 → IFU, 否则 → LSU。用 2'b10 时 R 数据被送到 IFU, MSHR 的
+//    rb_entry_r_id_hit 永不命中 ⇒ fill 永远等不到数据 (2026-10-18 实测:
+//    DA 已 done/建 MSHR, 但 rb_vec_rsp_vld 恒 0)。
+//    LFB 读 ID 是 {2'b00, id}; 2'b01 在 LSU 读侧空闲, 不会和 LFB 撞。
 // 单 beat / 16B / INCR, 不分配 LFB。
 assign rb_biu_ar_id[3:0]    = rb_biu_req_vec_q
-                              ? {2'b10, rb_biu_req_ptr_idx[1:0]}
+                              ? {2'b01, rb_biu_req_ptr_idx[1:0]}
                               : lfb_rb_create_id[3:0];
 assign rb_biu_ar_len[1:0]   = rb_biu_req_vec_q ? 2'b00 : 2'b01;
 assign rb_biu_ar_size[2:0]  = 3'b100;

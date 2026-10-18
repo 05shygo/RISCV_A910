@@ -33,6 +33,10 @@ module ct_lsu_lfb #(
     input  logic [INDEX_WIDTH-1:0]   ld_da_idx,
     input  logic         ld_da_lfb_discard_grnt,
     input  logic         ld_da_lfb_set_wakeup_queue,
+    // 2026-10-18: 向量 load 命中 LFB 表项被 discard 时, 记下 fill_id,
+    // linefill 数据回来 (lfb_pop_depd_ff) 后再唤醒 fill。
+    input  logic         ld_da_vec,
+    input  logic [4:0]   ld_da_fill_id,
     input  logic [LSIQ_ENTRY-1:0] ld_da_lfb_wakeup_queue_next,
     input  logic [31:0]  rb_biu_req_addr,
     input  logic [27:0]  rb_lfb_addr_tto4,
@@ -73,6 +77,8 @@ module ct_lsu_lfb #(
     output logic [4:0]   lfb_dcache_arb_st_dirty_din,
     output logic [4:0]   lfb_dcache_arb_st_dirty_wen,
     output logic [LSIQ_ENTRY-1:0] lfb_depd_wakeup,
+    output logic         lfb_vec_wk_vld,
+    output logic [4:0]   lfb_vec_wk_fill_id,
     output logic         lfb_ld_da_hit_idx,
     output logic         lfb_pop_depd_ff,
     output logic         lfb_rb_biu_req_hit_idx,
@@ -569,6 +575,28 @@ assign lfb_wakeup_queue_next[LSIQ_ENTRY-1:0]
       | {LSIQ_ENTRY{ld_da_lfb_set_wakeup_queue}} & ld_da_lfb_wakeup_queue_next[LSIQ_ENTRY-1:0];
 
 //------------------------wakeup----------------------------
+// 2026-10-18: 向量 fill 的 LFB 冲突延迟唤醒 (FE 串行, 一笔 pending 够)
+logic        lfb_vec_wk_pend;
+logic [4:0]  lfb_vec_wk_fill_id_q;
+always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
+  if (!cpurst_b) begin
+    lfb_vec_wk_pend    <= 1'b0;
+    lfb_vec_wk_fill_id_q <= 5'd0;
+  end
+  else if (rtu_yy_xx_flush) begin
+    lfb_vec_wk_pend    <= 1'b0;
+  end
+  else if (ld_da_lfb_set_wakeup_queue && ld_da_vec && !lfb_vec_wk_pend) begin
+    lfb_vec_wk_pend    <= 1'b1;
+    lfb_vec_wk_fill_id_q <= ld_da_fill_id;
+  end
+  else if (lfb_pop_depd_ff && lfb_vec_wk_pend) begin
+    lfb_vec_wk_pend    <= 1'b0;
+  end
+end
+assign lfb_vec_wk_vld      = lfb_pop_depd_ff && lfb_vec_wk_pend;
+assign lfb_vec_wk_fill_id  = lfb_vec_wk_fill_id_q;
+
 assign lfb_depd_wakeup[LSIQ_ENTRY-1:0] = lfb_pop_depd_ff
                                          ? lfb_wakeup_queue[LSIQ_ENTRY-1:0]
                                          : {LSIQ_ENTRY{1'b0}};

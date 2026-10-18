@@ -115,6 +115,9 @@ module ct_idu_top(
   // 2026-10-17 S8: 向量 store 的提交电平 → SQ
   output logic         vec_st_cmit_vld,
   output logic [6:0]   vec_st_cmit_iid,
+  // 2026-10-18: LSU 向量 store spec-fail → fill 立即释放 entry
+  input  logic         lsu_vec_st_spec_fail_vld,
+  input  logic [4:0]   lsu_vec_st_spec_fail_fill_id,
 
   //==========================================================
   // 2026-10-18 直连向量 L/S: fill <-> LSU
@@ -1945,6 +1948,8 @@ ct_idu_vec_ls_fill u_vec_ls_fill (
 
   .vec_st_cmit_vld              (vec_st_cmit_vld),
   .vec_st_cmit_iid              (vec_st_cmit_iid),
+  .vec_st_spec_fail_vld         (lsu_vec_st_spec_fail_vld),
+  .vec_st_spec_fail_fill_id     (lsu_vec_st_spec_fail_fill_id),
   .idu_lsu_cmit_vec_st_pending  (idu_lsu_cmit_vec_st_pending)
 );
 

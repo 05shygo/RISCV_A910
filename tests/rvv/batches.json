@@ -1,0 +1,26 @@
+{
+ "full": [
+  "alu_0",
+  "alu_1",
+  "alu_2",
+  "alu_3",
+  "alu_4",
+  "mulmac_0",
+  "mulmac_1",
+  "red",
+  "mask",
+  "ls_0",
+  "ls_1"
+ ],
+ "unif": [
+  "alu_0",
+  "alu_1",
+  "alu_2",
+  "alu_3",
+  "alu_4",
+  "mulmac_0",
+  "mulmac_1",
+  "red",
+  "mask"
+ ]
+}

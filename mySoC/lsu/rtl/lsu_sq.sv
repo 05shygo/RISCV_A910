@@ -18,6 +18,9 @@ module ct_lsu_sq #(
     input  logic         forever_cpuclk,
     input  logic [7:0]  ld_da_lsid,
     input  logic         ld_da_sq_data_discard_vld,
+    // 2026-10-18: 向量 load 的 fill_id (SQ/LFB 唤醒队列用)
+    input  logic         ld_da_vec,
+    input  logic [4:0]   ld_da_fill_id,
     input  logic [SQ_ENTRY-1:0] ld_da_sq_fwd_id,
     input  logic         ld_da_sq_fwd_multi_vld,
     input  logic         ld_da_sq_global_discard_vld,
@@ -79,6 +82,9 @@ module ct_lsu_sq #(
 
     output logic [LSIQ_ENTRY-1:0] sq_data_depd_wakeup,
     output logic [LSIQ_ENTRY-1:0] sq_global_depd_wakeup,
+    // 2026-10-18: 给 ct_idu_vec_ls_fill 的延迟唤醒 (替代"立刻 restart")
+    output logic         sq_vec_wk_vld,
+    output logic [4:0]   sq_vec_wk_fill_id,
     output logic [31:0]  sq_ld_da_fwd_data,
     // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): output logic         sq_ld_dc_addr1_dep_discard,
     // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): output logic         sq_ld_dc_cancel_acc_req,
@@ -231,6 +237,8 @@ module ct_lsu_sq #(
     logic [IID_WIDTH-1:0] sq_entry_iid [0:SQ_ENTRY-1];
     logic [7:0]  sq_entry_rot_sel [0:SQ_ENTRY-1];
     logic [7:0]  sq_entry_data_depd_wakeup [0:SQ_ENTRY-1];
+    logic [SQ_ENTRY-1:0] sq_entry_vec_wk_vld;
+    logic [4:0]  sq_entry_vec_wk_fill_id [0:SQ_ENTRY-1];
 logic [SQ_ENTRY-1:0]sq_entry_cmit_data_not_vld;
     //==========================================================
     // SQ entry instances
@@ -256,6 +264,8 @@ logic [SQ_ENTRY-1:0]sq_entry_cmit_data_not_vld;
                 .dcache_tag_gwen                           (dcache_tag_gwen),
                 .dcache_tag_wen                            (dcache_tag_wen),
                 .ld_da_lsid                                (ld_da_lsid),
+                .ld_da_vec                                 (ld_da_vec),
+                .ld_da_fill_id                             (ld_da_fill_id),
                 .ld_dc_addr0                               (ld_dc_addr0),
                 // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): .ld_dc_addr1_11to4                         (ld_dc_addr1_11to4),
                 .ld_dc_bytes_vld                           (ld_dc_bytes_vld),
@@ -323,6 +333,8 @@ logic [SQ_ENTRY-1:0]sq_entry_cmit_data_not_vld;
                 .sq_entry_cmit_data_not_vld(sq_entry_cmit_data_not_vld[i]),
                 .sq_entry_cmit_x                           (sq_entry_cmit[i]),
                 .sq_entry_data_depd_wakeup_v               (sq_entry_data_depd_wakeup[i]),
+                .sq_entry_vec_wk_vld_x                     (sq_entry_vec_wk_vld[i]),
+                .sq_entry_vec_wk_fill_id_x                 (sq_entry_vec_wk_fill_id[i]),
                 .sq_entry_data_discard_req_x               (sq_entry_data_discard_req[i]),
                 .sq_entry_data_v                           (sq_entry_data[i]),
                 .sq_entry_dcache_dirty_x                   (sq_entry_dcache_dirty[i]),
@@ -406,12 +418,18 @@ logic [SQ_ENTRY-1:0]sq_entry_cmit_data_not_vld;
     // Settle data
     //==========================================================
     assign sq_data_ori = {idu_lsu_rf_pipe5_src0, idu_lsu_rf_pipe5_src0, idu_lsu_rf_pipe5_src0, idu_lsu_rf_pipe5_src0};
-    assign sq_settle_rot_sel = {8{sq_entry_settle_data_hit[0]}} & sq_entry_rot_sel[0] |
-                               {8{sq_entry_settle_data_hit[1]}} & sq_entry_rot_sel[1] |
-                               {8{sq_entry_settle_data_hit[2]}} & sq_entry_rot_sel[2] |
-                               {8{sq_entry_settle_data_hit[3]}} & sq_entry_rot_sel[3] |
-                               {8{sq_entry_settle_data_hit[4]}} & sq_entry_rot_sel[4] |
-                               {8{sq_entry_settle_data_hit[5]}} & sq_entry_rot_sel[5];
+    // ⚠️ 2026-10-18: 这里原来只 OR 了表项 0~5 —— 是 SQ_ENTRY=6 时代的残留。
+    //   SQ_ENTRY 扩到 12 后, store 落在表项 6~11 且它是唯一命中数据广播的表项时,
+    //   rot_sel 为 0 ⇒ ct_lsu_rot_data 走 default 输出 X ⇒ 该 SQ 表项的 store data
+    //   变成 X, 之后一路写进 WMB / dcache (coremark_i1 #97586:
+    //   `lw s10,0(sp)` 读回 X, 因为 sp+0 那笔 sw 落在表项 E6)。
+    //   改为遍历全部表项, 并保持原语义 (多表项同 sdid 命中时仍 OR rot_sel)。
+    always_comb begin
+        sq_settle_rot_sel = 8'b0;
+        for (int k = 0; k < SQ_ENTRY; k++)
+            if (sq_entry_settle_data_hit[k])
+                sq_settle_rot_sel = sq_settle_rot_sel | sq_entry_rot_sel[k];
+    end
 
     ct_lsu_rot_data x_lsu_sq_data_rot_to_mem_format (
         .data_in         (sq_data_ori),
@@ -510,12 +528,57 @@ logic [SQ_ENTRY-1:0]sq_entry_cmit_data_not_vld;
     assign sq_wakeup_queue_next = sq_pop_depd_ff ? {LSIQ_ENTRY{1'b0}} : sq_wakeup_queue_grnt;
     assign sq_global_depd_wakeup = sq_pop_depd_ff ? sq_wakeup_queue_grnt : {LSIQ_ENTRY{1'b0}};
 
-    assign sq_data_depd_wakeup = sq_entry_data_depd_wakeup[0] |
-                                 sq_entry_data_depd_wakeup[1] |
-                                 sq_entry_data_depd_wakeup[2] |
-                                 sq_entry_data_depd_wakeup[3] |
-                                 sq_entry_data_depd_wakeup[4] |
-                                 sq_entry_data_depd_wakeup[5];
+    //==========================================================
+    // 2026-10-18: 向量 fill 的延迟唤醒
+    //   data discard: fill_id 记在命中的 SQ entry, data_set 时唤醒;
+    //   global discard: fill_id 记在 SQ 顶层, sq_pop_depd_ff 时唤醒。
+    //   FE 同一时刻只有一笔 outstanding, 所以每类一个 pending 就够。
+    //==========================================================
+    logic        sq_vec_global_wk_pend;
+    logic [4:0]  sq_vec_global_wk_fill_id;
+
+    always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
+        if (!cpurst_b) begin
+            sq_vec_global_wk_pend    <= 1'b0;
+            sq_vec_global_wk_fill_id <= 5'd0;
+        end
+        else if (rtu_yy_xx_flush) begin
+            sq_vec_global_wk_pend    <= 1'b0;
+        end
+        else if (ld_da_sq_global_discard_vld && ld_da_vec && !sq_vec_global_wk_pend) begin
+            sq_vec_global_wk_pend    <= 1'b1;
+            sq_vec_global_wk_fill_id <= ld_da_fill_id;
+        end
+        else if (sq_pop_depd_ff && sq_vec_global_wk_pend) begin
+            sq_vec_global_wk_pend    <= 1'b0;
+        end
+    end
+
+    logic        sq_vec_data_wk_vld;
+    logic [4:0]  sq_vec_data_wk_fill_id;
+    always_comb begin
+        sq_vec_data_wk_vld     = 1'b0;
+        sq_vec_data_wk_fill_id = 5'd0;
+        for (int k=0; k<SQ_ENTRY; k++) begin
+            if (sq_entry_vec_wk_vld[k]) begin
+                sq_vec_data_wk_vld     = 1'b1;
+                sq_vec_data_wk_fill_id = sq_entry_vec_wk_fill_id[k];
+            end
+        end
+    end
+
+    assign sq_vec_wk_vld = sq_vec_data_wk_vld ||
+                           (sq_pop_depd_ff && sq_vec_global_wk_pend);
+    assign sq_vec_wk_fill_id = sq_vec_data_wk_vld ? sq_vec_data_wk_fill_id
+                                                  : sq_vec_global_wk_fill_id;
+
+    // ⚠️ 2026-10-18: 同样只 OR 了表项 0~5 (SQ_ENTRY=6 时代的残留)。落在表项 6~11
+    //   的 store 数据到达时, 等它数据的 load 收不到唤醒 ⇒ 只能等别的偶然唤醒/冲刷。
+    always_comb begin
+        sq_data_depd_wakeup = {LSIQ_ENTRY{1'b0}};
+        for (int k = 0; k < SQ_ENTRY; k++)
+            sq_data_depd_wakeup = sq_data_depd_wakeup | sq_entry_data_depd_wakeup[k];
+    end
 
     //==========================================================
     // Pop entry

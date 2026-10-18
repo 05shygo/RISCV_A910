@@ -14,6 +14,7 @@
 #include <string.h>
 #include "cpu.h"
 #include "csr.h"
+#include "rvv.h"
 
 /* Ensure C linkage even if compiled by a C++ compiler */
 #ifdef __cplusplus
@@ -137,6 +138,22 @@ static void print_inst_at(const char *who, uint32_t pc) {
   }
   fprintf(stderr, "  %-9s PC=0x%08x  inst=0x%08x\n", who, pc, memory[pc >> 2]);
 }
+
+// ---------------------------------------------------------------------------
+// RVV: "上一条执行过的指令" 的向量写回信息.
+//
+// TB 在每次 gm_check_step() 返回后立即调用这些函数, 然后用 RvvCore 的退休
+// 记录逐字节比对. 注意它们只是单槽查询, 不能跨 gm_check_step 保存.
+// ---------------------------------------------------------------------------
+int gm_last_executed(void) { return rvv_last_executed(); }
+int gm_last_is_vec(void)   { return rvv_last_is_vec(); }
+int gm_last_is_vset(void)  { return rvv_last_is_vset(); }
+int gm_last_vd_base(void)  { return rvv_last_vd_base(); }
+int gm_last_vd_nreg(void)  { return rvv_last_vd_nreg(); }
+int gm_last_vd_word(int rel_reg, int word) { return (int)rvv_last_vd_word(rel_reg, word); }
+int gm_last_vd_wmask(int rel_reg) { return rvv_last_vd_wmask(rel_reg); }
+unsigned gm_last_inst_word(void) { return (unsigned)rvv_last_inst_word(); }
+unsigned gm_last_pc(void) { return (unsigned)rvv_last_pc(); }
 
 int gm_check_step(int dut_wb_have_inst, int dut_wb_pc, int dut_wb_ena, int dut_wb_reg,
                   int dut_wb_value, int dut_wb_irq_safe) {

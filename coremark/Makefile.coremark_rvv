@@ -1,0 +1,109 @@
+# CoreMark RVV build —— 与 Makefile.coremark 并列的**向量版**构建脚本
+#
+# 路线（2026-10-18 与用户确认）：编译器规避，不改 RTL。
+#   * GCC 14 自动向量化 CoreMark；
+#   * -mrvv-vector-bits=zvl 固定 VLEN=128，消除 csrr vlenb
+#     （A910 顶层没有 CSR 文件，读 vlenb 会拿到 X/0）；
+#   * -mrvv-max-lmul=m1 把 LMUL 上限压到 1；
+#   * 会生成 vmv.x.s / vid.v / vrgather / 整寄存器 spill / e16,mf4 的函数
+#     在源码里用 CM_NO_VECTORIZE（coremark.h，仅 COREMARK_RVV 时生效）关掉。
+#
+# 产物与标量版完全分开：
+#   coremark/build_rvv/          （不入库；clean 只删这里）
+#   bin/coremark_rvv.bin
+#
+# ⚠️ 标量版仍由 Makefile.coremark 构建，bin/coremark.bin 不受本文件影响。
+TOOLCHAIN_PATH ?= /x2025/GPrj1/IC1/riscv/RISCV_CPU/tools/riscv/bin
+export PATH := $(TOOLCHAIN_PATH):$(PATH)
+
+CROSS_COMPILE ?= riscv32-unknown-elf-
+CC = $(CROSS_COMPILE)gcc
+OBJCOPY = $(CROSS_COMPILE)objcopy
+OBJDUMP = $(CROSS_COMPILE)objdump
+
+# RV32IM + V（不含 _zicsr：真出现 csrr vlenb 应该在汇编期就报错，
+# 而不是跑起来以后静默读 X）
+ARCH = rv32imv
+ABI = ilp32
+
+# 迭代次数默认与入库的标量版一致（30 次）。
+# 快速冒烟：make -f Makefile.coremark_rvv ITERATIONS=1
+ITERATIONS ?= 30
+CONTEXTS ?= 1
+
+CFLAGS = -march=$(ARCH) -mabi=$(ABI) -O2 -g -nostdlib -nostartfiles -fno-builtin
+CFLAGS += -ftree-vectorize -mrvv-vector-bits=zvl -mrvv-max-lmul=m1
+CFLAGS += -DCOREMARK_RVV=1
+CFLAGS += -Iriscv-port -I. -DITERATIONS=$(ITERATIONS) -DPERFORMANCE_RUN=1
+CFLAGS += -DCOREMARK_CONTEXTS=$(CONTEXTS)
+
+LDFLAGS = -march=$(ARCH) -mabi=$(ABI) -nostdlib -nostartfiles
+LDFLAGS += -T riscv-port/link.ld
+
+CORE_SRCS = core_list_join.c core_main.c core_matrix.c core_state.c core_util.c
+PORT_SRCS = riscv-port/core_portme.c riscv-port/ee_printf.c riscv-port/softmul.c
+ASM_SRCS  = riscv-port/start.S
+
+BUILD_DIR ?= build_rvv
+OBJS = $(addprefix $(BUILD_DIR)/, $(CORE_SRCS:.c=.o) \
+                     $(notdir $(PORT_SRCS:.c=.o)) $(notdir $(ASM_SRCS:.S=.o)))
+
+TARGET = $(BUILD_DIR)/coremark_rvv
+BIN_TARGET ?= ../bin/coremark_rvv.bin
+
+# 指令审计：只要出现 RTL/黄金模型不支持的向量指令就让构建失败
+AUDIT_PY ?= $(abspath $(CURDIR)/../scripts/audit_rvv_isa.py)
+
+.PHONY: all clean check audit
+
+all: $(BIN_TARGET) audit
+	@echo "=== CoreMark RVV built successfully (ITERATIONS=$(ITERATIONS)) ==="
+	@ls -lh $(BIN_TARGET)
+
+$(BIN_TARGET): $(TARGET).bin
+	@cp $< $@
+	@echo "Copied to $@"
+
+$(TARGET).bin: $(TARGET).elf
+	@echo "Creating binary..."
+	@$(OBJCOPY) -O binary $< $@
+
+$(TARGET).elf: $(OBJS)
+	@echo "Linking..."
+	@$(CC) $(LDFLAGS) $^ -o $@
+	@$(OBJDUMP) -D $@ > $(TARGET).dump
+	@echo "Created $@"
+
+$(BUILD_DIR)/%.o: %.c | $(BUILD_DIR)
+	@echo "Compiling $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/%.o: riscv-port/%.c | $(BUILD_DIR)
+	@echo "Compiling $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/%.o: riscv-port/%.S | $(BUILD_DIR)
+	@echo "Compiling $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+# ee_printf.c 整文件不做向量化：
+#   * number() 的排版循环会生成 vid/vrgather/e8,mf8/整寄存器 spill；
+#   * 它又不能用 coremark.h 的 CM_NO_VECTORIZE —— optimize 属性会丢掉
+#     -fno-builtin, 清零循环被改写成 memset, 而本 port 是 -nostdlib。
+# 代价是 ee_printf 本身那点安全向量化也没了（不属于 benchmark 计算）。
+$(BUILD_DIR)/ee_printf.o: CFLAGS += -fno-tree-vectorize
+
+$(BUILD_DIR):
+	@mkdir -p $(BUILD_DIR)
+
+audit: $(TARGET).elf
+	@python3 $(AUDIT_PY) --elf $< --objdump "$(OBJDUMP)" --summary
+
+check:
+	@which $(CC) > /dev/null || (echo "ERROR: RISC-V toolchain not found at $(TOOLCHAIN_PATH)"; exit 1)
+	@echo "Toolchain: $$($(CC) --version | head -1)"
+	@echo "Target: RV32IMV ($(ARCH)/$(ABI)), ITERATIONS=$(ITERATIONS)"
+
+clean:
+	@rm -rf $(BUILD_DIR)
+	@echo "Cleaned $(BUILD_DIR) (scalar coremark/build is untouched)"

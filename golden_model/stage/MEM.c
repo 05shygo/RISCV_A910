@@ -1,5 +1,10 @@
 #include <cpu.h>
 #include <stdint.h>
+#ifdef GM_TRACE_COREMARK
+#include <stdio.h>
+extern uint32_t gm_tr_pc[], gm_tr_inst[], gm_tr_val[];
+extern void gm_trace_store(uint32_t, uint32_t, uint32_t);
+#endif
 extern riscv32_CPU_state cpu;
 extern uint32_t memory[];
 extern peripheral_descr peripherals[];
@@ -99,6 +104,7 @@ MEM2WB MEM(EX2MEM ex_info) {
     ret.exc_cause = ex_info.exc_cause;
     ret.exc_tval  = ex_info.exc_tval;
     ret.is_mret   = ex_info.is_mret;
+    ret.is_vec    = ex_info.is_vec;
     Log("PC = %8.8x", ret.pc);
     uint32_t load_result = 0;
     uint32_t is_store = 0;
@@ -124,8 +130,22 @@ MEM2WB MEM(EX2MEM ex_info) {
         }
         if(is_store) {
             mem_store(ret.alu_out, mode, ex_info.store_val);
+#ifdef GM_TRACE_COREMARK
+            gm_trace_store(ret.alu_out, ret.pc, ret.inst);
+#endif
         } else {
             ret.load_out = mem_load(ret.alu_out, mode, is_signed);
+#ifdef GM_TRACE_COREMARK
+            if (ret.pc == 0x11e4) {
+                uint32_t a = ret.alu_out;
+                uint32_t i = a >> 2;
+                fprintf(stderr,
+                    "GM_TRACE load pc=%08x addr=%08x val=%08x sp=%08x "
+                    "| last pc=%08x inst=%08x val=%08x\n",
+                    ret.pc, a, ret.load_out, cpu.gpr[2],
+                    gm_tr_pc[i], gm_tr_inst[i], gm_tr_val[i]);
+            }
+#endif
         }
     }
     return ret;

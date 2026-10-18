@@ -26,6 +26,9 @@ module ct_lsu_vec_ls_fe #(
   input  logic         clk,
   input  logic         rst_b,
   input  logic         vec_ls_flush,
+  // 2026-10-18: DC 入口仲裁 —— 标量 AG 这拍正在用同一个 DC 槽时,
+  // 向量请求必须**等待** (而不是把标量请求挤掉)。dc_deny=1 时保持 pending。
+  input  logic         dc_deny,
 
   //----------------------------------------------------------------------------
   // fill -> FE
@@ -124,9 +127,13 @@ logic [PTR_W-1:0]    q_wr;
 logic [PTR_W-1:0]    q_rd;
 logic [PTR_W:0]      q_cnt;
 logic                outstanding;
-// 获得 dcache_arb 授权后只注入 dc 一拍 (与 dcache 阵列读对齐); 之后请求
-// 留在队头等 DC/DA 完成或 restart, 不能持续拉 dc_valid 重复注入。
-logic                dc_pulse;
+// 获得 dcache_arb 授权后注入 dc; 与 dcache 阵列读对齐。
+// ⚠️ 不能是"授权后 N+1 拍的固定单拍脉冲" —— 那一拍如果标量 AG 也有效,
+//    st_dc/ld_dc 的输入 mux 会把标量请求挤掉 (向量优先), 标量 LSIQ 表项
+//    永远停在 frz=1 ⇒ 年龄图不前进 ⇒ 后面的向量 store 全被 old 门住
+//    (2026-10-18 实测: 标量 sw iid=44 在 AG→DC 消失)。
+//    改成 pending: 一直举到真正注入的那一拍 (dc_deny=0), 再清。
+logic                dc_pending;
 // 2026-10-18: 按 fill_id 的休眠/唤醒。队头同一时刻只有一笔在飞, 因此三组
 // sleep 状态天然对应队头的 fill_id。
 logic                sleep_lq;
@@ -181,7 +188,7 @@ wire grant = head_vld && !outstanding && !sleeping &&
 //----------------------------------------------------------------------------
 // DC 注入: 获授权后的下一拍有效 (与 dcache 阵列同步读对齐)
 //----------------------------------------------------------------------------
-assign dc_valid     = dc_pulse && !vec_ls_flush;
+assign dc_valid     = dc_pending && !dc_deny && !vec_ls_flush;
 assign dc_store     = head.store;
 assign dc_nop       = head.nop;
 assign dc_last      = head.last;
@@ -211,7 +218,7 @@ always_ff @(posedge clk or negedge rst_b) begin
     q_rd        <= '0;
     q_cnt       <= '0;
     outstanding <= 1'b0;
-    dc_pulse    <= 1'b0;
+    dc_pending  <= 1'b0;
     sleep_lq    <= 1'b0;
     sleep_rb    <= 1'b0;
     sleep_sq    <= 1'b0;
@@ -222,7 +229,7 @@ always_ff @(posedge clk or negedge rst_b) begin
     q_rd        <= '0;
     q_cnt       <= '0;
     outstanding <= 1'b0;
-    dc_pulse    <= 1'b0;
+    dc_pending  <= 1'b0;
     sleep_lq    <= 1'b0;
     sleep_rb    <= 1'b0;
     sleep_sq    <= 1'b0;
@@ -230,12 +237,16 @@ always_ff @(posedge clk or negedge rst_b) begin
   else begin
     if (grant) begin
       outstanding <= 1'b1;
-      dc_pulse    <= 1'b1;
+      dc_pending  <= 1'b1;
     end
     else begin
-      dc_pulse <= 1'b0;
-      if (accept_now || (outstanding && restart_now))
+      // 本拍真正注入 DC (标量 AG 没占槽) ⇒ 清 pending
+      if (dc_pending && !dc_deny)
+        dc_pending <= 1'b0;
+      if (accept_now || (outstanding && restart_now)) begin
         outstanding <= 1'b0;
+        dc_pending  <= 1'b0;
+      end
     end
 
     // 资源空出 → 唤醒 (按队头 fill_id 隐含匹配, 同一时刻只有队头在飞)。

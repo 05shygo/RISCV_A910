@@ -1,0 +1,101 @@
+{
+ "group": "ls",
+ "test": "ls_1",
+ "n": 15,
+ "progress_addr": 8192,
+ "phase_addr": 8196,
+ "status_addr": 8204,
+ "a0_addr": 8200,
+ "cases": [
+  {
+   "id": 0,
+   "name": "vsse16.v 0",
+   "kind": "mem",
+   "bytes": 64
+  },
+  {
+   "id": 1,
+   "name": "vlse32.v +4",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 2,
+   "name": "vlse32.v -4",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 3,
+   "name": "vsse32.v +4",
+   "kind": "mem",
+   "bytes": 64
+  },
+  {
+   "id": 4,
+   "name": "vsse32.v 0",
+   "kind": "mem",
+   "bytes": 64
+  },
+  {
+   "id": 5,
+   "name": "vluxei8.v",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 6,
+   "name": "vsuxei8.v",
+   "kind": "mem",
+   "bytes": 64
+  },
+  {
+   "id": 7,
+   "name": "vluxei16.v",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 8,
+   "name": "vsuxei16.v",
+   "kind": "mem",
+   "bytes": 64
+  },
+  {
+   "id": 9,
+   "name": "vluxei32.v",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 10,
+   "name": "vsuxei32.v",
+   "kind": "mem",
+   "bytes": 64
+  },
+  {
+   "id": 11,
+   "name": "vle32.v masked",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 12,
+   "name": "vse32.v masked",
+   "kind": "mem",
+   "bytes": 64
+  },
+  {
+   "id": 13,
+   "name": "vle32.v m2 lmul2",
+   "kind": "vreg",
+   "bytes": 32
+  },
+  {
+   "id": 14,
+   "name": "vse32.v m2 lmul2",
+   "kind": "mem",
+   "bytes": 64
+  }
+ ]
+}

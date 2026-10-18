@@ -1,6 +1,7 @@
 #include <cpu.h>
 #include <bin.h>
 #include <csr.h>
+#include <rvv.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -376,6 +377,11 @@ ID2EX ID(IF2ID inst) {
             break;
         case B8(00110011):
             ret = ID_R(inst);
+            break;
+        case B8(01010111):  // OP-V
+        case B8(00000111):  // vector load (LOAD-FP)
+        case B8(00100111):  // vector store (STORE-FP)
+            ret = ID_VECTOR(inst);
             break;
         default:
             ret.alu_op = OP_INVALID;

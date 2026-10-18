@@ -141,6 +141,7 @@ cmp_idx(list_data *a, list_data *b, core_results *res)
     return a->idx - b->idx;
 }
 
+CM_NO_VECTORIZE
 void
 copy_info(list_data *to, list_data *from)
 {
@@ -247,6 +248,7 @@ core_bench_list(core_results *res, ee_s16 finder_idx)
         Pointer to the head of the list.
 
 */
+CM_NO_VECTORIZE
 list_head *
 core_list_init(ee_u32 blksize, list_head *memblock, ee_s16 seed)
 {
@@ -332,6 +334,7 @@ core_list_init(ee_u32 blksize, list_head *memblock, ee_s16 seed)
         Returns:
         Pointer to new item.
 */
+CM_NO_VECTORIZE
 list_head *
 core_list_insert_new(list_head * insert_point,
                      list_data * info,

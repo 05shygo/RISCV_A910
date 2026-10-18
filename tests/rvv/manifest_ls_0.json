@@ -1,0 +1,131 @@
+{
+ "group": "ls",
+ "test": "ls_0",
+ "n": 20,
+ "progress_addr": 9888,
+ "phase_addr": 9892,
+ "status_addr": 9900,
+ "a0_addr": 9896,
+ "cases": [
+  {
+   "id": 0,
+   "name": "vle32.v dcache-hit",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 1,
+   "name": "vle32.v sq-data-discard",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 2,
+   "name": "vle32.v lfb-conflict",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 3,
+   "name": "vle8.v unit",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 4,
+   "name": "vle16.v unit",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 5,
+   "name": "vle32.v unit",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 6,
+   "name": "vle32.v unaligned+4",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 7,
+   "name": "vle16.v cross16B",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 8,
+   "name": "vle32.v VL=1",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 9,
+   "name": "vse8.v unit",
+   "kind": "mem",
+   "bytes": 64
+  },
+  {
+   "id": 10,
+   "name": "vse16.v unit",
+   "kind": "mem",
+   "bytes": 64
+  },
+  {
+   "id": 11,
+   "name": "vse32.v unit",
+   "kind": "mem",
+   "bytes": 64
+  },
+  {
+   "id": 12,
+   "name": "vse16.v unaligned+2",
+   "kind": "mem",
+   "bytes": 64
+  },
+  {
+   "id": 13,
+   "name": "vlse8.v +4",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 14,
+   "name": "vlse8.v -4",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 15,
+   "name": "vsse8.v +4",
+   "kind": "mem",
+   "bytes": 64
+  },
+  {
+   "id": 16,
+   "name": "vsse8.v 0",
+   "kind": "mem",
+   "bytes": 64
+  },
+  {
+   "id": 17,
+   "name": "vlse16.v +4",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 18,
+   "name": "vlse16.v -4",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 19,
+   "name": "vsse16.v +4",
+   "kind": "mem",
+   "bytes": 64
+  }
+ ]
+}

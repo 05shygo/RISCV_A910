@@ -24,6 +24,10 @@ module ct_lsu_sq_entry #(
     // from LD DA / LD DC
     //==========================================================
     input  logic [LSIQ_ENTRY-1:0] ld_da_lsid,
+    // 2026-10-18: 向量 load 被本 store 的 data 依赖 discard 时, 记下 fill_id,
+    // 等本表项 data_set 后唤醒对应的 ct_idu_vec_ls_fill 表项。
+    input  logic                  ld_da_vec,
+    input  logic [4:0]            ld_da_fill_id,
     input  logic [31:0]           ld_dc_addr0,
     // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): input  logic [7:0]            ld_dc_addr1_11to4,   // 注: 实际接的是 ld_dc_addr0[11:4] (lsu_top:661), 与"addr1"无关
     input  logic [15:0]           ld_dc_bytes_vld,
@@ -126,6 +130,8 @@ module ct_lsu_sq_entry #(
    // output logic                  sq_entry_cmit_data_vld_x,
     output logic                  sq_entry_cmit_x,
     output logic [LSIQ_ENTRY-1:0] sq_entry_data_depd_wakeup_v,
+    output logic                  sq_entry_vec_wk_vld_x,
+    output logic [4:0]            sq_entry_vec_wk_fill_id_x,
 
     output logic                  sq_entry_data_discard_req_x,
     output logic [31:0]           sq_entry_data_v,
@@ -181,6 +187,9 @@ module ct_lsu_sq_entry #(
     // 2026-10-15 停用: 死亡声明 (无驱动无负载, 与本次非对齐摘除无关的既有残留): logic                  sq_entry_st_data_sdid_hit;
     logic                  sq_entry_vld;
     logic [LSIQ_ENTRY-1:0] sq_entry_wakeup_queue;
+    // 2026-10-18: 向量 fill 的 data-discard 唤醒 (FE 串行, 至多一笔在等)
+    logic                  sq_entry_vec_wk_pend;
+    logic [4:0]            sq_entry_vec_wk_fill_id;
 
     //==========================================================
     //                 Internal wires
@@ -659,6 +668,26 @@ module ct_lsu_sq_entry #(
     // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): assign sq_entry_cancel_acc_req = 1'b0;   // 原: sq_entry_depd_hit8
 
     assign sq_entry_depd_set = sq_entry_discard_req || sq_entry_fwd_multi_depd_set;
+
+    always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
+        if (!cpurst_b) begin
+            sq_entry_vec_wk_pend    <= 1'b0;
+            sq_entry_vec_wk_fill_id <= 5'd0;
+        end
+        else if (rtu_yy_xx_flush) begin
+            sq_entry_vec_wk_pend    <= 1'b0;
+        end
+        else if (sq_entry_data_discard_grnt && ld_da_vec && !sq_entry_vec_wk_pend) begin
+            sq_entry_vec_wk_pend    <= 1'b1;
+            sq_entry_vec_wk_fill_id <= ld_da_fill_id;
+        end
+        else if (sq_entry_data_set && sq_entry_vec_wk_pend) begin
+            sq_entry_vec_wk_pend    <= 1'b0;
+        end
+    end
+
+    assign sq_entry_vec_wk_vld_x      = sq_entry_data_set && sq_entry_vec_wk_pend;
+    assign sq_entry_vec_wk_fill_id_x  = sq_entry_vec_wk_fill_id;
 
     assign sq_entry_data_depd_wakeup_vld = sq_entry_data_set || sq_entry_data_set_ff;
 

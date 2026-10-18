@@ -35,6 +35,10 @@ static int skip_atoi(const char **s) {
     return i;
 }
 
+/* number() 不向量化, 但**不能**用 CM_NO_VECTORIZE: optimize 属性会丢掉
+ * -fno-builtin, GCC 把这里的清零循环改写成 memset, 而本 port 是 -nostdlib。
+ * 整个 ee_printf.c 在 RVV 构建里用 -fno-tree-vectorize 编译
+ * （见 coremark/Makefile.coremark_rvv 的 ee_printf.o 规则）。 */
 static char *number(char *str, long num, int base, int size, int precision, int type) {
     char c, sign, tmp[66];
     char *dig = digits;

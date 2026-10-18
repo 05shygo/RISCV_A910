@@ -90,6 +90,7 @@ module ct_lsu_st_da #(
   output logic         st_da_wb_expt_vld,
   output logic [31:0]  st_da_wb_expt_addr,
   output logic         st_da_wb_spec_fail,
+  output logic         st_da_vec_spec_fail_vld,
   output logic [31:0]  st_da_addr,
   //output logic         st_da_boundary,      // 2026-10-15 停用
   output logic [15:0]  st_da_bytes_vld,
@@ -351,9 +352,12 @@ assign st_da_vec_restart_fill_id  = st_da_fill_id;
 //==========================================================
 // 2026-10-15 停用: 非对齐第一半标记恒 0
 //assign st_da_boundary_first = st_da_boundary && !st_da_secd;
-// 2026-10-18: 向量 store beat 不发 wb cmplt / spec_fail (完成由 RVV 管)
-assign st_da_wb_cmplt_req = st_da_pass_vld && !st_da_vec;
-assign st_da_wb_spec_fail = st_da_spec_fail && !st_da_vec;
+// 2026-10-18: 向量 store 正常 beat 不发 wb cmplt (完成由 RVV 管);
+// **但 spec-fail 例外**: 要发 wb cmplt + spec_fail 让 RTU 重放, 同时立刻释放
+// ct_idu_vec_ls_fill 里对应的 entry (st_da_vec_spec_fail_vld)。
+assign st_da_wb_cmplt_req = st_da_pass_vld && (!st_da_vec || st_da_spec_fail);
+assign st_da_wb_spec_fail = st_da_spec_fail;
+assign st_da_vec_spec_fail_vld = st_da_pass_vld && st_da_vec && st_da_spec_fail;
 assign st_da_wb_expt_vld = st_da_expt;
 assign st_da_wb_expt_addr= st_da_addr0;
 

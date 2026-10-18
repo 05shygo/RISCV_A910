@@ -93,6 +93,7 @@ VHDR := $(wildcard $(PWD)/mySoC/*.vh) $(wildcard $(PWD)/mySoC/rtu/rtl/*.vh)
 SVSRC := $(wildcard $(PWD)/tb/*.sv)
 DPIC := $(wildcard $(PWD)/dpi/*.c)
 CSRC_GM := $(wildcard $(PWD)/golden_model/*.c) $(wildcard $(PWD)/golden_model/stage/*.c) $(wildcard $(PWD)/golden_model/peripheral/*.c)
+GM_HDR  := $(wildcard $(PWD)/golden_model/include/*.h)
 INC  := +incdir+$(PWD)/mySoC +incdir+$(PWD)/vsrc +incdir+$(PWD)/mySoC/rtu/rtl \
         +incdir+$(PWD)/mySoC/idu_c910/rtl
 DEFINES := +define+PATH=$(TESTFILE) +define+PATHHEX=$(TESTHEX) +define+PATH128=$(TESTHEX128)
@@ -231,15 +232,44 @@ CROSS     ?= riscv32-unknown-elf-
 ASM_SRCS  := $(wildcard $(PWD)/asm/*.S)
 ASM_BINS  := $(patsubst $(PWD)/asm/%.S,$(PWD)/bin/%.bin,$(ASM_SRCS))
 
-.PHONY: all build run run-all verdi clean help coremark asm muldiv-unit rtu-unit rtu-lsu-unit rtu-adapter-unit rtu-expt-unit iu-alu-unit iu-beu-unit iu-md-unit rtu-subsys-elab biu-unit a910-elab rvv-elab a910-run a910-difftest a910-difftest-all a910-difftest-all_wave a910-difftest-wave verdi-difftest
+.PHONY: all build run run-all verdi clean help coremark coremark-rvv coremark-rvv-run asm muldiv-unit rtu-unit rtu-lsu-unit rtu-adapter-unit rtu-expt-unit iu-alu-unit iu-beu-unit iu-md-unit rtu-subsys-elab biu-unit a910-elab rvv-elab a910-run a910-difftest a910-difftest-all a910-difftest-all_wave a910-difftest-wave a910-difftest-rvv verdi-difftest gm-host rvv-sweep rvv-sweep-gen rvv-sweep-unif rvv-sweep-gen-unif
 
 asm: $(ASM_BINS)
+
+# ---------------------------------------------------------------------------
+# RVV 逐指令跑通测试 (doc/v-instruction.md 全集)
+#
+#   make rvv-sweep-gen     # 用 Spike 重新生成 asm/rvv_sweep_*.S 的黄金值
+#   make rvv-sweep         # 整核跑全部用例, 出逐指令 PASS/FAIL/HANG 表
+#   make rvv-sweep RVV_SWEEP_ARGS="--only ls --verbose"
+#
+# 黄金值已经嵌在生成的 .S 里, 日常回归**不需要** Spike。
+# ---------------------------------------------------------------------------
+RVV_SWEEP_ARGS ?=
+PYTHON         ?= python3
+
+rvv-sweep-gen:
+	@$(PYTHON) $(PWD)/tests/rvv/gen_sweep.py --oracle $(RVV_SWEEP_ARGS)
+
+rvv-sweep:
+	@$(PYTHON) $(PWD)/tests/rvv/run_sweep.py $(RVV_SWEEP_ARGS)
+
+# 计算类的 "统一操作数" 变体: 向量 load 尚未跑通时, 先把 ALU/MULMAC/RED/MASK
+# 的每条指令跑通 (源操作数用 vmv.v.i 常量, 不碰向量 load)。
+rvv-sweep-gen-unif:
+	@$(PYTHON) $(PWD)/tests/rvv/gen_sweep.py --oracle --setup unif $(RVV_SWEEP_ARGS)
+
+rvv-sweep-unif:
+	@$(PYTHON) $(PWD)/tests/rvv/run_sweep.py --variant unif $(RVV_SWEEP_ARGS)
 
 $(PWD)/bin/%.bin: $(PWD)/asm/%.S
 	@mkdir -p $(PWD)/bin
 	# _zicsr 不能省: asm/trap.S 用了 csrw/csrr, 而 binutils 2.43 会正确拒绝
 	# 没有 zicsr 的 CSR 指令(旧的 Xuantie binutils 2.35 放过了, 所以以前没暴露)。
-	@$(TOOLCHAIN)/$(CROSS)gcc -march=rv32imv_zicsr -mabi=ilp32 -nostdlib -nostartfiles \
+	# ⚠️ -mno-relax 也不能省: 裸机程序没有 crt0 设 gp, 链接器缺省会把手写的
+	#    `la symbol` 松弛成 gp-relative ⇒ gp=0 时地址全错 (RVV sweep 踩过)。
+	@$(TOOLCHAIN)/$(CROSS)gcc -march=rv32imv_zicsr -mabi=ilp32 -mno-relax \
+	    -nostdlib -nostartfiles \
 	    -Wl,-Ttext=0 $< -o $(PWD)/asm/$*.elf
 	@$(TOOLCHAIN)/$(CROSS)objdump -D $(PWD)/asm/$*.elf > $(PWD)/asm/$*.dump
 	@$(TOOLCHAIN)/$(CROSS)objcopy -O binary $(PWD)/asm/$*.elf $@
@@ -289,6 +319,41 @@ coremark:
 	$(MAKE) -C coremark -f Makefile.coremark ITERATIONS=$(COREMARK_ITERATIONS)
 	@echo "CoreMark binary ready at bin/coremark.bin"
 	@echo "Run with: make run TEST=coremark MAX_CYCLES=30000000"
+
+# ---------------------------------------------------------------------------
+# CoreMark RVV（2026-10-18）：GCC 自动向量化 + 编译器规避路线。
+#
+# 与标量版的唯一区别是加了 -march=rv32imv -ftree-vectorize，并按函数关掉了
+# 会生成 A910 不支持指令的向量化（见 coremark/coremark.h 的 CM_NO_VECTORIZE）。
+# 产物与标量版完全分开：bin/coremark_rvv.bin、coremark/build_rvv/。
+#
+#   make coremark-rvv                              # ITERATIONS=30（与标量基线同）
+#   make coremark-rvv COREMARK_RVV_ITERATIONS=1    # 快速冒烟
+#   make coremark-rvv-run                          # ITERATIONS=30 的 a910 difftest
+#   make coremark-rvv-run COREMARK_RVV_ITERATIONS=1 COREMARK_RVV_MAX_CYCLES=2000000
+#
+# ⚠️ build_rvv 与标量 coremark/build 分开；clean 只删 build_rvv。
+# ⚠️ 构建末尾会自动跑 scripts/audit_rvv_isa.py，出现不支持的向量指令直接失败。
+# ---------------------------------------------------------------------------
+COREMARK_RVV_ITERATIONS   ?= 30
+COREMARK_RVV_MAX_CYCLES   ?= 30000000
+COREMARK_RVV_DT_ARGS      ?= +NOVALID
+
+coremark-rvv:
+	@echo "=== Building CoreMark RVV (GCC 14.2, ITERATIONS=$(COREMARK_RVV_ITERATIONS)) ==="
+	$(MAKE) -C coremark -f Makefile.coremark_rvv clean
+	$(MAKE) -C coremark -f Makefile.coremark_rvv ITERATIONS=$(COREMARK_RVV_ITERATIONS)
+	@echo "CoreMark RVV binary ready at bin/coremark_rvv.bin"
+	@echo "Run: make coremark-rvv-run"
+
+# 只在镜像缺失时按需构建；改源码/改 flags 后请显式 `make coremark-rvv`。
+$(PWD)/bin/coremark_rvv.bin:
+	$(MAKE) coremark-rvv
+
+coremark-rvv-run: $(PWD)/bin/coremark_rvv.bin
+	$(MAKE) a910-difftest TEST=coremark_rvv \
+	        A910_DT_MAX_CYCLES=$(COREMARK_RVV_MAX_CYCLES) \
+	        A910_DT_ARGS="$(COREMARK_RVV_DT_ARGS)"
 
 build: $(SIMV)
 
@@ -476,7 +541,7 @@ $(BP_CFG): FORCE
 
 FORCE:
 
-$(SIMV): $(VSRC) $(VHDR) $(SVSRC) $(DPIC) $(CSRC_GM) $(IFU_CFG) $(LBUF_CFG) $(BP_CFG) $(ICACHE_CFG) $(BP_EN_CFG) $(DCACHE_CFG) $(PREG_CFG)
+$(SIMV): $(VSRC) $(VHDR) $(SVSRC) $(DPIC) $(CSRC_GM) $(GM_HDR) $(IFU_CFG) $(LBUF_CFG) $(BP_CFG) $(ICACHE_CFG) $(BP_EN_CFG) $(DCACHE_CFG) $(PREG_CFG)
 	@mkdir -p $(BUILD_DIR)
 	$(VCS) $(VCS_FLAGS) $(VCS_FLAGS_EXTRA) $(INC) $(DEFINES) $(BP_DEFS) $(PREG_DEFS) $(FSDB_VCS) -CFLAGS -DVCS \
 	  -CFLAGS -I$(PWD)/golden_model/include \
@@ -931,7 +996,7 @@ a910-difftest: $(A910_DT_SIMV) $(PWD)/bin/$(TEST).bin $(PWD)/bin/$(TEST).hex $(P
 	@$(A910_DT_SIMV) +vcs+lic+wait -exitstatus +TEST=$(TEST) $(A910_DT_ARGS) \
 	  +MAX_CYCLES=$(A910_DT_MAX_CYCLES) -l $(A910_DT_BUILD)/sim.log
 
-$(A910_DT_SIMV): $(A910_SRC) $(A910_DT_TB) $(DPIC) $(CSRC_GM)
+$(A910_DT_SIMV): $(A910_SRC) $(A910_DT_TB) $(DPIC) $(CSRC_GM) $(GM_HDR)
 	@mkdir -p $(A910_DT_BUILD)
 	$(VCS) $(VCS_FLAGS) $(VCS_FLAGS_EXTRA) $(INC) $(RVV_INC) $(RVV_DEFS) \
 	  -CFLAGS -DVCS -CFLAGS -I$(PWD)/golden_model/include \
@@ -943,10 +1008,11 @@ $(A910_DT_SIMV): $(A910_SRC) $(A910_DT_TB) $(DPIC) $(CSRC_GM)
 
 # 整套顺序核用例 × A910 difftest, 末尾给一张 PASS/FAIL 总表。
 # 每个用例一行; 失败的在 /tmp/a910_dt/<用例>.log 里有完整对照。
-# ⚠️ coremark 不在默认列表里 (千万拍级, 且它靠外设 MONITOR 收尾, 本台没接外设)
+# ⚠️ coremark / coremark_rvv 不在默认列表里 (千万拍级, 且它们靠外设 MONITOR 收尾,
+#    要单独用 A910_DT_ARGS=+NOVALID + 更大的 MAX_CYCLES 跑)
 # ⚠️ npu_loop / npu_smoke: NPU 还在做 (2026-10-14: npu_loop 第 6 条退休就失配),
 #    先排除, 免得整套总表被两条在做中的用例染红。NPU 收尾后从这行删掉即可。
-A910_DT_SKIP ?= coremark start peri trap npu_loop npu_smoke
+A910_DT_SKIP ?= coremark coremark_rvv start peri trap npu_loop npu_smoke
 # ⚠️ 2026-10-17 S9: 日志目录**不能**用 /tmp/a910_dt —— 多用户机器上常是别人 (IC1)
 #    先建的 (775, IC2 只有 others 的 r-x) ⇒ 重定向 "Permission denied" ⇒ 每个
 #    用例都被判 FAIL (但 sim.log 里其实是 PASS)。改写到自己的构建目录。
@@ -957,6 +1023,7 @@ a910-difftest-all: $(A910_DT_SIMV)
 	@pass=""; fail=""; \
 	for f in $(PWD)/bin/*.bin; do \
 	  t=$$(basename $$f .bin); \
+	  case $$t in rvv_sweep_*|rvv_lsu) continue;; esac; \
 	  case " $(A910_DT_SKIP) " in *" $$t "*) continue;; esac; \
 	  $(MAKE) --no-print-directory a910-difftest TEST=$$t > $(A910_DT_LOG)/$$t.log 2>&1; \
 	  if [ $$? -eq 0 ]; then pass="$$pass $$t"; st="PASS"; else fail="$$fail $$t"; st="FAIL"; fi; \
@@ -968,6 +1035,48 @@ a910-difftest-all: $(A910_DT_SIMV)
 	echo "FAIL ($$(echo $$fail | wc -w)):"; \
 	if [ -n "$$fail" ]; then echo "$$fail" | sed -e 's/^ //; s/ /, /g'; else echo "  (无)"; fi; \
 	echo "日志: $(A910_DT_LOG)/<用例>.log"
+
+# ---------------------------------------------------------------------------
+# RVV 向量黄金模型: 主机侧自测 (不需要 VCS / DUT)
+#
+# 用现有 bin/rvv_sweep_*.bin 里嵌的 Spike 黄金值, 跑 C 模型自己的自检程序.
+# 先过这一步, 再进整核 difftest —— 把"C 语义错"和"TB 记录/时序接错"分开.
+# ---------------------------------------------------------------------------
+RVV_HOST_BIN := $(PWD)/obj_gm_host/gm_host_run
+RVV_HOST_ARGS ?=
+
+$(RVV_HOST_BIN): $(CSRC_GM) $(GM_HDR) $(PWD)/tools/gm_host_run.c
+	@mkdir -p $(dir $@)
+	gcc -O2 -std=c99 -w -I$(PWD)/golden_model/include \
+	    $(CSRC_GM) $(PWD)/tools/gm_host_run.c -o $@
+
+gm-host: $(RVV_HOST_BIN)
+	@python3 $(PWD)/tests/rvv/run_host_model.py --runner $(RVV_HOST_BIN) $(RVV_HOST_ARGS)
+
+# ---------------------------------------------------------------------------
+# RVV 整核 difftest: 向量 sweep 全量 (逐指令比对 + 标量 difftest)
+# 单批约 3 万~15 万拍; 默认上限放大到 60 万拍.
+# ---------------------------------------------------------------------------
+A910_RVV_DT_TESTS := rvv_sweep_alu_0 rvv_sweep_alu_1 rvv_sweep_alu_2 rvv_sweep_alu_3 rvv_sweep_alu_4 \
+                     rvv_sweep_mulmac_0 rvv_sweep_mulmac_1 rvv_sweep_red rvv_sweep_mask \
+                     rvv_sweep_ls_0 rvv_sweep_ls_1
+A910_RVV_DT_MAX_CYCLES ?= 600000
+A910_RVV_DT_LOG := $(A910_DT_BUILD)/logs_rvv
+
+a910-difftest-rvv: $(A910_DT_SIMV)
+	@mkdir -p $(A910_RVV_DT_LOG)
+	@pass=""; fail=""; \
+	for t in $(A910_RVV_DT_TESTS); do \
+	  $(MAKE) --no-print-directory a910-difftest TEST=$$t \
+	         A910_DT_MAX_CYCLES=$(A910_RVV_DT_MAX_CYCLES) \
+	         > $(A910_RVV_DT_LOG)/$$t.log 2>&1; \
+	  if [ $$? -eq 0 ]; then pass="$$pass $$t"; st="PASS"; else fail="$$fail $$t"; st="FAIL"; fi; \
+	  printf "  %-22s %s\n" "$$t" "$$st"; \
+	done; \
+	echo; echo "==================== A910 RVV difftest 汇总 ===================="; \
+	echo "PASS ($$(echo $$pass | wc -w)): $$pass"; \
+	echo "FAIL ($$(echo $$fail | wc -w)): $$fail"; \
+	echo "日志: $(A910_RVV_DT_LOG)/<用例>.log"
 
 # ---------------------------------------------------------------------------
 # A910 difftest 带波形版本
@@ -994,7 +1103,7 @@ A910_DT_WAVE_LOG   := $(A910_DT_WAVE_BUILD)/logs
 A910_DT_WAVE_SIMV  := $(A910_DT_WAVE_BUILD)/simv
 
 # 带 FSDB 波形支持的 difftest simv
-$(A910_DT_WAVE_SIMV): $(A910_SRC) $(A910_DT_TB) $(DPIC) $(CSRC_GM)
+$(A910_DT_WAVE_SIMV): $(A910_SRC) $(A910_DT_TB) $(DPIC) $(CSRC_GM) $(GM_HDR)
 	@mkdir -p $(A910_DT_WAVE_BUILD)
 	$(VCS) $(VCS_FLAGS) $(VCS_FLAGS_EXTRA) $(INC) $(RVV_INC) $(RVV_DEFS) $(FSDB_VCS) \
 	  -CFLAGS -DVCS -CFLAGS -I$(PWD)/golden_model/include \
@@ -1033,6 +1142,7 @@ a910-difftest-all_wave: $(A910_DT_WAVE_SIMV)
 	@pass=""; fail=""; fail_tests=""; last_run=""; \
 	for f in $(PWD)/bin/*.bin; do \
 	  t=$$(basename $$f .bin); \
+	  case $$t in rvv_sweep_*|rvv_lsu) continue;; esac; \
 	  case " $(A910_DT_SKIP) " in *" $$t "*) continue;; esac; \
 	  echo "----------------------------------------"; \
 	  echo "测试: $$t"; \
@@ -1286,6 +1396,8 @@ help:
 	@echo "  run-all          Run all tests under bin/*.bin (per-test WAVE); prints pass/fail summary"
 	@echo "  asm              Build every asm/*.S into bin/*.bin"
 	@echo "  coremark         Build CoreMark benchmark for RV32I (output: bin/coremark.bin)"
+	@echo "  coremark-rvv     Build auto-vectorized CoreMark (RVV, output: bin/coremark_rvv.bin)"
+	@echo "  coremark-rvv-run Build if needed + run the RVV CoreMark on A910 difftest"
 	@echo "  verdi            Open the project in Verdi (uses WAVE/FMT to select waveform)"
 	@echo "  clean            Remove generated files"
 	@echo
@@ -1303,4 +1415,6 @@ help:
 	@echo "Examples:"
 	@echo "  make coremark                    # Build CoreMark"
 	@echo "  make run TEST=coremark MAX_CYCLES=10000000  # Run CoreMark (needs more cycles)"
+	@echo "  make coremark-rvv                # Build RVV CoreMark (ITERATIONS=30)"
+	@echo "  make coremark-rvv-run            # RVV CoreMark on the A910 difftest bench"
 

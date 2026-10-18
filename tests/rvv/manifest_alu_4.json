@@ -1,0 +1,131 @@
+{
+ "group": "alu",
+ "test": "alu_4",
+ "n": 20,
+ "progress_addr": 9376,
+ "phase_addr": 9380,
+ "status_addr": 9388,
+ "a0_addr": 9384,
+ "cases": [
+  {
+   "id": 0,
+   "name": "vmv.v.v e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 1,
+   "name": "vmv.v.x e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 2,
+   "name": "vmv.v.i e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 3,
+   "name": "vmerge.vvm e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 4,
+   "name": "vmerge.vxm e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 5,
+   "name": "vmerge.vim e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 6,
+   "name": "vsext.vf2 e8",
+   "kind": "vreg",
+   "bytes": 32
+  },
+  {
+   "id": 7,
+   "name": "vsext.vf4 e8",
+   "kind": "vreg",
+   "bytes": 64
+  },
+  {
+   "id": 8,
+   "name": "vzext.vf2 e8",
+   "kind": "vreg",
+   "bytes": 32
+  },
+  {
+   "id": 9,
+   "name": "vzext.vf4 e8",
+   "kind": "vreg",
+   "bytes": 64
+  },
+  {
+   "id": 10,
+   "name": "vnclip.vv e16",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 11,
+   "name": "vnclip.vx e16",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 12,
+   "name": "vnclip.vi e16",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 13,
+   "name": "vnclipu.vv e16",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 14,
+   "name": "vnclipu.vx e16",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 15,
+   "name": "vnclipu.vi e16",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 16,
+   "name": "vnsrl.vv e16",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 17,
+   "name": "vnsrl.vx e16",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 18,
+   "name": "vnsrl.vi e16",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 19,
+   "name": "vnclip.vv e8",
+   "kind": "vreg",
+   "bytes": 16
+  }
+ ]
+}

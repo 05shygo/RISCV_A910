@@ -245,7 +245,16 @@ module rvv_backend_dispatch_opr_byte_type
           // ele_index = uop_index * (VLEN/vd_eew) + BYTE_INDEX[MSB:vd_eew]
           assign v0_enable[i] = uop_info.vm ? 1'b1 : v0_enable_tmp[i >> vd_eew_shift];
           assign vd_enable[i] = v0_enable[i];
-          assign vd_ele_index[i] = (`VL_WIDTH)'(ele_start) + (i >> vd_eew_shift);
+          // ⚠️ 2026-10-18: EEW1 (mask 目的: vmand 组 / 比较结果) 的元素是 **1 bit**,
+          // 而 strobe 的粒度是字节。字节 i 覆盖元素 [i*8, i*8+7], 所以它的
+          // "起始元素号"必须是 i*8 —— 原来写成 `i >> 0` (= 字节号), 再拿它和
+          // 按 bit 计的 vl 比较 ⇒ vl=16 时字节 0..15 全判成 BODY_ACTIVE,
+          // 把 vl 之后本应 tail-undisturbed 的字节全写了 (实测 rvv_sweep
+          // mask 组: 低 2 字节对、其余被写成 0)。
+          assign vd_ele_index[i] = (`VL_WIDTH)'(ele_start) +
+                                   ((uop_info.vd_eew==EEW1)
+                                    ? (`VL_WIDTH)'(i << 3)
+                                    : (`VL_WIDTH)'(i >> vd_eew_shift));
 
           always_comb begin
             if (uop_info.ignore_vta&uop_info.ignore_vma)

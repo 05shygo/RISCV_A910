@@ -45,6 +45,9 @@ module lsu_top #(
   // S8 fill 引擎给的向量 store 提交电平
   input  logic                 vec_st_cmit_vld,
   input  logic [6:0]           vec_st_cmit_iid,
+  // 2026-10-18: 向量 store spec-fail → IDU fill 立即释放 entry
+  output logic                 vec_st_spec_fail_vld,
+  output logic [4:0]           vec_st_spec_fail_fill_id,
 
   input  logic [31:0]          idu_lsu_rf_pipe5_src0,  // in
   input  logic                 idu_lsu_sdiq_sel,  // in
@@ -613,6 +616,7 @@ logic st_da_sq_dcache_way;
 // 2026-10-15 停用: 死亡声明 (无驱动无负载, 与本次非对齐摘除无关的既有残留): logic [TAG_WIDTH+INDEX_WIDTH-1:0] st_da_vb_feedback_addr_tto_offset;
 logic st_da_wb_cmplt_req;
 logic st_da_wb_spec_fail;
+logic st_da_vec_spec_fail_vld;
 logic st_da_wb_expt_vld;
 logic [31:0] st_da_wb_expt_addr;
 logic [31:0] st_da_addr;
@@ -1147,6 +1151,11 @@ logic [4:0]                    ld_dc_beat_idx;
 logic [4:0]                    ld_dc_fill_id;
 logic [4:0]                    ld_da_beat_idx;
 logic [4:0]                    ld_da_fill_id;
+// 2026-10-18: SQ/LFB 给向量 fill 的延迟唤醒
+logic                          sq_vec_wk_vld;
+logic [4:0]                    sq_vec_wk_fill_id;
+logic                          lfb_vec_wk_vld;
+logic [4:0]                    lfb_vec_wk_fill_id;
 logic [4:0]                    st_dc_beat_idx;
 logic [4:0]                    st_dc_fill_id;
 logic [4:0]                    st_da_beat_idx;
@@ -1195,6 +1204,11 @@ logic [127:0]                  rb_vec_rsp_data;
 logic [15:0]                   rb_vec_rsp_bytes_vld;
 logic                          rb_vec_rsp_grnt;
 
+// 2026-10-18: DC 入口仲裁。向量直连请求只能走"标量 AG 本拍没在用 DC"的空拍；
+// 否则 st_dc/ld_dc 的输入 mux (向量优先) 会把标量请求无声挤掉 —— 标量 LSIQ
+// 表项停在 frz=1, 年龄图不前进, 后续向量 store 被 lsiq_vec_old 永久门住。
+wire dc_deny = dc_store ? st_ag_dc_inst_vld : ld_ag_dc_inst_vld;
+
 ct_lsu_vec_ls_fe #(
   .DEPTH            (8),
   .INDEX_WIDTH      (INDEX_WIDTH),
@@ -1203,6 +1217,7 @@ ct_lsu_vec_ls_fe #(
   .clk              (forever_cpuclk),
   .rst_b            (cpurst_b),
   .vec_ls_flush     (rtu_yy_xx_flush),
+  .dc_deny          (dc_deny),
 
   .req_valid        (vec_ls_req_valid),
   .req_ready        (vec_ls_req_ready),
@@ -1262,9 +1277,17 @@ ct_lsu_vec_ls_fe #(
 );
 
 // restart 汇聚: DC 的 restart 优先 (更早一级), 带 fill_id 给 FE 匹配。
-assign ld_restart_any         = ld_dc_vec_restart | ld_da_vec_restart;
+// 2026-10-18: SQ data/global discard 与 LFB 冲突 discard 走**延迟唤醒**:
+// 事件那拍 DA 不 restart, 等 SQ/LFB 拿到数据后用 fill_id 在这里补一个 restart。
+assign vec_st_spec_fail_vld      = st_da_vec_spec_fail_vld;
+assign vec_st_spec_fail_fill_id  = st_da_fill_id;
+
+assign ld_restart_any         = ld_dc_vec_restart | ld_da_vec_restart |
+                                sq_vec_wk_vld | lfb_vec_wk_vld;
 assign ld_restart_fill_id_sel = ld_dc_vec_restart ? ld_dc_vec_restart_fill_id
-                                                  : ld_da_vec_restart_fill_id;
+                              : ld_da_vec_restart ? ld_da_vec_restart_fill_id
+                              : sq_vec_wk_vld     ? sq_vec_wk_fill_id
+                                                  : lfb_vec_wk_fill_id;
 assign st_restart_any         = st_dc_vec_restart | st_da_vec_restart;
 assign st_restart_fill_id_sel = st_dc_vec_restart ? st_dc_vec_restart_fill_id
                                                   : st_da_vec_restart_fill_id;
@@ -1450,6 +1473,8 @@ lsu_ld_da #(
   .sq_ld_dc_fwd_id(sq_ld_dc_fwd_id),  
   .ld_da_sq_fwd_id(ld_da_sq_fwd_id),
   .ld_da_sq_data_discard_vld(ld_da_sq_data_discard_vld),
+  .ld_da_vec(ld_da_vec),
+  .ld_da_fill_id(ld_da_fill_id),
   .ld_da_sq_fwd_multi_vld(ld_da_sq_fwd_multi_vld),
   .ld_da_sq_global_discard_vld(ld_da_sq_global_discard_vld),
   // 2026-10-15 停用: .cb_ld_da_data_vld(cb_ld_da_data_vld),
@@ -1834,6 +1859,7 @@ ct_lsu_st_da #(
   .st_da_wb_expt_vld(st_da_wb_expt_vld),
   .st_da_wb_expt_addr(st_da_wb_expt_addr),
   .st_da_wb_spec_fail(st_da_wb_spec_fail),
+  .st_da_vec_spec_fail_vld(st_da_vec_spec_fail_vld),
   .st_da_addr(st_da_addr),
   // 2026-10-15 停用: .st_da_boundary(st_da_boundary),
   .st_da_bytes_vld(st_da_bytes_vld),
@@ -1926,6 +1952,8 @@ ct_lsu_sq #(
   .forever_cpuclk(forever_cpuclk),
   .ld_da_lsid(ld_da_lsid),
   .ld_da_sq_data_discard_vld(ld_da_sq_data_discard_vld),
+  .ld_da_vec(ld_da_vec),
+  .ld_da_fill_id(ld_da_fill_id),
   .ld_da_sq_fwd_id(ld_da_sq_fwd_id),
   .ld_da_sq_fwd_multi_vld(ld_da_sq_fwd_multi_vld),
   .ld_da_sq_global_discard_vld(ld_da_sq_global_discard_vld),
@@ -1980,7 +2008,9 @@ ct_lsu_sq #(
   .wmb_ce_sq_ptr(wmb_ce_sq_ptr),
   .wmb_sq_pop_grnt(wmb_sq_pop_grnt),
   .wmb_sq_pop_to_ce_grnt(wmb_sq_pop_to_ce_grnt),  
-  .sq_data_depd_wakeup(sq_data_depd_wakeup),  // out
+  .sq_data_depd_wakeup(sq_data_depd_wakeup),
+  .sq_vec_wk_vld(sq_vec_wk_vld),
+  .sq_vec_wk_fill_id(sq_vec_wk_fill_id),  // out
   .sq_global_depd_wakeup(sq_global_depd_wakeup),  // out
   .sq_ld_da_fwd_data(sq_ld_da_fwd_data),
   // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): .sq_ld_dc_addr1_dep_discard(sq_ld_dc_addr1_dep_discard),
@@ -2276,6 +2306,8 @@ ct_lsu_lfb #(
   .ld_da_lfb_discard_grnt(ld_da_lfb_discard_grnt),
   .ld_da_lfb_set_wakeup_queue(ld_da_hit_idx_discard_req),
   .ld_da_lfb_wakeup_queue_next(ld_da_lsid),
+  .ld_da_vec(ld_da_vec),
+  .ld_da_fill_id(ld_da_fill_id),
   .rb_biu_req_addr(rb_biu_req_addr),
   .rb_lfb_addr_tto4(rb_lfb_addr_tto4),
   .rb_lfb_boundary_depd_wakeup(rb_lfb_boundary_depd_wakeup),
@@ -2312,6 +2344,8 @@ ct_lsu_lfb #(
   .lfb_dcache_arb_st_dirty_din(lfb_dcache_arb_st_dirty_din),
   .lfb_dcache_arb_st_dirty_wen(lfb_dcache_arb_st_dirty_wen),
   .lfb_depd_wakeup(lfb_depd_wakeup),
+  .lfb_vec_wk_vld(lfb_vec_wk_vld),
+  .lfb_vec_wk_fill_id(lfb_vec_wk_fill_id),
   .lfb_ld_da_hit_idx(lfb_ld_da_hit_idx),
   .lfb_pop_depd_ff(lfb_pop_depd_ff),
   .lfb_rb_biu_req_hit_idx(lfb_rb_biu_req_hit_idx),

@@ -165,6 +165,8 @@ module A910_cpu
   UOP_LSU2RVV_t rvv_lsu_resp;
   logic         rvv_lsu_resp_ready;
   logic         vec_st_cmit_vld;
+  logic         vec_st_spec_fail_vld;
+  logic [4:0]   vec_st_spec_fail_fill_id;
   logic [  6:0] vec_st_cmit_iid;
   logic         lsu_idu_wb_pipe3_wb_preg_vec;
   logic [  4:0] lsu_idu_wb_pipe3_wb_uop_idx;
@@ -694,7 +696,10 @@ module A910_cpu
   //     difftest 与冒烟台都只听程序序, 平移无害。
   //  ⚠️ 复位用 `rst` (高有效) —— 与 RTU/LSU 同极性, 这里只是观察口, 不复核核内复位相位。
   // ===========================================================================
-  localparam int DBG_HOLD = 16;
+  // 2026-10-18: 16 -> 32. mask 组的 difftest 里, 一条 dcache miss 的 load
+  //   写回落在 16 拍窗口之外 ⇒ 观察口回退到"提交时的 PRF 读值"(0), 而核内
+  //   架构值是对的 (冒烟台同一镜像 PASS). 只影响观察口径, 不改退休时序.
+  localparam int DBG_HOLD = 32;
 
   // RTU 侧原始退休包 (改名, 不再直接对外)
   logic [2:0]       rtu_cmt_vld;
@@ -1161,12 +1166,8 @@ module A910_cpu
 
   logic        idu_vec_src0_vld;
   logic [31:0] idu_vec_src0_data;
-  logic [5:0]  idu_vec_src0_preg;
-  logic        idu_vec_src0_wb;
   logic        idu_vec_src1_vld;
   logic [31:0] idu_vec_src1_data;
-  logic [5:0]  idu_vec_src1_preg;
-  logic        idu_vec_src1_wb;
   logic [5:0]  idu_vec_dst_preg;
   logic        idu_vec_dst_vld;
   logic [4:0]  idu_vec_dst_reg;
@@ -1292,6 +1293,8 @@ module A910_cpu
   .lsu_idu_sq_pop_uop_idx         (lsu_idu_sq_pop_uop_idx),
   .vec_st_cmit_vld                (vec_st_cmit_vld),
   .vec_st_cmit_iid                (vec_st_cmit_iid),
+  .lsu_vec_st_spec_fail_vld       (vec_st_spec_fail_vld),
+  .lsu_vec_st_spec_fail_fill_id   (vec_st_spec_fail_fill_id),
 
   //==========================================================
   // Interface with LSU - SDIQ control
@@ -1541,12 +1544,8 @@ module A910_cpu
     .idu_vec_lsid                   (idu_vec_lsid),
     .idu_vec_src0_vld               (idu_vec_src0_vld),
     .idu_vec_src0_data              (idu_vec_src0_data),
-    .idu_vec_src0_preg              (idu_vec_src0_preg),
-    .idu_vec_src0_wb                (idu_vec_src0_wb),
     .idu_vec_src1_vld               (idu_vec_src1_vld),
     .idu_vec_src1_data              (idu_vec_src1_data),
-    .idu_vec_src1_preg              (idu_vec_src1_preg),
-    .idu_vec_src1_wb                (idu_vec_src1_wb),
     .idu_vec_dst_preg               (idu_vec_dst_preg),
     .idu_vec_dst_vld                (idu_vec_dst_vld),
     .idu_vec_dst_reg                (idu_vec_dst_reg),
@@ -1672,6 +1671,8 @@ module A910_cpu
     .idu_lsu_st_last                (idu_lsu_st_last),
     .vec_st_cmit_vld                (vec_st_cmit_vld),
     .vec_st_cmit_iid                (vec_st_cmit_iid),
+    .vec_st_spec_fail_vld           (vec_st_spec_fail_vld),
+    .vec_st_spec_fail_fill_id       (vec_st_spec_fail_fill_id),
     .idu_lsu_st_oldest              (idu_lsu_st_oldest),
     .idu_lsu_st_offset              (idu_lsu_st_offset),
     //.idu_lsu_st_offset_plus         (idu_lsu_st_offset_plus),

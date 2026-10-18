@@ -1,0 +1,131 @@
+{
+ "group": "alu",
+ "test": "alu_0",
+ "n": 20,
+ "progress_addr": 8800,
+ "phase_addr": 8804,
+ "status_addr": 8812,
+ "a0_addr": 8808,
+ "cases": [
+  {
+   "id": 0,
+   "name": "vadd.vv e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 1,
+   "name": "vadd.vx e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 2,
+   "name": "vadd.vi e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 3,
+   "name": "vsub.vv e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 4,
+   "name": "vsub.vx e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 5,
+   "name": "vrsub.vx e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 6,
+   "name": "vrsub.vi e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 7,
+   "name": "vadc.vvm e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 8,
+   "name": "vadc.vxm e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 9,
+   "name": "vadc.vim e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 10,
+   "name": "vmax.vv e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 11,
+   "name": "vmax.vx e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 12,
+   "name": "vmaxu.vv e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 13,
+   "name": "vmaxu.vx e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 14,
+   "name": "vmin.vv e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 15,
+   "name": "vmin.vx e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 16,
+   "name": "vminu.vv e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 17,
+   "name": "vminu.vx e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 18,
+   "name": "vmseq.vv e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 19,
+   "name": "vmseq.vx e32",
+   "kind": "vreg",
+   "bytes": 16
+  }
+ ]
+}

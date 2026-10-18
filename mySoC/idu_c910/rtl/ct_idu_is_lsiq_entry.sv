@@ -26,6 +26,11 @@ module ct_idu_is_lsiq_entry (
   output logic         x_load,
   input  logic         x_lq_full_set,
   input  logic [6:0]   x_other_raw_rdy,
+  // 2026-10-18: 其它表项里"向量"标记 (与 x_other_raw_rdy 同序)。store 表项看到
+  // 更老的向量 store 锚点时必须停下来 —— 锚点的一个 beat 就要占一格 SQ, 而
+  // 标量 store 若抢先分配会把 SQ 占满, 队头向量 store 永远拿不到槽 ⇒ 死锁
+  // (实测 alu_4: vse32 的队头在 st_dc 被 sq_full 永久 restart)。
+  input  logic [6:0]   x_other_vec,
   input  logic         x_pop_cur_entry,
   input  logic [6:0]   x_pop_other_entry,
   output logic         x_raw_rdy,
@@ -465,7 +470,12 @@ assign x_raw_rdy = vld && !frz
 
 //----------------------older ready-------------------------
 //if older entry of same type raw ready, mask cur entry ready
-assign older_entry_rdy_mask = |(agevec[6:0] & x_other_raw_rdy[6:0]);
+// 2026-10-18: store 还要等更老的**向量** store 真正做完 (锚点 pop)。
+// 向量 store 的 beats 由 fill 异步注入, 不受 LSIQ 发射序约束; 若放行年轻标量
+// store, 它们会先占满 SQ (8 格), 而队头向量 store 每 beat 还要一格 ⇒ 永久卡死。
+assign older_entry_rdy_mask = |(agevec[6:0] &
+                                (x_other_raw_rdy[6:0] |
+                                 (x_other_vec[6:0] & {7{store}})));
 
 //----------------------final ready-------------------------
 //if older entry is ready, mask current entry ready

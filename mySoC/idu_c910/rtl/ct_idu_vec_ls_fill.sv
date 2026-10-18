@@ -89,6 +89,9 @@ module ct_idu_vec_ls_fill
   // 给 SQ 的向量 store 提交电平
   output logic         vec_st_cmit_vld,
   output logic [6:0]   vec_st_cmit_iid,
+  // 2026-10-18: LSU st DA 报告向量 store spec-fail ⇒ 立刻释放对应 fill entry
+  input  logic         vec_st_spec_fail_vld,
+  input  logic [4:0]   vec_st_spec_fail_fill_id,
 
   // 已提交但还有 beat 没进 SQ —— 喂 RTU 冲刷闸
   output logic         idu_lsu_cmit_vec_st_pending
@@ -147,9 +150,18 @@ function automatic logic [31:0] vec_byte_addr (
   logic [2:0] sh;
   logic [2:0] sh2;
   logic [8:0] elem;
+  logic [8:0] elem_m;      // 元素号对"本寄存器能装的元素数"取模
+  // ⚠️ 2026-10-18: 必须 ≥7 位 —— VLEN=128 时最后一个元素 (k=15, e8) 的
+  // 起始 bit 是 120; 原来只有 6 位, k=8..15 被截成 0..56 ⇒ 元素 8..15
+  // 读回元素 0..7 的地址 (实测 vluxei8 结果后 8 字节是前 8 字节的复制)。
+  logic [7:0] idx_bit;     // 索引元素在 vidx 里的起始 bit
+  logic [31:0] idx_val;    // 按 EEW 取出的索引 (符号扩展到 32 位)
 
   sh   = eew_shift(vd_eew);
-  elem = ({4'b0, uop_idx} + {5'b0, byte_pos}) >> sh;
+  sh2  = eew_shift(vs2_eew);
+  // 每个 uop 覆盖 16 字节的目的数据 ⇒ 元素数 = 16 >> sh; uop_idx 要按元素数
+  // 跨过去。原式 `(uop_idx + byte_pos) >> sh` 只在 uop_idx==0 且 e8 下碰巧对。
+  elem = ({4'b0, uop_idx} << (4'd4 - {1'b0, sh})) + ({5'b0, byte_pos} >> sh);
 
   case (mop)
     3'd0: // US
@@ -159,10 +171,23 @@ function automatic logic [31:0] vec_byte_addr (
                     + $signed(stride) * $signed({23'b0, elem})
                     + {28'b0, (byte_pos & ((8'd1 << sh) - 8'd1))};
     3'd1, 3'd3: begin // IU / IO
-      sh2 = eew_shift(vs2_eew);
+      // ⚠️ 2026-10-18 修: 索引元素的宽度 = vs2 EEW (e8 → 1 字节), 不能一律
+      //    读 32 位 —— 原来 e8 时把 4 个相邻索引拼成一个数, 地址全错; 而且
+      //    elem 超过 11 时 32 位切片会越过 128 位 vidx ⇒ X ⇒ fill 活锁
+      //    (实测 vluxei8.v 卡死、AXI 读握手 10 万次)。
+      //    元素号按 16>>sh2 取模, 保证切片不越界。
+      elem_m  = elem & ((9'd16 >> sh2) - 9'd1);
+      idx_bit = elem_m[5:0] * (8 << sh2);
+      case (sh2)
+        3'd0:    idx_val = {{24{vidx[idx_bit + 7 ]}}, vidx[idx_bit +: 8 ]};
+        3'd1:    idx_val = {{16{vidx[idx_bit + 15]}}, vidx[idx_bit +: 16]};
+        default: idx_val = vidx[idx_bit +: 32];
+      endcase
+      // RVV 规范: 索引是**字节偏移**, 不按元素大小缩放 (ei8/ei16/ei32 只是
+      // 索引自身的宽度; 数据宽度由 vtype.SEW 决定)。原式多乘了 1<<sh ⇒
+      // e16/e32 的地址被放大, 读到的是 "32 位连续 load" 的数据。
       vec_byte_addr = base
-                    + $signed(vidx[((elem * (8'd1 << sh2)) & 5'h0F)*8 +: 32])
-                      * $signed({29'b0, (8'd1 << sh)})
+                    + $signed(idx_val)
                     + {28'b0, (byte_pos & ((8'd1 << sh) - 8'd1))};
     end
     default:
@@ -187,7 +212,9 @@ logic [6:0]          ctx_iid        [0:NUM_CTX-1];
 logic [4:0]          ctx_uop_index  [0:NUM_CTX-1];
 logic [4:0]          ctx_dst_index  [0:NUM_CTX-1];
 logic [2:0]          ctx_lsu_id     [0:NUM_CTX-1];
-logic [4:0]          ctx_seq        [0:NUM_CTX-1];
+// 2026-10-18: 5 位会回绕 —— seq 29/30/31/0 时数值比较把 0 当成最老,
+// 最老 store context 被永久饿死 (实测 alu_4 的 vzext.vf4 结果 store 卡住)。
+logic [15:0]         ctx_seq        [0:NUM_CTX-1];
 logic                ctx_load       [0:NUM_CTX-1];
 logic                ctx_last_uop   [0:NUM_CTX-1];
 logic [2:0]          ctx_mop        [0:NUM_CTX-1];
@@ -224,7 +251,7 @@ logic [4:0]          req_alloc_ptr;
 // ---------------------------------------------------------------------------
 // 其余状态
 // ---------------------------------------------------------------------------
-logic [4:0]          seq_cnt;
+logic [15:0]         seq_cnt;
 
 // ---------------------------------------------------------------------------
 // 每 context 的逐字节地址
@@ -321,11 +348,11 @@ logic        st_req_last [0:NUM_CTX-1];
 // (它没发完之前, 后面的 context 一律不许发)
 logic        st_old_vld;
 logic [3:0]  st_old_ctx;
-logic [4:0]  st_old_seq;
+logic [15:0] st_old_seq;
 always_comb begin : st_old_calc
   st_old_vld = 1'b0;
   st_old_ctx = 4'd0;
-  st_old_seq = 5'h1F;
+  st_old_seq = 16'hFFFF;
   for (int sc=0; sc<NUM_CTX; sc++) begin
     if (ctx_vld[sc] && !ctx_load[sc]) begin
       if (!st_old_vld || (ctx_seq[sc] < st_old_seq)) begin
@@ -453,14 +480,14 @@ logic [15:0] issue_mask;
 
 logic        st_any;
 logic [3:0]  st_sel;
-logic [4:0]  st_min_seq;
+logic [15:0] st_min_seq;
 logic        ld_any;
 logic [3:0]  ld_sel;
 
 always_comb begin
   st_any     = 1'b0;
   st_sel     = 4'd0;
-  st_min_seq = 5'h1F;
+  st_min_seq = 16'hFFFF;
   for (int ci0=0; ci0<NUM_CTX; ci0++) begin
     if (st_req_can[ci0] && ctx_vld[ci0]) begin
       if (!st_any || (ctx_seq[ci0] < st_min_seq)) begin
@@ -604,13 +631,13 @@ logic        load_resp_vld;
 logic [3:0]  load_resp_ctx;
 
 always_comb begin : resp_sel_calc
-  logic [4:0] min_seq;
+  logic [15:0] min_seq;
   store_resp_vld = 1'b0;
   store_resp_ctx = 4'd0;
   load_resp_vld  = 1'b0;
   load_resp_ctx  = 4'd0;
 
-  min_seq = 5'h1F;
+  min_seq = 16'hFFFF;
   for (int ci=0; ci<NUM_CTX; ci++) begin
     if (ctx_vld[ci] && !ctx_load[ci] && !ctx_need_nop[ci] &&
         (ctx_outs[ci] == 6'd0) && (ctx_pending[ci] == 16'd0) &&
@@ -621,7 +648,7 @@ always_comb begin : resp_sel_calc
     end
   end
 
-  min_seq = 5'h1F;
+  min_seq = 16'hFFFF;
   for (int ci=0; ci<NUM_CTX; ci++) begin
     if (ctx_vld[ci] && ctx_load[ci] && !ctx_need_nop[ci] &&
         (ctx_outs[ci] == 6'd0) && (ctx_pending[ci] == 16'd0) &&
@@ -677,6 +704,7 @@ wire done_req_vld = req_vld[done_id];
 // 主状态机
 // ---------------------------------------------------------------------------
 integer x;
+integer r, q;
 always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
   if (!cpurst_b) begin
     anc_vld       <= '0;
@@ -685,7 +713,7 @@ always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
     ctx_vld       <= '0;
     req_vld       <= '0;
     req_alloc_ptr <= 5'd0;
-    seq_cnt       <= 5'd0;
+    seq_cnt       <= 16'd0;
     for (x=0; x<NUM_ANC; x++) anc_iid[x] <= 7'd0;
     for (x=0; x<NUM_CTX; x++) begin
       ctx_lsid[x]       <= 3'd0;
@@ -693,7 +721,7 @@ always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
       ctx_uop_index[x]  <= 5'd0;
       ctx_dst_index[x]  <= 5'd0;
       ctx_lsu_id[x]     <= 3'd0;
-      ctx_seq[x]        <= 5'd0;
+      ctx_seq[x]        <= 16'd0;
       ctx_load[x]       <= 1'b0;
       ctx_last_uop[x]   <= 1'b0;
       ctx_mop[x]        <= 3'd0;
@@ -796,7 +824,7 @@ always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
       ctx_outs[free_ctx]      <= 6'd0;
       ctx_need_nop[free_ctx]  <= (uop_mask == 16'd0) && rvv_lsu_uop.last_uop_valid;
       ctx_resp_ready[free_ctx]<= (uop_mask == 16'd0) && !rvv_lsu_uop.last_uop_valid;
-      seq_cnt                 <= seq_cnt + 5'd1;
+      seq_cnt                 <= seq_cnt + 16'd1;
     end
 
     // ---------------- 请求发射 ----------------
@@ -878,6 +906,26 @@ always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
         ctx_vld[store_resp_ctx] <= 1'b0;
       else
         ctx_vld[load_resp_ctx]  <= 1'b0;
+    end
+
+    // ---------------- 2026-10-18: store spec-fail 立即释放 ----------------
+    // st DA 检测到 LQ spec-fail 时, 这条向量 store 会被 RTU 重放/冲刷;
+    // 这里把该 beat 所属 context 及其所有在途请求立刻释放, 避免 fill 等一个
+    // 永远不会完成的 store 响应。
+    if (vec_st_spec_fail_vld) begin
+      for (r=0; r<NUM_REQ; r++) begin
+        if (req_vld[r] && (r[4:0] == vec_st_spec_fail_fill_id)) begin
+          ctx_vld[req_ctx[r]]       <= 1'b0;
+          ctx_pending[req_ctx[r]]   <= 16'd0;
+          ctx_inflight[req_ctx[r]]  <= 16'd0;
+          ctx_outs[req_ctx[r]]      <= 6'd0;
+          ctx_need_nop[req_ctx[r]]  <= 1'b0;
+          ctx_resp_ready[req_ctx[r]]<= 1'b0;
+          for (q=0; q<NUM_REQ; q++)
+            if (req_vld[q] && (req_ctx[q] == req_ctx[r]))
+              req_vld[q] <= 1'b0;
+        end
+      end
     end
   end
 end

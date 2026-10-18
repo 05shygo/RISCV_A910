@@ -194,6 +194,297 @@ module tb_a910_smoke;
   always @(*) if (fix_accept2) force dut.idu_accept_num = accept_intended;
 
   // -------------------------------------------------------------------------
+  // [RVV_DBG] 向量 L/S uop 为什么进不了 fill —— 只打前 40 次
+  //   (2026-10-18: rvv_lsu/逐指令 sweep 都在第一条 vle 上卡死, 用这个定位)
+  // -------------------------------------------------------------------------
+  integer rvv_dbg_cnt = 0;
+  integer d_vecq=0, d_acc=0, d_rs=0, d_lsu=0, d_core=0;
+  always @(posedge clk) if (!rst && $test$plusargs("RVV_DBG")) begin
+    if (dut.u_ct_idu_top.u_ct_idu_vecq.vecq_xx_issue_en && d_vecq<8) begin
+      d_vecq = d_vecq + 1;
+      $display("[RVVDBG] T%0t VIQ issue iid=%0d op=%0d bits=%h", $time,
+               dut.idu_vec_inst_iid, dut.idu_vec_inst_opcode,
+               dut.idu_vec_inst_bits);
+    end
+    if (dut.u_rvv_a910_bridge.accept && d_acc<8) begin
+      d_acc = d_acc + 1;
+      $display("[RVVDBG] T%0t bridge accept iid=%0d", $time,
+               dut.idu_vec_inst_iid);
+    end
+    if (dut.u_rvv_a910_bridge.u_rvv_core.backend.rs_valid_dp2lsu[0] && d_rs<8) begin
+      d_rs = d_rs + 1;
+      $display("[RVVDBG] T%0t LSU RS push iid=%0d", $time,
+               dut.u_rvv_a910_bridge.u_rvv_core.backend.rs_dp2lsu[0].rob_tag);
+    end
+    if (dut.u_rvv_a910_bridge.u_rvv_core.backend.uop_lsu_valid_rvv2lsu[0] && d_lsu<8) begin
+      d_lsu = d_lsu + 1;
+      $display("[RVVDBG] T%0t LSU RS out iid=%0d", $time,
+               dut.u_rvv_a910_bridge.u_rvv_core.backend.uop_lsu_rvv2lsu[0].rob_tag);
+    end
+    if (dut.rvv_lsu_uop_valid && d_core<8) begin
+      d_core = d_core + 1;
+      $display("[RVVDBG] T%0t bridge LSU uop valid iid=%0d lsid=%0d ready=%b",
+               $time, dut.rvv_lsu_uop.rob_tag, dut.rvv_lsu_uop.lsid,
+               dut.rvv_lsu_uop_ready);
+    end
+    // 卡住之后的周期状态: fill ctx / LSU 请求-响应
+    if (cycles > 3000 && cycles < 20000 && (cycles % 1000) == 0) begin
+      $display("[RVVDBG] T%0t FILL vld=%b ld=%b pend=%h outs=%0d infl=%h respv=%b respR=%b | reqv=%b reqR=%b done=%b rspv=%b",
+        $time,
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_vld,
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_load[0],
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_pending[0],
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_outs[0],
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_inflight[0],
+        dut.u_ct_idu_top.u_vec_ls_fill.rvv_lsu_resp_valid,
+        dut.u_ct_idu_top.u_vec_ls_fill.rvv_lsu_resp_ready,
+        dut.vec_ls_req_valid, dut.vec_ls_req_ready,
+        dut.vec_ls_req_done_vld, dut.vec_ls_rsp_valid);
+      $display("[RVVDBG]        ST old_vld=%b old_ctx=%0d lsiq_old=%b can=%b%b%b%b seq=%0d/%0d/%0d/%0d lsid=%0d/%0d/%0d/%0d samiid=%0d/%0d/%0d/%0d",
+        dut.u_ct_idu_top.u_vec_ls_fill.st_old_vld,
+        dut.u_ct_idu_top.u_vec_ls_fill.st_old_ctx,
+        dut.u_ct_idu_top.lsiq_vec_old,
+        dut.u_ct_idu_top.u_vec_ls_fill.st_req_can[0],
+        dut.u_ct_idu_top.u_vec_ls_fill.st_req_can[1],
+        dut.u_ct_idu_top.u_vec_ls_fill.st_req_can[2],
+        dut.u_ct_idu_top.u_vec_ls_fill.st_req_can[3],
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_seq[0],
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_seq[1],
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_seq[2],
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_seq[3],
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_lsid[0],
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_lsid[1],
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_lsid[2],
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_lsid[3],
+        dut.u_ct_idu_top.u_vec_ls_fill.same_iid_cnt[0],
+        dut.u_ct_idu_top.u_vec_ls_fill.same_iid_cnt[1],
+        dut.u_ct_idu_top.u_vec_ls_fill.same_iid_cnt[2],
+        dut.u_ct_idu_top.u_vec_ls_fill.same_iid_cnt[3]);
+      $display("[RVVDBG]        LSU ld_da_vec=%b rspv=%b fid=%0d bytes=%h done=%b miss=%b mshr=%b | lq_ok=%b rb_ok=%b",
+        dut.u_lsu_top.ld_da_vec, dut.u_lsu_top.ld_da_vec_rsp_vld,
+        dut.u_lsu_top.ld_da_fill_id, dut.u_lsu_top.ld_da_bytes_vld,
+        dut.u_lsu_top.ld_da_vec_done, dut.u_lsu_top.ld_da_vec_miss,
+        dut.u_lsu_top.ld_da_vec_mshr_created,
+        dut.u_lsu_top.lsu_idu_lq_not_full, dut.u_lsu_top.lsu_idu_rb_not_full);
+    end
+  end
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("RVV_DBG") &&
+        dut.rvv_lsu_uop_valid && !dut.rvv_lsu_uop_ready && rvv_dbg_cnt < 40) begin
+      rvv_dbg_cnt = rvv_dbg_cnt + 1;
+      $display("[RVVDBG] T%0t uop iid=%0d lsid=%0d st=%b | anc_vld=%b anc_iid=%0d anc_st=%b | anc_ok=%b ready=%b",
+        $time, dut.rvv_lsu_uop.rob_tag, dut.rvv_lsu_uop.lsid,
+        dut.rvv_lsu_uop.lsu_is_store,
+        dut.u_ct_idu_top.u_vec_ls_fill.anc_vld[dut.rvv_lsu_uop.lsid],
+        dut.u_ct_idu_top.u_vec_ls_fill.anc_iid[dut.rvv_lsu_uop.lsid],
+        dut.u_ct_idu_top.u_vec_ls_fill.anc_store[dut.rvv_lsu_uop.lsid],
+        dut.u_ct_idu_top.u_vec_ls_fill.uop_anc_ok,
+        dut.rvv_lsu_uop_ready);
+    end
+  end
+
+  // ---- RVV load DA event probe ----
+  integer e_da=0,e_done=0,e_rsp=0,e_mshr=0,e_miss=0,e_rbrsp=0,e_rbcr=0,e_rbfull=0,e_dcv=0;
+  always @(posedge clk) if (!rst && $test$plusargs("RVV_DBG")) begin
+    if (dut.u_lsu_top.u_lsu_ld_da.ld_da_inst_vld && e_da<20) begin
+      e_da=e_da+1;
+      $display("[RVVDBG] T%0t DA inst_vld vec=%b nop=%b hit=%b data=%b rbcr=%b rbfull=%b rbhit=%b fid=%0d",
+        $time, dut.u_lsu_top.ld_da_vec, dut.u_lsu_top.u_lsu_ld_da.ld_da_vec_nop_q,
+        dut.u_lsu_top.u_lsu_ld_da.ld_da_dcache_hit, dut.u_lsu_top.u_lsu_ld_da.ld_da_data_vld,
+        dut.u_lsu_top.ld_da_rb_create_vld, dut.u_lsu_top.rb_ld_da_full,
+        dut.u_lsu_top.rb_ld_da_hit_idx, dut.u_lsu_top.ld_da_fill_id);
+    end
+    if (dut.u_lsu_top.ld_da_vec && e_dcv<20) begin
+      e_dcv=e_dcv+1;
+      $display("[RVVDBG] T%0t DA vec_level inst_vld=%b restart=%b done=%b rsp=%b mshr=%b miss=%b",
+        $time, dut.u_lsu_top.u_lsu_ld_da.ld_da_inst_vld, dut.u_lsu_top.u_lsu_ld_da.ld_da_restart_vld,
+        dut.u_lsu_top.ld_da_vec_done, dut.u_lsu_top.ld_da_vec_rsp_vld,
+        dut.u_lsu_top.ld_da_vec_mshr_created, dut.u_lsu_top.ld_da_vec_miss);
+    end
+    if (dut.u_lsu_top.ld_da_vec_done && e_done<20) begin
+      e_done=e_done+1; $display("[RVVDBG] T%0t DA vec_done fid=%0d", $time, dut.u_lsu_top.ld_da_fill_id);
+    end
+    if (dut.u_lsu_top.ld_da_vec_rsp_vld && e_rsp<20) begin
+      e_rsp=e_rsp+1; $display("[RVVDBG] T%0t DA vec_rsp fid=%0d bytes=%h", $time, dut.u_lsu_top.ld_da_fill_id, dut.u_lsu_top.ld_da_bytes_vld);
+    end
+    if (dut.u_lsu_top.ld_da_vec_mshr_created && e_mshr<20) begin
+      e_mshr=e_mshr+1; $display("[RVVDBG] T%0t DA vec_mshr_created fid=%0d", $time, dut.u_lsu_top.ld_da_fill_id);
+    end
+    if (dut.u_lsu_top.ld_da_vec_miss && e_miss<20) begin
+      e_miss=e_miss+1; $display("[RVVDBG] T%0t DA vec_miss fid=%0d", $time, dut.u_lsu_top.ld_da_fill_id);
+    end
+    if (dut.u_lsu_top.rb_vec_rsp_vld && e_rbrsp<20) begin
+      e_rbrsp=e_rbrsp+1; $display("[RVVDBG] T%0t RB vec_rsp fid=%0d bytes=%h", $time, dut.u_lsu_top.rb_vec_rsp_fill_id, dut.u_lsu_top.rb_vec_rsp_bytes_vld);
+    end
+    if (dut.u_lsu_top.ld_da_rb_create_vld && e_rbcr<20) begin
+      e_rbcr=e_rbcr+1; $display("[RVVDBG] T%0t rb_create fid=%0d", $time, dut.u_lsu_top.ld_da_fill_id);
+    end
+    if (dut.u_lsu_top.rb_ld_da_full && e_rbfull<5) begin
+      e_rbfull=e_rbfull+1; $display("[RVVDBG] T%0t rb_full", $time);
+    end
+  end
+
+  // ---- RVV store fill/anchor event probe ----
+  logic [7:0]  prev_lsiq_vec_old = 8'h0;
+  logic [7:0]  prev_anc_vld = 8'h0;
+  always @(posedge clk) if (!rst && $test$plusargs("RVV_DBG")) begin
+    if (dut.rvv_lsu_uop_valid && dut.rvv_lsu_uop_ready &&
+        dut.rvv_lsu_uop.lsu_is_store) begin
+      $display("[RVVDBG] T%0t ST accept iid=%0d lsid=%0d fill=%0d mask=%h last_uop=%b", $time,
+        dut.rvv_lsu_uop.rob_tag, dut.rvv_lsu_uop.lsid,
+        dut.u_ct_idu_top.u_vec_ls_fill.seq_cnt,
+        dut.u_ct_idu_top.u_vec_ls_fill.uop_mask,
+        dut.rvv_lsu_uop.last_uop_valid);
+    end
+    if (dut.u_ct_idu_top.u_vec_ls_fill.issue_fire &&
+        dut.u_ct_idu_top.u_vec_ls_fill.issue_store) begin
+      $display("[RVVDBG] T%0t ST issue ctx=%0d mask=%h last=%b addr=%h", $time,
+        dut.u_ct_idu_top.u_vec_ls_fill.issue_ctx,
+        dut.u_ct_idu_top.u_vec_ls_fill.issue_mask,
+        dut.u_ct_idu_top.u_vec_ls_fill.issue_last,
+        dut.u_ct_idu_top.u_vec_ls_fill.issue_addr);
+    end
+    if (dut.u_ct_idu_top.u_vec_ls_fill.done_hit &&
+        dut.u_ct_idu_top.u_vec_ls_fill.done_req_vld) begin
+      $display("[RVVDBG] T%0t ST done id=%0d reqstore=%b", $time,
+        dut.u_ct_idu_top.u_vec_ls_fill.done_id,
+        dut.u_ct_idu_top.u_vec_ls_fill.req_store[dut.u_ct_idu_top.u_vec_ls_fill.done_id]);
+    end
+    if (dut.u_lsu_top.u_lsu_st_da.st_da_vec_done)
+      $display("[RVVDBG] T%0t ST VEC DA done last=%b lsid=%h fid=%0d",
+        $time, dut.u_lsu_top.u_lsu_st_da.st_da_last,
+        dut.u_lsu_top.u_lsu_st_da.st_da_lsid,
+        dut.u_lsu_top.u_lsu_st_da.st_da_fill_id);
+    if (dut.lsu_idu_lsiq_pop1_vld)
+      $display("[RVVDBG] T%0t ST DA pop vld entry=%h last=%b lsid=%h", $time, dut.u_lsu_top.st_da_idu_pop_entry, dut.u_lsu_top.u_lsu_st_da.st_da_last, dut.u_lsu_top.u_lsu_st_da.st_da_lsid);
+    if (dut.lsu_idu_lsiq_pop0_vld)
+      $display("[RVVDBG] LD DA pop vld entry=%h", dut.u_lsu_top.ld_da_idu_pop_entry);
+    if (dut.lsu_idu_lsiq_pop_entry != 8'h0)
+      $display("[RVVDBG] LSIQ pop entry=%h", dut.lsu_idu_lsiq_pop_entry);
+    if (cycles > 1000 && (cycles % 500) == 0)
+      $display("[RVVDBG] T%0t E2 st=%b ld=%b frz=%b rdy=%b raw=%b old=%b | ready=%b p4rdy=%b p4iss=%b rf4=%b | op=%h",
+        $time,
+        dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry2.store,
+        dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry2.load,
+        dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry2.frz,
+        dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry2.x_rdy,
+        dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry2.x_raw_rdy,
+        dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry2.old,
+        dut.u_ct_idu_top.x_ct_idu_is_lsiq.lsiq_entry_ready[2],
+        dut.u_ct_idu_top.x_ct_idu_is_lsiq.lsiq_pipe4_entry_ready[2],
+        dut.u_ct_idu_top.x_ct_idu_is_lsiq.lsiq_dp_pipe4_issue_entry[2],
+        dut.u_ct_idu_top.x_ct_idu_is_lsiq.lsiq_rf_pipe4_issue_en,
+        dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry2.opcode);
+    if (dut.u_lsu_top.st_ag_dc_inst_vld)
+      $display("[RVVDBG] T%0t ST AG iid=%0d old=%b addr=%h",
+        $time, dut.u_lsu_top.st_ag_iid, dut.u_lsu_top.st_ag_old,
+        dut.u_lsu_top.st_ag_dc_addr0);
+    if (dut.u_lsu_top.st_dc_da_inst_vld)
+      $display("[RVVDBG] T%0t ST DC iid=%0d vec=%b sqfull=%b",
+        $time, dut.u_lsu_top.st_dc_iid, dut.u_lsu_top.st_dc_vec,
+        !dut.lsu_idu_sq_not_full);
+    if (dut.u_lsu_top.st_da_inst_vld)
+      $display("[RVVDBG] T%0t ST DA iid=%0d vec=%b restart=%b sqfull=%b",
+        $time, dut.u_lsu_top.st_da_iid, dut.u_lsu_top.st_da_vec,
+        dut.u_lsu_top.u_lsu_st_da.st_da_restart_vld, !dut.lsu_idu_sq_not_full);
+    if (dut.u_lsu_top.u_lsu_st_ag.st_ag_dcache_stall_req ||
+        dut.u_lsu_top.u_lsu_st_ag.st_ag_stall_vld ||
+        dut.u_lsu_top.u_lsu_st_ag.st_ag_stall_mask ||
+        (dut.u_lsu_top.st_ag_stall_restart_entry != 8'h0))
+      $display("[RVVDBG] T%0t STALL req=%b vld=%b mask=%b re=%h | ag_iid=%0d ag_lsid=%h inst=%b | rf_sel=%b rf_iid=%0d lch=%h | imme_wk=%h",
+        $time,
+        dut.u_lsu_top.u_lsu_st_ag.st_ag_dcache_stall_req,
+        dut.u_lsu_top.u_lsu_st_ag.st_ag_stall_vld,
+        dut.u_lsu_top.u_lsu_st_ag.st_ag_stall_mask,
+        dut.u_lsu_top.st_ag_stall_restart_entry,
+        dut.u_lsu_top.st_ag_iid,
+        dut.u_lsu_top.u_lsu_st_ag.st_ag_lsid,
+        dut.u_lsu_top.u_lsu_st_ag.st_ag_inst_vld,
+        dut.u_lsu_top.idu_lsu_st_sel,
+        dut.u_lsu_top.idu_lsu_st_iid,
+        dut.u_lsu_top.idu_lsu_st_lch_entry,
+        dut.u_lsu_top.lsu_idu_imme_wakeup);
+    if (dut.u_lsu_top.u_lsu_st_dc.st_dc_inst_vld &&
+        dut.u_lsu_top.u_lsu_st_dc.st_dc_iid == 7'd44)
+      $display("[RVVDBG] T%0t DC44 inst=1 restart=%b sqfullvld=%b old=%b specfail=%b expt=%b vec=%b sqfull=%b",
+        $time,
+        dut.u_lsu_top.u_lsu_st_dc.st_dc_restart_vld,
+        dut.u_lsu_top.u_lsu_st_dc.st_dc_sq_full_vld,
+        dut.u_lsu_top.u_lsu_st_dc.st_dc_old,
+        dut.u_lsu_top.u_lsu_st_dc.st_dc_spec_fail,
+        dut.u_lsu_top.u_lsu_st_dc.st_dc_expt,
+        dut.u_lsu_top.u_lsu_st_dc.st_dc_vec,
+        !dut.lsu_idu_sq_not_full);
+    if (dut.u_ct_idu_top.u_vec_ls_fill.ld_rsp_hit)
+      $display("[RVVDBG] T%0t FILL ld_rsp_hit rspid=%0d reqvld=%b reqctx=%0d rspv=%b",
+        $time, dut.u_ct_idu_top.u_vec_ls_fill.rsp_id,
+        dut.u_ct_idu_top.u_vec_ls_fill.req_vld[dut.u_ct_idu_top.u_vec_ls_fill.rsp_id],
+        dut.u_ct_idu_top.u_vec_ls_fill.req_ctx[dut.u_ct_idu_top.u_vec_ls_fill.rsp_id],
+        dut.vec_ls_rsp_valid);
+    if (cycles > 1000 && (cycles % 500) == 0)
+      $display("[RVVDBG] T%0t CTX vld=%b ld=%b pend=%h/%h/%h/%h outs=%0d/%0d/%0d/%0d rr=%b%b%b%b respv=%b",
+        $time,
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_vld,
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_load[0],
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_pending[0],
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_pending[1],
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_pending[2],
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_pending[3],
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_outs[0],
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_outs[1],
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_outs[2],
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_outs[3],
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_resp_ready[0],
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_resp_ready[1],
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_resp_ready[2],
+        dut.u_ct_idu_top.u_vec_ls_fill.ctx_resp_ready[3],
+        dut.u_ct_idu_top.u_vec_ls_fill.rvv_lsu_resp_valid);
+    if (dut.u_lsu_top.rb_vec_rsp_vld)
+      $display("[RVVDBG] T%0t RB rspvld=%b grnt=%b fid=%0d | vec=%b rsp=%b fd=%0d/%0d/%0d/%0d grntx=%b ptr=%b st0=%0d grnt0=%b",
+        $time,
+        dut.u_lsu_top.rb_vec_rsp_vld, dut.u_lsu_top.rb_vec_rsp_grnt,
+        dut.u_lsu_top.rb_vec_rsp_fill_id,
+        dut.u_lsu_top.u_lsu_mshr.rb_entry_vec,
+        dut.u_lsu_top.u_lsu_mshr.rb_entry_vec_rsp,
+        dut.u_lsu_top.u_lsu_mshr.rb_entry_vec_fill_id[0],
+        dut.u_lsu_top.u_lsu_mshr.rb_entry_vec_fill_id[1],
+        dut.u_lsu_top.u_lsu_mshr.rb_entry_vec_fill_id[2],
+        dut.u_lsu_top.u_lsu_mshr.rb_entry_vec_fill_id[3],
+        dut.u_lsu_top.u_lsu_mshr.rb_entry_vec_rsp_grnt,
+        dut.u_lsu_top.u_lsu_mshr.rb_vec_rsp_ptr,
+        dut.u_lsu_top.u_lsu_mshr.gen_mshr_entry[0].u_mshr_entry.rb_entry_state,
+        dut.u_lsu_top.u_lsu_mshr.gen_mshr_entry[0].u_mshr_entry.rb_entry_vec_rsp_grnt_x);
+    if (dut.rtu_yy_xx_flush)
+      $display("[RVVDBG] T%0t RTU FLUSH", $time);
+    if (cycles > 1000 && (cycles % 500) == 0)
+      $display("[RVVDBG] T%0t LSIQ vld=%h vec=%h old=%h | e0 age=%b iid=%0d | e1 age=%b iid=%0d | e2 age=%b iid=%0d | e3 age=%b iid=%0d",
+        $time,
+        dut.u_ct_idu_top.x_ct_idu_is_lsiq.lsiq_entry_vld,
+        dut.u_ct_idu_top.x_ct_idu_is_lsiq.lsiq_entry_vec,
+        dut.u_ct_idu_top.x_ct_idu_is_lsiq.lsiq_vec_old,
+        dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry0.agevec_all,
+        dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry0.iid,
+        dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry1.agevec_all,
+        dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry1.iid,
+        dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry2.agevec_all,
+        dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry2.iid,
+        dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry3.agevec_all,
+        dut.u_ct_idu_top.x_ct_idu_is_lsiq.u_ct_idu_is_lsiq_entry3.iid);
+    if (dut.u_ct_idu_top.lsiq_vec_old != prev_lsiq_vec_old) begin
+      prev_lsiq_vec_old <= dut.u_ct_idu_top.lsiq_vec_old;
+      $display("[RVVDBG] vec_old %b -> %b (entries vld=%h vec=%h)",
+        prev_lsiq_vec_old, dut.u_ct_idu_top.lsiq_vec_old,
+        dut.u_ct_idu_top.x_ct_idu_is_lsiq.lsiq_entry_vld,
+        dut.u_ct_idu_top.x_ct_idu_is_lsiq.lsiq_entry_vec);
+    end
+    if (dut.u_ct_idu_top.u_vec_ls_fill.anc_vld != prev_anc_vld) begin
+      prev_anc_vld <= dut.u_ct_idu_top.u_vec_ls_fill.anc_vld;
+      $display("[RVVDBG] anc_vld %b -> %b", prev_anc_vld,
+        dut.u_ct_idu_top.u_vec_ls_fill.anc_vld);
+    end
+  end
+
+  // -------------------------------------------------------------------------
   // 退休监视 (全部走顶层已命名的观察口, 层次化引用, 零 RTL 改动)
   // -------------------------------------------------------------------------
   integer retired  = 0;              // 累计退休条数 (rtu_retire_cnt 是**当拍条数**, 要自己累)
@@ -202,6 +493,58 @@ module tb_a910_smoke;
   integer exit_seen = 0;             // 见到 x17 = 93 (用例的退出序列标记)
   integer trap_seen = 0;
   integer trace_on  = 0;
+
+  // -------------------------------------------------------------------------
+  // 【RVV 逐指令 sweep 回读】+RVV_SWEEP 时启用, 平时完全不影响本台
+  //
+  //   用例把 “当前 case id” 写进 progress 字, 把每条指令的自检结果 (0=pass,
+  //   1=fail, 0xffffffff=还没跑到) 写进 status 数组。本台在 PASS / 超时两条
+  //   收尾路径上把它们从 AXI 从机内存里读出来打印, 运行器按 manifest 映射成
+  //   逐指令表。超时能看到 progress ⇒ 直接定位“卡在哪条指令”。
+  // -------------------------------------------------------------------------
+  bit          rvv_sweep_en = 1'b0;
+  integer      rvv_progress_addr = 0;
+  integer      rvv_status_addr   = 0;
+  integer      rvv_status_n      = 0;
+  integer      rvv_phase_addr    = 0;
+
+  // AXI 从机: reg [127:0] mem[0:4095], 索引 addr[15:4], 字在块内 [3:2]
+  function automatic [31:0] rvv_mem_word(input integer a);
+    rvv_mem_word = u_mem.mem[a[15:4]][a[3:2]*32 +: 32];
+  endfunction
+
+  task automatic rvv_dump;
+    integer k;
+    integer res_addr, exp_addr;
+    begin
+      if (!rvv_sweep_en) disable rvv_dump;
+      $display("RVV_PROGRESS %08x", rvv_mem_word(rvv_progress_addr));
+      $display("RVV_PHASE %08x", rvv_mem_word(rvv_phase_addr));
+      for (k = 0; k < rvv_status_n; k = k + 1)
+        $display("RVV_STATUS %0d %08x", k,
+                 rvv_mem_word(rvv_status_addr + 4*k));
+      $display("RVV_TRAPS %0d", trap_seen);
+      $display("RVV_EXPT vld=%b iid=%0d",
+               dut.rvv_expt_vld, dut.rvv_expt_iid);
+      // 可选调试: +RVV_RES_ADDR/+RVV_EXP_ADDR 给出两个阵列的基址,
+      // 每条用例打印前 4 个字 (FAIL 时对照用)。平时不传就不打。
+      if ($value$plusargs("RVV_RES_ADDR=%d", res_addr) &&
+          $value$plusargs("RVV_EXP_ADDR=%d", exp_addr)) begin
+        for (k = 0; k < rvv_status_n; k = k + 1)
+          $display("RVV_RES %0d %08x %08x %08x %08x", k,
+                   rvv_mem_word(res_addr + 64*k + 0),
+                   rvv_mem_word(res_addr + 64*k + 4),
+                   rvv_mem_word(res_addr + 64*k + 8),
+                   rvv_mem_word(res_addr + 64*k + 12));
+        for (k = 0; k < rvv_status_n; k = k + 1)
+          $display("RVV_EXP %0d %08x %08x %08x %08x", k,
+                   rvv_mem_word(exp_addr + 64*k + 0),
+                   rvv_mem_word(exp_addr + 64*k + 4),
+                   rvv_mem_word(exp_addr + 64*k + 8),
+                   rvv_mem_word(exp_addr + 64*k + 12));
+      end
+    end
+  endtask
 
   always @(posedge clk) begin
     if (!rst) begin
@@ -452,6 +795,21 @@ module tb_a910_smoke;
   initial begin
     if (!$value$plusargs("MAX_CYCLES=%d", max_cycles)) max_cycles = 200000;
 
+    // RVV sweep 回读参数 (地址用十进制传, 避免 VCS 对 %h 的实现差异)
+    rvv_sweep_en = $test$plusargs("RVV_SWEEP");
+    if (rvv_sweep_en) begin
+      if (!$value$plusargs("RVV_PROGRESS_ADDR=%d", rvv_progress_addr))
+        rvv_progress_addr = 0;
+      if (!$value$plusargs("RVV_STATUS_ADDR=%d", rvv_status_addr))
+        rvv_status_addr = 0;
+      if (!$value$plusargs("RVV_STATUS_N=%d", rvv_status_n))
+        rvv_status_n = 0;
+      if (!$value$plusargs("RVV_PHASE_ADDR=%d", rvv_phase_addr))
+        rvv_phase_addr = 0;
+      $display("  [RVV_SWEEP] progress@0x%08x status@0x%08x n=%0d",
+               rvv_progress_addr, rvv_status_addr, rvv_status_n);
+    end
+
     $display("");
     $display("==================================================");
     $display("  A910_cpu 最小冒烟台  (MAX_CYCLES=%0d)", max_cycles);
@@ -488,6 +846,8 @@ module tb_a910_smoke;
     if (exit_seen) begin
       // 退出序列已看到, 再放几拍让后面的退休排空
       repeat (20) @(posedge clk);
+      // RVV sweep 的 status/progress 是标量 store, 可能还压在 WMB 里 —— 多等一会儿
+      if (rvv_sweep_en) repeat (5000) @(posedge clk);
       $display("");
       $display("==================================================");
       if (a0_val == 0) begin
@@ -495,6 +855,7 @@ module tb_a910_smoke;
         $display("  a0(x10) = 0 (写了 %0d 次), 累计退休 %0d 条, 用了 %0d 拍",
                  a0_hits, retired, cycles);
         $display("==================================================");
+        rvv_dump();
         $finish;
       end
       else begin
@@ -506,6 +867,7 @@ module tb_a910_smoke;
         else
           $display("  ⚠️ a0 != 0 —— 用例自检没过, 乘法/除法结果不对");
         $display("==================================================");
+        rvv_dump();
         $fatal(1, "a910 smoke failed");
       end
     end
@@ -524,6 +886,7 @@ module tb_a910_smoke;
       $display("==================================================");
       $display("  idu_accept_num 取值集合: 0=%b 2=%b 3=%b (1 应当从不出现)",
                seen0, seen2, seen3);
+      rvv_dump();
     end
 
     // ⚠️ 必须 $fatal 不能 $finish: $finish 的退出码是 0, make 会把失败当通过。
@@ -622,7 +985,12 @@ module tb_a910_smoke;
 
   // =========================================================================
   // 2026-10-17 S9: 向量通路一次性探针 (只打前 8 次, 用完可删)
+  //
+  // 2026-10-18: ct_idu_vec_ls_fill.sv 重写后 ctx_*/beat_* 这些内部名改了,
+  //   下面这段会和新的 RTL 对不上 (VCS 的 XMRE 是编译期解析, 不是运行期)。
+  //   默认不编译; 需要时用 +define+RVV_OLD_FILL_VDBG 打开并同步信号名。
   // =========================================================================
+`ifdef RVV_OLD_FILL_VDBG
   integer v_issue=0, v_accept=0, v_lsuvalid=0, v_fillacc=0, v_beat=0, v_lsiqcrt=0, v_vqcreate=0, v_lsuok=0, v_acc2=0, v_lsu2=0, v_resp=0, v_ctx=0, v_wb=0;
   always @(posedge clk) begin
     if (dut.u_ct_idu_top.u_ct_idu_vecq.vecq_xx_issue_en && v_issue<8) begin
@@ -741,5 +1109,6 @@ module tb_a910_smoke;
       $display("[VDBG] T%0t vecq create0", $time);
     end
   end
+`endif  // RVV_OLD_FILL_VDBG
 
 endmodule

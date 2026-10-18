@@ -1,5 +1,6 @@
 #include <cpu.h>
 #include <csr.h>
+#include <rvv.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stddef.h>
@@ -23,6 +24,7 @@ EX2MEM EX(ID2EX decode_info) {
     ret.store_val = decode_info.store_val;
     ret.is_mem = decode_info.is_mem;
     ret.mem_op = decode_info.mem_op;
+    ret.is_vec = decode_info.is_vec;
     Log("PC=%8.8x", ret.pc);
 
     // 陷阱信息: 由 ID 级传来的(非法/ecall/ebreak), 下面 EX 级可能再补非对齐
@@ -30,6 +32,20 @@ EX2MEM EX(ID2EX decode_info) {
     ret.exc_cause = decode_info.exc_cause;
     ret.exc_tval  = decode_info.exc_tval;
     ret.is_mret   = decode_info.is_mret;
+
+    // 向量指令: 架构副作用全部在 rvv_execute() 里完成; vset 的 rd=vl
+    // 仍走原来的 WB 写回通路 (wb_en/wb_sel/dst 已由 ID_VECTOR 设好).
+    if (decode_info.is_vec) {
+        rvv_trap_t vt;
+        ret.branch_taken = 0;
+        ret.alu_out = rvv_execute(decode_info.inst, decode_info.pc, &vt);
+        if (vt.valid) {
+            ret.exc_valid = 1;
+            ret.exc_cause = vt.cause;
+            ret.exc_tval  = vt.tval;
+        }
+        return ret;
+    }
 
     uint32_t alu_result;
     uint32_t src1 = decode_info.src1.value;

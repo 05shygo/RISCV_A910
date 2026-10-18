@@ -1,0 +1,131 @@
+{
+ "group": "mulmac",
+ "test": "mulmac_0",
+ "n": 20,
+ "progress_addr": 9056,
+ "phase_addr": 9060,
+ "status_addr": 9068,
+ "a0_addr": 9064,
+ "cases": [
+  {
+   "id": 0,
+   "name": "vmul.vv e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 1,
+   "name": "vmul.vx e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 2,
+   "name": "vmulhu.vv e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 3,
+   "name": "vmulhu.vx e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 4,
+   "name": "vmulh.vv e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 5,
+   "name": "vmulh.vx e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 6,
+   "name": "vmulhsu.vv e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 7,
+   "name": "vmulhsu.vx e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 8,
+   "name": "vmul.vv e8",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 9,
+   "name": "vmul.vv e16",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 10,
+   "name": "vmacc.vv e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 11,
+   "name": "vmacc.vx e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 12,
+   "name": "vmadd.vv e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 13,
+   "name": "vmadd.vx e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 14,
+   "name": "vnmsac.vv e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 15,
+   "name": "vnmsac.vx e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 16,
+   "name": "vnmsub.vv e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 17,
+   "name": "vnmsub.vx e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 18,
+   "name": "vwmulu.vv e8",
+   "kind": "vreg",
+   "bytes": 32
+  },
+  {
+   "id": 19,
+   "name": "vwmulu.vx e8",
+   "kind": "vreg",
+   "bytes": 32
+  }
+ ]
+}

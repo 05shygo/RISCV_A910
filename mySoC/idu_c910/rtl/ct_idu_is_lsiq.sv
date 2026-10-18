@@ -808,6 +808,20 @@ assign lsiq_entry5_other_raw_rdy[6:0]  = {lsiq_entry_raw_rdy[7:6], lsiq_entry_ra
 assign lsiq_entry6_other_raw_rdy[6:0]  = {lsiq_entry_raw_rdy[7],   lsiq_entry_raw_rdy[5:0]};
 assign lsiq_entry7_other_raw_rdy[6:0]  =  lsiq_entry_raw_rdy[6:0];
 
+// 2026-10-18: 同序的"其它表项 vec 标记", 给 store 表项判"更老的向量 store 还在飞"
+logic [6:0]  lsiq_entry0_other_vec, lsiq_entry1_other_vec;
+logic [6:0]  lsiq_entry2_other_vec, lsiq_entry3_other_vec;
+logic [6:0]  lsiq_entry4_other_vec, lsiq_entry5_other_vec;
+logic [6:0]  lsiq_entry6_other_vec, lsiq_entry7_other_vec;
+assign lsiq_entry0_other_vec[6:0]  =  lsiq_entry_vec[7:1];
+assign lsiq_entry1_other_vec[6:0]  = {lsiq_entry_vec[7:2], lsiq_entry_vec[0]};
+assign lsiq_entry2_other_vec[6:0]  = {lsiq_entry_vec[7:3], lsiq_entry_vec[1:0]};
+assign lsiq_entry3_other_vec[6:0]  = {lsiq_entry_vec[7:4], lsiq_entry_vec[2:0]};
+assign lsiq_entry4_other_vec[6:0]  = {lsiq_entry_vec[7:5], lsiq_entry_vec[3:0]};
+assign lsiq_entry5_other_vec[6:0]  = {lsiq_entry_vec[7:6], lsiq_entry_vec[4:0]};
+assign lsiq_entry6_other_vec[6:0]  = {lsiq_entry_vec[7],   lsiq_entry_vec[5:0]};
+assign lsiq_entry7_other_vec[6:0]  =  lsiq_entry_vec[6:0];
+
 //==========================================================
 //             LSU Issue Queue Entry Instance
 //==========================================================
@@ -838,6 +852,7 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry0 (
   .x_load                           (lsiq_entry_load[0]               ),
   .x_lq_full_set                    (lsiq_entry0_lq_full_set          ),
   .x_other_raw_rdy                  (lsiq_entry0_other_raw_rdy        ),
+  .x_other_vec                      (lsiq_entry0_other_vec            ),
   .x_pop_cur_entry                  (lsiq_entry0_pop_cur_entry        ),
   .x_pop_other_entry                (lsiq_entry0_pop_other_entry      ),
   .x_raw_rdy                        (lsiq_entry0_raw_rdy              ),
@@ -885,6 +900,7 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry1 (
   .x_load                           (lsiq_entry_load[1]               ),
   .x_lq_full_set                    (lsiq_entry1_lq_full_set          ),
   .x_other_raw_rdy                  (lsiq_entry1_other_raw_rdy        ),
+  .x_other_vec                      (lsiq_entry1_other_vec            ),
   .x_pop_cur_entry                  (lsiq_entry1_pop_cur_entry        ),
   .x_pop_other_entry                (lsiq_entry1_pop_other_entry      ),
   .x_raw_rdy                        (lsiq_entry1_raw_rdy              ),
@@ -932,6 +948,7 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry2 (
   .x_load                           (lsiq_entry_load[2]               ),
   .x_lq_full_set                    (lsiq_entry2_lq_full_set          ),
   .x_other_raw_rdy                  (lsiq_entry2_other_raw_rdy        ),
+  .x_other_vec                      (lsiq_entry2_other_vec            ),
   .x_pop_cur_entry                  (lsiq_entry2_pop_cur_entry        ),
   .x_pop_other_entry                (lsiq_entry2_pop_other_entry      ),
   .x_raw_rdy                        (lsiq_entry2_raw_rdy              ),
@@ -979,6 +996,7 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry3 (
   .x_load                           (lsiq_entry_load[3]               ),
   .x_lq_full_set                    (lsiq_entry3_lq_full_set          ),
   .x_other_raw_rdy                  (lsiq_entry3_other_raw_rdy        ),
+  .x_other_vec                      (lsiq_entry3_other_vec            ),
   .x_pop_cur_entry                  (lsiq_entry3_pop_cur_entry        ),
   .x_pop_other_entry                (lsiq_entry3_pop_other_entry      ),
   .x_raw_rdy                        (lsiq_entry3_raw_rdy              ),
@@ -1026,6 +1044,7 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry4 (
   .x_load                           (lsiq_entry_load[4]               ),
   .x_lq_full_set                    (lsiq_entry4_lq_full_set          ),
   .x_other_raw_rdy                  (lsiq_entry4_other_raw_rdy        ),
+  .x_other_vec                      (lsiq_entry4_other_vec            ),
   .x_pop_cur_entry                  (lsiq_entry4_pop_cur_entry        ),
   .x_pop_other_entry                (lsiq_entry4_pop_other_entry      ),
   .x_raw_rdy                        (lsiq_entry4_raw_rdy              ),
@@ -1073,6 +1092,7 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry5 (
   .x_load                           (lsiq_entry_load[5]               ),
   .x_lq_full_set                    (lsiq_entry5_lq_full_set          ),
   .x_other_raw_rdy                  (lsiq_entry5_other_raw_rdy        ),
+  .x_other_vec                      (lsiq_entry5_other_vec            ),
   .x_pop_cur_entry                  (lsiq_entry5_pop_cur_entry        ),
   .x_pop_other_entry                (lsiq_entry5_pop_other_entry      ),
   .x_raw_rdy                        (lsiq_entry5_raw_rdy              ),
@@ -1120,6 +1140,7 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry6 (
   .x_load                           (lsiq_entry_load[6]               ),
   .x_lq_full_set                    (lsiq_entry6_lq_full_set          ),
   .x_other_raw_rdy                  (lsiq_entry6_other_raw_rdy        ),
+  .x_other_vec                      (lsiq_entry6_other_vec            ),
   .x_pop_cur_entry                  (lsiq_entry6_pop_cur_entry        ),
   .x_pop_other_entry                (lsiq_entry6_pop_other_entry      ),
   .x_raw_rdy                        (lsiq_entry6_raw_rdy              ),
@@ -1167,6 +1188,7 @@ ct_idu_is_lsiq_entry u_ct_idu_is_lsiq_entry7 (
   .x_load                           (lsiq_entry_load[7]               ),
   .x_lq_full_set                    (lsiq_entry7_lq_full_set          ),
   .x_other_raw_rdy                  (lsiq_entry7_other_raw_rdy        ),
+  .x_other_vec                      (lsiq_entry7_other_vec            ),
   .x_pop_cur_entry                  (lsiq_entry7_pop_cur_entry        ),
   .x_pop_other_entry                (lsiq_entry7_pop_other_entry      ),
   .x_raw_rdy                        (lsiq_entry7_raw_rdy              ),

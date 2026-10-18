@@ -1,0 +1,83 @@
+{
+ "group": "mulmac",
+ "test": "mulmac_1",
+ "n": 12,
+ "progress_addr": 8320,
+ "phase_addr": 8324,
+ "status_addr": 8332,
+ "a0_addr": 8328,
+ "cases": [
+  {
+   "id": 0,
+   "name": "vwmul.vv e8",
+   "kind": "vreg",
+   "bytes": 32
+  },
+  {
+   "id": 1,
+   "name": "vwmul.vx e8",
+   "kind": "vreg",
+   "bytes": 32
+  },
+  {
+   "id": 2,
+   "name": "vwmulsu.vv e8",
+   "kind": "vreg",
+   "bytes": 32
+  },
+  {
+   "id": 3,
+   "name": "vwmulsu.vx e8",
+   "kind": "vreg",
+   "bytes": 32
+  },
+  {
+   "id": 4,
+   "name": "vwmul.vv e16",
+   "kind": "vreg",
+   "bytes": 32
+  },
+  {
+   "id": 5,
+   "name": "vwmaccu.vv e8",
+   "kind": "vreg",
+   "bytes": 32
+  },
+  {
+   "id": 6,
+   "name": "vwmaccu.vx e8",
+   "kind": "vreg",
+   "bytes": 32
+  },
+  {
+   "id": 7,
+   "name": "vwmacc.vv e8",
+   "kind": "vreg",
+   "bytes": 32
+  },
+  {
+   "id": 8,
+   "name": "vwmacc.vx e8",
+   "kind": "vreg",
+   "bytes": 32
+  },
+  {
+   "id": 9,
+   "name": "vwmaccsu.vv e8",
+   "kind": "vreg",
+   "bytes": 32
+  },
+  {
+   "id": 10,
+   "name": "vwmaccsu.vx e8",
+   "kind": "vreg",
+   "bytes": 32
+  },
+  {
+   "id": 11,
+   "name": "vwmaccus.vx e8",
+   "kind": "vreg",
+   "bytes": 32
+  }
+ ]
+}

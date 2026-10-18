@@ -1,0 +1,47 @@
+{
+ "group": "red",
+ "test": "red",
+ "n": 6,
+ "progress_addr": 5920,
+ "phase_addr": 5924,
+ "status_addr": 5932,
+ "a0_addr": 5928,
+ "cases": [
+  {
+   "id": 0,
+   "name": "vredsum.vs e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 1,
+   "name": "vredmax.vs e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 2,
+   "name": "vredmaxu.vs e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 3,
+   "name": "vredmin.vs e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 4,
+   "name": "vredminu.vs e32",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 5,
+   "name": "vwredsum.vs e8",
+   "kind": "vreg",
+   "bytes": 16
+  }
+ ]
+}

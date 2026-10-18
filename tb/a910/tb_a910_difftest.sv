@@ -44,6 +44,18 @@ module tb_a910_difftest;
   import "DPI-C" context function int unsigned gm_read_mem(input int addr);
   import "DPI-C" context function void gm_set_timer(input int lo, input int hi);
 
+  // RVV: 每次 gm_check_step() 之后查询"上一条执行的指令"是不是向量指令、
+  // 它写了哪个 vd 组、每个寄存器应当被写哪些字节.
+  import "DPI-C" context function int  gm_last_executed();
+  import "DPI-C" context function int  gm_last_is_vec();
+  import "DPI-C" context function int  gm_last_is_vset();
+  import "DPI-C" context function int  gm_last_vd_base();
+  import "DPI-C" context function int  gm_last_vd_nreg();
+  import "DPI-C" context function int  gm_last_vd_word(input int rel_reg, input int word);
+  import "DPI-C" context function int  gm_last_vd_wmask(input int rel_reg);
+  import "DPI-C" context function int unsigned gm_last_inst_word();
+  import "DPI-C" context function int unsigned gm_last_pc();
+
   // -------------------------------------------------------------------------
   // 时钟 / 复位
   // -------------------------------------------------------------------------
@@ -872,6 +884,116 @@ module tb_a910_difftest;
     end
   end
 
+  // 【临时诊断 2026-10-18】vset 标量写回 vs 架构映射
+  //   coremark_rvv 第 95597 条: matrix_test 恢复 s3 时读到 X/0。矩阵代码里
+  //   大量 `vsetvli rd!=x0`，怀疑 vset 的第 6 写口打到了 s3/sp 的 preg。
+  always @(posedge clk) begin
+    if (!rst && dut.rvv_idu_vset_wb_vld)
+      $display("  [VWB] T%0d iid=%0d preg=%0d data=%08x unk=%b | amt[x2]=%0d amt[x15]=%0d amt[x19]=%0d",
+               cycles, dut.rvv_idu_vset_wb_iid, dut.rvv_idu_vset_wb_preg,
+               dut.rvv_idu_vset_wb_data, $isunknown(dut.rvv_idu_vset_wb_data),
+               dut.u_rtu.u_preg.amt[2], dut.u_rtu.u_preg.amt[15],
+               dut.u_rtu.u_preg.amt[19]);
+  end
+
+  // 【临时诊断 2026-10-18】preg 8 (= 架构 s3) 的所有写口 + 栈帧 store 的 DC 数据。
+  //   coremark_rvv 第 95597 条之前，某次 matrix_test 的 `sw s3,28(sp)` 存进去是 X。
+  //   这里跟踪"谁最后一次写 preg 8"和"store 在 DC 那拍的数据是什么"。
+  always @(posedge clk) if (!rst) begin
+    if (dut.iu_idu_ex2_pipe0_wb_preg_vld && dut.iu_idu_ex2_pipe0_wb_preg_expand[8])
+      $display("  [P8W] T%0d IU0 data=%08x", cycles, dut.iu_idu_ex2_pipe0_wb_preg_data);
+    if (dut.iu_idu_ex2_pipe1_wb_preg_vld && dut.iu_idu_ex2_pipe1_wb_preg_expand[8])
+      $display("  [P8W] T%0d IU1 data=%08x", cycles, dut.iu_idu_ex2_pipe1_wb_preg_data);
+    if (dut.iu_idu_ex2_pipe2_wb_preg_vld && dut.iu_idu_ex2_pipe2_wb_preg_expand[8])
+      $display("  [P8W] T%0d IU2 data=%08x", cycles, dut.iu_idu_ex2_pipe2_wb_preg_data);
+    if (dut.lsu_rtu_wb_pipe3_wb_preg_vld && dut.lsu_rtu_wb_pipe3_wb_preg_expand[8])
+      $display("  [P8W] T%0d LSU data=%08x", cycles, dut.lsu_idu_wb_pipe3_wb_preg_data);
+    if (dut.rvv_idu_vset_wb_vld && dut.rvv_idu_vset_wb_preg == 6'd8)
+      $display("  [P8W] T%0d VSET data=%08x", cycles, dut.rvv_idu_vset_wb_data);
+    if (dut.u_lsu_top.st_dc_inst_vld && dut.u_lsu_top.st_dc_addr0 >= 32'hf6c0
+        && dut.u_lsu_top.st_dc_addr0 <= 32'hf6ff)
+      $display("  [SDC] T%0d iid=%0d addr=%08x sqvld=%b data=%08x",
+               cycles, dut.u_lsu_top.st_dc_iid, dut.u_lsu_top.st_dc_addr0,
+               dut.u_lsu_top.st_dc_sq_data_vld, dut.u_lsu_top.st_dc_sq_data);
+  end
+
+  // 【临时诊断 2026-10-18】SDIQ issue: store 数据源的 preg/PRF 读值
+  //   coremark_rvv 第 95597 条前，matrix_test 存 s3 时数据是 X。若这里
+  //   出现 unk=1，就说明 PRF 读口给 SDIQ 的就是 X（不是 WMB 的锅）。
+  always @(posedge clk) if (!rst && dut.u_ct_idu_top.sdiq_xx_issue_en)
+    $display("  [SDQ] T%0d ent=%0d preg=%0d data=%08x unk=%b",
+             cycles, dut.u_ct_idu_top.sdiq_dp_issue_entry,
+             dut.u_ct_idu_top.sdiq_dp_issue_read_data[5:0],
+             dut.u_ct_idu_top.prf_dp_rf_pipe5_src0_data,
+             $isunknown(dut.u_ct_idu_top.prf_dp_rf_pipe5_src0_data));
+
+  // 【临时诊断 2026-10-18】栈帧 (0xf6c0..0xf6ff) 的 WMB CE 数据快照
+  //   coremark_rvv 在 T92518 把 X 写进 0xf6dc。看 CE 从 SQ 读到的 128b data，
+  //   以及选中 SQ 表项的 iid/sdid（和 SDIQ issue 的 ent/data 对照）。
+  logic [6:0] cemx_iid;
+  logic [3:0] cemx_sdid;
+  always @(posedge clk) begin
+    if (!rst && dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_vld
+        && dut.u_lsu_top.sq_pop_addr >= 32'hf6c0
+        && dut.u_lsu_top.sq_pop_addr <= 32'hf6ff) begin
+      cemx_iid = 7'd0;
+      cemx_sdid = 4'd0;
+      if (dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_sq_ptr[0]) begin
+        cemx_iid = dut.u_lsu_top.u_lsu_sq.sq_entry_iid[0];
+        cemx_sdid = dut.u_lsu_top.u_lsu_sq.gen_sq_entry[0].x_ct_lsu_sq_entry.sq_entry_sdid;
+      end else if (dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_sq_ptr[1]) begin
+        cemx_iid = dut.u_lsu_top.u_lsu_sq.sq_entry_iid[1];
+        cemx_sdid = dut.u_lsu_top.u_lsu_sq.gen_sq_entry[1].x_ct_lsu_sq_entry.sq_entry_sdid;
+      end else if (dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_sq_ptr[2]) begin
+        cemx_iid = dut.u_lsu_top.u_lsu_sq.sq_entry_iid[2];
+        cemx_sdid = dut.u_lsu_top.u_lsu_sq.gen_sq_entry[2].x_ct_lsu_sq_entry.sq_entry_sdid;
+      end else if (dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_sq_ptr[3]) begin
+        cemx_iid = dut.u_lsu_top.u_lsu_sq.sq_entry_iid[3];
+        cemx_sdid = dut.u_lsu_top.u_lsu_sq.gen_sq_entry[3].x_ct_lsu_sq_entry.sq_entry_sdid;
+      end else if (dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_sq_ptr[4]) begin
+        cemx_iid = dut.u_lsu_top.u_lsu_sq.sq_entry_iid[4];
+        cemx_sdid = dut.u_lsu_top.u_lsu_sq.gen_sq_entry[4].x_ct_lsu_sq_entry.sq_entry_sdid;
+      end else if (dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_sq_ptr[5]) begin
+        cemx_iid = dut.u_lsu_top.u_lsu_sq.sq_entry_iid[5];
+        cemx_sdid = dut.u_lsu_top.u_lsu_sq.gen_sq_entry[5].x_ct_lsu_sq_entry.sq_entry_sdid;
+      end else if (dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_sq_ptr[6]) begin
+        cemx_iid = dut.u_lsu_top.u_lsu_sq.sq_entry_iid[6];
+        cemx_sdid = dut.u_lsu_top.u_lsu_sq.gen_sq_entry[6].x_ct_lsu_sq_entry.sq_entry_sdid;
+      end else if (dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_sq_ptr[7]) begin
+        cemx_iid = dut.u_lsu_top.u_lsu_sq.sq_entry_iid[7];
+        cemx_sdid = dut.u_lsu_top.u_lsu_sq.gen_sq_entry[7].x_ct_lsu_sq_entry.sq_entry_sdid;
+      end else if (dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_sq_ptr[8]) begin
+        cemx_iid = dut.u_lsu_top.u_lsu_sq.sq_entry_iid[8];
+        cemx_sdid = dut.u_lsu_top.u_lsu_sq.gen_sq_entry[8].x_ct_lsu_sq_entry.sq_entry_sdid;
+      end else if (dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_sq_ptr[9]) begin
+        cemx_iid = dut.u_lsu_top.u_lsu_sq.sq_entry_iid[9];
+        cemx_sdid = dut.u_lsu_top.u_lsu_sq.gen_sq_entry[9].x_ct_lsu_sq_entry.sq_entry_sdid;
+      end else if (dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_sq_ptr[10]) begin
+        cemx_iid = dut.u_lsu_top.u_lsu_sq.sq_entry_iid[10];
+        cemx_sdid = dut.u_lsu_top.u_lsu_sq.gen_sq_entry[10].x_ct_lsu_sq_entry.sq_entry_sdid;
+      end else if (dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_sq_ptr[11]) begin
+        cemx_iid = dut.u_lsu_top.u_lsu_sq.sq_entry_iid[11];
+        cemx_sdid = dut.u_lsu_top.u_lsu_sq.gen_sq_entry[11].x_ct_lsu_sq_entry.sq_entry_sdid;
+      end
+      $display("  [CEMX] T%0d addr=%08x bv=%04x iid=%0d sdid=%b data=%032x sqptr=%b mnotvld=%b merge=%b",
+        cycles, dut.u_lsu_top.sq_pop_addr, dut.u_lsu_top.sq_pop_bytes_vld,
+        cemx_iid, cemx_sdid,
+        dut.u_lsu_top.wmb_ce_data128, dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_sq_ptr,
+        dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_merge_not_vld,
+        dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_merge);
+    end
+  end
+
+  // 【临时诊断 2026-10-18】任何带 X 的 WMB→dcache 写：抓"第一个 X 是从哪笔 store 写进去的"
+  always @(posedge clk) begin
+    if (!rst && dut.u_lsu_top.u_lsu_wmb.wmb_write_dcache_pop_req
+        && $isunknown(dut.u_lsu_top.u_lsu_wmb.wmb_write_dcache_data))
+      $display("  [XWR] T%0d addr=%08x bytes=%04x data=%032x",
+               cycles, dut.u_lsu_top.u_lsu_wmb.wmb_write_dcache_addr,
+               dut.u_lsu_top.u_lsu_wmb.wmb_write_dcache_bytes_vld,
+               dut.u_lsu_top.u_lsu_wmb.wmb_write_dcache_data);
+  end
+
   // 【临时诊断】WMB 表项 + CE merge 目标快照 (2026-10-15, coremark_i1 #75039)
   //   症状: 约 T94128 那笔写 0xfc1c 的 `sw` 既没进 dcache([WDC] 无)也没进内存([SLVW] 无),
   //         数据凭空消失; 之后 dcache 里 0xfc1c 一直是上一代的 0x13a3, 直到 #75039 失配。
@@ -1047,6 +1169,281 @@ module tb_a910_difftest;
     end
   end
 
+  // 【临时诊断】盯 dcache 数据阵列里 set=0x16 两个 way 的所有 bank (coremark_i1
+  //   #97586: 栈行 0xf6c0 在 way1, 只有 word0 是 X, 其余字正确)。
+  //   +PROBE_BW: 任一 bank 内容变化就打印 (带当拍写口信号)。
+  function [31:0] bw_rd(input integer b, input integer ix);
+    begin
+      case (b)
+        0: bw_rd = dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_ld_data_bank0_array.x_ct_spsram_64x32.mem_q[ix[5:0]];
+        1: bw_rd = dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_ld_data_bank1_array.x_ct_spsram_64x32.mem_q[ix[5:0]];
+        2: bw_rd = dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_ld_data_bank2_array.x_ct_spsram_64x32.mem_q[ix[5:0]];
+        3: bw_rd = dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_ld_data_bank3_array.x_ct_spsram_64x32.mem_q[ix[5:0]];
+        4: bw_rd = dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_ld_data_bank4_array.x_ct_spsram_64x32.mem_q[ix[5:0]];
+        5: bw_rd = dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_ld_data_bank5_array.x_ct_spsram_64x32.mem_q[ix[5:0]];
+        6: bw_rd = dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_ld_data_bank6_array.x_ct_spsram_64x32.mem_q[ix[5:0]];
+        default: bw_rd = dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_ld_data_bank7_array.x_ct_spsram_64x32.mem_q[ix[5:0]];
+      endcase
+    end
+  endfunction
+  integer bw_b, bw_j;
+  reg [31:0] bw_prev [0:15];
+  integer bw_k;
+  initial for (bw_k = 0; bw_k < 16; bw_k = bw_k + 1) bw_prev[bw_k] = 32'hdead_beef;
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_BW")) begin
+      for (bw_b = 0; bw_b < 8; bw_b = bw_b + 1) begin
+        for (bw_j = 0; bw_j < 2; bw_j = bw_j + 1) begin
+          if (bw_rd(bw_b, bw_j ? 6'h36 : 6'h16) !== bw_prev[bw_b*2+bw_j]) begin
+            $display("  [BW] T%0d bank%0d idx=%02x  %08x -> %08x | dcw low_idx=%02x high_idx=%02x sel_b=%b gwen_b=%b wen_b=%08x",
+                     cycles, bw_b, bw_j ? 6'h36 : 6'h16, bw_prev[bw_b*2+bw_j],
+                     bw_rd(bw_b, bw_j ? 6'h36 : 6'h16),
+                     dut.u_lsu_top.lsu_dcache_ld_data_low_idx,
+                     dut.u_lsu_top.lsu_dcache_ld_data_high_idx,
+                     dut.u_lsu_top.lsu_dcache_ld_data_sel_b,
+                     dut.u_lsu_top.lsu_dcache_ld_data_gwen_b,
+                     dut.u_lsu_top.lsu_dcache_ld_data_wen_b);
+            if (bw_b == 4)
+              $display("       bank4 write port: CEN=%b GWEN=%b D=%08x WEN=%08x",
+                       dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_ld_data_bank4_array.x_ct_spsram_64x32.CEN,
+                       dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_ld_data_bank4_array.x_ct_spsram_64x32.GWEN,
+                       dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_ld_data_bank4_array.x_ct_spsram_64x32.D,
+                       dut.u_lsu_top.u_dcache_top.x_ct_lsu_dcache_ld_data_bank4_array.x_ct_spsram_64x32.WEN);
+            bw_prev[bw_b*2+bw_j] = bw_rd(bw_b, bw_j ? 6'h36 : 6'h16);
+          end
+        end
+      end
+    end
+  end
+
+  // 【临时诊断】栈帧 0xf6c0..0xf6ff 的 store / WMB 写 dcache / LFB 回填全记录。
+  //   +PROBE_STK —— 查 coremark_i1 #97586 那一行 word0 为什么是 X。
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_STK")) begin
+      if (dut.u_lsu_top.u_lsu_st_da.st_da_inst_vld
+          && dut.u_lsu_top.u_lsu_st_da.st_da_addr0 >= 32'hf6c0
+          && dut.u_lsu_top.u_lsu_st_da.st_da_addr0 <= 32'hf6ff)
+        $display("  [STK] T%0d ST_DA iid=%0d addr=%08x hit=%b way=%b bytes=%04x sdid=%b",
+                 cycles, dut.u_lsu_top.u_lsu_st_da.st_da_iid,
+                 dut.u_lsu_top.u_lsu_st_da.st_da_addr0,
+                 dut.u_lsu_top.u_lsu_st_da.st_da_dcache_hit,
+                 dut.u_lsu_top.u_lsu_st_da.st_da_dcache_way,
+                 dut.u_lsu_top.u_lsu_st_da.st_da_bytes_vld,
+                 dut.u_lsu_top.st_ag_sdid_oh);
+      if (dut.u_lsu_top.u_lsu_wmb.wmb_write_dcache_pop_req
+          && dut.u_lsu_top.u_lsu_wmb.wmb_write_dcache_addr >= 32'hf6c0
+          && dut.u_lsu_top.u_lsu_wmb.wmb_write_dcache_addr <= 32'hf6ff)
+        $display("  [STK] T%0d WMB_REQ grnt=%b addr=%08x way=%b bytes=%04x data=%032x wen=%08x idx=%02x",
+                 cycles, dut.u_lsu_top.u_dcache_arb.dcache_arb_wmb_ld_grnt,
+                 dut.u_lsu_top.u_lsu_wmb.wmb_write_dcache_addr,
+                 dut.u_lsu_top.u_lsu_wmb.wmb_write_req_dcache_way,
+                 dut.u_lsu_top.u_lsu_wmb.wmb_write_dcache_bytes_vld,
+                 dut.u_lsu_top.u_lsu_wmb.wmb_write_dcache_data,
+                 dut.u_lsu_top.u_lsu_wmb.wmb_dcache_arb_ld_data_wen,
+                 dut.u_lsu_top.u_lsu_wmb.wmb_dcache_arb_ld_data_idx);
+      if (dut.u_lsu_top.u_dcache_arb.dcache_arb_lfb_ld_sel
+          && dut.u_lsu_top.u_lsu_lfb.lfb_lf_sm_addr_tto5[4:0] == 5'h16)
+        $display("  [STK] T%0d LFB_FILL tto5=%07x way=%b low=%032x high=%032x",
+                 cycles, dut.u_lsu_top.u_lsu_lfb.lfb_lf_sm_addr_tto5,
+                 dut.u_lsu_top.u_lsu_lfb.lfb_lf_sm_refill_way,
+                 dut.u_lsu_top.u_lsu_lfb.lfb_lf_sm_data_settle[127:0],
+                 dut.u_lsu_top.u_lsu_lfb.lfb_lf_sm_data_settle[255:128]);
+      if (dut.u_lsu_top.u_lsu_ld_da.ld_da_inst_vld
+          && dut.u_lsu_top.u_lsu_ld_da.ld_da_addr >= 32'hf6c0
+          && dut.u_lsu_top.u_lsu_ld_da.ld_da_addr <= 32'hf6ff)
+        $display("  [STK] T%0d LD_DA iid=%0d addr=%08x hit=%b setway=%b low=%b high=%b rot=%02x bv=%04x | lowidx=%02x highidx=%02x | b0..7=%08x %08x %08x %08x %08x %08x %08x %08x | wb=%08x",
+                 cycles, dut.u_lsu_top.u_lsu_ld_da.ld_da_iid,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_addr,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_dcache_hit,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_settle_way,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_hit_low_region,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_hit_high_region,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_data_rot_sel,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_bytes_vld,
+                 dut.u_lsu_top.lsu_dcache_ld_data_low_idx,
+                 dut.u_lsu_top.lsu_dcache_ld_data_high_idx,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_dcache_data_bank0,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_dcache_data_bank1,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_dcache_data_bank2,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_dcache_data_bank3,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_dcache_data_bank4,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_dcache_data_bank5,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_dcache_data_bank6,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_dcache_data_bank7,
+                 dut.u_lsu_top.u_lsu_ld_da.ld_da_wb_data);
+    end
+  end
+
+  // 【临时诊断】盯 WMB 里地址落在 0xf6c0..0xf6c7 的表项: 每次 vld/addr/bv/data 变化
+  //   就把该表项和当拍 CE 输入全打出来。查 "X 是怎么进到 word0 的" (+PROBE_WMBHIST)。
+  integer wh_k;
+  reg        wh_prev_vld [0:3];
+  reg [31:0] wh_prev_addr [0:3];
+  reg [15:0] wh_prev_bv [0:3];
+  reg [127:0] wh_prev_data [0:3];
+  integer wh_init;
+  initial begin
+    wh_init = 0;
+    for (wh_k = 0; wh_k < 4; wh_k = wh_k + 1) begin
+      wh_prev_vld[wh_k] = 1'b0; wh_prev_addr[wh_k] = 32'hdead_beef;
+      wh_prev_bv[wh_k] = 16'hdead; wh_prev_data[wh_k] = 128'hdead_beef;
+    end
+  end
+  always @(posedge clk) begin
+    if (!rst && $test$plusargs("PROBE_WMBHIST")) begin
+      for (wh_k = 0; wh_k < 4; wh_k = wh_k + 1) begin
+        if (dut.u_lsu_top.u_lsu_wmb.wmb_entry_vld[wh_k] !== wh_prev_vld[wh_k]
+            || dut.u_lsu_top.u_lsu_wmb.wmb_entry_addr[wh_k] !== wh_prev_addr[wh_k]
+            || dut.u_lsu_top.u_lsu_wmb.wmb_entry_bytes_vld[wh_k] !== wh_prev_bv[wh_k]
+            || dut.u_lsu_top.u_lsu_wmb.wmb_entry_data[wh_k] !== wh_prev_data[wh_k]) begin
+          if ((dut.u_lsu_top.u_lsu_wmb.wmb_entry_addr[wh_k] >= 32'hf6c0
+               && dut.u_lsu_top.u_lsu_wmb.wmb_entry_addr[wh_k] <= 32'hf6c7)
+              || (wh_prev_addr[wh_k] >= 32'hf6c0 && wh_prev_addr[wh_k] <= 32'hf6c7)
+              || $test$plusargs("WMBHIST_ALL"))
+            $display("  [WMH] T%0d E%0d v=%b addr=%08x bv=%04x data=%032x || CE vld=%b addr=%08x bv=%04x sqptr=%b data32=%08x dvld=%b",
+                     cycles, wh_k,
+                     dut.u_lsu_top.u_lsu_wmb.wmb_entry_vld[wh_k],
+                     dut.u_lsu_top.u_lsu_wmb.wmb_entry_addr[wh_k],
+                     dut.u_lsu_top.u_lsu_wmb.wmb_entry_bytes_vld[wh_k],
+                     dut.u_lsu_top.u_lsu_wmb.wmb_entry_data[wh_k],
+                     dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_vld,
+                     dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_addr,
+                     dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_bytes_vld,
+                     dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_sq_ptr,
+                     dut.u_lsu_top.wmb_ce_data128[31:0],
+                     dut.u_lsu_top.wmb_ce_data_vld);
+          wh_prev_vld[wh_k]  = dut.u_lsu_top.u_lsu_wmb.wmb_entry_vld[wh_k];
+          wh_prev_addr[wh_k] = dut.u_lsu_top.u_lsu_wmb.wmb_entry_addr[wh_k];
+          wh_prev_bv[wh_k]   = dut.u_lsu_top.u_lsu_wmb.wmb_entry_bytes_vld[wh_k];
+          wh_prev_data[wh_k] = dut.u_lsu_top.u_lsu_wmb.wmb_entry_data[wh_k];
+        end
+      end
+    end
+  end
+
+  // 【临时诊断】SQ 表项里地址落在 0xf6c0..0xf6c7 的店: create / data_set 那两拍
+  //   把 sdid 广播与数据全打出来。查 "store data 为什么是 X" (+PROBE_SQD)。
+  integer sqk;
+  always @(posedge clk) begin
+    // $strobe: 等本拍所有 NBA 落定后再采样, 避免 posedge 块的 delta 竞争
+    if (!rst && $test$plusargs("PROBE_E5") && cycles >= 93530 && cycles <= 93560)
+      $strobe("  [STR] T%0d ceptr=%b cevld=%b cebv=%04x cedata=%08x | sq's ptr=%b data32=%08x | sqpop_ptr=%b sqpop_addr=%08x | e5 vld=%b dvld=%b addr=%08x data=%08x | sqd0=%08x sqd5=%08x sqvld=%b",
+              cycles,
+              dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_sq_ptr,
+              dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_vld,
+              dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_bytes_vld,
+              dut.u_lsu_top.wmb_ce_data128[31:0],
+              dut.u_lsu_top.u_lsu_sq.wmb_ce_sq_ptr,
+              dut.u_lsu_top.u_lsu_sq.wmb_ce_data32,
+              dut.u_lsu_top.u_lsu_sq.sq_pop_ptr,
+              dut.u_lsu_top.u_lsu_sq.sq_pop_addr,
+              dut.u_lsu_top.u_lsu_sq.gen_sq_entry[5].x_ct_lsu_sq_entry.sq_entry_vld,
+              dut.u_lsu_top.u_lsu_sq.gen_sq_entry[5].x_ct_lsu_sq_entry.sq_entry_data_vld,
+              dut.u_lsu_top.u_lsu_sq.sq_entry_addr0[5],
+              dut.u_lsu_top.u_lsu_sq.sq_entry_data[5],
+              dut.u_lsu_top.u_lsu_sq.sq_entry_data[0],
+              dut.u_lsu_top.u_lsu_sq.sq_entry_data[5],
+              dut.u_lsu_top.u_lsu_sq.sq_entry_vld);
+    if (!rst && $test$plusargs("PROBE_E5") && cycles >= 93545 && cycles <= 93552)
+      for (sqk = 0; sqk < 12; sqk = sqk + 1)
+        $display("  [EALL] T%0d E%0d vld=%b addr=%08x bv=%04x data=%08x | popaddr=%08x popptr=%b",
+                 cycles, sqk, dut.u_lsu_top.u_lsu_sq.sq_entry_vld[sqk],
+                 dut.u_lsu_top.u_lsu_sq.sq_entry_addr0[sqk],
+                 dut.u_lsu_top.u_lsu_sq.sq_entry_bytes_vld[sqk],
+                 dut.u_lsu_top.u_lsu_sq.sq_entry_data[sqk],
+                 dut.u_lsu_top.u_lsu_sq.sq_pop_addr,
+                 dut.u_lsu_top.u_lsu_sq.sq_pop_ptr);
+    if (!rst && $test$plusargs("PROBE_E5")
+        && cycles >= 93530 && cycles <= 93560)
+      $display("  [E5] T%0d vld=%b dvld=%b addr=%08x iid=%0d bv=%04x data=%08x sdid=%b hit=%b set=%b | popreq5=%b popptr=%b crptr=%b grnt=%b | sdiq_sel=%b p5sdid=%0d p5src0=%08x rotOR=%02x settle=%08x wake=%b",
+               cycles,
+               dut.u_lsu_top.u_lsu_sq.gen_sq_entry[5].x_ct_lsu_sq_entry.sq_entry_vld,
+               dut.u_lsu_top.u_lsu_sq.gen_sq_entry[5].x_ct_lsu_sq_entry.sq_entry_data_vld,
+               dut.u_lsu_top.u_lsu_sq.sq_entry_addr0[5],
+               dut.u_lsu_top.u_lsu_sq.sq_entry_iid[5],
+               dut.u_lsu_top.u_lsu_sq.sq_entry_bytes_vld[5],
+               dut.u_lsu_top.u_lsu_sq.sq_entry_data[5],
+               dut.u_lsu_top.u_lsu_sq.gen_sq_entry[5].x_ct_lsu_sq_entry.sq_entry_sdid,
+               dut.u_lsu_top.u_lsu_sq.gen_sq_entry[5].x_ct_lsu_sq_entry.sq_entry_sdid_hit,
+               dut.u_lsu_top.u_lsu_sq.gen_sq_entry[5].x_ct_lsu_sq_entry.sq_entry_data_set,
+               dut.u_lsu_top.u_lsu_sq.sq_entry_pop_req[5],
+               dut.u_lsu_top.u_lsu_sq.sq_pop_ptr,
+               dut.u_lsu_top.u_lsu_sq.sq_create_ptr,
+               dut.u_lsu_top.wmb_sq_pop_to_ce_grnt,
+               dut.idu_lsu_sdiq_sel, dut.idu_lsu_rf_pipe5_sdiq_entry,
+               dut.idu_lsu_rf_pipe5_src0,
+               dut.u_lsu_top.u_lsu_sq.sq_settle_rot_sel,
+               dut.u_lsu_top.u_lsu_sq.sq_data_settle,
+               dut.u_lsu_top.sq_data_depd_wakeup);
+    if (!rst && $test$plusargs("PROBE_E5") && cycles >= 93530 && cycles <= 93560)
+      $display("       CEptr=%b cebv=%04x cedata0=%08x cedata5=%08x cedata6=%08x | sqd0..5=%08x %08x %08x %08x %08x %08x | vld=%b",
+               dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_sq_ptr,
+               dut.u_lsu_top.u_lsu_wmb_ce.wmb_ce_bytes_vld,
+               dut.u_lsu_top.wmb_ce_data128[31:0],
+               dut.u_lsu_top.u_lsu_sq.sq_entry_data[0],
+               dut.u_lsu_top.u_lsu_sq.sq_entry_data[5],
+               dut.u_lsu_top.u_lsu_sq.sq_entry_data[6],
+               dut.u_lsu_top.u_lsu_sq.sq_entry_data[0],
+               dut.u_lsu_top.u_lsu_sq.sq_entry_data[1],
+               dut.u_lsu_top.u_lsu_sq.sq_entry_data[2],
+               dut.u_lsu_top.u_lsu_sq.sq_entry_data[3],
+               dut.u_lsu_top.u_lsu_sq.sq_entry_data[4],
+               dut.u_lsu_top.u_lsu_sq.sq_entry_data[5],
+               dut.u_lsu_top.u_lsu_sq.sq_entry_vld[11:0]);
+    if (!rst && $test$plusargs("PROBE_SQD")
+        && (dut.u_lsu_top.u_lsu_sq.gen_sq_entry[5].x_ct_lsu_sq_entry.sq_entry_data_set
+            || dut.u_lsu_top.u_lsu_sq.sq_entry_data_depd_wakeup[5]))
+      $display("  [SQ5] T%0d set=%b wake5=%b vld5=%b addr5=%08x iid5=%0d bv5=%04x data5=%08x sdid5=%b | hit=%b rotOR=%02x | sdiq_sel=%b p5_sdid=%0d p5_src0=%08x settle=%08x | wakeall=%b",
+               cycles,
+               dut.u_lsu_top.u_lsu_sq.gen_sq_entry[5].x_ct_lsu_sq_entry.sq_entry_data_set,
+               dut.u_lsu_top.u_lsu_sq.sq_entry_data_depd_wakeup[5],
+               dut.u_lsu_top.u_lsu_sq.sq_entry_vld[5],
+               dut.u_lsu_top.u_lsu_sq.sq_entry_addr0[5],
+               dut.u_lsu_top.u_lsu_sq.sq_entry_iid[5],
+               dut.u_lsu_top.u_lsu_sq.sq_entry_bytes_vld[5],
+               dut.u_lsu_top.u_lsu_sq.sq_entry_data[5],
+               dut.u_lsu_top.u_lsu_sq.gen_sq_entry[5].x_ct_lsu_sq_entry.sq_entry_sdid,
+               dut.u_lsu_top.u_lsu_sq.sq_entry_settle_data_hit,
+               dut.u_lsu_top.u_lsu_sq.sq_settle_rot_sel,
+               dut.idu_lsu_sdiq_sel, dut.idu_lsu_rf_pipe5_sdiq_entry,
+               dut.idu_lsu_rf_pipe5_src0, dut.u_lsu_top.u_lsu_sq.sq_data_settle,
+               dut.u_lsu_top.sq_data_depd_wakeup);
+    if (!rst && $test$plusargs("PROBE_SQD")
+        && dut.u_lsu_top.u_lsu_sq.sq_create_success
+        && dut.u_lsu_top.st_dc_addr0 >= 32'hf6c0
+        && dut.u_lsu_top.st_dc_addr0 <= 32'hf6c7)
+      $display("  [SQC] T%0d DC-CREATE ptr=%b addr=%08x iid=%0d vec=%b sqdata_vld=%b sqdata=%08x vecdata_q=%08x sdid=%b",
+               cycles, dut.u_lsu_top.u_lsu_sq.sq_create_ptr,
+               dut.u_lsu_top.st_dc_addr0, dut.u_lsu_top.st_dc_iid,
+               dut.u_lsu_top.u_lsu_st_dc.st_dc_vec,
+               dut.u_lsu_top.st_dc_sq_data_vld, dut.u_lsu_top.st_dc_sq_data,
+               dut.u_lsu_top.u_lsu_st_dc.st_dc_vec_data_q,
+               dut.u_lsu_top.st_dc_sdid_oh);
+    if (!rst && $test$plusargs("PROBE_SQD")) begin
+      for (sqk = 0; sqk < 12; sqk = sqk + 1) begin
+        if (dut.u_lsu_top.u_lsu_sq.sq_entry_addr0[sqk] >= 32'hf6c0
+            && dut.u_lsu_top.u_lsu_sq.sq_entry_addr0[sqk] <= 32'hf6c7
+            && (dut.u_lsu_top.u_lsu_sq.sq_entry_create_vld[sqk]
+                || dut.u_lsu_top.u_lsu_sq.sq_entry_data_depd_wakeup[sqk])) begin
+          $display("  [SQD] T%0d E%0d create=%b wake=%b vld=%b iid=%0d bv=%04x data=%08x | sdiq_sel=%b p5_sdid=%0d p5_src0=%08x settle=%08x | st_dc_dvld=%b st_dc_data=%08x st_dc_iid=%0d",
+                   cycles, sqk,
+                   dut.u_lsu_top.u_lsu_sq.sq_entry_create_vld[sqk],
+                   dut.u_lsu_top.u_lsu_sq.sq_entry_data_depd_wakeup[sqk],
+                   dut.u_lsu_top.u_lsu_sq.sq_entry_vld[sqk],
+                   dut.u_lsu_top.u_lsu_sq.sq_entry_iid[sqk],
+                   dut.u_lsu_top.u_lsu_sq.sq_entry_bytes_vld[sqk],
+                   dut.u_lsu_top.u_lsu_sq.sq_entry_data[sqk],
+                   dut.idu_lsu_sdiq_sel, dut.idu_lsu_rf_pipe5_sdiq_entry,
+                   dut.idu_lsu_rf_pipe5_src0, dut.u_lsu_top.u_lsu_sq.sq_data_settle,
+                   dut.u_lsu_top.st_dc_sq_data_vld, dut.u_lsu_top.st_dc_sq_data,
+                   dut.u_lsu_top.st_dc_iid);
+          $display("        st_dc_sdid_oh=%b st_da_sdid_oh=%b", dut.u_lsu_top.st_dc_sdid_oh,
+                   dut.u_lsu_top.st_ag_sdid_oh);
+        end
+      end
+    end
+  end
+
   // -------------------------------------------------------------------------
   // TIMER 外设 (0xFFFFF040) —— A910_cpu 顶层**没有外设**, 总线上的 TIMER 由本 TB 现造
   //
@@ -1124,6 +1521,173 @@ module tb_a910_difftest;
 
   wire trace_en = $test$plusargs("TRACE");
 
+  // =========================================================================
+  // RVV difftest: 捕获 RvvCore 已提交 uop 的 VRF 写记录
+  //
+  // 【为什么不比 live VRF】`dbg_commit_*` 有 DBG_HOLD=16 拍延迟, 而 core 的
+  //   VRF 在真实提交后 ~3 拍就写完了 ⇒ 观察点上 live VRF 已经比模型"超前"
+  //   最多 16 拍, 还可能被更年轻的指令覆盖. 所以按 rob_tag(=A910 iid) 捕获
+  //   每条指令自己的写记录, 等到延迟提交时再逐字节比对.
+  //
+  // 【为什么戳 u_rob 而不是 u_retire.rvvrob2rt_*】后者被 res_updating_end
+  //   过滤, 会丢掉非末尾 uop; u_rob 的 rd_valid_rob2rt 是完整的 per-uop 流,
+  //   且已被 entry_committed(提交水位) 门控 ⇒ 只会看到已提交指令.
+  //   `rt2rob_write_ready` 与 VRF 写同拍, 用它确认这条记录真的落地.
+  // =========================================================================
+  localparam int RVV_CAP_N = 128;   // iid 7 位
+
+  reg         rvv_cap_vld    [0:RVV_CAP_N-1];
+  reg         rvv_cap_done   [0:RVV_CAP_N-1];
+  reg [31:0]  rvv_cap_regmask[0:RVV_CAP_N-1];
+  reg [15:0]  rvv_cap_strb   [0:RVV_CAP_N-1][0:31];
+  reg [127:0] rvv_cap_data   [0:RVV_CAP_N-1][0:31];
+
+  always @(posedge clk) begin : rvv_capture
+    integer ck, cb;
+    reg [6:0] ctag;
+    if (rst) begin
+      for (ck = 0; ck < RVV_CAP_N; ck = ck + 1) begin
+        rvv_cap_vld[ck]      <= 1'b0;
+        rvv_cap_done[ck]     <= 1'b0;
+        rvv_cap_regmask[ck]  <= 32'b0;
+        for (cb = 0; cb < 32; cb = cb + 1) rvv_cap_strb[ck][cb] <= 16'b0;
+      end
+    end else begin
+      for (ck = 0; ck < 4; ck = ck + 1) begin
+        if (dut.u_rvv_a910_bridge.u_rvv_core.backend.u_rob.rd_valid_rob2rt[ck] &&
+            dut.u_rvv_a910_bridge.u_rvv_core.backend.u_retire.rt2rob_write_ready[ck]) begin
+          ctag = dut.u_rvv_a910_bridge.u_rvv_core.backend.u_rob.rd_rob2rt[ck].rob_tag;
+          rvv_cap_vld[ctag] <= 1'b1;
+          if (dut.u_rvv_a910_bridge.u_rvv_core.backend.u_rob.rd_rob2rt[ck].last_uop_valid)
+            rvv_cap_done[ctag] <= 1'b1;
+          // 只收真正写 VRF、且不是 trap 的记录 (trap uop 的 w_valid 可能仍是 1)
+          if (dut.u_rvv_a910_bridge.u_rvv_core.backend.u_rob.rd_rob2rt[ck].w_valid &&
+              dut.u_rvv_a910_bridge.u_rvv_core.backend.u_rob.rd_rob2rt[ck].w_type == 2'd1 &&
+              !dut.u_rvv_a910_bridge.u_rvv_core.backend.u_rob.rd_rob2rt[ck].trap_flag) begin
+            for (cb = 0; cb < 16; cb = cb + 1) begin
+              // BODY_ACTIVE = 2'b11: 这个字节真的写进 VRF
+              if (dut.u_rvv_a910_bridge.u_rvv_core.backend.u_rob.rd_rob2rt[ck].vd_type[cb] == 2'b11) begin
+                rvv_cap_strb[ctag]
+                    [dut.u_rvv_a910_bridge.u_rvv_core.backend.u_rob.rd_rob2rt[ck].w_index][cb] <= 1'b1;
+                rvv_cap_data[ctag]
+                    [dut.u_rvv_a910_bridge.u_rvv_core.backend.u_rob.rd_rob2rt[ck].w_index]
+                    [8*cb +: 8] <=
+                    dut.u_rvv_a910_bridge.u_rvv_core.backend.u_rob.rd_rob2rt[ck].w_data[8*cb +: 8];
+                rvv_cap_regmask[ctag]
+                    [dut.u_rvv_a910_bridge.u_rvv_core.backend.u_rob.rd_rob2rt[ck].w_index] <= 1'b1;
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+
+  task automatic rvv_release(input integer iid);
+    integer r;
+    rvv_cap_vld[iid]     = 1'b0;
+    rvv_cap_done[iid]    = 1'b0;
+    rvv_cap_regmask[iid] = 32'b0;
+    for (r = 0; r < 32; r = r + 1) rvv_cap_strb[iid][r] = 16'b0;
+  endtask
+
+  function automatic integer rvv_in_group(input integer rv, input integer base,
+                                          input integer nreg);
+    integer d;
+    d = (rv - base) & 31;
+    rvv_in_group = (d < nreg);
+  endfunction
+
+  // 在延迟提交点上比对. slot 只用于打印; iid 由调用方用常量下标取
+  // `dut.h_iid[slot][DBG_OUT]` 传入 (DBG_OUT = DBG_HOLD-1).
+  task automatic rvv_check(input integer slot, input integer iid);
+    integer base, nreg, r, b, regidx;
+    integer emask, amask, mismatch;
+    reg [31:0] ew;
+    reg [7:0]  eb, ab;
+
+    if (!gm_last_executed()) begin
+      rvv_release(iid);
+      return;
+    end
+    if (!gm_last_is_vec() || gm_last_is_vset()) begin
+      rvv_release(iid);
+      return;
+    end
+
+    base = gm_last_vd_base();
+    nreg = gm_last_vd_nreg();
+
+    if (!rvv_cap_vld[iid]) begin
+      $display("  ❌ RVV difftest: 向量指令没有退休记录 (T%0d slot%0d iid=%0d pc=%08x inst=%08x)",
+               cycles, slot, iid, gm_last_pc(), gm_last_inst_word());
+      bad = 1;
+      rvv_release(iid);
+      return;
+    end
+    if (!rvv_cap_done[iid]) begin
+      $display("  ❌ RVV difftest: 退休记录到延迟提交点仍未流完 (T%0d slot%0d iid=%0d pc=%08x inst=%08x)",
+               cycles, slot, iid, gm_last_pc(), gm_last_inst_word());
+      bad = 1;
+      rvv_release(iid);
+      return;
+    end
+
+    mismatch = 0;
+    if (nreg == 0) begin
+      // 向量 store: 不应有 VRF 写
+      if (rvv_cap_regmask[iid] != 32'b0) begin
+        $display("  ❌ RVV difftest: 向量 store 却写了 VRF (iid=%0d mask=%08x pc=%08x)",
+                 iid, rvv_cap_regmask[iid], gm_last_pc());
+        mismatch = 1;
+      end
+    end else begin
+      for (r = 0; r < nreg; r = r + 1) begin
+        regidx = (base + r) & 31;
+        emask  = gm_last_vd_wmask(r) & 16'hffff;
+        amask  = 0;
+        for (b = 0; b < 16; b = b + 1) amask[b] = rvv_cap_strb[iid][regidx][b];
+        // 本仓 RTL 的 compare/mask 类目的会把整条 VLEN 标成 BODY_ACTIVE,
+        // 但尾部的数据是从旧 vd 选回来的 (架构上仍是 undisturbed). 所以:
+        //   * 模型认为要写的字节 (emask) 必须都被写;
+        //   * DUT 实际写的每个字节都要等于"模型这条指令执行后的 vd"(尾部即旧值);
+        //   * 不要求 amask == emask.
+        if (((emask & ~amask) & 16'hffff) != 0) begin
+          $display("  ❌ RVV difftest: DUT 缺少写字节 (T%0d iid=%0d pc=%08x inst=%08x v%0d exp=%04x act=%04x)",
+                   cycles, iid, gm_last_pc(), gm_last_inst_word(), regidx, emask, amask);
+          mismatch = 1;
+        end
+        for (b = 0; b < 16; b = b + 1) begin
+          if (amask[b]) begin
+            ew = gm_last_vd_word(r, b / 4);
+            eb = ew >> (8 * (b % 4));
+            ab = rvv_cap_data[iid][regidx][8*b +: 8];
+            if (ab !== eb) begin
+              $display("  ❌ RVV difftest: 数据不一致 (T%0d iid=%0d pc=%08x inst=%08x v%0d byte%0d exp=%02x act=%02x)",
+                       cycles, iid, gm_last_pc(), gm_last_inst_word(), regidx, b, eb, ab);
+              mismatch = 1;
+            end
+          end
+        end
+      end
+      // 组外不应有写
+      for (regidx = 0; regidx < 32; regidx = regidx + 1) begin
+        if (rvv_cap_regmask[iid][regidx] &&
+            !rvv_in_group(regidx, base, nreg)) begin
+          $display("  ❌ RVV difftest: 写了目的组外的寄存器 v%0d (iid=%0d base=v%0d nreg=%0d pc=%08x)",
+                   regidx, iid, base, nreg, gm_last_pc());
+          mismatch = 1;
+        end
+      end
+    end
+
+    if (mismatch) begin
+      $display("     (live VRF 可能超前, 仅参考: %032x)", dut.u_rvv_a910_bridge.u_rvv_core.backend.u_vrf.vrf_rd_data_full[base]);
+      bad = 1;
+    end
+    rvv_release(iid);
+  endtask
+
   // 一颗 3 发射核的退休包最多 3 条, 槽 0 最旧 —— 必须按程序序喂, 否则参考模型
   // 会拿着后一条的 pc 去比对前一条的值, 报出来的失配点全错位。
   always @(posedge clk) begin
@@ -1168,6 +1732,7 @@ module tb_a910_difftest;
           bad = 1;
           $display("  ❌ 第 %0d 条退休 (slot0, T%0d) 起与黄金模型不一致", retired, cycles);
         end
+        if (!bad) rvv_check(0, dut.h_iid[0][31]);
       end
       if (dut.dbg_commit_vld1 && !bad) begin
         retired = retired + 1;
@@ -1177,6 +1742,7 @@ module tb_a910_difftest;
           bad = 1;
           $display("  ❌ 第 %0d 条退休 (slot1, T%0d) 起与黄金模型不一致", retired, cycles);
         end
+        if (!bad) rvv_check(1, dut.h_iid[1][31]);
       end
       if (dut.dbg_commit_vld2 && !bad) begin
         retired = retired + 1;
@@ -1186,6 +1752,7 @@ module tb_a910_difftest;
           bad = 1;
           $display("  ❌ 第 %0d 条退休 (slot2, T%0d) 起与黄金模型不一致", retired, cycles);
         end
+        if (!bad) rvv_check(2, dut.h_iid[2][31]);
       end
 
       // 模型在"下一条是 ecall"时自己停下 —— 用当时的 a0 定 pass/fail。
@@ -1210,6 +1777,21 @@ module tb_a910_difftest;
         $display("    DUT_MEM[0x%08x] = %032x", 16 * (12'hf7f + di), u_mem.mem[12'hf7f + di]);
       $display("  ---- 黄金模型内存 0xf7f0..0xf83f ----");
       gm_dump_mem(32'h0000_f7f0, 80);
+    end
+    // 【临时诊断 2026-10-18】coremark_rvv 第 95597 条: `lw s3,28(sp)` @0x11e4
+    //   黄金模型 sp=0xf6c0 ⇒ 地址 0xf6dc; DUT 读回 0。先把这一带逐字对出来,
+    //   区分"prologue 的 sw 丢了/被覆盖"和"load 用错了地址(sp 被写坏)"。
+    begin : mem_dump_f6c
+      integer aj;
+      $display("  ---- DUT vs GM 0xf6c0..0xf6ff (逐字) ----");
+      for (aj = 0; aj < 16; aj = aj + 1) begin
+        $display("    [0x%08x] DUT=%08x GM=%08x %s",
+                 32'h0000_f6c0 + 4 * aj,
+                 u_mem.mem[12'hf6c + (aj >> 2)][((aj & 3) * 32) +: 32],
+                 gm_read_mem(32'h0000_f6c0 + 4 * aj),
+                 (u_mem.mem[12'hf6c + (aj >> 2)][((aj & 3) * 32) +: 32]
+                  !== gm_read_mem(32'h0000_f6c0 + 4 * aj)) ? "  <<< DIFF" : "");
+      end
     end
     // 【临时诊断】逐字对齐 DUT vs GM 0xfa80..0xfa9f (第 49312 条那个 0xfa8c 循环的数组)
     begin : mem_dump_fa8

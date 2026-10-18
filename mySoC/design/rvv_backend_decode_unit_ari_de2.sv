@@ -971,7 +971,11 @@ module rvv_backend_decode_unit_ari_de2
           VMNOR,
           VMXNOR: begin
             ignore_vma = 1'b1;
-            ignore_vta = 1'b1;
+            // 2026-10-18 修: 原来 ignore_vta=1 ⇒ byte_type 把整条 VLEN 都标成
+            // BODY_ACTIVE, vl (按 **bit** 计) 之后的尾段也被写 ⇒ tail-undisturbed
+            // (tu) 失效 (rvv_sweep mask 组: 期望 vd 尾段保持 0x05, 实测被写成 0)。
+            // vma 仍忽略 (这些指令不支持 vm=0 的屏蔽执行)。
+            ignore_vta = 1'b0;
           end
           VMUNARY0: begin
             case(vs1_opcode)
@@ -1438,6 +1442,9 @@ module rvv_backend_decode_unit_ari_de2
             VMNOR,
             VMORN,
             VMXNOR : begin
+              // vstart!=0 时 uop_class 会升级成 VVV, vd 才需要作为源读进来。
+              // vstart==0 时 class=XVV (不读 vd), 尾段靠 byte_type 的 TAIL +
+              // 退休写口的字节 strobe 保留 (见 ignore_vta 的修正)。
               vs3_valid[i] = (csr_vstart!='b0);
             end
             VMACC,

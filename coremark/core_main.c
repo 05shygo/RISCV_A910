@@ -147,12 +147,14 @@ char *mem_name[3] = { "Static", "Heap", "Stack" };
 */
 
 #if MAIN_HAS_NOARGC
+CM_NO_VECTORIZE
 MAIN_RETURN_TYPE
 main(void)
 {
     int   argc = 0;
     char *argv[1];
 #else
+CM_NO_VECTORIZE
 MAIN_RETURN_TYPE
 main(int argc, char *argv[])
 {

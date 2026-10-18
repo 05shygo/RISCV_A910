@@ -1,0 +1,59 @@
+{
+ "group": "mask",
+ "test": "mask",
+ "n": 8,
+ "progress_addr": 4096,
+ "phase_addr": 4100,
+ "status_addr": 4108,
+ "a0_addr": 4104,
+ "cases": [
+  {
+   "id": 0,
+   "name": "vmandn.mm",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 1,
+   "name": "vmand.mm",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 2,
+   "name": "vmor.mm",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 3,
+   "name": "vmxor.mm",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 4,
+   "name": "vmorn.mm",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 5,
+   "name": "vmnand.mm",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 6,
+   "name": "vmnor.mm",
+   "kind": "vreg",
+   "bytes": 16
+  },
+  {
+   "id": 7,
+   "name": "vmxnor.mm",
+   "kind": "vreg",
+   "bytes": 16
+  }
+ ]
+}

@@ -1041,69 +1041,63 @@ module rvv_backend_decode_unit_ari
             endcase
           end
 
+          // ⚠️ 2026-10-18 修: 变宽扩展的 EMUL_vd = 2*EMUL_vs2 / 4*EMUL_vs2
+          // (与 VW* 同口径)。原表把 EMUL 也按"SEW 是目的宽度"平移了一档,
+          // LMUL1 只给 1 个 uop ⇒ 即使 eew 修好也只能算出一半目的寄存器。
           VXUNARY0: begin
-            case(vs1_opcode) 
+            case(vs1_opcode)
               VZEXT_VF2,
               VSEXT_VF2: begin
                 case(reduced_lmul)
-                  LMUL2: uop_index_max = (`UOP_INDEX_WIDTH)'('d1);
-                  LMUL4: uop_index_max = (`UOP_INDEX_WIDTH)'('d3);
-                  LMUL8: uop_index_max = (`UOP_INDEX_WIDTH)'('d7);
+                  LMUL1: uop_index_max = (`UOP_INDEX_WIDTH)'('d1);
+                  LMUL2: uop_index_max = (`UOP_INDEX_WIDTH)'('d3);
+                  LMUL4: uop_index_max = (`UOP_INDEX_WIDTH)'('d7);
                 endcase
 
                 case(csr_lmul)
-                  LMUL1_2,
-                  LMUL1: begin
+                  LMUL1_2: begin
+                    // 分数 LMUL 在 EMUL_e 里没有表示; 保持原口径 (1 个 uop)。
                     emul_vd     = EMUL1;
                     emul_vs2    = EMUL1;
                     emul_max    = EMUL1;
                   end
-                  LMUL2: begin
+                  LMUL1: begin
                     emul_vd     = EMUL2;
                     emul_vs2    = EMUL1;
                     emul_max    = EMUL2;
                   end
-                  LMUL4: begin
+                  LMUL2: begin
                     emul_vd     = EMUL4;
                     emul_vs2    = EMUL2;
                     emul_max    = EMUL4;
                   end
-                  LMUL8: begin
+                  LMUL4: begin
                     emul_vd     = EMUL8;
                     emul_vs2    = EMUL4;
                     emul_max    = EMUL8;
                   end
+                  // LMUL8: vd 需要 EMUL16 (>8) ⇒ 编码非法, 保持 EMUL_NONE
                 endcase
               end
               VZEXT_VF4,
               VSEXT_VF4: begin
                 case(reduced_lmul)
-                  LMUL2: uop_index_max = (`UOP_INDEX_WIDTH)'('d1);
-                  LMUL4: uop_index_max = (`UOP_INDEX_WIDTH)'('d3);
-                  LMUL8: uop_index_max = (`UOP_INDEX_WIDTH)'('d7);
+                  LMUL1: uop_index_max = (`UOP_INDEX_WIDTH)'('d3);
+                  LMUL2: uop_index_max = (`UOP_INDEX_WIDTH)'('d7);
                 endcase
 
                 case(csr_lmul)
                   LMUL1: begin
-                    emul_vd     = EMUL1;
-                    emul_vs2    = EMUL1;
-                    emul_max    = EMUL1;
-                  end
-                  LMUL2: begin
-                    emul_vd     = EMUL2;
-                    emul_vs2    = EMUL1;
-                    emul_max    = EMUL2;
-                  end
-                  LMUL4: begin
                     emul_vd     = EMUL4;
                     emul_vs2    = EMUL1;
                     emul_max    = EMUL4;
                   end
-                  LMUL8: begin
+                  LMUL2: begin
                     emul_vd     = EMUL8;
                     emul_vs2    = EMUL2;
                     emul_max    = EMUL8;
                   end
+                  // LMUL4/8: vd 需要 EMUL16/32 (>8) ⇒ 编码非法
                 endcase
               end
             endcase
@@ -2552,17 +2546,22 @@ module rvv_backend_decode_unit_ari
           end
 
           // SEW = extend 1/2SEW or 1/4SEW
+          // ⚠️ 2026-10-18 修: 按 RVV 规范, vtype.SEW 是**源**元素宽度, 目的 EEW
+          // 是 2*SEW / 4*SEW。原表把 SEW 当成目的宽度 (vf2 只认 SEW16/32,
+          // vf4 只认 SEW32) ⇒ 合法的 `vsetivli e8; vsext.vf2/vf4` 被 check_sew
+          // 判非法 ⇒ bridge 走 F1 报 illegal instruction (实测 alu_4 在 0x260
+          // vsext.vf2 处 trap, trap 后反复重启)。
           VXUNARY0: begin
-            case(vs1_opcode) 
+            case(vs1_opcode)
               VZEXT_VF2,
               VSEXT_VF2: begin
                 case(csr_sew)
-                  SEW16: begin
+                  SEW8: begin
                     eew_vd      = EEW16;
                     eew_vs2     = EEW8;
                     eew_max     = EEW16;
                   end
-                  SEW32: begin
+                  SEW16: begin
                     eew_vd      = EEW32;
                     eew_vs2     = EEW16;
                     eew_max     = EEW32;
@@ -2572,7 +2571,7 @@ module rvv_backend_decode_unit_ari
               VZEXT_VF4,
               VSEXT_VF4: begin
                 case(csr_sew)
-                  SEW32: begin
+                  SEW8: begin
                     eew_vd      = EEW32;
                     eew_vs2     = EEW8;
                     eew_max     = EEW32;
