@@ -3,7 +3,7 @@
 // http://www.apache.org/licenses/LICENSE-2.0
 
 module ct_lsu_sq #(
-    parameter SQ_ENTRY   = 6,
+    parameter SQ_ENTRY   = 12,
     parameter LSIQ_ENTRY = 8,
     parameter IID_WIDTH  = 7
 )(
@@ -48,6 +48,7 @@ module ct_lsu_sq #(
     input  logic [IID_WIDTH-1:0] st_da_iid,
     input  logic         st_da_vec,
     input  logic [4:0]   st_da_uop_idx,
+    input  logic [4:0]   st_da_beat_idx,
     input  logic         st_da_inst_vld,
     // 2026-10-15 停用: 非对齐拆分通路整条摘掉 (secd/boundary)
     //input  logic         st_da_secd,
@@ -62,6 +63,7 @@ module ct_lsu_sq #(
     input  logic [IID_WIDTH-1:0] st_dc_iid,
     input  logic         st_dc_vec,
     input  logic [4:0]   st_dc_uop_idx,
+    input  logic [4:0]   st_dc_beat_idx,
     input  logic         st_dc_old,
     input  logic [7:0]   st_dc_rot_sel_rev,
     input  logic [3:0]   st_dc_sdid,
@@ -69,6 +71,7 @@ module ct_lsu_sq #(
     //input  logic         st_dc_secd,
     input  logic         st_dc_sq_create_vld,
     input  logic         st_dc_sq_data_vld,
+    input  logic [31:0]  st_dc_sq_data,
     input  logic [31:0]  wmb_ce_addr,
     input  logic [SQ_ENTRY-1:0] wmb_ce_sq_ptr,
     input  logic         wmb_sq_pop_grnt,
@@ -84,6 +87,7 @@ module ct_lsu_sq #(
     output logic         sq_ld_dc_fwd_multi,
     output logic         sq_ld_dc_fwd_multi_mask,
     output logic         sq_ld_dc_fwd_req,
+    output logic [15:0]  sq_ld_dc_fwd_bytes_vld,   // 2026-10-18 16B 向量 load 前递掩码
     output logic         sq_ld_dc_other_discard_req,
     output logic [31:0]  sq_pop_addr,
     output logic [15:0]  sq_pop_bytes_vld,
@@ -288,6 +292,7 @@ logic [SQ_ENTRY-1:0]sq_entry_cmit_data_not_vld;
                 .st_da_inst_vld                            (st_da_inst_vld),
                 .st_da_vec                                 (st_da_vec),
                 .st_da_uop_idx                             (st_da_uop_idx),
+                .st_da_beat_idx                            (st_da_beat_idx),
                 //.st_da_secd                                (st_da_secd),
                 .st_da_sq_dcache_dirty                     (st_da_sq_dcache_dirty),
                 .st_da_sq_dcache_valid                     (st_da_sq_dcache_valid),
@@ -300,11 +305,13 @@ logic [SQ_ENTRY-1:0]sq_entry_cmit_data_not_vld;
                 .st_dc_iid                                 (st_dc_iid),
                 .st_dc_vec                                 (st_dc_vec),
                 .st_dc_uop_idx                             (st_dc_uop_idx),
+                .st_dc_beat_idx                            (st_dc_beat_idx),
                 .st_dc_rot_sel_rev                         (st_dc_rot_sel_rev),
                 .st_dc_sdid                                (st_dc_sdid),
             //    .st_dc_sdid_hit                            (st_dc_sdid_hit),
                 //.st_dc_secd                                (st_dc_secd),
                 .st_dc_sq_data_vld                         (st_dc_sq_data_vld),
+                .st_dc_sq_data                             (st_dc_sq_data),
                 .wmb_sq_pop_grnt                           (wmb_sq_pop_grnt),
                 .sq_entry_addr0_v                          (sq_entry_addr0[i]),
                 // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): .sq_entry_addr1_dep_discard_x              (sq_entry_addr1_dep_discard[i]),
@@ -345,15 +352,12 @@ logic [SQ_ENTRY-1:0]sq_entry_cmit_data_not_vld;
     //==========================================================
     always_comb begin
         sq_create_ptr = {SQ_ENTRY{1'b0}};
-        casez (sq_entry_vld[SQ_ENTRY-1:0])
-            6'b????_?0: sq_create_ptr[0] = 1'b1;
-            6'b????_01: sq_create_ptr[1] = 1'b1;
-            6'b???0_11: sq_create_ptr[2] = 1'b1;
-            6'b??01_11: sq_create_ptr[3] = 1'b1;
-            6'b?011_11: sq_create_ptr[4] = 1'b1;
-            6'b0111_11: sq_create_ptr[5] = 1'b1;
-            default: sq_create_ptr = {SQ_ENTRY{1'b0}};
-        endcase
+        for (int k=0; k<SQ_ENTRY; k++) begin
+            if (!sq_entry_vld[k]) begin
+                sq_create_ptr[k] = 1'b1;
+                break;
+            end
+        end
     end
 
     assign sq_has_cmit = |(sq_entry_cmit[SQ_ENTRY-1:0] & sq_entry_vld[SQ_ENTRY-1:0]);
@@ -434,18 +438,19 @@ logic [SQ_ENTRY-1:0]sq_entry_cmit_data_not_vld;
     assign sq_ld_dc_fwd_id = sq_data_discard_req & !sq_newest_fwd_req ? sq_entry_data_discard_req : sq_fwd_req_id;
     assign sq_fwd_req_id = sq_newest_fwd_req ? sq_newest_fwd_req_id : sq_entry_fwd_req;
 
+    // 2026-10-18: 选中前递表项的字节掩码 (16B 向量 load 不能用 16'hffff)
     always_comb begin
-        sq_fwd_multi = 1'b1;
-        case (sq_entry_fwd_req)
-            6'b000000,
-            6'b000001,
-            6'b000010,
-            6'b000100,
-            6'b001000,
-            6'b010000,
-            6'b100000: sq_fwd_multi = 1'b0;
-            default: sq_fwd_multi = 1'b1;
-        endcase
+        sq_ld_dc_fwd_bytes_vld = 16'h0;
+        for (int k = 0; k < SQ_ENTRY; k++)
+            if (sq_fwd_req_id[k]) sq_ld_dc_fwd_bytes_vld = sq_entry_bytes_vld[k];
+    end
+
+    always_comb begin
+        logic [$clog2(SQ_ENTRY+1)-1:0] cnt;
+        cnt = '0;
+        for (int k=0; k<SQ_ENTRY; k++)
+            if (sq_entry_fwd_req[k]) cnt = cnt + 1'b1;
+        sq_fwd_multi = (cnt > 1);
     end
     assign sq_ld_dc_fwd_multi = sq_fwd_multi;
     assign sq_ld_dc_fwd_multi_mask = sq_newest_fwd_req;
@@ -454,15 +459,9 @@ logic [SQ_ENTRY-1:0]sq_entry_cmit_data_not_vld;
     // Forward data to LD DA
     //==========================================================
     always_comb begin
-        case (ld_da_sq_fwd_id)
-            6'h01: sq_ld_da_fwd_data = sq_entry_data[0];
-            6'h02: sq_ld_da_fwd_data = sq_entry_data[1];
-            6'h04: sq_ld_da_fwd_data = sq_entry_data[2];
-            6'h08: sq_ld_da_fwd_data = sq_entry_data[3];
-            6'h10: sq_ld_da_fwd_data = sq_entry_data[4];
-            6'h20: sq_ld_da_fwd_data = sq_entry_data[5];
-            default: sq_ld_da_fwd_data = {32{1'bx}};
-        endcase
+        sq_ld_da_fwd_data = {32{1'bx}};
+        for (int k=0; k<SQ_ENTRY; k++)
+            if (ld_da_sq_fwd_id[k]) sq_ld_da_fwd_data = sq_entry_data[k];
     end
 
     //==========================================================
@@ -473,15 +472,8 @@ logic [SQ_ENTRY-1:0]sq_entry_cmit_data_not_vld;
 
     always_comb begin
         sq_data_discard_id_sel = {SQ_ENTRY{1'b0}};
-        casez (ld_da_sq_fwd_id)
-            6'b1?????: sq_data_discard_id_sel[5] = 1'b1;
-            6'b01????: sq_data_discard_id_sel[4] = 1'b1;
-            6'b001???: sq_data_discard_id_sel[3] = 1'b1;
-            6'b0001??: sq_data_discard_id_sel[2] = 1'b1;
-            6'b00001?: sq_data_discard_id_sel[1] = 1'b1;
-            6'b000001: sq_data_discard_id_sel[0] = 1'b1;
-            default: sq_data_discard_id_sel = {SQ_ENTRY{1'b0}};
-        endcase
+        for (int k=0; k<SQ_ENTRY; k++)
+            if (ld_da_sq_fwd_id[k]) sq_data_discard_id_sel = {SQ_ENTRY{1'b0}} | (1 << k);
     end
 
     assign sq_data_discard_newest_id = sq_entry_same_addr_newest & ld_da_sq_fwd_id;
@@ -532,7 +524,7 @@ logic [SQ_ENTRY-1:0]sq_entry_cmit_data_not_vld;
         if(!cpurst_b)begin
             sq_pop_addr        <= 32'b0;
             sq_pop_bytes_vld   <= 16'b0;
-            sq_pop_ptr         <= 6'b0;
+            sq_pop_ptr         <= {SQ_ENTRY{1'b0}};
         end 
         else if (sq_pe_sel_age_vec_zero_entry_vld) begin
             sq_pop_addr        <= sq_pe_age_vec_zero_addr[31:0];
@@ -550,52 +542,28 @@ logic [SQ_ENTRY-1:0]sq_entry_cmit_data_not_vld;
     assign sq_pe_sel_age_vec_surplus1_entry_vld = wmb_sq_pop_to_ce_grnt;
 
     always_comb begin
-        case (sq_entry_age_vec_zero_ptr)
-            6'h01: sq_pe_age_vec_zero_addr = sq_entry_addr0[0][31:0];
-            6'h02: sq_pe_age_vec_zero_addr = sq_entry_addr0[1][31:0];
-            6'h04: sq_pe_age_vec_zero_addr = sq_entry_addr0[2][31:0];
-            6'h08: sq_pe_age_vec_zero_addr = sq_entry_addr0[3][31:0];
-            6'h10: sq_pe_age_vec_zero_addr = sq_entry_addr0[4][31:0];
-            6'h20: sq_pe_age_vec_zero_addr = sq_entry_addr0[5][31:0];
-            default: sq_pe_age_vec_zero_addr = {PA_WIDTH{1'bx}};
-        endcase
+        sq_pe_age_vec_zero_addr = {PA_WIDTH{1'bx}};
+        for (int k=0; k<SQ_ENTRY; k++)
+            if (sq_entry_age_vec_zero_ptr[k]) sq_pe_age_vec_zero_addr = sq_entry_addr0[k][31:0];
     end
 
     always_comb begin
-        case (sq_entry_age_vec_zero_ptr)
-            6'h01: sq_pe_age_vec_zero_bytes_vld = sq_entry_bytes_vld[0];
-            6'h02: sq_pe_age_vec_zero_bytes_vld = sq_entry_bytes_vld[1];
-            6'h04: sq_pe_age_vec_zero_bytes_vld = sq_entry_bytes_vld[2];
-            6'h08: sq_pe_age_vec_zero_bytes_vld = sq_entry_bytes_vld[3];
-            6'h10: sq_pe_age_vec_zero_bytes_vld = sq_entry_bytes_vld[4];
-            6'h20: sq_pe_age_vec_zero_bytes_vld = sq_entry_bytes_vld[5];
-            default: sq_pe_age_vec_zero_bytes_vld = {16{1'bx}};
-        endcase
+        sq_pe_age_vec_zero_bytes_vld = {16{1'bx}};
+        for (int k=0; k<SQ_ENTRY; k++)
+            if (sq_entry_age_vec_zero_ptr[k]) sq_pe_age_vec_zero_bytes_vld = sq_entry_bytes_vld[k];
     end
 
 
     always_comb begin
-        case (sq_entry_age_vec_surplus1_ptr)
-            6'h01: sq_pe_age_vec_surplus1_addr = sq_entry_addr0[0][31:0];
-            6'h02: sq_pe_age_vec_surplus1_addr = sq_entry_addr0[1][31:0];
-            6'h04: sq_pe_age_vec_surplus1_addr = sq_entry_addr0[2][31:0];
-            6'h08: sq_pe_age_vec_surplus1_addr = sq_entry_addr0[3][31:0];
-            6'h10: sq_pe_age_vec_surplus1_addr = sq_entry_addr0[4][31:0];
-            6'h20: sq_pe_age_vec_surplus1_addr = sq_entry_addr0[5][31:0];
-            default: sq_pe_age_vec_surplus1_addr = {PA_WIDTH{1'bx}};
-        endcase
+        sq_pe_age_vec_surplus1_addr = {PA_WIDTH{1'bx}};
+        for (int k=0; k<SQ_ENTRY; k++)
+            if (sq_entry_age_vec_surplus1_ptr[k]) sq_pe_age_vec_surplus1_addr = sq_entry_addr0[k][31:0];
     end
 
     always_comb begin
-        case (sq_entry_age_vec_surplus1_ptr)
-            6'h01: sq_pe_age_vec_surplus1_bytes_vld = sq_entry_bytes_vld[0];
-            6'h02: sq_pe_age_vec_surplus1_bytes_vld = sq_entry_bytes_vld[1];
-            6'h04: sq_pe_age_vec_surplus1_bytes_vld = sq_entry_bytes_vld[2];
-            6'h08: sq_pe_age_vec_surplus1_bytes_vld = sq_entry_bytes_vld[3];
-            6'h10: sq_pe_age_vec_surplus1_bytes_vld = sq_entry_bytes_vld[4];
-            6'h20: sq_pe_age_vec_surplus1_bytes_vld = sq_entry_bytes_vld[5];
-            default: sq_pe_age_vec_surplus1_bytes_vld = {16{1'bx}};
-        endcase
+        sq_pe_age_vec_surplus1_bytes_vld = {16{1'bx}};
+        for (int k=0; k<SQ_ENTRY; k++)
+            if (sq_entry_age_vec_surplus1_ptr[k]) sq_pe_age_vec_surplus1_bytes_vld = sq_entry_bytes_vld[k];
     end
 
 
@@ -618,15 +586,9 @@ logic [SQ_ENTRY-1:0]sq_entry_cmit_data_not_vld;
     // WMB CE data path
     //==========================================================
     always_comb begin
-        case (wmb_ce_sq_ptr)
-            6'h01: wmb_ce_data32 = sq_entry_data[0];
-            6'h02: wmb_ce_data32 = sq_entry_data[1];
-            6'h04: wmb_ce_data32 = sq_entry_data[2];
-            6'h08: wmb_ce_data32 = sq_entry_data[3];
-            6'h10: wmb_ce_data32 = sq_entry_data[4];
-            6'h20: wmb_ce_data32 = sq_entry_data[5];
-            default: wmb_ce_data32 = {32{1'bx}};
-        endcase
+        wmb_ce_data32 = {32{1'bx}};
+        for (int k=0; k<SQ_ENTRY; k++)
+            if (wmb_ce_sq_ptr[k]) wmb_ce_data32 = sq_entry_data[k];
     end
     assign wmb_ce_data128 = {wmb_ce_data32, wmb_ce_data32, wmb_ce_data32, wmb_ce_data32};
 

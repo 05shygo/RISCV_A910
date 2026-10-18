@@ -100,6 +100,11 @@ module ct_idu_top(
   input  logic [6:0]   rtu_yy_xx_commit1_iid,
   input  logic         rtu_yy_xx_commit2,
   input  logic [6:0]   rtu_yy_xx_commit2_iid,
+  // 2026-10-18: RTU 头部 3 条提交窗口 (电平, 非退休脉冲)
+  input  logic [2:0]   rtu_yy_xx_win_valid,
+  input  logic [6:0]   rtu_yy_xx_win_iid0,
+  input  logic [6:0]   rtu_yy_xx_win_iid1,
+  input  logic [6:0]   rtu_yy_xx_win_iid2,
   // LSU load 写回
   input  logic         lsu_idu_wb_pipe3_wb_preg_vec,
   input  logic [4:0]   lsu_idu_wb_pipe3_wb_uop_idx,
@@ -110,6 +115,32 @@ module ct_idu_top(
   // 2026-10-17 S8: 向量 store 的提交电平 → SQ
   output logic         vec_st_cmit_vld,
   output logic [6:0]   vec_st_cmit_iid,
+
+  //==========================================================
+  // 2026-10-18 直连向量 L/S: fill <-> LSU
+  //==========================================================
+  output logic         vec_ls_req_valid,
+  input  logic         vec_ls_req_ready,
+  output logic         vec_ls_req_store,
+  output logic         vec_ls_req_nop,
+  output logic         vec_ls_req_last,
+  output logic [31:0]  vec_ls_req_addr,
+  output logic [15:0]  vec_ls_req_bytes_vld,
+  output logic [31:0]  vec_ls_req_wdata,
+  output logic [2:0]   vec_ls_req_lsid,
+  output logic [4:0]   vec_ls_req_fill_id,
+  output logic [4:0]   vec_ls_req_uop_idx,
+  output logic [4:0]   vec_ls_req_beat_idx,
+  output logic [6:0]   vec_ls_req_iid,
+
+  input  logic         vec_ls_rsp_valid,
+  input  logic [4:0]   vec_ls_rsp_fill_id,
+  input  logic         vec_ls_rsp_load,
+  input  logic [127:0] vec_ls_rsp_data,
+  input  logic [15:0]  vec_ls_rsp_bytes_vld,
+  input  logic         vec_ls_req_done_vld,
+  input  logic [4:0]   vec_ls_req_done_fill_id,
+  output logic         idu_lsu_cmit_vec_st_pending,
 
   //==========================================================
   // Interface with LSU - SDIQ control
@@ -315,6 +346,8 @@ module ct_idu_top(
   output logic [31:0]  idu_vec_inst_pc,
   output logic [1:0]   idu_vec_inst_opcode,   // 0=LOAD 1=STORE 2=RVV
   output logic [24:0]  idu_vec_inst_bits,     // inst[31:7]
+  // 2026-10-18 直连向量 L/S: 该指令在 IS 建好的 LSIQ anchor 槽号
+  output logic [2:0]   idu_vec_lsid,
   output logic         idu_vec_src0_vld,
   output logic [31:0]  idu_vec_src0_data,
   // 2026-10-17 S3b: 标量源物理号 + issue 时是否已写回 (供 core RS 等迟到写回)
@@ -400,8 +433,11 @@ logic [1:0]  ctrl_dp_is_dis_vec_create1_sel;
 logic        ctrl_dp_dis_inst0_vec;
 logic        ctrl_dp_dis_inst1_vec;
 logic        ctrl_dp_dis_inst2_vec;
-logic [100:0] dp_vec_create0_data;
-logic [100:0] dp_vec_create1_data;
+logic [103:0] dp_vec_create0_data;
+logic [103:0] dp_vec_create1_data;
+// 2026-10-18 直连向量 L/S: LSIQ create0/1 实际落到的空闲槽 (one-hot)
+logic [7:0]   lsiq_create0_entry;
+logic [7:0]   lsiq_create1_entry;
 logic [6:0]  dp_vec_create0_iid;
 logic [6:0]  dp_vec_create1_iid;
 logic        dp_ctrl_is_inst0_vec;
@@ -456,6 +492,14 @@ logic [6:0]   dp_lsiq_create1_iid;
 logic [6:0]   lsiq_vec_create_iid;
 logic         lsiq_vec_create_store;
 logic [7:0] sdiq_dp_issue_read_data;
+
+// 2026-10-18: 旧合成 beat / SDIQ 写口已停用; 顶住 0 防止 X 传播
+assign lsiq_vec_upd_entry    = 8'd0;
+assign lsiq_vec_upd_data     = 106'd0;
+assign lsiq_vec_beat_rdy     = 8'd0;
+assign vec_sdiq_create_vld   = 1'b0;
+assign vec_sdiq_create_entry = 4'd0;
+assign vec_sd_data           = 32'd0;
 
 logic         idu_ifu_inst0_ready;
 logic         idu_ifu_inst1_ready;
@@ -1143,6 +1187,8 @@ ct_idu_is_dp x_ct_idu_is_dp (
   .ctrl_xx_is_inst0_sel                              (ctrl_xx_is_inst0_sel),
   .sdiq_create0_entry                              (sdiq_create0_entry),//in
   .sdiq_create1_entry                              (sdiq_create1_entry),//in
+  .lsiq_create0_entry                              (lsiq_create0_entry),//in
+  .lsiq_create1_entry                              (lsiq_create1_entry),//in
   .ctrl_sdiq_create0_en                              (ctrl_sdiq_create0_en),
   .ctrl_sdiq_create1_en                              (ctrl_sdiq_create1_en),
   .ctrl_dp_is_dis_aiq_create0_sel        (ctrl_dp_is_dis_aiq_create0_sel),
@@ -1245,6 +1291,7 @@ assign idu_vec_inst_valid = vecq_xx_issue_en;
 assign idu_vec_inst_iid   = vecq_dp_issue_data[`VIQ_IID:`VIQ_IID-6];
 assign idu_vec_inst_pc    = vecq_dp_issue_data[`VIQ_PC:`VIQ_PC-31];
 assign idu_vec_inst_bits  = vecq_dp_issue_data[`VIQ_OPCODE:`VIQ_OPCODE-24];
+assign idu_vec_lsid       = vecq_dp_issue_data[`VIQ_LSID:`VIQ_LSID-2];
 
 // vec_type → bridge 的两类 opcode: 0=LOAD 1=STORE 2=RVV
 assign idu_vec_inst_opcode = (vec_inst_type == 2'b01) ? 2'd0 :
@@ -1425,6 +1472,8 @@ ct_idu_is_lsiq x_ct_idu_is_lsiq (
   .lsiq_vec_old                          (lsiq_vec_old),
   .lsiq_vec_create_entry                 (lsiq_vec_create_entry),
   .lsiq_vec_create_vld                   (lsiq_vec_create_vld),
+  .lsiq_create0_entry                    (lsiq_create0_entry),
+  .lsiq_create1_entry                    (lsiq_create1_entry),
   .rvv_idu_vset_wb_preg_dupx         (rvv_idu_vset_wb_preg),
   .rvv_idu_vset_wb_preg_vld_dupx     (rvv_idu_vset_wb_vld)
 );
@@ -1829,11 +1878,11 @@ assign idu_rtu_disp2_flags[0]       = dp_is_dis_inst2_data[IS_BJU];             
 // 本拍 create 的 anchor 的 iid / load-store (计划的口径: 同拍最多一个向量 L/S)
 localparam int LSIQ_VEC      = 60;
 localparam int LSIQ_STORE    = 48;
-wire lsiq_vec_create_sel0 = dp_lsiq_create0_data[LSIQ_VEC];
-assign lsiq_vec_create_iid   = lsiq_vec_create_sel0 ? dp_lsiq_create0_iid
-                                                    : dp_lsiq_create1_iid;
-assign lsiq_vec_create_store = lsiq_vec_create_sel0 ? dp_lsiq_create0_data[LSIQ_STORE]
-                                                    : dp_lsiq_create1_data[LSIQ_STORE];
+// 2026-10-18: 同拍可能有两条向量 L/S ⇒ create0/1 的 iid/store 分开送
+wire [6:0] lsiq_vec_create0_iid   = dp_lsiq_create0_iid;
+wire [6:0] lsiq_vec_create1_iid   = dp_lsiq_create1_iid;
+wire       lsiq_vec_create0_store = dp_lsiq_create0_data[LSIQ_STORE];
+wire       lsiq_vec_create1_store = dp_lsiq_create1_data[LSIQ_STORE];
 
 ct_idu_vec_ls_fill u_vec_ls_fill (
   .cpurst_b                     (cpurst_b),
@@ -1846,6 +1895,10 @@ ct_idu_vec_ls_fill u_vec_ls_fill (
   .rtu_yy_xx_commit1_iid        (rtu_yy_xx_commit1_iid),
   .rtu_yy_xx_commit2            (rtu_yy_xx_commit2),
   .rtu_yy_xx_commit2_iid        (rtu_yy_xx_commit2_iid),
+  .rtu_yy_xx_win_valid          (rtu_yy_xx_win_valid),
+  .rtu_yy_xx_win_iid0           (rtu_yy_xx_win_iid0),
+  .rtu_yy_xx_win_iid1           (rtu_yy_xx_win_iid1),
+  .rtu_yy_xx_win_iid2           (rtu_yy_xx_win_iid2),
 
   .rvv_lsu_uop_valid            (rvv_lsu_uop_valid),
   .rvv_lsu_uop                  (rvv_lsu_uop),
@@ -1856,39 +1909,43 @@ ct_idu_vec_ls_fill u_vec_ls_fill (
 
   .lsiq_vec_create_entry        (lsiq_vec_create_entry),
   .lsiq_vec_create_vld          (lsiq_vec_create_vld),
-  .lsiq_vec_create_iid          (lsiq_vec_create_iid),
-  .lsiq_vec_create_store        (lsiq_vec_create_store),
-  .lsiq_vec_upd_entry           (lsiq_vec_upd_entry),
-  .lsiq_vec_upd_data            (lsiq_vec_upd_data),
-  .lsiq_vec_beat_rdy            (lsiq_vec_beat_rdy),
+  .lsiq_create0_entry           (lsiq_create0_entry),
+  .lsiq_vec_create0_iid         (lsiq_vec_create0_iid),
+  .lsiq_vec_create0_store       (lsiq_vec_create0_store),
+  .lsiq_vec_create1_iid         (lsiq_vec_create1_iid),
+  .lsiq_vec_create1_store       (lsiq_vec_create1_store),
   .lsiq_vec_old                 (lsiq_vec_old),
-  .lsu_idu_beat_done            (lsu_idu_beat_done),
   .lsu_idu_pop_entry            (lsu_idu_lsiq_pop_entry),
 
-  .lsu_idu_wb_pipe3_wb_preg_vec (lsu_idu_wb_pipe3_wb_preg_vec),
-  .lsu_idu_wb_pipe3_wb_uop_idx  (lsu_idu_wb_pipe3_wb_uop_idx),
-  .lsu_idu_wb_pipe3_wb_preg_iid (lsu_idu_wb_pipe3_wb_preg_iid),
-  .lsu_idu_wb_pipe3_wb_preg_data(lsu_idu_wb_pipe3_wb_preg_data),
+  // 2026-10-18 直连 LSU 请求/响应
+  .vec_ls_req_valid             (vec_ls_req_valid),
+  .vec_ls_req_ready             (vec_ls_req_ready),
+  .vec_ls_req_store             (vec_ls_req_store),
+  .vec_ls_req_nop               (vec_ls_req_nop),
+  .vec_ls_req_last              (vec_ls_req_last),
+  .vec_ls_req_addr              (vec_ls_req_addr),
+  .vec_ls_req_bytes_vld         (vec_ls_req_bytes_vld),
+  .vec_ls_req_wdata             (vec_ls_req_wdata),
+  .vec_ls_req_lsid              (vec_ls_req_lsid),
+  .vec_ls_req_fill_id           (vec_ls_req_fill_id),
+  .vec_ls_req_uop_idx           (vec_ls_req_uop_idx),
+  .vec_ls_req_beat_idx          (vec_ls_req_beat_idx),
+  .vec_ls_req_iid               (vec_ls_req_iid),
 
-  .lsu_idu_sq_pop_vld           (lsu_idu_sq_pop_vld),
-  .lsu_idu_sq_pop_uop_idx       (lsu_idu_sq_pop_uop_idx),
-
-  .sdiq_entry_vld               (sdiq_entry_vld),
-  .vec_sdiq_create_vld          (vec_sdiq_create_vld),
-  .vec_sdiq_create_entry        (vec_sdiq_create_entry),
-  .sdiq_dp_issue_entry          (sdiq_dp_issue_entry),
-  .sdiq_issue_en                (sdiq_xx_issue_en),
-  .vec_sd_data                  (vec_sd_data),
-
-  .lsu_idu_lq_full              (lsu_idu_lq_full),
-  .lsu_idu_rb_full              (lsu_idu_rb_full),
-  .lsu_idu_sq_full              (lsu_idu_sq_full),
+  .vec_ls_rsp_valid             (vec_ls_rsp_valid),
+  .vec_ls_rsp_fill_id           (vec_ls_rsp_fill_id),
+  .vec_ls_rsp_load              (vec_ls_rsp_load),
+  .vec_ls_rsp_data              (vec_ls_rsp_data),
+  .vec_ls_rsp_bytes_vld         (vec_ls_rsp_bytes_vld),
+  .vec_ls_req_done_vld          (vec_ls_req_done_vld),
+  .vec_ls_req_done_fill_id      (vec_ls_req_done_fill_id),
 
   .vec_old_iid                  (vec_old_iid),
   .vec_old_vld                  (vec_old_vld),
 
   .vec_st_cmit_vld              (vec_st_cmit_vld),
-  .vec_st_cmit_iid              (vec_st_cmit_iid)
+  .vec_st_cmit_iid              (vec_st_cmit_iid),
+  .idu_lsu_cmit_vec_st_pending  (idu_lsu_cmit_vec_st_pending)
 );
 
 endmodule

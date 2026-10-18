@@ -1,41 +1,42 @@
 `include "rvv_backend.svh"
 
 // ===========================================================================
-// ct_idu_vec_ls_fill —— 向量 load/store 的 fill 引擎 (2026-10-17 S8)
+// ct_idu_vec_ls_fill —— 向量 load/store 直连 fill 引擎 (2026-10-18 重写)
 //
-// 职责（与计划 §10 对应）:
-//   1. 接受 RvvCore 的 core uop (UOP_RVV2LSU_t)，按 iid 匹配 IS 阶段建好的
-//      LSIQ anchor，把 uop 拆成 A910 的 **单字节** beat:
-//        {synthetic opcode(LBU/SB), 完整地址, sdiq_entry, uop_idx, last, sd_data}
-//      写进 anchor（`lsiq_vec_upd_*`），再拉 `lsiq_vec_beat_rdy` 让 LSIQ 发射。
-//   2. load: 收集 32 位写回（按 {iid,uop_idx} 查 request 表），逐字节拼进
-//      128 位 `ld_asm`，一个 core uop 的字节全回来后回一个 UOP_LSU2RVV_t。
-//   3. store: 提交前 staging（每 anchor 最多 4 个 core uop），数据齐后先回
-//      `lsu_vstore_last` 让 core 完成/提交；**提交后**才把 beat 排空进 LSU。
-//
-// 简化（首版，S9 再按用例收紧）:
-//   * 默认每个 A910 beat 是 **1 个字节**（LBU/SB），但同一切片内连续、
-//     4B 对齐、4 字节全 active 的组会合并成一个 **32 位 LW/SW** beat。
-//     这样对齐的 16B uop 从 16 个请求降到 4 个；不满足条件时回退到 1B。
-//     （A910 LSU 的 load 写回口只有 32 位，所以不可能一次 beat 取 16B。）
-//   * mop 支持 US / CS / IU / IO；segment 由 S6 的 store uop 数限制兜住。
-//   * request index 在**写回**时释放（计划写"LQ pop 后"，但 LQ 的 pop 不回送
-//     uop_idx；匹配靠 {iid,uop_idx}，iid 不同 ⇒ 提前释放不会串）。
-//   * fault-only-first / page fault 不在本方案范围。
+// 新架构:
+//   * fill 自己算地址 / 组包, 直接发 {store, nop, addr16, bytes_vld, wdata,
+//     lsid, fill_id, iid} 给 LSU 的 ct_lsu_vec_ls_fe (再驱动 dcache_arb),
+//     不再合成 LBU/SB/LW/SW 标量 beat, 也不再经过 LSIQ 发射。
+//   * load: 按 16B 对齐块 gather; 一笔请求取 16B, 响应按 fill_id 拼回 uop。
+//     该笔走完 ld DA 即可发下一 beat, 数据响应可以晚到/乱序。
+//   * store: 每个 4B 对齐字内严格选 32/16/8 最大连续宽度; 提交前逐笔进 SQ。
+//   * 同一 uop 的 beat 串行; 不同 uop 由 FE 队列排序。
+//   * 每个 uop 只有在所有 beat 都走完 DA (ctx_outs==0) 且 load 数据全部
+//     回来 (ctx_pending==0) 后才回完成给 RVV。store 数据在 SQ 里等提交。
+//   * LSIQ anchor 仍由 IS 建立, 但永久冻结; anchor 的 pop 由 ld_da/st_da 产生,
+//     本模块只跟踪 anchor 的存活/最老状态。
+//   * uop_idx 用 RVV 后端的 uop 索引, beat_idx 是本模块的 uop 内 beat 标签,
+//     fill_id 只用于本模块与 LSU 的请求配对。
 // ===========================================================================
+
 module ct_idu_vec_ls_fill
 (
   input  logic         cpurst_b,
   input  logic         forever_cpuclk,
   input  logic         rtu_yy_xx_flush,
 
-  // RTU commit 广播（store 提交后排空）
+  // RTU commit 广播 (store 提交)
   input  logic         rtu_yy_xx_commit0,
   input  logic [6:0]   rtu_yy_xx_commit0_iid,
   input  logic         rtu_yy_xx_commit1,
   input  logic [6:0]   rtu_yy_xx_commit1_iid,
   input  logic         rtu_yy_xx_commit2,
   input  logic [6:0]   rtu_yy_xx_commit2_iid,
+  // 2026-10-18: RTU 头部 3 条提交窗口 (电平) —— 向量 store 提前标记提交
+  input  logic [2:0]   rtu_yy_xx_win_valid,
+  input  logic [6:0]   rtu_yy_xx_win_iid0,
+  input  logic [6:0]   rtu_yy_xx_win_iid1,
+  input  logic [6:0]   rtu_yy_xx_win_iid2,
 
   // RvvCore → fill
   input  logic         rvv_lsu_uop_valid,
@@ -45,67 +46,70 @@ module ct_idu_vec_ls_fill
   output UOP_LSU2RVV_t rvv_lsu_resp,
   input  logic         rvv_lsu_resp_ready,
 
-  // LSIQ anchor 接口
+  // LSIQ anchor 广播
   input  logic [7:0]   lsiq_vec_create_entry,
   input  logic         lsiq_vec_create_vld,
-  input  logic [6:0]   lsiq_vec_create_iid,
-  input  logic         lsiq_vec_create_store,
-  output logic [7:0]   lsiq_vec_upd_entry,
-  output logic [105:0] lsiq_vec_upd_data,
-  output logic [7:0]   lsiq_vec_beat_rdy,
+  // create0/1 各自的 iid/store (同拍可能有两条向量 L/S)
+  input  logic [7:0]   lsiq_create0_entry,
+  input  logic [6:0]   lsiq_vec_create0_iid,
+  input  logic         lsiq_vec_create0_store,
+  input  logic [6:0]   lsiq_vec_create1_iid,
+  input  logic         lsiq_vec_create1_store,
   input  logic [7:0]   lsiq_vec_old,
-  input  logic [7:0]   lsu_idu_beat_done,
   input  logic [7:0]   lsu_idu_pop_entry,
-
-  // LSU → fill（load 写回）
-  input  logic         lsu_idu_wb_pipe3_wb_preg_vec,
-  input  logic [4:0]   lsu_idu_wb_pipe3_wb_uop_idx,
-  input  logic [6:0]   lsu_idu_wb_pipe3_wb_preg_iid,
-  input  logic [31:0]  lsu_idu_wb_pipe3_wb_preg_data,
-
-  // SQ 表项弹出（store 的 request 释放）
-  input  logic         lsu_idu_sq_pop_vld,
-  input  logic [4:0]   lsu_idu_sq_pop_uop_idx,
-
-  // SDIQ
-  input          [3:0] sdiq_entry_vld,       // 现有 4 项占用情况
-  output logic         vec_sdiq_create_vld,
-  output logic [3:0]   vec_sdiq_create_entry,
-  input  logic [3:0]   sdiq_dp_issue_entry,
-  input  logic         sdiq_issue_en,
-  output logic [31:0]  vec_sd_data,
-
-  // 反压
-  input  logic [7:0]   lsu_idu_lq_full,
-  input  logic [7:0]   lsu_idu_rb_full,
-  input  logic [7:0]   lsu_idu_sq_full,
-
-  // LSIQ 标量 old 的跨类型修正
   output logic [6:0]   vec_old_iid,
   output logic         vec_old_vld,
 
-  // 向量 store 提交电平（给 SQ）
+  // 直连 LSU 请求
+  output logic         vec_ls_req_valid,
+  input  logic         vec_ls_req_ready,
+  output logic         vec_ls_req_store,
+  output logic         vec_ls_req_nop,
+  output logic         vec_ls_req_last,
+  output logic [31:0]  vec_ls_req_addr,
+  output logic [15:0]  vec_ls_req_bytes_vld,
+  output logic [31:0]  vec_ls_req_wdata,
+  output logic [2:0]   vec_ls_req_lsid,
+  output logic [4:0]   vec_ls_req_fill_id,
+  // 2026-10-18: uop_idx 是 RVV 后端给这条向量指令拆出的 uop 索引;
+  // beat_idx 是本模块为同一 uop 内不同 beat 打的标签。
+  output logic [4:0]   vec_ls_req_uop_idx,
+  output logic [4:0]   vec_ls_req_beat_idx,
+  output logic [6:0]   vec_ls_req_iid,
+
+  // 直连 LSU 响应
+  input  logic         vec_ls_rsp_valid,
+  input  logic [4:0]   vec_ls_rsp_fill_id,
+  input  logic         vec_ls_rsp_load,
+  input  logic [127:0] vec_ls_rsp_data,
+  input  logic [15:0]  vec_ls_rsp_bytes_vld,
+  input  logic         vec_ls_req_done_vld,
+  input  logic [4:0]   vec_ls_req_done_fill_id,
+
+  // 给 SQ 的向量 store 提交电平
   output logic         vec_st_cmit_vld,
-  output logic [6:0]   vec_st_cmit_iid
+  output logic [6:0]   vec_st_cmit_iid,
+
+  // 已提交但还有 beat 没进 SQ —— 喂 RTU 冲刷闸
+  output logic         idu_lsu_cmit_vec_st_pending
 );
 
-parameter NUM_ANCHOR = 8;
-parameter NUM_REQ    = 32;
+// ---------------------------------------------------------------------------
+// 参数
+// ---------------------------------------------------------------------------
+localparam NUM_ANC = 8;
+localparam NUM_CTX = 8;
+localparam NUM_REQ = 32;
 
 localparam logic [$clog2(`VLENB):0] FF_TAIL_MAX = `VLENB;
-localparam logic [31:0] SYNTH_LBU = 32'h0000_0003;   // opcode 0000011, funct3 000
-localparam logic [31:0] SYNTH_SB  = 32'h0000_0023;   // opcode 0100011, funct3 000
-localparam logic [31:0] SYNTH_LW  = 32'h0000_2003;   // opcode 0000011, funct3 010
-localparam logic [31:0] SYNTH_SW  = 32'h0000_2023;   // opcode 0100011, funct3 010
 
 // ---------------------------------------------------------------------------
-// 小工具
+// 工具函数 (沿用旧 fill)
 // ---------------------------------------------------------------------------
 function automatic logic iid_older7 (input logic [6:0] a, input logic [6:0] b);
   iid_older7 = (a[6] ^ b[6]) ? (a[5:0] > b[5:0]) : (a[5:0] < b[5:0]);
 endfunction
 
-// EEW_e: EEW_NONE=0, EEW1=1, EEW8=2, EEW16=3, EEW32=4, EEW64=5
 function automatic logic [2:0] eew_shift (input logic [2:0] eew);
   case (eew)
     3'd3:    eew_shift = 3'd1;   // EEW16
@@ -124,17 +128,12 @@ function automatic logic [15:0] calc_mask (input logic [127:0] v0_data,
   logic [8:0] elem;
   sh = eew_shift(eew);
   calc_mask = 16'd0;
-  for (int b=0;b<16;b++) begin
+  for (int b=0; b<16; b++) begin
     elem = ({4'b0, uop_index} + {5'b0, b[3:0]}) >> sh;
     calc_mask[b] = (elem < {1'b0, vl}) && (!v0_valid || v0_data[b]);
   end
 endfunction
 
-// ---------------------------------------------------------------------------
-// 计算 anchor 中第 byte_pos 个字节的完整地址
-// ---------------------------------------------------------------------------
-// 与原来的 beat_addr case 逐式一致; 抽成函数是为了同时检查"相邻 4 字节
-// 地址是否连续" (4B 合并条件)。
 function automatic logic [31:0] vec_byte_addr (
     input logic [2:0]   mop,
     input logic [31:0]  base,
@@ -153,14 +152,12 @@ function automatic logic [31:0] vec_byte_addr (
   elem = ({4'b0, uop_idx} + {5'b0, byte_pos}) >> sh;
 
   case (mop)
-    3'd0: begin // US
+    3'd0: // US
       vec_byte_addr = base + {27'b0, uop_idx}*32'd16 + {28'b0, byte_pos};
-    end
-    3'd2: begin // CS
+    3'd2: // CS
       vec_byte_addr = base
                     + $signed(stride) * $signed({23'b0, elem})
                     + {28'b0, (byte_pos & ((8'd1 << sh) - 8'd1))};
-    end
     3'd1, 3'd3: begin // IU / IO
       sh2 = eew_shift(vs2_eew);
       vec_byte_addr = base
@@ -168,199 +165,370 @@ function automatic logic [31:0] vec_byte_addr (
                       * $signed({29'b0, (8'd1 << sh)})
                     + {28'b0, (byte_pos & ((8'd1 << sh) - 8'd1))};
     end
-    default: vec_byte_addr = base + {28'b0, byte_pos};
+    default:
+      vec_byte_addr = base + {28'b0, byte_pos};
   endcase
 endfunction
 
 // ---------------------------------------------------------------------------
-// anchor 上下文
+// Anchor 表 (按 lsid)
 // ---------------------------------------------------------------------------
-logic [NUM_ANCHOR-1:0] ctx_active;
-logic [NUM_ANCHOR-1:0] ctx_store;
-logic [NUM_ANCHOR-1:0] ctx_busy;
-logic [NUM_ANCHOR-1:0] ctx_committed;
-logic [NUM_ANCHOR-1:0] ctx_drained;
-logic [NUM_ANCHOR-1:0] ctx_beat_issue;
-logic [NUM_ANCHOR-1:0] ctx_beat_staged;   // 已写 beat 字段, 等下一拍拉 ready
-logic [NUM_ANCHOR-1:0] ctx_all_issued;
-logic [6:0]  ctx_iid       [0:NUM_ANCHOR-1];
-logic [4:0]  ctx_lsu_id    [0:NUM_ANCHOR-1];
-logic [2:0]  ctx_vd_eew    [0:NUM_ANCHOR-1];
-logic [2:0]  ctx_vs2_eew   [0:NUM_ANCHOR-1];
-logic [2:0]  ctx_mop       [0:NUM_ANCHOR-1];
-logic [7:0]  ctx_vl        [0:NUM_ANCHOR-1];
-logic [31:0] ctx_base      [0:NUM_ANCHOR-1];
-logic [31:0] ctx_stride    [0:NUM_ANCHOR-1];
-logic [127:0] ctx_sdata    [0:NUM_ANCHOR-1];
-logic [127:0] ctx_vidx     [0:NUM_ANCHOR-1];
-logic [15:0] ctx_mask      [0:NUM_ANCHOR-1];
-logic [15:0] ctx_ld_pend   [0:NUM_ANCHOR-1];
-logic [127:0] ctx_ld_asm   [0:NUM_ANCHOR-1];
-logic [4:0]  ctx_uop_idx   [0:NUM_ANCHOR-1];
-logic        ctx_uop_last  [0:NUM_ANCHOR-1];
-logic [3:0]  ctx_byte_ptr  [0:NUM_ANCHOR-1];
+logic [NUM_ANC-1:0] anc_vld;
+logic [NUM_ANC-1:0] anc_store;
+logic [NUM_ANC-1:0] anc_committed;
+logic [6:0]         anc_iid [0:NUM_ANC-1];
 
-// store staging（每 anchor 4 个 core uop）
-logic [3:0]  stg_vld     [0:NUM_ANCHOR-1];
-logic [4:0]  stg_uop_idx [0:NUM_ANCHOR-1][0:3];
-logic        stg_last    [0:NUM_ANCHOR-1][0:3];
-logic [15:0] stg_mask    [0:NUM_ANCHOR-1][0:3];
-logic [127:0] stg_sdata  [0:NUM_ANCHOR-1][0:3];
-logic [4:0]  stg_lsu_id  [0:NUM_ANCHOR-1][0:3];
-logic [2:0]  stg_drain_slot [0:NUM_ANCHOR-1];
-logic        drain_owner_vld;
-logic [2:0]  drain_owner;
+// ---------------------------------------------------------------------------
+// uop context
+// ---------------------------------------------------------------------------
+logic [NUM_CTX-1:0]  ctx_vld;
+logic [2:0]          ctx_lsid       [0:NUM_CTX-1];
+logic [6:0]          ctx_iid        [0:NUM_CTX-1];
+logic [4:0]          ctx_uop_index  [0:NUM_CTX-1];
+logic [4:0]          ctx_dst_index  [0:NUM_CTX-1];
+logic [2:0]          ctx_lsu_id     [0:NUM_CTX-1];
+logic [4:0]          ctx_seq        [0:NUM_CTX-1];
+logic                ctx_load       [0:NUM_CTX-1];
+logic                ctx_last_uop   [0:NUM_CTX-1];
+logic [2:0]          ctx_mop        [0:NUM_CTX-1];
+logic [2:0]          ctx_vd_eew     [0:NUM_CTX-1];
+logic [2:0]          ctx_vs2_eew    [0:NUM_CTX-1];
+logic [7:0]          ctx_vl         [0:NUM_CTX-1];
+logic [31:0]         ctx_base       [0:NUM_CTX-1];
+logic [31:0]         ctx_stride     [0:NUM_CTX-1];
+logic [127:0]        ctx_vidx       [0:NUM_CTX-1];
+logic [15:0]         ctx_mask       [0:NUM_CTX-1];
+logic [15:0]         ctx_pending    [0:NUM_CTX-1];
+// load 已发出但数据还没回来的字节 (pending 是它的超集)
+logic [15:0]         ctx_inflight  [0:NUM_CTX-1];
+logic [127:0]        ctx_asm        [0:NUM_CTX-1];
+logic [127:0]        ctx_stg_data   [0:NUM_CTX-1];
 
-// request 表（单独 always_ff，避免和上下文多驱动）
-logic [NUM_REQ-1:0] req_valid;
-logic [2:0]  req_anchor [0:NUM_REQ-1];
-logic [4:0]  req_uop    [0:NUM_REQ-1];
-logic [3:0]  req_lane   [0:NUM_REQ-1];
-logic [2:0]  req_len    [0:NUM_REQ-1];   // 1 或 4
-logic        req_store  [0:NUM_REQ-1];
-logic [4:0]  req_alloc_ptr;
-logic [31:0] sd_entry_data [0:3];
+logic                ctx_req_vld    [0:NUM_CTX-1];   // 已发请求、尚未被 LSU 接收
+logic [4:0]          ctx_beat_idx   [0:NUM_CTX-1];
+logic [5:0]          ctx_outs       [0:NUM_CTX-1];   // 已接收但未完成(响应/done)的请求数
+logic                ctx_need_nop   [0:NUM_CTX-1];
+logic                ctx_resp_ready [0:NUM_CTX-1];
 
-// uop → anchor 匹配 / store 响应保持寄存器
-wire         uop_accept;
-logic [2:0]  uop_anchor;
-logic        uop_anchor_found;
-logic [3:0] uop_free_slot;
-logic       uop_free_slot_vld;
-always_comb begin
-  uop_free_slot     = 4'd0;
-  uop_free_slot_vld = 1'b0;
-  for (int s=3;s>=0;s--) begin
-    if (!stg_vld[uop_anchor][s]) begin
-      uop_free_slot     = s[3:0];
-      uop_free_slot_vld = 1'b1;
+// ---------------------------------------------------------------------------
+// request 表 (按 fill_id)
+// ---------------------------------------------------------------------------
+logic [NUM_REQ-1:0]  req_vld;
+logic [2:0]          req_ctx   [0:NUM_REQ-1];
+logic [15:0]         req_mask  [0:NUM_REQ-1];
+logic [27:0]         req_blk   [0:NUM_REQ-1];
+logic                req_store [0:NUM_REQ-1];
+logic                req_nop   [0:NUM_REQ-1];
+logic [4:0]          req_alloc_ptr;
+
+// ---------------------------------------------------------------------------
+// 其余状态
+// ---------------------------------------------------------------------------
+logic [4:0]          seq_cnt;
+
+// ---------------------------------------------------------------------------
+// 每 context 的逐字节地址
+// ---------------------------------------------------------------------------
+logic [31:0] caddr [0:NUM_CTX-1][0:15];
+always_comb begin : caddr_calc
+  for (int ci=0; ci<NUM_CTX; ci++) begin
+    for (int bi=0; bi<16; bi++) begin
+      caddr[ci][bi] = vec_byte_addr(ctx_mop[ci], ctx_base[ci], ctx_stride[ci],
+                                    ctx_vidx[ci], ctx_vs2_eew[ci], ctx_vd_eew[ci],
+                                    ctx_uop_index[ci], bi[3:0]);
     end
   end
 end
 
-logic        store_resp_vld;
-logic [6:0]  store_resp_iid;
-logic [4:0]  store_resp_uop;
-logic [4:0]  store_resp_lsu_id;
-logic        resp_is_store;
-logic [2:0]  resp_anchor;
-logic        resp_load_can;
-
-// ---------------------------------------------------------------------------
-// 选 anchor + 当前字节地址
-// ---------------------------------------------------------------------------
-logic [2:0] beat_sel;
-logic [3:0] beat_byte;
-logic       beat_active;
-logic       beat_is_load;
-logic [31:0] beat_addr;
-logic       beat_go;           // 真正发射 (active + 允许)
-logic       beat_skip;         // 非 active 字节, 直接跳过
-
-// 4B 合并 (2026-10-17): 同一 uop 内连续、4B 对齐、4 字节全 active 的组
-// 合成一个 LW/SW beat。其余情况保持 1 字节 LBU/SB。
-logic       beat_merge4;
-logic [2:0] beat_len;          // 1 或 4
-logic [4:0] beat_end;          // 本 beat 覆盖的最后一个字节
-logic       beat_is_last;
-logic [31:0] beat_opcode;
-logic [31:0] beat_sdata;
-logic [3:0]  beat_word_base;   // 4B 窗口起点 (<=12)
-logic [3:0]  beat_mask4;       // 从 beat_byte 开始的 4 位 mask
-logic [31:0] beat_addr_p1;
-logic [31:0] beat_addr_p2;
-logic [31:0] beat_addr_p3;
-
-// 2026-10-17 S9 修: 有一个 beat 在飞时必须**锁定它的 anchor** 去做 beat_done
-// 的清除; 否则 beat_sel 会跳到别的 anchor, done 清错表项 ⇒ 永远只发第一个 beat。
-logic [2:0] beat_pend_sel;
-logic       beat_pend_valid;
-always_comb begin
-  beat_pend_valid = |(ctx_beat_issue | ctx_beat_staged);
-  beat_pend_sel   = 3'd0;
-  for (int k=NUM_ANCHOR-1;k>=0;k--)
-    if (ctx_beat_issue[k] | ctx_beat_staged[k]) beat_pend_sel = k[2:0];
-
-  if (beat_pend_valid) begin
-    beat_sel = beat_pend_sel;
+// 同一 iid 的活跃 context 数 (final beat 的 LSIQ pop 需要等其它 uop 完成)
+logic [3:0] same_iid_cnt [0:NUM_CTX-1];
+always_comb begin : same_iid_calc
+  for (int ci=0; ci<NUM_CTX; ci++) begin
+    same_iid_cnt[ci] = 4'd0;
+    for (int cj=0; cj<NUM_CTX; cj++)
+      if (ctx_vld[cj] && (ctx_iid[cj] == ctx_iid[ci]))
+        same_iid_cnt[ci] = same_iid_cnt[ci] + 4'd1;
   end
-  else begin
-    beat_sel = drain_owner_vld ? drain_owner : 3'd0;
-    if (!drain_owner_vld) begin
-      for (int k=NUM_ANCHOR-1;k>=0;k--) begin
-        if (ctx_active[k] && ctx_busy[k] && !ctx_store[k] &&
-            !ctx_beat_issue[k] && !ctx_beat_staged[k] && !ctx_all_issued[k])
-          beat_sel = k[2:0];
+end
+
+// ---------------------------------------------------------------------------
+// Load 请求候选: 按 16B 对齐块 gather
+// ---------------------------------------------------------------------------
+logic [15:0] ld_req_mask [0:NUM_CTX-1];
+logic [31:0] ld_req_addr [0:NUM_CTX-1];
+logic [15:0] ld_req_bv   [0:NUM_CTX-1];
+logic        ld_req_can  [0:NUM_CTX-1];
+logic        ld_req_last [0:NUM_CTX-1];
+
+always_comb begin : ld_cand_calc
+  logic        found;
+  logic [3:0]  first_b;
+  logic [27:0] blk;
+  logic [15:0] unreq;
+  logic [15:0] rmask;
+  logic [15:0] remain;
+
+  for (int ci=0; ci<NUM_CTX; ci++) begin
+    ld_req_mask[ci] = 16'd0;
+    ld_req_addr[ci] = 32'd0;
+    ld_req_bv[ci]   = 16'd0;
+    ld_req_can[ci]  = 1'b0;
+    ld_req_last[ci] = 1'b0;
+
+    // 已发出、尚未回来的字节不再重复请求
+    unreq = ctx_pending[ci] & ~ctx_inflight[ci];
+    if (ctx_vld[ci] && ctx_load[ci] && !ctx_req_vld[ci] && (unreq != 16'd0)) begin
+      found   = 1'b0;
+      first_b = 4'd0;
+      for (int k=0; k<16; k++) begin
+        if (!found && unreq[k]) begin
+          first_b = k[3:0];
+          found   = 1'b1;
+        end
+      end
+      blk = caddr[ci][first_b][31:4];
+      rmask = 16'd0;
+      for (int k=0; k<16; k++) begin
+        if (unreq[k] && (caddr[ci][k][31:4] == blk)) begin
+          rmask[k] = 1'b1;
+          ld_req_bv[ci][caddr[ci][k][3:0]] = 1'b1;
+        end
+      end
+      remain = unreq & ~rmask;     // 还没请求过的剩余字节
+      ld_req_mask[ci] = rmask;
+      ld_req_addr[ci] = {blk, 4'b0};
+      ld_req_last[ci] = ctx_last_uop[ci] && (remain == 16'd0) &&
+                        (same_iid_cnt[ci] == 4'd1);
+      // 最后一个 uop 的最后一笔要等其它 uop 都完成才能发 (避免 anchor 提前 pop 后 lsid 复用)
+      ld_req_can[ci]  = lsiq_vec_old[ctx_lsid[ci]] &&
+                        !(ctx_last_uop[ci] && (remain == 16'd0) &&
+                          (same_iid_cnt[ci] > 4'd1));
+    end
+  end
+end
+
+// ---------------------------------------------------------------------------
+// Store 请求候选: 4B 字内严格 32/16/8 最大连续宽度
+// ---------------------------------------------------------------------------
+logic [15:0] st_req_mask [0:NUM_CTX-1];
+logic [31:0] st_req_addr [0:NUM_CTX-1];
+logic [15:0] st_req_bv   [0:NUM_CTX-1];
+logic [31:0] st_req_data [0:NUM_CTX-1];
+logic        st_req_can  [0:NUM_CTX-1];
+logic        st_req_last [0:NUM_CTX-1];
+
+// store 必须严格按 uop 顺序进入 SQ: 先找出所有活跃 store context 里 seq 最小的
+// (它没发完之前, 后面的 context 一律不许发)
+logic        st_old_vld;
+logic [3:0]  st_old_ctx;
+logic [4:0]  st_old_seq;
+always_comb begin : st_old_calc
+  st_old_vld = 1'b0;
+  st_old_ctx = 4'd0;
+  st_old_seq = 5'h1F;
+  for (int sc=0; sc<NUM_CTX; sc++) begin
+    if (ctx_vld[sc] && !ctx_load[sc]) begin
+      if (!st_old_vld || (ctx_seq[sc] < st_old_seq)) begin
+        st_old_vld = 1'b1;
+        st_old_ctx = sc[3:0];
+        st_old_seq = ctx_seq[sc];
       end
     end
   end
 end
 
-always_comb begin
-  beat_byte   = ctx_byte_ptr[beat_sel];
-  beat_active = ctx_mask[beat_sel][beat_byte];
-  beat_is_load= !ctx_store[beat_sel];
-  beat_addr   = vec_byte_addr(ctx_mop[beat_sel], ctx_base[beat_sel],
-                              ctx_stride[beat_sel], ctx_vidx[beat_sel],
-                              ctx_vs2_eew[beat_sel], ctx_vd_eew[beat_sel],
-                              ctx_uop_idx[beat_sel], beat_byte);
+always_comb begin : st_cand_calc
+  logic        found;
+  logic [3:0]  first_b;
+  logic [29:0] word_base;
+  logic [3:0]  word_mask;
+  logic [1:0]  grp_off;
+  logic [2:0]  grp_size;
+  logic [15:0] srmask;
+  logic [31:0] sdata;
+  logic [3:0]  grp_lo;
+  logic [3:0]  wb;
+  logic [31:0] grp_addr;
+  logic [15:0] remain;
 
-  // ---------------- 4B 合并判定 ----------------
-  // 条件:
-  //   1) 4 个字节都在这个 16B 切片内;
-  //   2) 起始地址 4B 对齐;
-  //   3) 4 个字节全部 active;
-  //   4) 4 个字节的地址连续 (US 恒成立; CS/IU/IO 只有元素内/索引恰好连续才成立)。
-  // 不满足时保持原来的 1 字节 LBU/SB。
-  beat_word_base = (beat_byte <= 4'd12) ? beat_byte : 4'd12;
-  beat_mask4     = ctx_mask[beat_sel][beat_word_base +: 4];
-  beat_merge4    = 1'b0;
-  beat_addr_p1   = 32'd0;
-  beat_addr_p2   = 32'd0;
-  beat_addr_p3   = 32'd0;
-  if (beat_byte <= 4'd12) begin
-    beat_addr_p1 = vec_byte_addr(ctx_mop[beat_sel], ctx_base[beat_sel],
-                                 ctx_stride[beat_sel], ctx_vidx[beat_sel],
-                                 ctx_vs2_eew[beat_sel], ctx_vd_eew[beat_sel],
-                                 ctx_uop_idx[beat_sel], beat_byte + 4'd1);
-    beat_addr_p2 = vec_byte_addr(ctx_mop[beat_sel], ctx_base[beat_sel],
-                                 ctx_stride[beat_sel], ctx_vidx[beat_sel],
-                                 ctx_vs2_eew[beat_sel], ctx_vd_eew[beat_sel],
-                                 ctx_uop_idx[beat_sel], beat_byte + 4'd2);
-    beat_addr_p3 = vec_byte_addr(ctx_mop[beat_sel], ctx_base[beat_sel],
-                                 ctx_stride[beat_sel], ctx_vidx[beat_sel],
-                                 ctx_vs2_eew[beat_sel], ctx_vd_eew[beat_sel],
-                                 ctx_uop_idx[beat_sel], beat_byte + 4'd3);
-    beat_merge4  = (beat_addr[1:0] == 2'b00) &&
-                   (&beat_mask4) &&
-                   (beat_addr_p1 == (beat_addr + 32'd1)) &&
-                   (beat_addr_p2 == (beat_addr + 32'd2)) &&
-                   (beat_addr_p3 == (beat_addr + 32'd3));
+  for (int ci=0; ci<NUM_CTX; ci++) begin
+    st_req_mask[ci] = 16'd0;
+    st_req_addr[ci] = 32'd0;
+    st_req_bv[ci]   = 16'd0;
+    st_req_data[ci] = 32'd0;
+    st_req_can[ci]  = 1'b0;
+    st_req_last[ci] = 1'b0;
+
+    if (ctx_vld[ci] && !ctx_load[ci] && !ctx_req_vld[ci] && (ctx_pending[ci] != 16'd0)) begin
+      found   = 1'b0;
+      first_b = 4'd0;
+      for (int k=0; k<16; k++) begin
+        if (!found && ctx_pending[ci][k]) begin
+          first_b = k[3:0];
+          found   = 1'b1;
+        end
+      end
+      word_base = caddr[ci][first_b][31:2];
+      word_mask = 4'd0;
+      for (int k=0; k<16; k++) begin
+        if (ctx_pending[ci][k] && (caddr[ci][k][31:2] == word_base))
+          word_mask[caddr[ci][k][1:0]] = 1'b1;
+      end
+
+      // 32/16/8 选择
+      grp_off  = 2'd0;
+      grp_size = 3'd1;
+      if (word_mask == 4'b1111) begin
+        grp_off  = 2'd0;
+        grp_size = 3'd4;
+      end
+      else if (word_mask[1:0] == 2'b11) begin
+        grp_off  = 2'd0;
+        grp_size = 3'd2;
+      end
+      else if (word_mask[3:2] == 2'b11) begin
+        grp_off  = 2'd2;
+        grp_size = 3'd2;
+      end
+      else begin
+        // 最低的有效字节
+        grp_off = 2'd0;
+        for (int k=0; k<4; k++)
+          if (word_mask[k]) begin
+            grp_off = k[1:0];
+            break;
+          end
+        grp_size = 3'd1;
+      end
+
+      grp_addr = {word_base, grp_off};
+      grp_lo   = grp_addr[3:0];
+
+      // 收集本组的输出字节 (重复地址也一并清掉 pending)
+      srmask = 16'd0;
+      sdata  = 32'd0;
+      for (int gi=0; gi<4; gi++) begin
+        if (gi < grp_size) begin
+          wb = grp_lo + gi[3:0];
+          st_req_bv[ci][wb] = 1'b1;
+          for (int k=0; k<16; k++) begin
+            if (ctx_pending[ci][k] &&
+                (caddr[ci][k][31:2] == word_base) &&
+                (caddr[ci][k][1:0] == (grp_off + gi[1:0]))) begin
+              srmask[k] = 1'b1;
+              // SQ 的 32 位数据会按 4 个 lane 复制, bytes_vld 选 lane;
+              // 数据本身按 4B 字内偏移摆放 (不是 16B 块内偏移)。
+              sdata[(grp_off + gi[1:0])*8 +: 8] = ctx_stg_data[ci][k*8 +: 8];
+            end
+          end
+        end
+      end
+
+      remain = ctx_pending[ci] & ~srmask;
+      st_req_mask[ci] = srmask;
+      st_req_addr[ci] = {grp_addr[31:4], 4'b0};
+      st_req_data[ci] = sdata;
+      st_req_last[ci] = ctx_last_uop[ci] && (remain == 16'd0) &&
+                        (same_iid_cnt[ci] == 4'd1);
+      st_req_can[ci]  = lsiq_vec_old[ctx_lsid[ci]] &&
+                        st_old_vld && (ci[3:0] == st_old_ctx) &&
+                        !(ctx_last_uop[ci] && (remain == 16'd0) &&
+                          (same_iid_cnt[ci] > 4'd1));
+    end
   end
-
-  beat_len    = beat_merge4 ? 3'd4 : 3'd1;
-  beat_end    = {1'b0, beat_byte} + {2'b0, beat_len} - 5'd1;
-  beat_is_last= ctx_uop_last[beat_sel] && (beat_end[3:0] == 4'd15);
-  beat_opcode = beat_merge4 ? (beat_is_load ? SYNTH_LW : SYNTH_SW)
-                            : (beat_is_load ? SYNTH_LBU : SYNTH_SB);
-  beat_sdata  = beat_is_load ? 32'd0 :
-                (beat_merge4 ? ctx_sdata[beat_sel][beat_word_base*8 +: 32]
-                             : ({{24{1'b0}}, ctx_sdata[beat_sel][beat_byte*8 +: 8]}
-                                << (beat_addr[1:0]*8)));
 end
 
-wire beat_sel_valid = drain_owner_vld ||
-                      (ctx_active[beat_sel] && ctx_busy[beat_sel] && !ctx_store[beat_sel]);
-// ⚠️ update 与 ready **分两拍** (计划 §9.2.4): 同拍的话 LSIQ 会用上一拍的
-// beat 字段发射。
-wire beat_can_issue = beat_sel_valid && !ctx_beat_issue[beat_sel] &&
-                      !ctx_beat_staged[beat_sel] &&
-                      (beat_is_load ? lsiq_vec_old[beat_sel] : 1'b1);
-assign beat_go   = beat_can_issue &&  beat_active;     // 写 beat 字段那一拍
-assign beat_skip = beat_can_issue && !beat_active;     // 非 active 字节直接跳过
-wire   beat_rdy  = ctx_beat_staged[beat_sel];          // 下一拍才拉 ready
+// ---------------------------------------------------------------------------
+// 请求仲裁: store 先 (按 seq 最老), 再 load (按 context 序)
+// ---------------------------------------------------------------------------
+logic        issue_vld;
+logic        issue_store;
+logic        issue_nop;
+logic        issue_last;
+logic [31:0] issue_addr;
+logic [15:0] issue_bv;
+logic [31:0] issue_data;
+logic [2:0]  issue_ctx;
+logic [15:0] issue_mask;
 
-// request index / SDIQ entry 分配
+logic        st_any;
+logic [3:0]  st_sel;
+logic [4:0]  st_min_seq;
+logic        ld_any;
+logic [3:0]  ld_sel;
+
+always_comb begin
+  st_any     = 1'b0;
+  st_sel     = 4'd0;
+  st_min_seq = 5'h1F;
+  for (int ci0=0; ci0<NUM_CTX; ci0++) begin
+    if (st_req_can[ci0] && ctx_vld[ci0]) begin
+      if (!st_any || (ctx_seq[ci0] < st_min_seq)) begin
+        st_any     = 1'b1;
+        st_sel     = ci0[3:0];
+        st_min_seq = ctx_seq[ci0];
+      end
+    end
+  end
+
+  ld_any = 1'b0;
+  ld_sel = 4'd0;
+  for (int ci1=NUM_CTX-1; ci1>=0; ci1--) begin
+    if (ld_req_can[ci1] && ctx_vld[ci1]) begin
+      ld_any = 1'b1;
+      ld_sel = ci1[3:0];
+    end
+  end
+
+  // 零掩码的最后一个 uop: 需要一笔 nop 请求去触发 LSIQ pop
+  issue_vld   = 1'b0;
+  issue_store = 1'b0;
+  issue_nop   = 1'b0;
+  issue_last  = 1'b0;
+  issue_addr  = 32'd0;
+  issue_bv    = 16'd0;
+  issue_data  = 32'd0;
+  issue_ctx   = 3'd0;
+  issue_mask  = 16'd0;
+
+  for (int ci2=NUM_CTX-1; ci2>=0; ci2--) begin
+    if (ctx_vld[ci2] && ctx_need_nop[ci2] && !ctx_req_vld[ci2] &&
+        lsiq_vec_old[ctx_lsid[ci2]] && (same_iid_cnt[ci2] == 4'd1) &&
+        (ctx_load[ci2] || (st_old_vld && (ci2[3:0] == st_old_ctx)))) begin
+      issue_vld   = 1'b1;
+      issue_store = !ctx_load[ci2];
+      issue_nop   = 1'b1;
+      issue_last  = 1'b1;
+      issue_ctx   = ci2[2:0];
+      issue_mask  = 16'd0;
+    end
+  end
+
+  if (!issue_vld && st_any) begin
+    issue_vld   = 1'b1;
+    issue_store = 1'b1;
+    issue_nop   = 1'b0;
+    issue_addr  = st_req_addr[st_sel];
+    issue_bv    = st_req_bv[st_sel];
+    issue_data  = st_req_data[st_sel];
+    issue_last  = st_req_last[st_sel];
+    issue_ctx   = st_sel[2:0];
+    issue_mask  = st_req_mask[st_sel];
+  end
+  else if (!issue_vld && ld_any) begin
+    issue_vld   = 1'b1;
+    issue_store = 1'b0;
+    issue_nop   = 1'b0;
+    issue_addr  = ld_req_addr[ld_sel];
+    issue_bv    = ld_req_bv[ld_sel];
+    issue_data  = 32'd0;
+    issue_last  = ld_req_last[ld_sel];
+    issue_ctx   = ld_sel[2:0];
+    issue_mask  = ld_req_mask[ld_sel];
+  end
+end
+
+// free fill_id
 function automatic logic [4:0] pick_req (input logic [NUM_REQ-1:0] used,
                                          input logic [4:0]        start);
   logic [2*NUM_REQ-1:0] used2;
@@ -371,403 +539,386 @@ function automatic logic [4:0] pick_req (input logic [NUM_REQ-1:0] used,
   end
 endfunction
 
-logic [4:0] beat_req;
-logic [3:0] beat_sdiq;
-always_comb begin
-  beat_req  = pick_req(req_valid, req_alloc_ptr);
-  beat_sdiq = 4'd0;
-  for (int k=3;k>=0;k--)
-    if (!sdiq_entry_vld[k]) beat_sdiq = k[3:0];
-end
+logic [4:0] issue_req;
+logic       req_free;
+assign issue_req = pick_req(req_vld, req_alloc_ptr);
+assign req_free  = ~(&req_vld);   // 至少一个空槽
+
+assign vec_ls_req_valid     = issue_vld && req_free && !rtu_yy_xx_flush;
+assign vec_ls_req_store     = issue_store;
+assign vec_ls_req_nop       = issue_nop;
+assign vec_ls_req_last      = issue_last;
+assign vec_ls_req_addr      = issue_addr;
+assign vec_ls_req_bytes_vld = issue_bv;
+assign vec_ls_req_wdata     = issue_data;
+assign vec_ls_req_lsid      = ctx_lsid[issue_ctx];
+assign vec_ls_req_fill_id   = issue_req;
+assign vec_ls_req_uop_idx   = ctx_uop_index[issue_ctx];
+assign vec_ls_req_beat_idx  = ctx_beat_idx[issue_ctx];
+assign vec_ls_req_iid       = ctx_iid[issue_ctx];
+
+wire issue_fire = vec_ls_req_valid && vec_ls_req_ready;
 
 // ---------------------------------------------------------------------------
-// anchor 侧输出
+// RVV uop 接收
 // ---------------------------------------------------------------------------
-always_comb begin
-  lsiq_vec_upd_entry = 8'd0;
-  lsiq_vec_upd_data  = 106'd0;
-  lsiq_vec_beat_rdy  = 8'd0;
-  if (beat_go) begin
-    lsiq_vec_upd_entry[beat_sel] = 1'b1;
-    lsiq_vec_upd_data = { beat_opcode,
-                          beat_addr[31:0],
-                          beat_sdiq,
-                          beat_req,
-                          beat_is_last,
-                          beat_sdata };
-  end
-  // ready 比 update 晚一拍; 持续保持到该 beat 完成 (frz 会挡住重复发射)
-  if (beat_rdy) lsiq_vec_beat_rdy[beat_sel] = 1'b1;
-end
-
-assign vec_sdiq_create_vld   = beat_go && !beat_is_load;
-assign vec_sdiq_create_entry = beat_sdiq;
-
-always_comb begin
-  vec_sd_data = 32'd0;
-  for (int k=0;k<4;k++)
-    if (sdiq_dp_issue_entry[k]) vec_sd_data = sd_entry_data[k];
-end
-
-// ---------------------------------------------------------------------------
-// 上下文状态机（单 always_ff）
-// ---------------------------------------------------------------------------
-integer ci;
-always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
-  if (!cpurst_b) begin
-    ctx_active     <= '0;
-    ctx_store      <= '0;
-    ctx_busy       <= '0;
-    ctx_committed  <= '0;
-    ctx_drained    <= '0;
-    ctx_beat_issue  <= '0;
-    ctx_beat_staged <= '0;
-    ctx_all_issued  <= '0;
-    drain_owner_vld <= 1'b0;
-    store_resp_vld  <= 1'b0;
-    for (ci=0; ci<NUM_ANCHOR; ci=ci+1) begin
-      ctx_byte_ptr[ci]   <= 4'd0;
-      stg_vld[ci]        <= 4'b0;
-      stg_drain_slot[ci] <= 3'd0;
-      ctx_ld_asm[ci]     <= 128'd0;
-      ctx_mask[ci]       <= 16'd0;
-      ctx_ld_pend[ci]    <= 16'd0;
-    end
-  end
-  else if (rtu_yy_xx_flush) begin
-    ctx_active     <= '0;
-    ctx_store      <= '0;
-    ctx_busy       <= '0;
-    ctx_committed  <= '0;
-    ctx_drained    <= '0;
-    ctx_beat_issue  <= '0;
-    ctx_beat_staged <= '0;
-    ctx_all_issued  <= '0;
-    drain_owner_vld <= 1'b0;
-    store_resp_vld  <= 1'b0;
-    for (ci=0; ci<NUM_ANCHOR; ci=ci+1) begin
-      stg_vld[ci]        <= 4'b0;
-      stg_drain_slot[ci] <= 3'd0;
-      ctx_ld_asm[ci]     <= 128'd0;
-      ctx_ld_pend[ci]    <= 16'd0;
-    end
-  end
-  else begin
-
-    // ---------------- anchor 创建 / 释放 ----------------
-    if (lsiq_vec_create_vld) begin
-      for (int k=0;k<NUM_ANCHOR;k++) begin
-        if (lsiq_vec_create_entry[k]) begin
-          ctx_active[k]  <= 1'b1;
-          ctx_store[k]   <= lsiq_vec_create_store;
-          ctx_iid[k]     <= lsiq_vec_create_iid;
-          ctx_busy[k]    <= 1'b0;
-          ctx_committed[k] <= 1'b0;
-          ctx_drained[k] <= 1'b0;
-          stg_vld[k]     <= 4'b0;
-          stg_drain_slot[k] <= 3'd0;
-        end
-      end
-    end
-    for (int k=0;k<NUM_ANCHOR;k++) begin
-      if (lsu_idu_pop_entry[k] && !(lsiq_vec_create_vld && lsiq_vec_create_entry[k])) begin
-        ctx_active[k]  <= 1'b0;
-        ctx_busy[k]    <= 1'b0;
-        stg_vld[k]     <= 4'b0;
-      end
-    end
-
-    // ---------------- core uop 接受 ----------------
-    if (uop_accept && uop_anchor_found) begin
-      if (rvv_lsu_uop.lsu_is_store) begin
-        if (uop_free_slot_vld) begin
-          stg_vld[uop_anchor][uop_free_slot]      <= 1'b1;
-          stg_uop_idx[uop_anchor][uop_free_slot]  <= rvv_lsu_uop.uop_index;
-          stg_last[uop_anchor][uop_free_slot]     <= rvv_lsu_uop.last_uop_valid;
-          stg_mask[uop_anchor][uop_free_slot]     <= calc_mask(rvv_lsu_uop.v0_data,
-                                                   rvv_lsu_uop.v0_valid,
-                                                   rvv_lsu_uop.vl[7:0],
-                                                   rvv_lsu_uop.uop_index,
-                                                   rvv_lsu_uop.vd_eew);
-          stg_sdata[uop_anchor][uop_free_slot]    <= rvv_lsu_uop.vregfile_read_data;
-          stg_lsu_id[uop_anchor][uop_free_slot]   <= rvv_lsu_uop.lsu_id;
-          // 公共字段
-          ctx_base[uop_anchor]    <= rvv_lsu_uop.rs1_data;
-          ctx_stride[uop_anchor]  <= rvv_lsu_uop.rs2_data;
-          ctx_vd_eew[uop_anchor]  <= {1'b0, rvv_lsu_uop.vd_eew};
-          ctx_vs2_eew[uop_anchor] <= {1'b0, rvv_lsu_uop.vs2_eew};
-          ctx_mop[uop_anchor]     <= {1'b0, rvv_lsu_uop.lsu_type.lsu_mop};
-          ctx_vl[uop_anchor]      <= rvv_lsu_uop.vl[7:0];
-        end
-      end
-      else begin
-        // load: 启动逐字节发射
-        ctx_busy[uop_anchor]       <= 1'b1;
-        ctx_byte_ptr[uop_anchor]   <= 4'd0;
-        ctx_beat_issue[uop_anchor] <= 1'b0;
-        ctx_all_issued[uop_anchor] <= 1'b0;
-        ctx_ld_asm[uop_anchor]     <= 128'd0;
-        ctx_mask[uop_anchor]       <= calc_mask(rvv_lsu_uop.v0_data,
-                                        rvv_lsu_uop.v0_valid,
-                                        rvv_lsu_uop.vl[7:0],
-                                        rvv_lsu_uop.uop_index,
-                                        rvv_lsu_uop.vd_eew);
-        ctx_ld_pend[uop_anchor]    <= calc_mask(rvv_lsu_uop.v0_data,
-                                        rvv_lsu_uop.v0_valid,
-                                        rvv_lsu_uop.vl[7:0],
-                                        rvv_lsu_uop.uop_index,
-                                        rvv_lsu_uop.vd_eew);
-        ctx_vidx[uop_anchor]       <= rvv_lsu_uop.vidx_data;
-        ctx_base[uop_anchor]       <= rvv_lsu_uop.rs1_data;
-        ctx_stride[uop_anchor]     <= rvv_lsu_uop.rs2_data;
-        ctx_vd_eew[uop_anchor]     <= {1'b0, rvv_lsu_uop.vd_eew};
-        ctx_vs2_eew[uop_anchor]    <= {1'b0, rvv_lsu_uop.vs2_eew};
-        ctx_mop[uop_anchor]        <= {1'b0, rvv_lsu_uop.lsu_type.lsu_mop};
-        ctx_vl[uop_anchor]         <= rvv_lsu_uop.vl[7:0];
-        ctx_uop_idx[uop_anchor]    <= rvv_lsu_uop.uop_index;
-        ctx_uop_last[uop_anchor]   <= rvv_lsu_uop.last_uop_valid;
-        ctx_lsu_id[uop_anchor]     <= rvv_lsu_uop.lsu_id;
-      end
-    end
-
-    // ---------------- beat 推进 ----------------
-    if (beat_skip) begin
-      if (ctx_byte_ptr[beat_sel] == 4'd15) ctx_all_issued[beat_sel] <= 1'b1;
-      else                                 ctx_byte_ptr[beat_sel]   <= ctx_byte_ptr[beat_sel] + 4'd1;
-    end
-    else if (beat_go) begin
-      ctx_beat_staged[beat_sel] <= 1'b1;
-      if (beat_end[3:0] == 4'd15) ctx_all_issued[beat_sel] <= 1'b1;
-      else                        ctx_byte_ptr[beat_sel]   <= ctx_byte_ptr[beat_sel] + beat_len;
-    end
-    else if (ctx_beat_staged[beat_sel] && !ctx_beat_issue[beat_sel]) begin
-      // update 后一拍: 标记 outstanding (ready 正在拉; frz 保证只发一次)
-      ctx_beat_issue[beat_sel] <= 1'b1;
-    end
-    else if (ctx_beat_issue[beat_sel] && lsu_idu_beat_done[beat_sel]) begin
-      ctx_beat_issue[beat_sel]  <= 1'b0;
-      ctx_beat_staged[beat_sel] <= 1'b0;
-    end
-
-    // ---------------- load 写回 → 拼装 ----------------
-    if (lsu_idu_wb_pipe3_wb_preg_vec) begin
-      for (int r=0;r<NUM_REQ;r++) begin
-        if (req_valid[r] && !req_store[r] &&
-            (req_uop[r] == lsu_idu_wb_pipe3_wb_uop_idx) &&
-            (ctx_iid[req_anchor[r]] == lsu_idu_wb_pipe3_wb_preg_iid)) begin
-          if (req_len[r] == 3'd4) begin
-            // 4B beat: LSU 回的是完整 32 位字, 按 little-endian 填进 4 个字节
-            ctx_ld_asm[req_anchor[r]][req_lane[r]*8 +: 32] <=
-                lsu_idu_wb_pipe3_wb_preg_data[31:0];
-            ctx_ld_pend[req_anchor[r]][req_lane[r] +: 4] <= 4'b0;
-          end
-          else begin
-            ctx_ld_asm[req_anchor[r]][req_lane[r]*8 +: 8] <=
-                lsu_idu_wb_pipe3_wb_preg_data[7:0];
-            ctx_ld_pend[req_anchor[r]][req_lane[r]] <= 1'b0;
-          end
-        end
-      end
-    end
-
-    // ---------------- store 响应保持 / load 响应发送 ----------------
-    if (uop_accept && uop_anchor_found && rvv_lsu_uop.lsu_is_store) begin
-      store_resp_vld    <= 1'b1;
-      store_resp_iid    <= rvv_lsu_uop.rob_tag;
-      store_resp_uop    <= rvv_lsu_uop.uop_index;
-      store_resp_lsu_id <= rvv_lsu_uop.lsu_id;
-    end
-    else if (store_resp_vld && rvv_lsu_resp_ready) begin
-      store_resp_vld    <= 1'b0;
-    end
-
-    if (resp_load_can && rvv_lsu_resp_ready) begin
-      ctx_busy[resp_anchor]   <= 1'b0;
-      ctx_ld_asm[resp_anchor] <= 128'd0;
-    end
-
-    // ---------------- store 提交 ----------------
-    if (rtu_yy_xx_commit0 || rtu_yy_xx_commit1 || rtu_yy_xx_commit2) begin
-      for (int k=0;k<NUM_ANCHOR;k++) begin
-        if (ctx_active[k] && ctx_store[k] &&
-            ((rtu_yy_xx_commit0 && ctx_iid[k]==rtu_yy_xx_commit0_iid) ||
-             (rtu_yy_xx_commit1 && ctx_iid[k]==rtu_yy_xx_commit1_iid) ||
-             (rtu_yy_xx_commit2 && ctx_iid[k]==rtu_yy_xx_commit2_iid)))
-          ctx_committed[k] <= 1'b1;
-      end
-    end
-
-    // ---------------- store 排空（一次一个 anchor） ----------------
-    if (!drain_owner_vld) begin
-      for (int k=NUM_ANCHOR-1;k>=0;k--) begin
-        if (ctx_active[k] && ctx_store[k] && ctx_committed[k] && !ctx_drained[k]) begin
-          drain_owner_vld   <= 1'b1;
-          drain_owner       <= k[2:0];
-          stg_drain_slot[k] <= 3'd0;
-          ctx_byte_ptr[k]   <= 4'd0;
-          ctx_all_issued[k] <= 1'b0;
-          ctx_beat_issue[k] <= 1'b0;
-          // 载入 slot0
-          ctx_mask[k]     <= stg_mask[k][0];
-          ctx_sdata[k]    <= stg_sdata[k][0];
-          ctx_uop_idx[k]  <= stg_uop_idx[k][0];
-          ctx_uop_last[k] <= stg_last[k][0];
-        end
-      end
-    end
-    else if (drain_owner_vld && ctx_all_issued[drain_owner] &&
-             !ctx_beat_issue[drain_owner]) begin
-      if (stg_drain_slot[drain_owner] < 3'd3) begin
-        stg_drain_slot[drain_owner] <= stg_drain_slot[drain_owner] + 3'd1;
-        ctx_byte_ptr[drain_owner]   <= 4'd0;
-        ctx_all_issued[drain_owner] <= 1'b0;
-        ctx_mask[drain_owner]       <= stg_mask[drain_owner][stg_drain_slot[drain_owner]+3'd1];
-        ctx_sdata[drain_owner]      <= stg_sdata[drain_owner][stg_drain_slot[drain_owner]+3'd1];
-        ctx_uop_idx[drain_owner]    <= stg_uop_idx[drain_owner][stg_drain_slot[drain_owner]+3'd1];
-        ctx_uop_last[drain_owner]   <= stg_last[drain_owner][stg_drain_slot[drain_owner]+3'd1];
-      end
-      else begin
-        ctx_drained[drain_owner]    <= 1'b1;
-        ctx_committed[drain_owner]  <= 1'b0;
-        drain_owner_vld             <= 1'b0;
-      end
+logic        free_ctx_vld;
+logic [3:0]  free_ctx;
+always_comb begin : free_ctx_calc
+  free_ctx_vld = 1'b0;
+  free_ctx     = 4'd0;
+  for (int ci=0; ci<NUM_CTX; ci++) begin
+    if (!ctx_vld[ci]) begin
+      free_ctx_vld = 1'b1;
+      free_ctx     = ci[3:0];
+      break;
     end
   end
 end
 
+wire [2:0] uop_lsid = rvv_lsu_uop.lsid;
+wire       uop_anc_ok = anc_vld[uop_lsid] &&
+                        (anc_iid[uop_lsid] == rvv_lsu_uop.rob_tag) &&
+                        (anc_store[uop_lsid] == rvv_lsu_uop.lsu_is_store);
+
+assign rvv_lsu_uop_ready = !rtu_yy_xx_flush &&
+                           free_ctx_vld &&
+                           uop_anc_ok;
+
+wire uop_accept = rvv_lsu_uop_valid && rvv_lsu_uop_ready;
+
+wire [15:0] uop_mask = calc_mask(rvv_lsu_uop.v0_data,
+                                 rvv_lsu_uop.v0_valid,
+                                 rvv_lsu_uop.vl[7:0],
+                                 rvv_lsu_uop.uop_index,
+                                 rvv_lsu_uop.vd_eew);
+
 // ---------------------------------------------------------------------------
-// request 表（写回释放 / beat 分配）
+// 响应
 // ---------------------------------------------------------------------------
-integer ri;
-always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
-  if (!cpurst_b) begin
-    req_valid     <= '0;
-    req_alloc_ptr <= 5'd0;
-    for (ri=0; ri<NUM_REQ; ri=ri+1) req_len[ri] <= 3'd0;
-    for (ri=0; ri<4; ri=ri+1) sd_entry_data[ri] <= 32'd0;
-  end
-  else if (rtu_yy_xx_flush) begin
-    req_valid <= '0;
-  end
-  else begin
-    // 分配
-    if (beat_go) begin
-      req_valid[beat_req]  <= 1'b1;
-      req_anchor[beat_req] <= beat_sel;
-      // LSU 流水里的 uop_idx 是 **request index** (beat 字段), 不是 core uop_index
-      req_uop[beat_req]    <= beat_req;
-      req_lane[beat_req]   <= beat_byte;
-      req_len[beat_req]    <= beat_len;
-      req_store[beat_req]  <= !beat_is_load;
-      req_alloc_ptr        <= beat_req + 5'd1;
-      // SDIQ 数据: 1B beat 是放在 addr[1:0] 字节道的单字节; 4B beat 是
-      // 4B 对齐的完整字 (beat_addr[1:0]==0)。load 不占 SDIQ, 不能写。
-      if (!beat_is_load)
-        sd_entry_data[beat_sdiq] <= beat_sdata;
+// 完成响应: 一个 context 只有在所有 beat 都被 LSU 接收/完成 (ctx_outs==0)
+// 且所有字节都已回来 (ctx_pending==0) 后才能回给 RVV。
+logic        store_resp_vld;
+logic [3:0]  store_resp_ctx;
+logic        load_resp_vld;
+logic [3:0]  load_resp_ctx;
+
+always_comb begin : resp_sel_calc
+  logic [4:0] min_seq;
+  store_resp_vld = 1'b0;
+  store_resp_ctx = 4'd0;
+  load_resp_vld  = 1'b0;
+  load_resp_ctx  = 4'd0;
+
+  min_seq = 5'h1F;
+  for (int ci=0; ci<NUM_CTX; ci++) begin
+    if (ctx_vld[ci] && !ctx_load[ci] && !ctx_need_nop[ci] &&
+        (ctx_outs[ci] == 6'd0) && (ctx_pending[ci] == 16'd0) &&
+        ctx_resp_ready[ci] && (!store_resp_vld || (ctx_seq[ci] < min_seq))) begin
+      store_resp_vld = 1'b1;
+      store_resp_ctx = ci[3:0];
+      min_seq        = ctx_seq[ci];
     end
-    // load 写回: 释放
-    if (lsu_idu_wb_pipe3_wb_preg_vec) begin
-      for (int r=0;r<NUM_REQ;r++) begin
-        if (req_valid[r] && !req_store[r] &&
-            (req_uop[r] == lsu_idu_wb_pipe3_wb_uop_idx) &&
-            (ctx_iid[req_anchor[r]] == lsu_idu_wb_pipe3_wb_preg_iid))
-          req_valid[r] <= 1'b0;
-      end
-    end
-    // store: SQ 表项弹出后释放
-    if (lsu_idu_sq_pop_vld) begin
-      for (int r=0;r<NUM_REQ;r++)
-        if (req_valid[r] && req_store[r] && (req_uop[r] == lsu_idu_sq_pop_uop_idx))
-          req_valid[r] <= 1'b0;
+  end
+
+  min_seq = 5'h1F;
+  for (int ci=0; ci<NUM_CTX; ci++) begin
+    if (ctx_vld[ci] && ctx_load[ci] && !ctx_need_nop[ci] &&
+        (ctx_outs[ci] == 6'd0) && (ctx_pending[ci] == 16'd0) &&
+        ctx_resp_ready[ci] && (!load_resp_vld || (ctx_seq[ci] < min_seq))) begin
+      load_resp_vld = 1'b1;
+      load_resp_ctx = ci[3:0];
+      min_seq       = ctx_seq[ci];
     end
   end
 end
 
-
-// ---------------------------------------------------------------------------
-// 响应通道: store 用保持寄存器 (避免 uop_ready ↔ resp_valid 组合环)
-// ---------------------------------------------------------------------------
-always_comb begin
-  resp_anchor   = 3'd0;
-  resp_is_store = 1'b0;
-  resp_load_can = 1'b0;
-  if (store_resp_vld) begin
-    resp_is_store = 1'b1;
-  end
-  else begin
-    for (int k=NUM_ANCHOR-1;k>=0;k--) begin
-      if (ctx_active[k] && ctx_busy[k] && !ctx_store[k] &&
-          (ctx_ld_pend[k] == 16'd0) &&
-          (ctx_all_issued[k] || (ctx_mask[k] == 16'd0))) begin
-        resp_anchor   = k[2:0];
-        resp_is_store = 1'b0;
-        resp_load_can = 1'b1;
-      end
-    end
-  end
-end
-
-// uop ↔ anchor 匹配 (accept 与 ready 都用)
-always_comb begin
-  uop_anchor = 3'd0;
-  uop_anchor_found = 1'b0;
-  for (int k=NUM_ANCHOR-1;k>=0;k--) begin
-    if (ctx_active[k] && (ctx_iid[k] == rvv_lsu_uop.rob_tag)) begin
-      uop_anchor = k[2:0];
-      uop_anchor_found = 1'b1;
-    end
-  end
-end
-
-assign uop_accept = rvv_lsu_uop_valid && rvv_lsu_uop_ready;
-assign rvv_lsu_resp_valid = !rtu_yy_xx_flush && (store_resp_vld || resp_load_can);
+assign rvv_lsu_resp_valid = !rtu_yy_xx_flush && (store_resp_vld || load_resp_vld);
 
 always_comb begin
   rvv_lsu_resp = '0;
   if (store_resp_vld) begin
-    rvv_lsu_resp.rob_tag              = store_resp_iid;
-    rvv_lsu_resp.lsu_id               = store_resp_lsu_id;
-    rvv_lsu_resp.uop_index            = store_resp_uop;
+    rvv_lsu_resp.rob_tag              = ctx_iid[store_resp_ctx];
+    rvv_lsu_resp.uop_index            = ctx_uop_index[store_resp_ctx];
+    rvv_lsu_resp.lsu_id               = ctx_lsu_id[store_resp_ctx];
     rvv_lsu_resp.vregfile_write_valid = 1'b0;
     rvv_lsu_resp.lsu_vstore_last      = 1'b1;
     rvv_lsu_resp.ff_tail_index        = FF_TAIL_MAX;
   end
   else begin
-    rvv_lsu_resp.rob_tag              = ctx_iid[resp_anchor];
-    rvv_lsu_resp.lsu_id               = ctx_lsu_id[resp_anchor];
-    rvv_lsu_resp.uop_index            = ctx_uop_idx[resp_anchor];
+    rvv_lsu_resp.rob_tag              = ctx_iid[load_resp_ctx];
+    rvv_lsu_resp.uop_index            = ctx_uop_index[load_resp_ctx];
+    rvv_lsu_resp.lsu_id               = ctx_lsu_id[load_resp_ctx];
     rvv_lsu_resp.vregfile_write_valid = 1'b1;
-    rvv_lsu_resp.vregfile_write_addr  = ctx_uop_idx[resp_anchor];
-    rvv_lsu_resp.vregfile_write_data  = ctx_ld_asm[resp_anchor];
+    rvv_lsu_resp.vregfile_write_addr  = ctx_dst_index[load_resp_ctx];
+    rvv_lsu_resp.vregfile_write_data  = ctx_asm[load_resp_ctx];
     rvv_lsu_resp.lsu_vstore_last      = 1'b0;
     rvv_lsu_resp.ff_tail_index        = FF_TAIL_MAX;
   end
 end
 
-// ---------------------------------------------------------------------------
-// uop ready / vec_old / store commit level
-// ---------------------------------------------------------------------------
-assign rvv_lsu_uop_ready = !rtu_yy_xx_flush &&
-                           !store_resp_vld &&
-                           uop_anchor_found &&
-                           ((ctx_store[uop_anchor] == 1'b0) ?
-                              !ctx_busy[uop_anchor] :
-                              uop_free_slot_vld && !drain_owner_vld);
+wire resp_fire = rvv_lsu_resp_valid && rvv_lsu_resp_ready;
 
-always_comb begin
+// ---------------------------------------------------------------------------
+// 响应/完成事件
+// ---------------------------------------------------------------------------
+wire ld_rsp_hit   = vec_ls_rsp_valid;
+wire ld_rsp_is_data = ld_rsp_hit && !req_store[vec_ls_rsp_fill_id];
+wire done_hit     = vec_ls_req_done_vld;
+
+wire [4:0] rsp_id  = vec_ls_rsp_fill_id;
+wire [4:0] done_id = vec_ls_req_done_fill_id;
+
+// 该请求是否 store/nop (避免越界/无效)
+wire rsp_req_vld  = req_vld[rsp_id];
+wire done_req_vld = req_vld[done_id];
+
+// ---------------------------------------------------------------------------
+// 主状态机
+// ---------------------------------------------------------------------------
+integer x;
+always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
+  if (!cpurst_b) begin
+    anc_vld       <= '0;
+    anc_store     <= '0;
+    anc_committed <= '0;
+    ctx_vld       <= '0;
+    req_vld       <= '0;
+    req_alloc_ptr <= 5'd0;
+    seq_cnt       <= 5'd0;
+    for (x=0; x<NUM_ANC; x++) anc_iid[x] <= 7'd0;
+    for (x=0; x<NUM_CTX; x++) begin
+      ctx_lsid[x]       <= 3'd0;
+      ctx_iid[x]        <= 7'd0;
+      ctx_uop_index[x]  <= 5'd0;
+      ctx_dst_index[x]  <= 5'd0;
+      ctx_lsu_id[x]     <= 3'd0;
+      ctx_seq[x]        <= 5'd0;
+      ctx_load[x]       <= 1'b0;
+      ctx_last_uop[x]   <= 1'b0;
+      ctx_mop[x]        <= 3'd0;
+      ctx_vd_eew[x]     <= 3'd0;
+      ctx_vs2_eew[x]    <= 3'd0;
+      ctx_vl[x]         <= 8'd0;
+      ctx_base[x]       <= 32'd0;
+      ctx_stride[x]     <= 32'd0;
+      ctx_vidx[x]       <= 128'd0;
+      ctx_mask[x]       <= 16'd0;
+      ctx_pending[x]    <= 16'd0;
+      ctx_inflight[x]   <= 16'd0;
+      ctx_asm[x]        <= 128'd0;
+      ctx_stg_data[x]   <= 128'd0;
+      ctx_req_vld[x]    <= 1'b0;
+      ctx_beat_idx[x]   <= 5'd0;
+      ctx_outs[x]       <= 6'd0;
+      ctx_need_nop[x]   <= 1'b0;
+      ctx_resp_ready[x] <= 1'b0;
+    end
+  end
+  else if (rtu_yy_xx_flush) begin
+    anc_vld       <= '0;
+    anc_store     <= '0;
+    anc_committed <= '0;
+    ctx_vld       <= '0;
+    req_vld       <= '0;
+    for (x=0; x<NUM_CTX; x++) begin
+      ctx_req_vld[x]    <= 1'b0;
+      ctx_beat_idx[x]   <= 5'd0;
+      ctx_outs[x]       <= 6'd0;
+      ctx_need_nop[x]   <= 1'b0;
+      ctx_resp_ready[x] <= 1'b0;
+      ctx_pending[x]    <= 16'd0;
+      ctx_inflight[x]   <= 16'd0;
+    end
+  end
+  else begin
+    // ---------------- anchor create / pop / commit ----------------
+    if (lsiq_vec_create_vld) begin
+      for (x=0; x<NUM_ANC; x++) begin
+        if (lsiq_vec_create_entry[x]) begin
+          anc_vld[x]       <= 1'b1;
+          // lsiq_create0_entry 为 1 ⇒ 该表项来自 create0, 否则来自 create1
+          anc_store[x]     <= lsiq_create0_entry[x] ? lsiq_vec_create0_store
+                                                    : lsiq_vec_create1_store;
+          anc_iid[x]       <= lsiq_create0_entry[x] ? lsiq_vec_create0_iid
+                                                    : lsiq_vec_create1_iid;
+          anc_committed[x] <= 1'b0;
+        end
+      end
+    end
+    for (x=0; x<NUM_ANC; x++) begin
+      if (lsu_idu_pop_entry[x] && !(lsiq_vec_create_entry[x] && lsiq_vec_create_vld)) begin
+        anc_vld[x]       <= 1'b0;
+        anc_committed[x] <= 1'b0;
+      end
+    end
+    // 2026-10-18: 除了真正的退休广播, 只要该向量 store 的 iid 进入 RTU 头部
+    // 3 条提交窗口, 就持续(锁存)标记为 committed, 让 SQ 提前弹到 WMB, 断开
+    // "SQ 满 -> beat 发不出 -> 指令完不成 -> 不提交" 的环。RTU 自身仍只在
+    // 收到 cmplt 后退休, 不会被这个电平带早。
+    for (x=0; x<NUM_ANC; x++) begin
+      if (anc_vld[x] && anc_store[x] &&
+          !(lsiq_vec_create_vld && lsiq_vec_create_entry[x]) &&
+          ((rtu_yy_xx_commit0 && (anc_iid[x] == rtu_yy_xx_commit0_iid)) ||
+           (rtu_yy_xx_commit1 && (anc_iid[x] == rtu_yy_xx_commit1_iid)) ||
+           (rtu_yy_xx_commit2 && (anc_iid[x] == rtu_yy_xx_commit2_iid)) ||
+           (rtu_yy_xx_win_valid[0] && (anc_iid[x] == rtu_yy_xx_win_iid0)) ||
+           (rtu_yy_xx_win_valid[1] && (anc_iid[x] == rtu_yy_xx_win_iid1)) ||
+           (rtu_yy_xx_win_valid[2] && (anc_iid[x] == rtu_yy_xx_win_iid2))))
+        anc_committed[x] <= 1'b1;
+    end
+
+    // ---------------- uop accept ----------------
+    if (uop_accept) begin
+      ctx_vld[free_ctx]       <= 1'b1;
+      ctx_lsid[free_ctx]      <= rvv_lsu_uop.lsid;
+      ctx_iid[free_ctx]       <= rvv_lsu_uop.rob_tag;
+      ctx_uop_index[free_ctx] <= rvv_lsu_uop.uop_index;
+      ctx_dst_index[free_ctx] <= rvv_lsu_uop.dst_index;
+      ctx_lsu_id[free_ctx]    <= rvv_lsu_uop.lsu_id;
+      ctx_seq[free_ctx]       <= seq_cnt;
+      ctx_load[free_ctx]      <= !rvv_lsu_uop.lsu_is_store;
+      ctx_last_uop[free_ctx]  <= rvv_lsu_uop.last_uop_valid;
+      ctx_mop[free_ctx]       <= rvv_lsu_uop.lsu_type.lsu_mop;
+      ctx_vd_eew[free_ctx]    <= rvv_lsu_uop.vd_eew;
+      ctx_vs2_eew[free_ctx]   <= rvv_lsu_uop.vs2_eew;
+      ctx_vl[free_ctx]        <= rvv_lsu_uop.vl[7:0];
+      ctx_base[free_ctx]      <= rvv_lsu_uop.rs1_data;
+      ctx_stride[free_ctx]    <= rvv_lsu_uop.rs2_data;
+      ctx_vidx[free_ctx]      <= rvv_lsu_uop.vidx_data;
+      ctx_mask[free_ctx]      <= uop_mask;
+      ctx_pending[free_ctx]   <= uop_mask;
+      ctx_inflight[free_ctx]  <= 16'd0;
+      ctx_asm[free_ctx]       <= 128'd0;
+      ctx_stg_data[free_ctx]  <= rvv_lsu_uop.vregfile_read_data;
+      ctx_req_vld[free_ctx]   <= 1'b0;
+      ctx_beat_idx[free_ctx]  <= 5'd0;
+      ctx_outs[free_ctx]      <= 6'd0;
+      ctx_need_nop[free_ctx]  <= (uop_mask == 16'd0) && rvv_lsu_uop.last_uop_valid;
+      ctx_resp_ready[free_ctx]<= (uop_mask == 16'd0) && !rvv_lsu_uop.last_uop_valid;
+      seq_cnt                 <= seq_cnt + 5'd1;
+    end
+
+    // ---------------- 请求发射 ----------------
+    if (issue_fire) begin
+      req_vld[issue_req]  <= 1'b1;
+      req_ctx[issue_req]  <= issue_ctx;
+      req_mask[issue_req] <= issue_mask;
+      req_blk[issue_req]  <= issue_addr[31:4];
+      req_store[issue_req]<= issue_store;
+      req_nop[issue_req]  <= issue_nop;
+      req_alloc_ptr       <= issue_req + 5'd1;
+
+      // 同一 uop 的 beat 串行: 等上一笔被 LSU 接收 (done) 后才允许下一笔。
+      ctx_req_vld[issue_ctx]   <= 1'b1;
+      ctx_beat_idx[issue_ctx]  <= ctx_beat_idx[issue_ctx] + 5'd1;
+      if (!issue_store && !issue_nop)
+        ctx_inflight[issue_ctx] <= ctx_inflight[issue_ctx] | issue_mask;
+      if (issue_nop)
+        ctx_need_nop[issue_ctx] <= 1'b0;
+    end
+
+    // ---------------- load 数据响应 ----------------
+    if (ld_rsp_hit && rsp_req_vld && !req_store[rsp_id] && !req_nop[rsp_id]) begin
+      for (x=0; x<16; x++) begin
+        if (req_mask[rsp_id][x] && (caddr[req_ctx[rsp_id]][x][31:4] == req_blk[rsp_id])) begin
+          ctx_asm[req_ctx[rsp_id]][x*8 +: 8] <=
+              vec_ls_rsp_data[caddr[req_ctx[rsp_id]][x][3:0]*8 +: 8];
+          ctx_pending[req_ctx[rsp_id]][x] <= 1'b0;
+        end
+      end
+      req_vld[rsp_id] <= 1'b0;
+      ctx_inflight[req_ctx[rsp_id]] <=
+          ctx_inflight[req_ctx[rsp_id]] & ~req_mask[rsp_id];
+    end
+
+    // ---------------- done: LSU 接收/完成一笔请求 ----------------
+    // load: DA 通过即 done (数据可能稍后由 MSHR 返回) —— 立即放行下一 beat。
+    // store/nop: st DA 通过即 done, 同时清掉该笔的 pending。
+    if (done_hit && done_req_vld) begin
+      ctx_req_vld[req_ctx[done_id]] <= 1'b0;
+
+      if (req_store[done_id]) begin
+        for (x=0; x<16; x++)
+          if (req_mask[done_id][x])
+            ctx_pending[req_ctx[done_id]][x] <= 1'b0;
+        req_vld[done_id] <= 1'b0;
+      end
+      else if (req_nop[done_id]) begin
+        req_vld[done_id] <= 1'b0;
+      end
+      // load: req_vld 保留到数据响应, ctx_outs 在响应时减
+    end
+
+    // ---------------- ctx_outs 计数 (issue +, load rsp -, store/nop done -) ----------------
+    // 同一拍可能"上一笔响应"与"下一笔发射"落在同一 context, 必须合并成一次更新。
+    for (x=0; x<NUM_CTX; x++) begin
+      logic inc_x, dec_x;
+      inc_x = issue_fire && (issue_ctx == x[3:0]);
+      dec_x = (ld_rsp_hit && rsp_req_vld && !req_store[rsp_id] && !req_nop[rsp_id] &&
+               (req_ctx[rsp_id] == x[3:0])) ||
+              (done_hit && done_req_vld && (req_store[done_id] || req_nop[done_id]) &&
+               (req_ctx[done_id] == x[3:0]));
+      if (inc_x && !dec_x)
+        ctx_outs[x] <= ctx_outs[x] + 6'd1;
+      else if (!inc_x && dec_x)
+        ctx_outs[x] <= ctx_outs[x] - 6'd1;
+    end
+
+    // ---------------- 完成判定 ----------------
+    for (x=0; x<NUM_CTX; x++) begin
+      if (ctx_vld[x] && !ctx_need_nop[x] &&
+          (ctx_outs[x] == 6'd0) && (ctx_pending[x] == 16'd0))
+        ctx_resp_ready[x] <= 1'b1;
+    end
+
+    // ---------------- 完成响应被 RVV 接收 → 释放 context ----------------
+    if (resp_fire) begin
+      if (store_resp_vld)
+        ctx_vld[store_resp_ctx] <= 1'b0;
+      else
+        ctx_vld[load_resp_ctx]  <= 1'b0;
+    end
+  end
+end
+
+// ---------------------------------------------------------------------------
+// vec_old / store commit level
+// ---------------------------------------------------------------------------
+always_comb begin : vec_old_calc
   vec_old_vld = 1'b0;
   vec_old_iid = 7'd0;
-  for (int k=NUM_ANCHOR-1;k>=0;k--) begin
-    if (ctx_active[k]) begin
-      if (!vec_old_vld || iid_older7(ctx_iid[k], vec_old_iid)) begin
-        vec_old_iid = ctx_iid[k];
+  for (int xi=0; xi<NUM_ANC; xi++) begin
+    if (anc_vld[xi]) begin
+      if (!vec_old_vld || iid_older7(anc_iid[xi], vec_old_iid)) begin
+        vec_old_iid = anc_iid[xi];
         vec_old_vld = 1'b1;
       end
     end
   end
 end
 
-assign vec_st_cmit_vld = drain_owner_vld && ctx_active[drain_owner];
-assign vec_st_cmit_iid = ctx_iid[drain_owner];
+always_comb begin : vec_st_cmit_calc
+  vec_st_cmit_vld = 1'b0;
+  vec_st_cmit_iid = 7'd0;
+  for (int xi=0; xi<NUM_ANC; xi++) begin
+    if (anc_vld[xi] && anc_store[xi] && anc_committed[xi]) begin
+      if (!vec_st_cmit_vld || iid_older7(anc_iid[xi], vec_st_cmit_iid)) begin
+        vec_st_cmit_iid = anc_iid[xi];
+        vec_st_cmit_vld = 1'b1;
+      end
+    end
+  end
+end
+
+// 已提交 store 还有 beat 没进 SQ: RTU 在这段时间内不许发后端 flush
+always_comb begin : cmit_st_pending_calc
+  idu_lsu_cmit_vec_st_pending = 1'b0;
+  for (int xi=0; xi<NUM_CTX; xi++) begin
+    if (ctx_vld[xi] && !ctx_load[xi] && anc_committed[ctx_lsid[xi]] &&
+        ((ctx_pending[xi] != 16'd0) || ctx_req_vld[xi] || ctx_need_nop[xi]))
+      idu_lsu_cmit_vec_st_pending = 1'b1;
+  end
+end
 
 endmodule

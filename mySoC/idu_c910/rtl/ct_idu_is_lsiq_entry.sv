@@ -456,8 +456,8 @@ end
 //without older entry ready mask
 // &Force ("output", "x_raw_rdy"); @718
 
-// S7: anchor 不用 PRF 的基址 ready, 改用 fill 引擎的 vec_beat_rdy
-assign src0_rdy_for_issue = vec ? x_vec_beat_rdy : read_src0_data[0];
+// 2026-10-18: anchor 永久冻结, 不再通过 LSIQ 发射 (直连路径由 fill 驱动)
+assign src0_rdy_for_issue = vec ? 1'b0 : read_src0_data[0];
 
 
 assign x_raw_rdy = vld && !frz

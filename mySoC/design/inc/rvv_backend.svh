@@ -102,6 +102,8 @@ typedef enum logic [1:0] {
 // A decoded instruction forwarded to the RVVCore from the scalar core.
 typedef struct packed {
   logic [`ROB_TAG_WIDTH-1:0] rob_tag;
+  // 2026-10-18 直连向量 L/S: IS 建好的 LSIQ anchor 槽号
+  logic [2:0]                lsid;
   logic [`PC_WIDTH-1:0]      pc;
   RVVOpCode                  opcode;   // effectively bits [6:0] from instruction
   logic [24:0]               bits;     // bits [31:7] from instruction
@@ -115,20 +117,14 @@ typedef struct packed {
   logic [`PC_WIDTH-1:0]      inst_pc;
 `endif
   logic [`ROB_TAG_WIDTH-1:0] rob_tag;
+  logic [2:0]                lsid;      // 向量 L/S 的 LSIQ anchor 槽号
   RVVOpCode                  opcode;
   logic [24:0]               bits;
   logic [`XLEN-1:0]               rs1;
-  // 2026-10-17 (S3b): 标量 rs1 的 A910 物理号 / 是否使用 / issue 时是否已写回。
-  // 计算类指令在 backend RS 里用它等迟到写回; 向量 L/S 的基址等待在 LSIQ。
-  logic [5:0]                     rs1_preg;
-  logic                           rs1_vld;
-  logic                           rs1_wb;
   // 2026-10-17 (S3): strided 向量 L/S 的步长 (rs2). vsetvl 的 vtype 仍由
   // frontend 直接从 reg_read_data_i[2*i+1] 取, 不经过这个字段。
   logic [`XLEN-1:0]               rs2;
   logic                           rs2_valid;
-  logic [5:0]                     rs2_preg;
-  logic                           rs2_wb;
   RVVConfigState             arch_state;
 } RVVCmd;
 
@@ -270,8 +266,9 @@ typedef struct packed {
 `ifdef TB_SUPPORT
   logic   [`PC_WIDTH-1:0]         uop_pc;
 `endif
-  logic                           res_updating_end; 
+  logic                           res_updating_end;
   logic   [`ROB_TAG_WIDTH-1:0]    rob_tag;
+  logic   [2:0]                   lsid;      // 向量 L/S 的 LSIQ anchor 槽号
   logic   [`FUNCT3_WIDTH-1:0]     uop_funct3;
   FUNCT6_u                        uop_funct6;
   EXE_UNIT_e                      uop_exe_unit; 
@@ -308,10 +305,6 @@ typedef struct packed {
   // 2026-10-17 (S6): strided 向量 L/S 的步长 (rs2)
   logic   [`XLEN-1:0]             rs2_data;
   logic                           rs2_data_valid;
-  // 2026-10-17 (S3b): 标量 rs1 的物理号 + issue 时是否已写回; RS 用它等迟到写回
-  logic   [5:0]                   rs1_preg;
-  logic                           rs1_vld;
-  logic                           rs1_wb;
   logic   [`UOP_INDEX_WIDTH-1:0]  uop_index;
   logic                           first_uop_valid;
   logic                           last_uop_valid;
@@ -358,11 +351,6 @@ typedef struct packed {
   logic   [`VLEN-1:0]                 vs1_data;
   logic                               vs1_data_valid;
   logic        	                      rs1_data_valid;
-  // S3b: 标量 rs1 等待字段 (scalar 快照在 vs1_data[31:0])
-  logic   [5:0]                       rs1_preg;
-  logic   [6:0]                       rs1_iid;   // 按-iid 源等待表索引
-  logic                               rs1_vld;
-  logic                               rs1_wb;
   logic   [`VLEN-1:0]                 vs2_data;
   logic                               vs2_data_valid;
   EEW_e                               vs2_eew;
@@ -383,11 +371,6 @@ typedef struct packed {
   logic   [`VLEN-1:0]                 vs1_data;
   logic                               vs1_data_valid;
   logic        	                      rs1_data_valid;
-  // S3b: 标量 rs1 等待字段 (scalar 快照在 vs1_data[31:0])
-  logic   [5:0]                       rs1_preg;
-  logic   [6:0]                       rs1_iid;   // 按-iid 源等待表索引
-  logic                               rs1_vld;
-  logic                               rs1_wb;
   logic   [`VLEN-1:0]                 vs2_data;
   logic                               vs2_data_valid;
   EEW_e                               vs2_eew;
@@ -429,11 +412,6 @@ typedef struct packed {
   logic   [`VLEN-1:0]                 vs1_data;
   logic                               vs1_data_valid;
   logic          	                    rs1_data_valid;
-  // S3b: 标量 rs1 等待字段 (scalar 快照在 vs1_data[31:0])
-  logic   [5:0]                       rs1_preg;
-  logic   [6:0]                       rs1_iid;   // 按-iid 源等待表索引
-  logic                               rs1_vld;
-  logic                               rs1_wb;
   logic   [`VLEN-1:0]                 vs2_data;
   logic                               vs2_data_valid;
   EEW_e                               vs2_eew;
@@ -465,11 +443,6 @@ typedef struct packed {
   EEW_e                               vd_eew;  
   logic   [`REGIDX_WIDTH-1:0]         dst_index;
   logic   [`XLEN-1:0] 	              rs1_data;
-  // S3b: 标量 rs1 等待字段 (scalar 快照在 rs1_data)
-  logic   [5:0]                       rs1_preg;
-  logic   [6:0]                       rs1_iid;   // 按-iid 源等待表索引
-  logic                               rs1_vld;
-  logic                               rs1_wb;
   logic                               first_uop_valid;
   logic                               last_uop_valid;     
   logic   [`UOP_INDEX_WIDTH_ALU-1:0]  uop_index;      
@@ -504,6 +477,7 @@ typedef struct packed {
   logic                               rs2_data_valid;
   logic   [$clog2(`EMUL_MAX)-1:0]     seg_field_index;
   logic   [2:0]                       lsu_id;              // 8 项 scoreboard 槽号
+  logic   [2:0]                       lsid;                // IDU LSIQ anchor 槽号
   // --- 原有 ---
   logic                               vidx_valid;
   logic   [`REGIDX_WIDTH-1:0]         vidx_addr;

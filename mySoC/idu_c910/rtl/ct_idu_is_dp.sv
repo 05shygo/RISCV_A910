@@ -56,6 +56,11 @@ module ct_idu_is_dp (
   input  logic [3:0]   sdiq_create0_entry,
   input  logic [3:0]   sdiq_create1_entry,
 
+  // 2026-10-18 直连向量 L/S: 本拍 LSIQ create0/1 实际落到的空闲槽 (one-hot)。
+  // 与下面的 is_lsiq_create0/1_iid 配对, 把 lsid 打进 VIQ 表项。
+  input  logic [7:0]   lsiq_create0_entry,
+  input  logic [7:0]   lsiq_create1_entry,
+
   // Queue enable inputs
 
   input  logic         ctrl_sdiq_create0_en,
@@ -102,8 +107,9 @@ module ct_idu_is_dp (
   output logic [61:0]  dp_div_create1_data,
 
   // 向量队列 (VIQ) 建表数据 (S1 新增; S2 接到 ct_idu_vecq)
-  output logic [100:0] dp_vec_create0_data,
-  output logic [100:0] dp_vec_create1_data,
+  // 2026-10-18: 101→104, 新增 [103:101] = lsid
+  output logic [103:0] dp_vec_create0_data,
+  output logic [103:0] dp_vec_create1_data,
   output logic [6:0]   dp_vec_create0_iid,
   output logic [6:0]   dp_vec_create1_iid,
   output logic         dp_ctrl_is_inst0_vec,
@@ -942,10 +948,44 @@ begin
   endcase
 end
 
-// 101 位打包 —— 顺序必须与 VIQ (S2 的 ct_idu_vecq) 的字段定义逐位一致:
-//   [100:69] pc, [68:37] opcode, [36:30] iid, [29:28] vec_type,
+// 2026-10-18 直连向量 L/S: 把 LSIQ create0/1 槽号按 iid 配给对应的 VIQ lane。
+// IS 窗口内 iid 唯一; 向量 L/S lane 一定同时占一个 LSIQ create 口。
+// 只有 vec_type=01(LOAD)/10(STORE) 才取 lsid, OP-V 固定 0。
+function automatic logic [2:0] onehot8_to_idx (input logic [7:0] oh);
+  onehot8_to_idx = 3'd0;
+  for (int b = 0; b < 8; b++)
+    if (oh[b]) onehot8_to_idx = b[2:0];
+endfunction
+
+wire is_vec_create0_ls =
+     is_vec_create0_data[IS_VEC]
+  && ((is_vec_create0_data[IS_VEC_TYPE:IS_VEC_TYPE-1] == 2'b01)
+   || (is_vec_create0_data[IS_VEC_TYPE:IS_VEC_TYPE-1] == 2'b10));
+wire is_vec_create1_ls =
+     is_vec_create1_data[IS_VEC]
+  && ((is_vec_create1_data[IS_VEC_TYPE:IS_VEC_TYPE-1] == 2'b01)
+   || (is_vec_create1_data[IS_VEC_TYPE:IS_VEC_TYPE-1] == 2'b10));
+
+wire [2:0] is_vec_create0_lsid =
+     (!is_vec_create0_ls) ? 3'd0 :
+     ((|lsiq_create0_entry) && (is_lsiq_create0_iid[6:0] == is_vec_create0_iid[6:0]))
+        ? onehot8_to_idx(lsiq_create0_entry) :
+     ((|lsiq_create1_entry) && (is_lsiq_create1_iid[6:0] == is_vec_create0_iid[6:0]))
+        ? onehot8_to_idx(lsiq_create1_entry) : 3'd0;
+
+wire [2:0] is_vec_create1_lsid =
+     (!is_vec_create1_ls) ? 3'd0 :
+     ((|lsiq_create0_entry) && (is_lsiq_create0_iid[6:0] == is_vec_create1_iid[6:0]))
+        ? onehot8_to_idx(lsiq_create0_entry) :
+     ((|lsiq_create1_entry) && (is_lsiq_create1_iid[6:0] == is_vec_create1_iid[6:0]))
+        ? onehot8_to_idx(lsiq_create1_entry) : 3'd0;
+
+// 104 位打包 —— 顺序必须与 VIQ (S2 的 ct_idu_vecq) 的字段定义逐位一致:
+//   [103:101] lsid, [100:69] pc, [68:37] opcode, [36:30] iid, [29:28] vec_type,
 //   [27:22] dst_preg, [21:17] dst_reg, [16] dst_vld,
 //   [15:9] src1_data, [8:2] src0_data, [1] src1_vld, [0] src0_vld
+assign dp_vec_create0_data[103:101] = is_vec_create0_lsid[2:0];
+assign dp_vec_create1_data[103:101] = is_vec_create1_lsid[2:0];
 assign dp_vec_create0_data[100:69] = is_vec_create0_pc[31:0];
 assign dp_vec_create0_data[68:37]  = is_vec_create0_data[IS_OPCODE:IS_OPCODE-31];
 assign dp_vec_create0_data[36:30]  = is_vec_create0_iid[6:0];

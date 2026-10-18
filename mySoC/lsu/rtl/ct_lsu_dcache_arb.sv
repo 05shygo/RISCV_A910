@@ -56,6 +56,23 @@ module ct_lsu_dcache_arb #(
   input  logic         ag_dcache_arb_st_dirty_gateclk_en,
   input  logic [INDEX_WIDTH-1:0]  ag_dcache_arb_st_dirty_idx,
 
+  //==========================================================
+  // VEC requests (2026-10-18 直连向量 L/S)
+  //==========================================================
+  input  logic         vec_dcache_arb_ld_req,
+  input  logic [INDEX_WIDTH-1:0]  vec_dcache_arb_ld_tag_idx,
+  input  logic [7:0]   vec_dcache_arb_ld_data_req,
+  input  logic [DATA_INDEX_WIDTH-1:0]  vec_dcache_arb_ld_data_low_idx,
+  input  logic [DATA_INDEX_WIDTH-1:0]  vec_dcache_arb_ld_data_high_idx,
+
+  input  logic         vec_dcache_arb_st_tag_req,
+  input  logic [INDEX_WIDTH-1:0]  vec_dcache_arb_st_tag_idx,
+  input  logic         vec_dcache_arb_st_dirty_req,
+  input  logic [INDEX_WIDTH-1:0]  vec_dcache_arb_st_dirty_idx,
+
+  output logic         dcache_arb_vec_ld_sel,
+  output logic         dcache_arb_vec_st_sel,
+
   output logic         dcache_arb_ag_ld_sel,
   output logic         dcache_arb_ag_st_sel,
   output logic [31:0]  dcache_arb_ld_ag_addr,
@@ -192,39 +209,46 @@ module ct_lsu_dcache_arb #(
 //==========================================================
 // Priority (high to low): LFB > VB > WMB > AG
 
-logic [3:0] dcache_arb_ld_req;
-logic [3:0] dcache_arb_ld_sel;
+logic [4:0] dcache_arb_ld_req;
+logic [4:0] dcache_arb_ld_sel;
 logic dcache_arb_lfb_ld_sel, dcache_arb_vb_ld_sel, dcache_arb_wmb_ld_sel;
+logic dcache_arb_vec_ld_sel_unmask, dcache_arb_ag_ld_sel_unmask;
 logic dcache_arb_lfb_ld_sel_unmask, dcache_arb_vb_ld_sel_unmask;
-logic dcache_arb_wmb_ld_sel_unmask, dcache_arb_ag_ld_sel_unmask;
+logic dcache_arb_wmb_ld_sel_unmask;
 
 // Store pipeline signals (declared here because used in load masking)
-logic [3:0] dcache_arb_st_req;
-logic [3:0] dcache_arb_st_sel;
+logic [4:0] dcache_arb_st_req;
+logic [4:0] dcache_arb_st_sel;
 logic dcache_arb_lfb_st_sel, dcache_arb_vb_st_sel, dcache_arb_wmb_st_sel;
+logic dcache_arb_vec_st_sel_unmask;
 logic dcache_arb_lfb_st_sel_unmask, dcache_arb_vb_st_sel_unmask, dcache_arb_ag_st_sel_unmask;
 logic dcache_arb_wmb_st_sel_unmask;
 
-assign dcache_arb_ld_req[3:0] = {lfb_dcache_arb_ld_req,
+// Load priority: LFB > VB > WMB > VEC > AG
+assign dcache_arb_ld_req[4:0] = {lfb_dcache_arb_ld_req,
                                  vb_dcache_arb_ld_req,
                                  wmb_dcache_arb_ld_req,
+                                 vec_dcache_arb_ld_req,
                                  ag_dcache_arb_ld_tag_req};
 
 always_comb begin
-  dcache_arb_ld_sel[3:0] = 4'b0;
-  casez(dcache_arb_ld_req[3:0])
-    4'b1???:  dcache_arb_ld_sel[3] = 1'b1;  // LFB
-    4'b01??:  dcache_arb_ld_sel[2] = 1'b1;  // VB
-    4'b001?:  dcache_arb_ld_sel[1] = 1'b1;  // WMB
-    4'b0001:  dcache_arb_ld_sel[0] = 1'b1;  // AG
-    default:  dcache_arb_ld_sel[3:0] = 4'b0;
+  dcache_arb_ld_sel[4:0] = 5'b0;
+  casez(dcache_arb_ld_req[4:0])
+    5'b1????:  dcache_arb_ld_sel[4] = 1'b1;  // LFB
+    5'b01???:  dcache_arb_ld_sel[3] = 1'b1;  // VB
+    5'b001??:  dcache_arb_ld_sel[2] = 1'b1;  // WMB
+    5'b0001?:  dcache_arb_ld_sel[1] = 1'b1;  // VEC
+    5'b00001:  dcache_arb_ld_sel[0] = 1'b1;  // AG
+    default:   dcache_arb_ld_sel[4:0] = 5'b0;
   endcase
 end
 
-assign dcache_arb_lfb_ld_sel_unmask = dcache_arb_ld_sel[3];
-assign dcache_arb_vb_ld_sel_unmask  = dcache_arb_ld_sel[2];
-assign dcache_arb_wmb_ld_sel_unmask = dcache_arb_ld_sel[1];
+assign dcache_arb_lfb_ld_sel_unmask = dcache_arb_ld_sel[4];
+assign dcache_arb_vb_ld_sel_unmask  = dcache_arb_ld_sel[3];
+assign dcache_arb_wmb_ld_sel_unmask = dcache_arb_ld_sel[2];
+assign dcache_arb_vec_ld_sel_unmask = dcache_arb_ld_sel[1];
 assign dcache_arb_ag_ld_sel_unmask  = dcache_arb_ld_sel[0];
+assign dcache_arb_vec_ld_sel        = dcache_arb_vec_ld_sel_unmask;
 
 // Mask if requesting both ld and st but only got one
 assign dcache_arb_lfb_ld_sel = dcache_arb_lfb_ld_sel_unmask
@@ -243,7 +267,7 @@ assign dcache_arb_wmb_ld_grnt = dcache_arb_wmb_ld_sel;
 //==========================================================
 //            Store pipeline arbitration
 //==========================================================
-// Priority (high to low): LFB > VB > AG > WMB
+// Priority (high to low): LFB > VB > AG > WMB > VEC
 // ⚠️ 2026-10-15 修 (coremark_i1 #46462 真凶): 原版 (ct_lsu_dcache_arb.v:1123)
 //    `dcache_arb_st_req[5:0] = {..., wmb_dcache_arb_st_req}` —— **WMB 也是 store
 //    流水线的一个源**，走同一个优先编码器。本仓把它从编码器里删了 (注释还写成
@@ -257,26 +281,29 @@ assign dcache_arb_wmb_ld_grnt = dcache_arb_wmb_ld_sel;
 //    **该行之后所有 store 都判 miss、绕过 dcache 直写内存**，而后续 load 命中 dcache
 //    读到旧值 (症状: load 读回上一笔 store 的值)。
 //    实测 T63684: lfb_st=1/wmb_req=1 ⇒ tag idx=24 (对)，dirty idx=24|10=26 (错)。
-assign dcache_arb_st_req[3:0] = {lfb_dcache_arb_st_req,
+assign dcache_arb_st_req[4:0] = {lfb_dcache_arb_st_req,
                                  vb_dcache_arb_st_req,
                                  ag_dcache_arb_st_tag_req,
-                                 wmb_dcache_arb_st_req};
+                                 wmb_dcache_arb_st_req,
+                                 vec_dcache_arb_st_tag_req};
 
 always_comb begin
-  dcache_arb_st_sel[3:0] = 4'b0;
-  casez(dcache_arb_st_req[3:0])
-    4'b1???:  dcache_arb_st_sel[3] = 1'b1;  // LFB
-    4'b01??:  dcache_arb_st_sel[2] = 1'b1;  // VB
-    4'b001?:  dcache_arb_st_sel[1] = 1'b1;  // AG
-    4'b0001:  dcache_arb_st_sel[0] = 1'b1;  // WMB
-    default:  dcache_arb_st_sel[3:0] = 4'b0;
+  dcache_arb_st_sel[4:0] = 5'b0;
+  casez(dcache_arb_st_req[4:0])
+    5'b1????:  dcache_arb_st_sel[4] = 1'b1;  // LFB
+    5'b01???:  dcache_arb_st_sel[3] = 1'b1;  // VB
+    5'b001??:  dcache_arb_st_sel[2] = 1'b1;  // AG
+    5'b0001?:  dcache_arb_st_sel[1] = 1'b1;  // WMB
+    5'b00001:  dcache_arb_st_sel[0] = 1'b1;  // VEC
+    default:   dcache_arb_st_sel[4:0] = 5'b0;
   endcase
 end
 
-assign dcache_arb_lfb_st_sel_unmask = dcache_arb_st_sel[3];
-assign dcache_arb_vb_st_sel_unmask  = dcache_arb_st_sel[2];
-assign dcache_arb_ag_st_sel_unmask  = dcache_arb_st_sel[1];
-assign dcache_arb_wmb_st_sel_unmask = dcache_arb_st_sel[0];
+assign dcache_arb_lfb_st_sel_unmask = dcache_arb_st_sel[4];
+assign dcache_arb_vb_st_sel_unmask  = dcache_arb_st_sel[3];
+assign dcache_arb_ag_st_sel_unmask  = dcache_arb_st_sel[2];
+assign dcache_arb_wmb_st_sel_unmask = dcache_arb_st_sel[1];
+assign dcache_arb_vec_st_sel_unmask = dcache_arb_st_sel[0];
 
 // Mask if requesting both ld and st but only got one
 assign dcache_arb_lfb_st_sel = dcache_arb_lfb_st_sel_unmask
@@ -286,6 +313,7 @@ assign dcache_arb_vb_st_sel  = dcache_arb_vb_st_sel_unmask
 assign dcache_arb_ag_st_sel  = dcache_arb_ag_st_sel_unmask;
 assign dcache_arb_wmb_st_sel = dcache_arb_wmb_st_sel_unmask
                                && dcache_arb_wmb_ld_sel_unmask;
+assign dcache_arb_vec_st_sel = dcache_arb_vec_st_sel_unmask;
 
 assign dcache_arb_vb_st_grnt = dcache_arb_vb_st_sel;
 
@@ -311,17 +339,20 @@ assign dcache_arb_st_ag_borrow_addr_vld = dcache_arb_st_dc_borrow_vld;
 //            Load tag array mux
 //==========================================================
 assign lsu_dcache_ld_tag_sel_b = !(dcache_arb_lfb_ld_sel || dcache_arb_vb_ld_sel
-                                    || dcache_arb_wmb_ld_sel || dcache_arb_ag_ld_sel);
+                                    || dcache_arb_wmb_ld_sel || dcache_arb_vec_ld_sel
+                                    || dcache_arb_ag_ld_sel);
 
 assign lsu_dcache_ld_tag_gwen_b = !(dcache_arb_lfb_ld_sel || dcache_arb_vb_ld_sel
                                      || dcache_arb_wmb_ld_sel);
 
 assign lsu_dcache_ld_tag_gateclk_en = lfb_dcache_arb_ld_tag_gateclk_en
                                        || vb_dcache_arb_ld_tag_gateclk_en
-                                       || ag_dcache_arb_ld_tag_gateclk_en;
+                                       || ag_dcache_arb_ld_tag_gateclk_en
+                                       || dcache_arb_vec_ld_sel;
 
 assign lsu_dcache_ld_tag_idx = ({INDEX_WIDTH{dcache_arb_lfb_ld_sel}} & lfb_dcache_arb_ld_tag_idx)
                                 | ({INDEX_WIDTH{dcache_arb_vb_ld_sel}} & vb_dcache_arb_ld_tag_idx)
+                                | ({INDEX_WIDTH{dcache_arb_vec_ld_sel}} & vec_dcache_arb_ld_tag_idx)
                                 | ({INDEX_WIDTH{dcache_arb_ag_ld_sel}} & ag_dcache_arb_ld_tag_idx);
 
 assign lsu_dcache_ld_tag_din = ({LD_TAG_WIDTH{dcache_arb_lfb_ld_sel}} & lfb_dcache_arb_ld_tag_din)
@@ -341,16 +372,19 @@ assign lsu_dcache_ld_tag_wen_b = ~( ({2{dcache_arb_lfb_ld_sel}} & lfb_dcache_arb
 //            Store tag array mux
 //==========================================================
 assign lsu_dcache_st_tag_sel_b = !(dcache_arb_lfb_st_sel || dcache_arb_vb_st_sel
-                                    || dcache_arb_ag_st_sel);
+                                    || dcache_arb_ag_st_sel || dcache_arb_wmb_st_sel
+                                    || dcache_arb_vec_st_sel);
 
 assign lsu_dcache_st_tag_gwen_b = !(dcache_arb_lfb_st_sel);
 
 assign lsu_dcache_st_tag_gateclk_en = lfb_dcache_arb_st_tag_gateclk_en
                                        || vb_dcache_arb_st_tag_gateclk_en
-                                       || ag_dcache_arb_st_tag_gateclk_en;
+                                       || ag_dcache_arb_st_tag_gateclk_en
+                                       || dcache_arb_vec_st_sel;
 
 assign lsu_dcache_st_tag_idx = ({INDEX_WIDTH{dcache_arb_lfb_st_sel}} & lfb_dcache_arb_st_tag_idx)
                                 | ({INDEX_WIDTH{dcache_arb_vb_st_sel}} & vb_dcache_arb_st_tag_idx)
+                                | ({INDEX_WIDTH{dcache_arb_vec_st_sel}} & vec_dcache_arb_st_tag_idx)
                                 | ({INDEX_WIDTH{dcache_arb_ag_st_sel}} & ag_dcache_arb_st_tag_idx);
 
 assign lsu_dcache_st_tag_din = ({ST_TAG_WIDTH{dcache_arb_lfb_st_sel}} & lfb_dcache_arb_st_tag_din);
@@ -373,7 +407,8 @@ assign vb_dirty_gwen = vb_dcache_arb_st_dirty_gwen && dcache_arb_vb_st_sel;
 //    上面的 store 优先编码器 ⇒ 必须改用加选后的 `dcache_arb_wmb_st_sel`，否则
 //    WMB 只要"在请求"就会和 LFB/VB/AG 选中的那路抢 idx/din (见上面的长注释)。
 assign lsu_dcache_st_dirty_sel_b = !(dcache_arb_lfb_st_sel || dcache_arb_vb_st_sel
-                                      || dcache_arb_ag_st_sel || dcache_arb_wmb_st_sel);
+                                      || dcache_arb_ag_st_sel || dcache_arb_wmb_st_sel
+                                      || dcache_arb_vec_st_sel);
 
 assign lsu_dcache_st_dirty_gwen_b = !(dcache_arb_lfb_st_sel || vb_dirty_gwen
                                        || dcache_arb_wmb_st_sel);
@@ -381,12 +416,14 @@ assign lsu_dcache_st_dirty_gwen_b = !(dcache_arb_lfb_st_sel || vb_dirty_gwen
 assign lsu_dcache_st_dirty_gateclk_en = lfb_dcache_arb_st_dirty_gateclk_en
                                          || vb_dcache_arb_st_dirty_gateclk_en
                                          || ag_dcache_arb_st_dirty_gateclk_en
-                                         || wmb_dcache_arb_st_dirty_gateclk_en;
+                                         || wmb_dcache_arb_st_dirty_gateclk_en
+                                         || dcache_arb_vec_st_sel;
 
 assign lsu_dcache_st_dirty_idx = ({INDEX_WIDTH{dcache_arb_lfb_st_sel}} & lfb_dcache_arb_st_dirty_idx)
                                   | ({INDEX_WIDTH{dcache_arb_vb_st_sel}} & vb_dcache_arb_st_dirty_idx)
                                   | ({INDEX_WIDTH{dcache_arb_ag_st_sel}} & ag_dcache_arb_st_dirty_idx)
-                                  | ({INDEX_WIDTH{dcache_arb_wmb_st_sel}} & wmb_dcache_arb_st_dirty_idx);
+                                  | ({INDEX_WIDTH{dcache_arb_wmb_st_sel}} & wmb_dcache_arb_st_dirty_idx)
+                                  | ({INDEX_WIDTH{dcache_arb_vec_st_sel}} & vec_dcache_arb_st_dirty_idx);
 
 
 assign lsu_dcache_st_dirty_din = ({5{dcache_arb_lfb_st_sel}} & lfb_dcache_arb_st_dirty_din)
@@ -430,24 +467,28 @@ assign dcache_dirty_wen  = ~lsu_dcache_st_dirty_wen_b;
 //    只有 AG 独占用口时才只使能它自己要的 bank。
 assign lsu_dcache_ld_data_sel_b = ~( {8{dcache_arb_lfb_ld_sel || dcache_arb_vb_ld_sel
                                         || dcache_arb_wmb_ld_sel}}
-                                   | ({8{dcache_arb_ag_ld_sel}} & ag_dcache_arb_ld_data_req) );
+                                   | ({8{dcache_arb_ag_ld_sel}} & ag_dcache_arb_ld_data_req)
+                                   | ({8{dcache_arb_vec_ld_sel}} & vec_dcache_arb_ld_data_req) );
 
 assign lsu_dcache_ld_data_gwen_b = {8{!(dcache_arb_lfb_ld_sel || dcache_arb_wmb_ld_sel)}};
 
 assign lsu_dcache_ld_data_gateclk_en = lfb_dcache_arb_ld_data_gateclk_en
                                         | vb_dcache_arb_ld_data_gateclk_en
                                         | wmb_dcache_arb_ld_data_gateclk_en
-                                        | ag_dcache_arb_ld_data_gateclk_en;
+                                        | ag_dcache_arb_ld_data_gateclk_en
+                                        | dcache_arb_vec_ld_sel;
 
 // LFB and VB use single index for all banks
 assign lsu_dcache_ld_data_low_idx = ({DATA_INDEX_WIDTH{dcache_arb_lfb_ld_sel}} & lfb_dcache_arb_ld_data_idx)
                                      | ({DATA_INDEX_WIDTH{dcache_arb_vb_ld_sel}} & vb_dcache_arb_ld_data_idx)
                                      | ({DATA_INDEX_WIDTH{dcache_arb_wmb_ld_sel}} & wmb_dcache_arb_ld_data_low_idx)
+                                     | ({DATA_INDEX_WIDTH{dcache_arb_vec_ld_sel}} & vec_dcache_arb_ld_data_low_idx)
                                      | ({DATA_INDEX_WIDTH{dcache_arb_ag_ld_sel}} & ag_dcache_arb_ld_data_low_idx);
 
 assign lsu_dcache_ld_data_high_idx = ({DATA_INDEX_WIDTH{dcache_arb_lfb_ld_sel}} & lfb_dcache_arb_ld_data_idx)
                                       | ({DATA_INDEX_WIDTH{dcache_arb_vb_ld_sel}} & vb_dcache_arb_ld_data_idx)
                                       | ({DATA_INDEX_WIDTH{dcache_arb_wmb_ld_sel}} & wmb_dcache_arb_ld_data_high_idx)
+                                      | ({DATA_INDEX_WIDTH{dcache_arb_vec_ld_sel}} & vec_dcache_arb_ld_data_high_idx)
                                       | ({DATA_INDEX_WIDTH{dcache_arb_ag_ld_sel}} & ag_dcache_arb_ld_data_high_idx);
 
 assign lsu_dcache_ld_data_low_din = ({128{dcache_arb_lfb_ld_sel}} & lfb_dcache_arb_ld_data_low_din)

@@ -42,6 +42,8 @@ module lsu_mshr_entry #(
     input  logic         rb_entry_st_create_vld_x,
     input  logic         rb_entry_wb_cmplt_grnt_x,
     input  logic         rb_entry_wb_data_grnt_x,
+    // 2026-10-18 直连向量 L/S: 16B no-fill 响应的 ack
+    input  logic         rb_entry_vec_rsp_grnt_x,
     input  logic         rb_ld_biu_pe_req_grnt,
     input  logic         rb_r_resp_err,
     input  logic         rtu_yy_xx_commit0,
@@ -83,7 +85,14 @@ module lsu_mshr_entry #(
     output logic         rb_entry_wb_cmplt_req_x,
     output logic         rb_entry_wb_data_pre_sel_x,
     output logic         rb_entry_wb_data_req_x,
-    output logic         rb_entry_wmb_ce_hit_idx_x
+    output logic         rb_entry_wmb_ce_hit_idx_x,
+    // 2026-10-18 直连向量 L/S
+    output logic         rb_entry_vec_x,
+    output logic         rb_entry_vec_rsp_x,
+    output logic [127:0] rb_entry_vec_data_x,
+    output logic [15:0]  rb_entry_vec_bytes_vld_x,
+    output logic [6:0]   rb_entry_vec_iid_x,
+    output logic [4:0]   rb_entry_vec_fill_id_x
 );
 
 // ---------------- internal registers ----------------
@@ -97,6 +106,7 @@ logic [15:0] rb_entry_bytes_vld;
 logic        rb_entry_cmit;
 logic        rb_entry_create_lfb;
 logic [63:0] rb_entry_data;
+logic [127:0] rb_entry_vec_data;
 logic        rb_entry_depd;
 logic        rb_entry_dest_vld;
 logic [6:0]  rb_entry_iid;
@@ -171,7 +181,8 @@ parameter IDLE        = 4'b0000,
           REQ_BIU     = 4'b1001,
           WAIT_RESP   = 4'b1100,
           REQ_WB      = 4'b1101,
-          WAIT_MERGE  = 4'b1110;
+          WAIT_MERGE  = 4'b1110,
+          VEC_RSP     = 4'b1111;
 
 //==========================================================
 //                 Register
@@ -324,7 +335,7 @@ begin
   if (!cpurst_b)
     rb_entry_dest_vld         <=  1'b0;
   else if(rb_entry_ld_create_vld)
-    rb_entry_dest_vld         <=  1'b1;
+    rb_entry_dest_vld         <=  !ld_da_vec;   // 向量项不回 32 位 WB
   else if(rb_entry_st_create_vld)
     rb_entry_dest_vld         <=  1'b0;
 end
@@ -334,6 +345,15 @@ end
 //+------+
 assign rb_entry_data_merge_vld = rb_entry_ld_merge_vld &&  ld_da_rb_data_vld
                                  || rb_entry_data_bypass_vld && rb_entry_secd;
+
+// 2026-10-18: 向量 no-fill 16B 读 —— 单 beat 的 128 位整拍数据
+always @(posedge forever_cpuclk or negedge cpurst_b)
+begin
+  if (!cpurst_b)
+    rb_entry_vec_data[127:0]  <=  128'b0;
+  else if (rb_entry_biu_r_resp_set)
+    rb_entry_vec_data[127:0]  <=  biu_lsu_r_data_mask[127:0];
+end
 
 always @(posedge forever_cpuclk or negedge cpurst_b)
 begin
@@ -469,7 +489,7 @@ case(rb_entry_state[3:0])
     else if(rb_entry_wait_resp_to_req_merge)
       rb_entry_next_state[3:0]  = WAIT_MERGE;
     else if(rb_entry_biu_r_resp_set)
-      rb_entry_next_state[3:0]  = REQ_WB;
+      rb_entry_next_state[3:0]  = rb_entry_vec ? VEC_RSP : REQ_WB;
     else
       rb_entry_next_state[3:0]  = WAIT_RESP;
   REQ_WB:
@@ -486,6 +506,11 @@ case(rb_entry_state[3:0])
       rb_entry_next_state[3:0]  = REQ_BIU;
     else
       rb_entry_next_state[3:0]  = WAIT_MERGE;
+  VEC_RSP:
+    if(rb_entry_flush_clear || rb_entry_vec_rsp_grnt_x)
+      rb_entry_next_state[3:0]  = IDLE;
+    else
+      rb_entry_next_state[3:0]  = VEC_RSP;
   default:rb_entry_next_state[3:0]  = IDLE;
 endcase
 // &CombEnd; @632
@@ -588,7 +613,7 @@ assign rb_entry_wait_resp_to_req_merge  = rb_entry_biu_r_resp_set
 assign rb_entry_wb_cmplt_req    = 1'b0;
 //------------------req data signal-------------------------
 //if get bus error, then it must commit and send bus_err signal
-assign rb_entry_wb_data_req     = rb_entry_dest_vld
+assign rb_entry_wb_data_req     = !rb_entry_vec && rb_entry_dest_vld
                                   &&  (rb_entry_state[3:0] ==  REQ_WB)
                                   &&  (!rb_entry_bus_err  ||  rb_entry_cmit)
                                   &&  !rb_entry_wb_data_success;
@@ -739,6 +764,14 @@ assign rb_entry_wmb_ce_hit_idx_x        = rb_entry_wmb_ce_hit_idx;
 assign rb_entry_discard_vld_x           = rb_entry_discard_vld;
 assign rb_entry_rot_sel_v[7:0]          = rb_entry_rot_sel[7:0];
 assign rb_entry_wb_data_pre_sel_x       = rb_entry_wb_data_pre_sel;
+
+// 2026-10-18 直连向量 L/S: VEC_RSP 状态把整拍 16B 数据送回 fill
+assign rb_entry_vec_x                   = rb_entry_vec;
+assign rb_entry_vec_rsp_x               = rb_entry_vec && (rb_entry_state[3:0] == VEC_RSP);
+assign rb_entry_vec_data_x[127:0]       = rb_entry_vec_data[127:0];
+assign rb_entry_vec_bytes_vld_x[15:0]   = rb_entry_bytes_vld[15:0];
+assign rb_entry_vec_iid_x[6:0]          = rb_entry_iid[6:0];
+assign rb_entry_vec_fill_id_x[4:0]      = rb_entry_uop_idx[4:0];
 
 // &ModuleEnd; @1136
 endmodule

@@ -375,10 +375,6 @@ module rvv_backend_dispatch
             assign rs_dp2alu[i].vs1_data        = uop_uop2dp[i].vs1_valid ? uop_operand[i].vs1 : (`VLEN)'(uop_uop2dp[i].rs1_data);
             assign rs_dp2alu[i].vs1_data_valid  = uop_uop2dp[i].vs1_valid;
             assign rs_dp2alu[i].rs1_data_valid  = uop_uop2dp[i].rs1_data_valid;
-            assign rs_dp2alu[i].rs1_preg        = uop_uop2dp[i].rs1_preg;
-            assign rs_dp2alu[i].rs1_iid         = uop_uop2dp[i].rob_tag;
-            assign rs_dp2alu[i].rs1_vld         = uop_uop2dp[i].rs1_vld;
-            assign rs_dp2alu[i].rs1_wb          = uop_uop2dp[i].rs1_wb;
             assign rs_dp2alu[i].vs2_data        = uop_operand[i].vs2;
             assign rs_dp2alu[i].vs2_data_valid  = uop_uop2dp[i].vs2_valid;
             assign rs_dp2alu[i].vs2_eew         = uop_uop2dp[i].vs2_eew;
@@ -408,10 +404,6 @@ module rvv_backend_dispatch
             assign rs_dp2pmtrdt[i].vd_eew          = uop_uop2dp[i].vd_eew;
             assign rs_dp2pmtrdt[i].dst_index       = uop_uop2dp[i].dst_index;
             assign rs_dp2pmtrdt[i].rs1_data        = uop_uop2dp[i].rs1_data;
-            assign rs_dp2pmtrdt[i].rs1_preg        = uop_uop2dp[i].rs1_preg;
-            assign rs_dp2pmtrdt[i].rs1_iid         = uop_uop2dp[i].rob_tag;
-            assign rs_dp2pmtrdt[i].rs1_vld         = uop_uop2dp[i].rs1_vld;
-            assign rs_dp2pmtrdt[i].rs1_wb          = uop_uop2dp[i].rs1_wb;
             assign rs_dp2pmtrdt[i].first_uop_valid = uop_uop2dp[i].first_uop_valid;
             assign rs_dp2pmtrdt[i].last_uop_valid  = uop_uop2dp[i].last_uop_valid;
             assign rs_dp2pmtrdt[i].uop_index       = uop_uop2dp[i].uop_index[$clog2(`EMUL_MAX)-1:0];
@@ -430,10 +422,6 @@ module rvv_backend_dispatch
             assign rs_dp2mul[i].vs1_data        = uop_uop2dp[i].vs1_valid ? uop_operand[i].vs1 : (`VLEN)'(uop_uop2dp[i].rs1_data);
             assign rs_dp2mul[i].vs1_data_valid  = uop_uop2dp[i].vs1_valid;
             assign rs_dp2mul[i].rs1_data_valid  = uop_uop2dp[i].rs1_data_valid;
-            assign rs_dp2mul[i].rs1_preg        = uop_uop2dp[i].rs1_preg;
-            assign rs_dp2mul[i].rs1_iid         = uop_uop2dp[i].rob_tag;
-            assign rs_dp2mul[i].rs1_vld         = uop_uop2dp[i].rs1_vld;
-            assign rs_dp2mul[i].rs1_wb          = uop_uop2dp[i].rs1_wb;
             assign rs_dp2mul[i].vs2_data        = uop_operand[i].vs2;
             assign rs_dp2mul[i].vs2_data_valid  = uop_uop2dp[i].vs2_valid;
             assign rs_dp2mul[i].vs2_eew         = uop_uop2dp[i].vs2_eew;
@@ -452,10 +440,6 @@ module rvv_backend_dispatch
             assign rs_dp2div[i].vs1_data        = uop_uop2dp[i].vs1_valid ? uop_operand[i].vs1 : (`VLEN)'(uop_uop2dp[i].rs1_data);
             assign rs_dp2div[i].vs1_data_valid  = uop_uop2dp[i].vs1_valid;
             assign rs_dp2div[i].rs1_data_valid  = uop_uop2dp[i].rs1_data_valid;
-            assign rs_dp2div[i].rs1_preg        = uop_uop2dp[i].rs1_preg;
-            assign rs_dp2div[i].rs1_iid         = uop_uop2dp[i].rob_tag;
-            assign rs_dp2div[i].rs1_vld         = uop_uop2dp[i].rs1_vld;
-            assign rs_dp2div[i].rs1_wb          = uop_uop2dp[i].rs1_wb;
             assign rs_dp2div[i].vs2_data        = uop_operand[i].vs2;
             assign rs_dp2div[i].vs2_eew         = uop_uop2dp[i].vs2_eew;
             assign rs_dp2div[i].vs2_data_valid  = uop_uop2dp[i].vs2_valid;
@@ -536,6 +520,7 @@ module rvv_backend_dispatch
           `endif
           // 2026-10-17 S6: 送 A910 LSU 需要的字段 (随 RS 保留到被接收)
             assign rs_dp2lsu[i].rob_tag             = uop_uop2dp[i].rob_tag;
+            assign rs_dp2lsu[i].lsid                = uop_uop2dp[i].lsid;
             assign rs_dp2lsu[i].uop_index           =
                 ((uop_uop2dp[i].uop_exe_unit==LSU) &&
                  (uop_uop2dp[i].uop_funct6.lsu_funct6.lsu_is_seg==IS_SEGMENT))

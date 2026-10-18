@@ -781,6 +781,7 @@ module rvv_backend_decode_unit_lsu_de2
     assign uop[j].uop_pc              = lcmd.cmd.inst_pc;
   `endif  
     assign uop[j].rob_tag             = lcmd.cmd.rob_tag;
+    assign uop[j].lsid                = lcmd.cmd.lsid;
     assign uop[j].res_updating_end    = 'b1;
     assign uop[j].uop_funct3          = inst_funct3;
     assign uop[j].uop_funct6          = funct6_lsu;
@@ -825,11 +826,6 @@ module rvv_backend_decode_unit_lsu_de2
     // strided 的步长 (rs2): 由 frontend 从 VIQ 的 src1 读口取来
     assign uop[j].rs2_data            = lcmd.cmd.rs2;
     assign uop[j].rs2_data_valid      = lcmd.cmd.rs2_valid;
-    // S3b: 字段在这里也填上, 避免 UOP_QUEUE_t 留 X。
-    // 向量 L/S 的基址等待在 A910 LSIQ (S7), RVV 后端不使用这三个字段。
-    assign uop[j].rs1_preg            = lcmd.cmd.rs1_preg;
-    assign uop[j].rs1_vld             = lcmd.cmd.rs1_vld;
-    assign uop[j].rs1_wb              = lcmd.cmd.rs1_wb;
     assign uop[j].uop_index           = uop_index[j];
     assign uop[j].first_uop_valid     = first_uop_valid[j];   
     assign uop[j].last_uop_valid      = last_uop_valid[j];    

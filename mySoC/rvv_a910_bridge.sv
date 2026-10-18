@@ -40,14 +40,12 @@ module rvv_a910_bridge (
   input  wire [31:0] idu_vec_inst_pc,
   input  wire [1:0]  idu_vec_inst_opcode,  // 0=LOAD 1=STORE 2=RVV
   input  wire [24:0] idu_vec_inst_bits,
+  // 2026-10-18 直连向量 L/S: IS 建好的 LSIQ anchor 槽号
+  input  wire [2:0]  idu_vec_lsid,
   input  wire        idu_vec_src0_vld,
   input  wire [31:0] idu_vec_src0_data,
-  input  wire [5:0]  idu_vec_src0_preg,
-  input  wire        idu_vec_src0_wb,
   input  wire        idu_vec_src1_vld,
   input  wire [31:0] idu_vec_src1_data,
-  input  wire [5:0]  idu_vec_src1_preg,
-  input  wire        idu_vec_src1_wb,
   input  wire [5:0]  idu_vec_dst_preg,
   input  wire        idu_vec_dst_vld,
   input  wire [4:0]  idu_vec_dst_reg,
@@ -75,14 +73,6 @@ module rvv_a910_bridge (
   input  wire [6:0]  rtu_commit_iid1,
   input  wire [6:0]  rtu_commit_iid2,
   input  wire        rtu_flush,
-
-  //----------------------------------------------------------------------------
-  // 标量写回直通 (S3b): IU pipe0/1/2、LSU pipe3、vset
-  // core 的 RS 用它在保留站里等迟到的标量源。
-  //----------------------------------------------------------------------------
-  input  wire [4:0]        scalar_wb_vld,
-  input  wire [4:0][5:0]   scalar_wb_preg,
-  input  wire [4:0][31:0]  scalar_wb_data,
 
   //----------------------------------------------------------------------------
   // 异常 (S5 实现)
@@ -180,6 +170,7 @@ module rvv_a910_bridge (
   logic          [1:0][6:0]   core_lsu_rob_tag;
   logic          [1:0][4:0]   core_lsu_uop_index;
   logic          [1:0][2:0]   core_lsu_lsu_id;
+  logic          [1:0][2:0]   core_lsu_lsid;
   logic          [1:0]        core_lsu_first;
   logic          [1:0]        core_lsu_last;
   logic          [1:0]        core_lsu_is_store;
@@ -263,6 +254,7 @@ module rvv_a910_bridge (
   // 收进来也只是等 core_flush 清掉，不如从一开始就挡住。
   assign core_inst_valid          = idu_vec_inst_valid && inst_entry_en && !is_scalar_dest;
   assign core_inst_data[0].rob_tag = idu_vec_inst_iid;
+  assign core_inst_data[0].lsid    = idu_vec_lsid;
   assign core_inst_data[0].pc      = idu_vec_inst_pc;
   assign core_inst_data[0].opcode  = RVVOpCode'(idu_vec_inst_opcode);
   assign core_inst_data[0].bits    = idu_vec_inst_bits;
@@ -784,6 +776,7 @@ module rvv_a910_bridge (
     .uop_lsu_rob_tag_rvv2lsu          (core_lsu_rob_tag),
     .uop_lsu_uop_index_rvv2lsu        (core_lsu_uop_index),
     .uop_lsu_lsu_id_rvv2lsu           (core_lsu_lsu_id),
+    .uop_lsu_lsid_rvv2lsu             (core_lsu_lsid),
     .uop_lsu_first_rvv2lsu            (core_lsu_first),
     .uop_lsu_last_rvv2lsu             (core_lsu_last),
     .uop_lsu_is_store_rvv2lsu         (core_lsu_is_store),
@@ -833,19 +826,6 @@ module rvv_a910_bridge (
     .wr_fflags_valid_o                (),
     .wr_fflags_o                      (),
 
-    // S3b: 标量源等待
-    .src0_vld_i                       (idu_vec_src0_vld),
-    .src0_preg_i                      (idu_vec_src0_preg),
-    .src0_wb_i                        (idu_vec_src0_wb),
-    .src0_data_i                      (idu_vec_src0_data),
-    .src1_vld_i                       (idu_vec_src1_vld),
-    .src1_preg_i                      (idu_vec_src1_preg),
-    .src1_wb_i                        (idu_vec_src1_wb),
-    .src1_data_i                      (idu_vec_src1_data),
-    .scalar_wb_vld                    (scalar_wb_vld),
-    .scalar_wb_preg                   (scalar_wb_preg),
-    .scalar_wb_data                   (scalar_wb_data),
-
     // S3 预留 / S4 接通的 A910 接口
     .cmd_config_state_o               (core_cmd_config_state),
     .config_load_valid_i              (core_flush),      // 与 core_flush 同拍
@@ -892,6 +872,7 @@ module rvv_a910_bridge (
     core_lsu_uop.rs2_data_valid    = core_lsu_rs2_vld[0];
     core_lsu_uop.seg_field_index   = core_lsu_seg_idx[0];
     core_lsu_uop.lsu_id            = core_lsu_lsu_id[0];
+    core_lsu_uop.lsid              = core_lsu_lsid[0];
     core_lsu_uop.vidx_valid        = core_lsu_idx_valid[0];
     core_lsu_uop.vidx_addr         = core_lsu_idx_addr[0];
     core_lsu_uop.vidx_data         = core_lsu_idx_data[0];

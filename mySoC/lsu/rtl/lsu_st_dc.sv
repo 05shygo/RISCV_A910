@@ -22,6 +22,19 @@ module ct_lsu_st_dc #(
     input  logic         sq_st_dc_full,
     input  logic         sq_st_dc_inst_hit,
 
+    // 2026-10-18 直连向量 L/S: VEC 请求直接注入 DC (绕过 AG)
+    input  logic         vec_st_dc_inst_vld,
+    input  logic [31:0]  vec_st_addr,
+    input  logic [15:0]  vec_st_bytes_vld,
+    input  logic [6:0]   vec_st_iid,
+    input  logic [4:0]   vec_st_uop_idx,
+    input  logic [4:0]   vec_st_beat_idx,
+    input  logic [4:0]   vec_st_fill_id,
+    input  logic [7:0]   vec_st_lsid,
+    input  logic         vec_st_last,
+    input  logic         vec_st_nop,
+    input  logic [31:0]  vec_st_wdata,
+
     // from ST AG
     // 2026-10-15 停用: 非对齐拆分通路整条摘掉 (boundary/secd)
     //input  logic         st_ag_boundary,
@@ -47,6 +60,8 @@ module ct_lsu_st_dc #(
     output logic [6:0]   st_dc_iid,
     output logic         st_dc_vec,
     output logic [4:0]   st_dc_uop_idx,
+    output logic [4:0]   st_dc_beat_idx,
+    output logic [4:0]   st_dc_fill_id,
     output logic         st_dc_last,
     output logic [7:0]  st_dc_lsid,
     output logic [3:0]  st_dc_sdid_oh,
@@ -73,7 +88,13 @@ module ct_lsu_st_dc #(
     output logic         st_dc_dcwp_hit_idx,
     output logic         st_dc_get_dcache_tag_dirty,
     output logic         st_dc_spec_fail,
-    output logic [SDIQ_ENTRY-1:0] lsu_idu_has_in_sq
+    output logic [SDIQ_ENTRY-1:0] lsu_idu_has_in_sq,
+    // 2026-10-18 直连向量 L/S
+    output logic         st_dc_vec_nop,
+    output logic         st_dc_vec_restart,
+    output logic         st_dc_vec_restart_sq_full,
+    output logic [4:0]   st_dc_vec_restart_fill_id,
+    output logic [31:0]  st_dc_sq_data
 );
 
     //==========================================================
@@ -83,6 +104,8 @@ module ct_lsu_st_dc #(
     logic [7:0] st_dc_mask_lsid;
     logic        st_dc_sq_full_vld;
     logic        st_dc_restart_vld;
+    logic        st_dc_vec_nop_q;
+    logic [31:0] st_dc_vec_data_q;
 
     //==========================================================
     //                 Pipeline Register
@@ -92,7 +115,7 @@ module ct_lsu_st_dc #(
             st_dc_inst_vld <= 1'b0;
         else if (rtu_yy_xx_flush)
             st_dc_inst_vld <= 1'b0;
-        else if (st_ag_dc_inst_vld)
+        else if (st_ag_dc_inst_vld || vec_st_dc_inst_vld)
             st_dc_inst_vld <= 1'b1;
         else
             st_dc_inst_vld <= 1'b0;
@@ -113,6 +136,8 @@ module ct_lsu_st_dc #(
             st_dc_iid[6:0]                <= 7'b0;
             st_dc_vec                     <= 1'b0;
             st_dc_uop_idx[4:0]            <= 5'b0;
+            st_dc_beat_idx[4:0]           <= 5'b0;
+            st_dc_fill_id[4:0]            <= 5'b0;
             st_dc_last                    <= 1'b0;
             st_dc_lsid[LSIQ_ENTRY-1:0]    <= {LSIQ_ENTRY{1'b0}};
             st_dc_sdid_oh[SDIQ_ENTRY-1:0] <= {SDIQ_ENTRY{1'b0}};
@@ -120,13 +145,33 @@ module ct_lsu_st_dc #(
             st_dc_expt                    <= 1'b0;
             st_dc_bytes_vld[15:0]         <= 16'b0;
             st_dc_rot_sel[3:0]            <= 4'b0;
+            st_dc_vec_nop_q               <= 1'b0;
+            st_dc_vec_data_q              <= 32'b0;
             //st_dc_boundary                <= 1'b0;
+        end
+        else if (vec_st_dc_inst_vld) begin
+            st_dc_iid[6:0]                <= vec_st_iid[6:0];
+            st_dc_vec                     <= 1'b1;
+            st_dc_uop_idx[4:0]            <= vec_st_uop_idx[4:0];
+            st_dc_beat_idx[4:0]           <= vec_st_beat_idx[4:0];
+            st_dc_fill_id[4:0]            <= vec_st_fill_id[4:0];
+            st_dc_last                    <= vec_st_last;
+            st_dc_lsid[LSIQ_ENTRY-1:0]    <= vec_st_lsid[LSIQ_ENTRY-1:0];
+            st_dc_sdid_oh[SDIQ_ENTRY-1:0] <= {SDIQ_ENTRY{1'b0}};
+            st_dc_old                     <= 1'b0;
+            st_dc_expt                    <= 1'b0;
+            st_dc_bytes_vld[15:0]         <= vec_st_bytes_vld[15:0];
+            st_dc_rot_sel[3:0]            <= 4'b0;
+            st_dc_vec_nop_q               <= vec_st_nop;
+            st_dc_vec_data_q              <= vec_st_wdata[31:0];
         end
         else if (st_ag_inst_vld) begin
             //st_dc_secd                    <= st_ag_secd;
             st_dc_iid[6:0]                <= st_ag_iid[6:0];
             st_dc_vec                     <= st_ag_vec;
             st_dc_uop_idx[4:0]            <= st_ag_uop_idx[4:0];
+            st_dc_beat_idx[4:0]           <= 5'b0;
+            st_dc_fill_id[4:0]            <= 5'b0;
             st_dc_last                    <= st_ag_last;
             st_dc_lsid[LSIQ_ENTRY-1:0]    <= st_ag_lsid[LSIQ_ENTRY-1:0];
             st_dc_sdid_oh[SDIQ_ENTRY-1:0] <= st_ag_sdid_oh[SDIQ_ENTRY-1:0];
@@ -134,6 +179,8 @@ module ct_lsu_st_dc #(
             st_dc_expt                    <= st_ag_expt;
             st_dc_bytes_vld[15:0]         <= st_ag_dc_bytes_vld[15:0];
             st_dc_rot_sel[3:0]            <= st_ag_dc_rot_sel[3:0];
+            st_dc_vec_nop_q               <= 1'b0;
+            st_dc_vec_data_q              <= 32'b0;
             //st_dc_boundary                <= st_ag_boundary;
         end
     end
@@ -143,6 +190,8 @@ module ct_lsu_st_dc #(
     always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
         if (!cpurst_b)
             st_dc_addr0[31:0] <= {32{1'b0}};
+        else if (vec_st_dc_inst_vld)
+            st_dc_addr0[31:0] <= vec_st_addr[31:0];
         else if (st_ag_inst_vld || dcache_arb_st_dc_borrow_vld)
             st_dc_addr0[31:0] <= st_ag_dc_addr0[31:0];
     end
@@ -169,13 +218,15 @@ assign st_dc_dcwp_hit_idx = 1'b0;
     //==========================================================
     //                 Create load queue
     //==========================================================
-    assign st_dc_sq_create_vld = st_dc_inst_vld && !sq_st_dc_inst_hit && !st_dc_expt;
+    assign st_dc_sq_create_vld = st_dc_inst_vld && !sq_st_dc_inst_hit && !st_dc_expt
+                               && !(st_dc_vec && st_dc_vec_nop_q);
 
     assign st_dc_sq_create_dp_vld     = st_dc_sq_create_vld;
     assign st_dc_sq_create_gateclk_en = st_dc_sq_create_dp_vld;
 
-   
-    assign st_dc_sq_data_vld = 1'b0;
+    // 2026-10-18: 向量 store 的数据随请求直连进 SQ (不再走 SDIQ / RF pipe5)
+    assign st_dc_sq_data_vld = st_dc_vec && st_dc_sq_create_vld;
+    assign st_dc_sq_data     = st_dc_vec_data_q[31:0];
 
     // 2026-10-15 停用: 非对齐第一半标记
     //assign st_dc_boundary_first = st_dc_boundary && !st_dc_secd;
@@ -257,6 +308,15 @@ assign st_dc_dcwp_hit_idx = 1'b0;
     assign lsu_idu_has_in_sq[SDIQ_ENTRY-1:0] = {SDIQ_ENTRY{st_dc_sq_create_vld & !sq_st_dc_full}} &
                                                 //  & (!st_dc_boundary | st_dc_secd)
                                                 st_dc_sdid_oh[SDIQ_ENTRY-1:0];
+
+    // 2026-10-18 直连向量 L/S: 前端重试用
+    assign st_dc_vec_nop     = st_dc_vec_nop_q;
+    assign st_dc_vec_restart = st_dc_inst_vld && st_dc_vec && st_dc_restart_vld;
+
+    // 2026-10-18: SQ 满 → 前端休眠, 唤醒用 fill_id 配对
+    assign st_dc_vec_restart_sq_full  = st_dc_inst_vld && st_dc_vec &&
+                                        st_dc_sq_full_vld;
+    assign st_dc_vec_restart_fill_id  = st_dc_fill_id;
                                        
 
 endmodule

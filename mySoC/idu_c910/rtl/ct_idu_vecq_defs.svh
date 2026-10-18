@@ -1,10 +1,11 @@
 // =============================================================================
-// ct_idu_vecq_defs.svh —— VIQ (向量队列) 101 位表项的字段定义
+// ct_idu_vecq_defs.svh —— VIQ (向量队列) 104 位表项的字段定义
 //
 // 单一来源：ct_idu_vecq.sv / ct_idu_vecq_entry.sv / ct_idu_top.sv 共同 include。
 // 用 `define 而不是 module parameter：VCS 默认把多个文件当同一编译单元，
 // 带 ifndef 的 parameter 头在第二个模块里会被 guard 跳过 ⇒ 参数未声明。
 //
+//   [103:101] lsid       —— 向量 L/S 在 IS 建立的 LSIQ anchor 槽号 (3)
 //   [100:69] pc          —— 指令 PC (32)
 //   [68:37]  opcode      —— 完整 32 位指令字
 //   [36:30]  iid         —— A910 ROB iid (7)
@@ -17,12 +18,13 @@
 //   [1]      src1_vld
 //   [0]      src0_vld
 //
-// ⚠️ 这个顺序必须与 ct_idu_is_dp.sv 的 101 位打包顺序逐位一致。
+// ⚠️ 这个顺序必须与 ct_idu_is_dp.sv 的 104 位打包顺序逐位一致。
 // =============================================================================
 `ifndef CT_IDU_VECQ_DEFS_SVH
 `define CT_IDU_VECQ_DEFS_SVH
 
-`define VIQ_WIDTH      101
+`define VIQ_WIDTH      104
+`define VIQ_LSID       103   // [103:101]
 `define VIQ_PC         100   // [100:69]
 `define VIQ_OPCODE     68    // [68:37]
 `define VIQ_IID        36    // [36:30]

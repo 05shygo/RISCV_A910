@@ -78,6 +78,8 @@ module RTU_ROB (
     output wire [6:0] win_iid0,
     output wire [6:0] win_iid1,
     output wire [6:0] win_iid2,
+    // 2026-10-18: 提交窗口有效位 (给向量 L/S 的 LQ/SQ 提前提交指示)
+    output wire [2:0] win_valid,
     output wire [`RTU_E_W-1:0] win_q0,
     output wire [`RTU_E_W-1:0] win_q1,
     output wire [`RTU_E_W-1:0] win_q2,
@@ -338,6 +340,9 @@ module RTU_ROB (
     assign win_iid0            = {win_q0[`RTU_E_WRAP], win_idx0};
     assign win_iid1            = {win_q1[`RTU_E_WRAP], win_idx1};
     assign win_iid2            = {win_q2[`RTU_E_WRAP], win_idx2};
+    assign win_valid           = {win_q2[`RTU_E_VLD],
+                                  win_q1[`RTU_E_VLD],
+                                  win_q0[`RTU_E_VLD]};
     assign occ                 = occ_q;
     assign rob_full            = (occ_q >= `RTU_ROB_FULL_TH);
 

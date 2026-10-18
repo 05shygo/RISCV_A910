@@ -2391,11 +2391,7 @@ module rvv_backend_decode_unit_ari_de2
     // S6: 非 LSU uop 不用 rs2; 显式填 0, 避免 UOP_QUEUE_t 里留 X
     assign uop[j].rs2_data              = '0;
     assign uop[j].rs2_data_valid        = 'b0;
-    // S3b: 标量源等待 (物理号 / 是否使用 / issue 时是否已写回)
-    assign uop[j].rs1_preg              = lcmd.cmd.rs1_preg;
-    assign uop[j].rs1_vld               = lcmd.cmd.rs1_vld;
-    assign uop[j].rs1_wb                = lcmd.cmd.rs1_wb;
-    assign uop[j].uop_index             = uop_index[j];         
+    assign uop[j].uop_index             = uop_index[j];
     assign uop[j].first_uop_valid       = first_uop_valid[j];   
     assign uop[j].last_uop_valid        = last_uop_valid[j];    
     assign uop[j].seg_field_index       = 'b0;   

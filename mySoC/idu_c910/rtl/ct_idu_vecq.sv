@@ -119,15 +119,15 @@ always_comb begin
   for (int k = 0; k < VECQ_ENTRY; k++)
     entry_create_data[k] = {`VIQ_WIDTH{1'bx}};
 
-  // 101 位打包与 is_dp 完全一致; 末尾用单独送来的 iid 覆盖同名字段,
+  // 104 位打包与 is_dp 完全一致; 末尾用单独送来的 iid 覆盖同名字段,
   // 保证“数据包里的 iid”和“create 口的 iid”永远一致。
   entry_create_data[wr_ptr] =
-      {dp_vec_create0_data[`VIQ_PC:`VIQ_IID+1],
+      {dp_vec_create0_data[`VIQ_LSID:`VIQ_IID+1],
        dp_vec_create0_iid[6:0],
        dp_vec_create0_data[`VIQ_VEC_TYPE:0]};
 
   entry_create_data[create1_slot] =
-      {dp_vec_create1_data[`VIQ_PC:`VIQ_IID+1],
+      {dp_vec_create1_data[`VIQ_LSID:`VIQ_IID+1],
        dp_vec_create1_iid[6:0],
        dp_vec_create1_data[`VIQ_VEC_TYPE:0]};
 end
@@ -168,16 +168,11 @@ always_comb begin
   endcase
 end
 
-// 2026-10-17 S3b: 只有 vset* 在 vecq 里等源 ready (它不进入 RVV 后端);
-// 其余向量计算指令立即发射, 迟到写回在 RVV 的 ALU/MUL/DIV/PMT RS 里等;
-// 向量 L/S 的基址等待在 A910 LSIQ (S7)。
-// head 的 101 位表项 [68:37] 是完整指令字: opcode=[43:37], funct3=[51:49]。
-wire [6:0] head_opcode = head_data[`VIQ_OPCODE-25:`VIQ_OPCODE-31];
-wire [2:0] head_funct3 = head_data[`VIQ_OPCODE-17:`VIQ_OPCODE-19];
-wire       head_is_vset = (head_opcode == 7'b1010111) && (head_funct3 == 3'b111);
-
-assign vecq_xx_issue_en = entry_vld[rd_ptr] &&
-                          (!head_is_vset || entry_rdy[rd_ptr]);
+// 2026-10-18: **所有**向量指令都在 vecq 里等它需要的标量源 ready 后才发射。
+// 发射时带出的标量快照 (含同拍写回旁路) 因此一定是有效值, 向量 L/S 的
+// 基址/步长同样受保护。srcX_vld=0 的表项在 entry 内部被强制成
+// {preg0, wb=1} ⇒ 无标量源的指令仍然当拍 ready, 不会多等。
+assign vecq_xx_issue_en = entry_vld[rd_ptr] && entry_rdy[rd_ptr];
 
 //==========================================================
 //                    PRF 读地址

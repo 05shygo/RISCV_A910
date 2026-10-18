@@ -108,6 +108,14 @@ module lsu_mshr #(
     output logic [31:0]  rb_biu_ar_addr,
     output logic [3:0]   rb_biu_ar_id,
     output logic [1:0]   rb_biu_ar_len,
+    // 2026-10-18 直连向量 L/S: 16B no-fill 响应回 fill
+    output logic         rb_vec_rsp_vld,
+    output logic [4:0]   rb_vec_rsp_fill_id,
+    output logic [6:0]   rb_vec_rsp_iid,
+    output logic [4:0]   rb_vec_rsp_uop_idx,
+    output logic [127:0] rb_vec_rsp_data,
+    output logic [15:0]  rb_vec_rsp_bytes_vld,
+    input  logic         rb_vec_rsp_grnt,
     output logic [2:0]   rb_biu_ar_size,
     output logic [1:0]   rb_biu_ar_burst,
     //output logic         rb_biu_ar_lock,
@@ -169,6 +177,8 @@ logic [RB_ENTRY-1:0] rb_biu_pe_req_ptr;
 // 2026-10-15 停用: 死亡声明 (无驱动无负载, 与本次非对齐摘除无关的既有残留): logic                 rb_biu_req_create_lfb;
 logic [RB_ENTRY-1:0] rb_biu_req_ptr;
 logic                 rb_biu_req_unmask;
+logic                 rb_biu_req_vec_q;
+logic [1:0]           rb_biu_req_ptr_idx;
 logic [RB_ENTRY-1:0] rb_create_ptr0;
 logic [RB_ENTRY-1:0] rb_create_ptr1;
 logic [RB_ENTRY-1:0] rb_ld_wb_cmplt_ptr;
@@ -229,6 +239,13 @@ logic [RB_ENTRY-1:0] rb_entry_wb_data_grnt;
 logic [RB_ENTRY-1:0] rb_entry_wb_data_pre_sel;
 logic [RB_ENTRY-1:0] rb_entry_wb_data_req;
 logic [RB_ENTRY-1:0] rb_entry_wmb_ce_hit_idx;
+logic [RB_ENTRY-1:0] rb_entry_vec;
+logic [RB_ENTRY-1:0] rb_entry_vec_rsp;
+logic [RB_ENTRY-1:0] rb_entry_vec_rsp_grnt;
+logic [127:0]        rb_entry_vec_data [RB_ENTRY-1:0];
+logic [15:0]         rb_entry_vec_bytes_vld [RB_ENTRY-1:0];
+logic [6:0]          rb_entry_vec_iid [RB_ENTRY-1:0];
+logic [4:0]          rb_entry_vec_fill_id [RB_ENTRY-1:0];
 logic [31:0]         rb_entry_addr [RB_ENTRY-1:0];
 logic [31:0]         rb_entry_data [RB_ENTRY-1:0];
 logic [6:0]          rb_entry_iid [RB_ENTRY-1:0];
@@ -324,7 +341,14 @@ lsu_mshr_entry u_mshr_entry (
     .rb_entry_wb_cmplt_req_x        (rb_entry_wb_cmplt_req[i]),
     .rb_entry_wb_data_pre_sel_x     (rb_entry_wb_data_pre_sel[i]),
     .rb_entry_wb_data_req_x         (rb_entry_wb_data_req[i]),
-    .rb_entry_wmb_ce_hit_idx_x      (rb_entry_wmb_ce_hit_idx[i])
+    .rb_entry_wmb_ce_hit_idx_x      (rb_entry_wmb_ce_hit_idx[i]),
+    .rb_entry_vec_rsp_grnt_x        (rb_entry_vec_rsp_grnt[i]),
+    .rb_entry_vec_x                 (rb_entry_vec[i]),
+    .rb_entry_vec_rsp_x             (rb_entry_vec_rsp[i]),
+    .rb_entry_vec_data_x            (rb_entry_vec_data[i]),
+    .rb_entry_vec_bytes_vld_x       (rb_entry_vec_bytes_vld[i]),
+    .rb_entry_vec_iid_x             (rb_entry_vec_iid[i]),
+    .rb_entry_vec_fill_id_x         (rb_entry_vec_fill_id[i])
 );
     end
 endgenerate
@@ -417,17 +441,28 @@ begin
   begin
     rb_biu_req_ptr[RB_ENTRY-1:0] <= {RB_ENTRY{1'b0}};
     rb_biu_req_addr[31:0]         <= 32'b0;
+    rb_biu_req_vec_q              <= 1'b0;
   end
   else if (rb_biu_pe_req_permit && rb_biu_pe_req)
   begin
     rb_biu_req_ptr[RB_ENTRY-1:0] <= rb_biu_pe_req_ptr[RB_ENTRY-1:0];
     rb_biu_req_addr[31:0]         <= rb_biu_pe_req_addr[31:0];
+    rb_biu_req_vec_q              <= |(rb_biu_pe_req_ptr[RB_ENTRY-1:0] & rb_entry_vec[RB_ENTRY-1:0]);
   end
   else if (rb_ld_biu_pe_req_grnt)
   begin
     rb_biu_req_ptr[RB_ENTRY-1:0] <= rb_create_ptr0[RB_ENTRY-1:0];
     rb_biu_req_addr[31:0]         <= ld_da_addr[31:0];
+    rb_biu_req_vec_q              <= ld_da_vec;
   end
+end
+
+// request 槽号 (2 位, 给 vector no-fill 的 BIU ID 用)
+always @(*)
+begin
+  rb_biu_req_ptr_idx[1:0] = 2'd0;
+  for (int k = RB_ENTRY-1; k >= 0; k--)
+    if (rb_biu_req_ptr[k]) rb_biu_req_ptr_idx = k[1:0];
 end
 
 //-----------------------biu req ptr------------------------
@@ -486,15 +521,18 @@ assign rb_biu_req_hit_idx = wmb_rb_biu_req_hit_idx
 assign rb_biu_ar_req = rb_biu_req_unmask
                        && !rb_biu_req_flush_clear
                        && !rb_biu_req_hit_idx
-                       && !lfb_addr_full
-                       && lfb_rb_ca_rready_grnt;
+                       && (!lfb_addr_full || rb_biu_req_vec_q)
+                       && (lfb_rb_ca_rready_grnt || rb_biu_req_vec_q);
 
 assign rb_biu_ar_addr[31:0] = {rb_biu_req_addr[31:4],4'b0};
-assign rb_biu_ar_id[3:0]    = lfb_rb_create_id[3:0];
-// fixed: 2-beat burst (32B linefill), 16B/beat
-assign rb_biu_ar_len[1:0]   = 2'b01;
+// 2026-10-18: vector no-fill 用 2'b10 前缀的独立 BIU ID (LFB=00, WMB=01),
+// 单 beat / 16B / INCR, 不分配 LFB。
+assign rb_biu_ar_id[3:0]    = rb_biu_req_vec_q
+                              ? {2'b10, rb_biu_req_ptr_idx[1:0]}
+                              : lfb_rb_create_id[3:0];
+assign rb_biu_ar_len[1:0]   = rb_biu_req_vec_q ? 2'b00 : 2'b01;
 assign rb_biu_ar_size[2:0]  = 3'b100;
-assign rb_biu_ar_burst[1:0] = 2'b10;   // WRAP
+assign rb_biu_ar_burst[1:0] = rb_biu_req_vec_q ? 2'b01 : 2'b10;   // INCR / WRAP
 //assign rb_biu_ar_lock       = 1'b0;
 assign rb_biu_ar_cache[3:0] = 4'b1111; // cacheable + bufferable
 assign rb_biu_ar_prot[2:0]  = 3'b000;
@@ -649,15 +687,48 @@ assign rb_st_da_hit_idx  = |rb_entry_st_da_hit_idx[RB_ENTRY-1:0];
 //        interface to other module (except biu_arb)
 //==========================================================
 //------------------------lfb-------------------------------
-assign rb_lfb_create_req = rb_biu_req_unmask;
+assign rb_lfb_create_req = rb_biu_req_unmask && !rb_biu_req_vec_q;
 assign rb_lfb_depd       = |(rb_biu_req_ptr[RB_ENTRY-1:0]
                              & (rb_entry_depd[RB_ENTRY-1:0]
                                 | rb_entry_discard_vld[RB_ENTRY-1:0]));
 assign rb_lfb_addr_tto4[27:0] = rb_biu_req_addr[31:4];
 
-assign rb_lfb_create_vld = bus_arb_rb_ar_grnt;
+assign rb_lfb_create_vld = bus_arb_rb_ar_grnt && !rb_biu_req_vec_q;
 assign rb_lfb_boundary_depd_wakeup = |(rb_entry_boundary_wakeup[RB_ENTRY-1:0]);
 
+//==========================================================
+// 2026-10-18 直连向量 L/S: 16B 响应选路 (最低项优先)
+//==========================================================
+logic [RB_ENTRY-1:0] rb_vec_rsp_ptr;
 
+always @(*)
+begin
+  rb_vec_rsp_ptr[RB_ENTRY-1:0] = {RB_ENTRY{1'b0}};
+  for (int k = RB_ENTRY-1; k >= 0; k--)
+    if (rb_entry_vec_rsp[k]) rb_vec_rsp_ptr = {{(RB_ENTRY-1){1'b0}},1'b1} << k;
+end
+
+assign rb_vec_rsp_vld = |rb_entry_vec_rsp[RB_ENTRY-1:0];
+
+always @(*)
+begin
+  rb_vec_rsp_fill_id[4:0]  = 5'd0;
+  rb_vec_rsp_iid[6:0]      = 7'd0;
+  rb_vec_rsp_uop_idx[4:0]  = 5'd0;
+  rb_vec_rsp_data[127:0]   = 128'd0;
+  rb_vec_rsp_bytes_vld[15:0] = 16'd0;
+  for (int k = 0; k < RB_ENTRY; k++) begin
+    if (rb_vec_rsp_ptr[k]) begin
+      rb_vec_rsp_fill_id[4:0]    = rb_entry_vec_fill_id[k][4:0];
+      rb_vec_rsp_iid[6:0]        = rb_entry_vec_iid[k][6:0];
+      rb_vec_rsp_uop_idx[4:0]    = rb_entry_vec_fill_id[k][4:0];
+      rb_vec_rsp_data[127:0]     = rb_entry_vec_data[k][127:0];
+      rb_vec_rsp_bytes_vld[15:0] = rb_entry_vec_bytes_vld[k][15:0];
+    end
+  end
+end
+
+assign rb_entry_vec_rsp_grnt[RB_ENTRY-1:0] =
+       rb_vec_rsp_ptr[RB_ENTRY-1:0] & {RB_ENTRY{rb_vec_rsp_grnt}};
 
 endmodule

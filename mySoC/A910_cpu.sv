@@ -500,6 +500,11 @@ module A910_cpu
   logic [  6:0] rtu_yy_xx_commit1_iid;
   logic         rtu_yy_xx_commit2;
   logic [  6:0] rtu_yy_xx_commit2_iid;
+  // 2026-10-18: RTU 头部 3 条提交窗口 (电平) —— 给向量 LQ/SQ 提前提交指示
+  logic [2:0]   rtu_yy_xx_win_valid;
+  logic [6:0]   rtu_yy_xx_win_iid0;
+  logic [6:0]   rtu_yy_xx_win_iid1;
+  logic [6:0]   rtu_yy_xx_win_iid2;
   logic         rtu_lsu_async_flush;
   logic         rtu_flush_busy;   // RTU: 冲刷状态机非 IDLE
 
@@ -1129,6 +1134,31 @@ module A910_cpu
   logic [31:0] idu_vec_inst_pc;
   logic [1:0]  idu_vec_inst_opcode;
   logic [24:0] idu_vec_inst_bits;
+  logic [2:0]  idu_vec_lsid;
+
+  // ---- 2026-10-18 直连向量 L/S: IDU fill <-> LSU ----
+  logic        vec_ls_req_valid;
+  logic        vec_ls_req_ready;
+  logic        vec_ls_req_store;
+  logic        vec_ls_req_nop;
+  logic        vec_ls_req_last;
+  logic [31:0] vec_ls_req_addr;
+  logic [15:0] vec_ls_req_bytes_vld;
+  logic [31:0] vec_ls_req_wdata;
+  logic [2:0]  vec_ls_req_lsid;
+  logic [4:0]  vec_ls_req_fill_id;
+  logic [4:0]  vec_ls_req_uop_idx;
+  logic [4:0]  vec_ls_req_beat_idx;
+  logic [6:0]  vec_ls_req_iid;
+  logic        vec_ls_rsp_valid;
+  logic [4:0]  vec_ls_rsp_fill_id;
+  logic        vec_ls_rsp_load;
+  logic [127:0] vec_ls_rsp_data;
+  logic [15:0] vec_ls_rsp_bytes_vld;
+  logic        vec_ls_req_done_vld;
+  logic [4:0]  vec_ls_req_done_fill_id;
+  logic        idu_lsu_cmit_vec_st_pending;
+
   logic        idu_vec_src0_vld;
   logic [31:0] idu_vec_src0_data;
   logic [5:0]  idu_vec_src0_preg;
@@ -1251,6 +1281,10 @@ module A910_cpu
   .rtu_yy_xx_commit1_iid          (rtu_yy_xx_commit1_iid),
   .rtu_yy_xx_commit2              (rtu_yy_xx_commit2),
   .rtu_yy_xx_commit2_iid          (rtu_yy_xx_commit2_iid),
+  .rtu_yy_xx_win_valid            (rtu_yy_xx_win_valid),
+  .rtu_yy_xx_win_iid0             (rtu_yy_xx_win_iid0),
+  .rtu_yy_xx_win_iid1             (rtu_yy_xx_win_iid1),
+  .rtu_yy_xx_win_iid2             (rtu_yy_xx_win_iid2),
   .lsu_idu_wb_pipe3_wb_preg_vec   (lsu_idu_wb_pipe3_wb_preg_vec),
   .lsu_idu_wb_pipe3_wb_uop_idx    (lsu_idu_wb_pipe3_wb_uop_idx),
   .lsu_idu_wb_pipe3_wb_preg_iid   (lsu_idu_wb_pipe3_wb_preg_iid),
@@ -1439,14 +1473,33 @@ module A910_cpu
   .idu_vec_inst_pc                (idu_vec_inst_pc),
   .idu_vec_inst_opcode            (idu_vec_inst_opcode),
   .idu_vec_inst_bits              (idu_vec_inst_bits),
+  .idu_vec_lsid                   (idu_vec_lsid),
+  // 2026-10-18 直连向量 L/S
+  .vec_ls_req_valid               (vec_ls_req_valid),
+  .vec_ls_req_ready               (vec_ls_req_ready),
+  .vec_ls_req_store               (vec_ls_req_store),
+  .vec_ls_req_nop                 (vec_ls_req_nop),
+  .vec_ls_req_last                (vec_ls_req_last),
+  .vec_ls_req_addr                (vec_ls_req_addr),
+  .vec_ls_req_bytes_vld           (vec_ls_req_bytes_vld),
+  .vec_ls_req_wdata               (vec_ls_req_wdata),
+  .vec_ls_req_lsid                (vec_ls_req_lsid),
+  .vec_ls_req_fill_id             (vec_ls_req_fill_id),
+  .vec_ls_req_uop_idx             (vec_ls_req_uop_idx),
+  .vec_ls_req_beat_idx            (vec_ls_req_beat_idx),
+  .vec_ls_req_iid                 (vec_ls_req_iid),
+  .vec_ls_rsp_valid               (vec_ls_rsp_valid),
+  .vec_ls_rsp_fill_id             (vec_ls_rsp_fill_id),
+  .vec_ls_rsp_load                (vec_ls_rsp_load),
+  .vec_ls_rsp_data                (vec_ls_rsp_data),
+  .vec_ls_rsp_bytes_vld           (vec_ls_rsp_bytes_vld),
+  .vec_ls_req_done_vld            (vec_ls_req_done_vld),
+  .vec_ls_req_done_fill_id        (vec_ls_req_done_fill_id),
+  .idu_lsu_cmit_vec_st_pending    (idu_lsu_cmit_vec_st_pending),
   .idu_vec_src0_vld               (idu_vec_src0_vld),
   .idu_vec_src0_data              (idu_vec_src0_data),
-  .idu_vec_src0_preg              (idu_vec_src0_preg),
-  .idu_vec_src0_wb                (idu_vec_src0_wb),
   .idu_vec_src1_vld               (idu_vec_src1_vld),
   .idu_vec_src1_data              (idu_vec_src1_data),
-  .idu_vec_src1_preg              (idu_vec_src1_preg),
-  .idu_vec_src1_wb                (idu_vec_src1_wb),
   .idu_vec_dst_preg               (idu_vec_dst_preg),
   .idu_vec_dst_vld                (idu_vec_dst_vld),
   .idu_vec_dst_reg                (idu_vec_dst_reg),
@@ -1485,6 +1538,7 @@ module A910_cpu
     .idu_vec_inst_pc                (idu_vec_inst_pc),
     .idu_vec_inst_opcode            (idu_vec_inst_opcode),
     .idu_vec_inst_bits              (idu_vec_inst_bits),
+    .idu_vec_lsid                   (idu_vec_lsid),
     .idu_vec_src0_vld               (idu_vec_src0_vld),
     .idu_vec_src0_data              (idu_vec_src0_data),
     .idu_vec_src0_preg              (idu_vec_src0_preg),
@@ -1516,23 +1570,6 @@ module A910_cpu
     .rtu_commit_iid1                (rtu_yy_xx_commit1_iid),
     .rtu_commit_iid2                (rtu_yy_xx_commit2_iid),
     .rtu_flush                      (rtu_yy_xx_flush),
-
-    // 标量写回直通 (S3b): {vset, LSU pipe3, IU pipe2, pipe1, pipe0}
-    .scalar_wb_vld                  ({rvv_idu_vset_wb_vld,
-                                      lsu_idu_wb_pipe3_wb_preg_vld,
-                                      iu_idu_ex2_pipe2_wb_preg_vld,
-                                      iu_idu_ex2_pipe1_wb_preg_vld,
-                                      iu_idu_ex2_pipe0_wb_preg_vld}),
-    .scalar_wb_preg                 ({rvv_idu_vset_wb_preg,
-                                      lsu_idu_wb_pipe3_wb_preg[5:0],
-                                      iu_idu_ex2_pipe2_wb_preg_dupx[5:0],
-                                      iu_idu_ex2_pipe1_wb_preg_dupx[5:0],
-                                      iu_idu_ex2_pipe0_wb_preg_dupx[5:0]}),
-    .scalar_wb_data                 ({rvv_idu_vset_wb_data,
-                                      lsu_idu_wb_pipe3_wb_preg_data,
-                                      iu_idu_ex2_pipe2_wb_preg_data,
-                                      iu_idu_ex2_pipe1_wb_preg_data,
-                                      iu_idu_ex2_pipe0_wb_preg_data}),
 
     // 异常 (S5)
     .rvv_expt_vld                   (rvv_expt_vld),
@@ -1599,7 +1636,8 @@ module A910_cpu
   lsu_top #(
     .DCACHE_SIZE     (2048),
     .LSIQ_ENTRY      (8),
-    .SQ_ENTRY        (6),
+    .SQ_ENTRY        (12),
+    .LQ_ENTRY        (16),
     .SDIQ_ENTRY      (4),
     .WMB_ENTRY       (4),
     .LFB_ADDR_ENTRY  (3),
@@ -1655,6 +1693,10 @@ module A910_cpu
     .rtu_yy_xx_commit1_iid          (rtu_yy_xx_commit1_iid),
     .rtu_yy_xx_commit2              (rtu_yy_xx_commit2),
     .rtu_yy_xx_commit2_iid          (rtu_yy_xx_commit2_iid),
+    .rtu_yy_xx_win_valid            (rtu_yy_xx_win_valid),
+    .rtu_yy_xx_win_iid0             (rtu_yy_xx_win_iid0),
+    .rtu_yy_xx_win_iid1             (rtu_yy_xx_win_iid1),
+    .rtu_yy_xx_win_iid2             (rtu_yy_xx_win_iid2),
     .rtu_lsu_async_flush            (rtu_lsu_async_flush),
 
     // Clock and reset
@@ -1791,7 +1833,30 @@ module A910_cpu
     .lsu_idu_sq_pop_vld             (lsu_idu_sq_pop_vld),
     .lsu_idu_sq_pop_uop_idx         (lsu_idu_sq_pop_uop_idx),
     .lsu_rtu_wb_pipe3_wb_preg_vec   (lsu_rtu_wb_pipe3_wb_preg_vec),
-    .lsu_rtu_wb_pipe4_vec           (lsu_rtu_wb_pipe4_vec)
+    .lsu_rtu_wb_pipe4_vec           (lsu_rtu_wb_pipe4_vec),
+
+    // 2026-10-18 直连向量 L/S
+    .vec_ls_req_valid               (vec_ls_req_valid),
+    .vec_ls_req_ready               (vec_ls_req_ready),
+    .vec_ls_req_store               (vec_ls_req_store),
+    .vec_ls_req_nop                 (vec_ls_req_nop),
+    .vec_ls_req_last                (vec_ls_req_last),
+    .vec_ls_req_addr                (vec_ls_req_addr),
+    .vec_ls_req_bytes_vld           (vec_ls_req_bytes_vld),
+    .vec_ls_req_wdata               (vec_ls_req_wdata),
+    .vec_ls_req_lsid                (vec_ls_req_lsid),
+    .vec_ls_req_fill_id             (vec_ls_req_fill_id),
+    .vec_ls_req_uop_idx             (vec_ls_req_uop_idx),
+    .vec_ls_req_beat_idx            (vec_ls_req_beat_idx),
+    .vec_ls_req_iid                 (vec_ls_req_iid),
+    .vec_ls_rsp_valid               (vec_ls_rsp_valid),
+    .vec_ls_rsp_fill_id             (vec_ls_rsp_fill_id),
+    .vec_ls_rsp_load                (vec_ls_rsp_load),
+    .vec_ls_rsp_data                (vec_ls_rsp_data),
+    .vec_ls_rsp_bytes_vld           (vec_ls_rsp_bytes_vld),
+    .vec_ls_req_done_vld            (vec_ls_req_done_vld),
+    .vec_ls_req_done_fill_id        (vec_ls_req_done_fill_id),
+    .idu_lsu_cmit_vec_st_pending    (idu_lsu_cmit_vec_st_pending)
 
     // Store queue wakeup
  // .sq_data_depd_wakeup            (),
@@ -2250,6 +2315,10 @@ module A910_cpu
     .rtu_yy_xx_commit0_iid      (rtu_yy_xx_commit0_iid),
     .rtu_yy_xx_commit1_iid      (rtu_yy_xx_commit1_iid),
     .rtu_yy_xx_commit2_iid      (rtu_yy_xx_commit2_iid),
+    .rtu_yy_xx_win_valid        (rtu_yy_xx_win_valid),
+    .rtu_yy_xx_win_iid0         (rtu_yy_xx_win_iid0),
+    .rtu_yy_xx_win_iid1         (rtu_yy_xx_win_iid1),
+    .rtu_yy_xx_win_iid2         (rtu_yy_xx_win_iid2),
 
     // ===================== §6.2 异步冲刷 (给 LSU) =====================
     .rtu_lsu_async_flush        (rtu_lsu_async_flush),

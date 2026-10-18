@@ -78,21 +78,6 @@ module rvv_backend
 
     rvv_idle,
 
-    // 2026-10-17 S3b: 标量源迟到写回等待
-    scalar_wb_vld,
-    scalar_wb_preg,
-    scalar_wb_data,
-    src0_wt_vld,
-    src0_wt_iid,
-    src0_wt_preg,
-    src0_wt_wb,
-    src0_wt_data,
-    src1_wt_vld,
-    src1_wt_iid,
-    src1_wt_preg,
-    src1_wt_wb,
-    src1_wt_data,
-
     // 2026-10-17 S4: A910 完成 / 提交接口
     cmt_wmk_valid,
     cmt_wmk_iid,
@@ -104,21 +89,6 @@ module rvv_backend
 // global signal
     input   logic                                 clk;
     input   logic                                 rst_n;
-
-// scalar WB / re-arm (S3b)
-    input   logic [4:0]                           scalar_wb_vld;
-    input   logic [4:0][5:0]                      scalar_wb_preg;
-    input   logic [4:0][31:0]                     scalar_wb_data;
-    input   logic                                 src0_wt_vld;
-    input   logic [6:0]                           src0_wt_iid;
-    input   logic [5:0]                           src0_wt_preg;
-    input   logic                                 src0_wt_wb;
-    input   logic [31:0]                          src0_wt_data;
-    input   logic                                 src1_wt_vld;
-    input   logic [6:0]                           src1_wt_iid;
-    input   logic [5:0]                           src1_wt_preg;
-    input   logic                                 src1_wt_wb;
-    input   logic [31:0]                          src1_wt_data;
 
 // 2026-10-17 S4: A910 完成 / 提交接口 (直通 ROB)
     input   logic                                 cmt_wmk_valid;   // 提交水位 (电平)
@@ -1005,187 +975,19 @@ module rvv_backend
     );
 
   //==========================================================
-  //   标量源迟到写回等待 (2026-10-17 S3b)
+  //              标量源 ready 由 A910 VIQ 保证
   //----------------------------------------------------------
-  // vecq 对非 vset 指令立即发射, 所以标量源可能在 RS 里等。
-  // 每条指令一个按 A910 iid 索引的表项 (ROB 64 深 ⇒ iid[5:0] 在飞窗口中唯一):
-  //   * accept: 写入 {preg, captured=issue 时 wb, data=accept 拍 PRF 读值};
-  //   * WB 命中且尚未 captured: 写入 WB 数据 —— 只认该指令 issue 后的
-  //     **第一次** WB, preg 复用不会把下一个生产者的值串进来;
-  //   * RS 发车时按 rs1_iid 读表: captured 即 ready, data 即当前操作数。
-  // 用"按 preg 的全局最新值 + re-arm"会在 preg 复用时把旧/新生产者串掉,
-  // 所以这里必须按 iid 分开存。
+  // VIQ 现在只发射标量源已写回的向量指令, accept 时带进来的数据就是
+  // 最终值, 因此后端不再需要按 iid 的迟到写回等待表 / RS 端数据回填。
+  // RS 只要非空就发车; multi_fifo 的 almost_empty 是 prefix 语义
+  // (~almost_empty = {cnt>=1, cnt>=2}), 多 lane 天然 in-order。
   //==========================================================
-  typedef struct packed {
-    logic        vld;
-    logic [5:0]  preg;
-    logic        captured;
-    logic [31:0] data;
-  } scalar_wait_t;
-
-  scalar_wait_t src0_wt_tbl [0:127];
-  scalar_wait_t src1_wt_tbl [0:127];
-
-  integer wti, wtj;
-
-  // accept 同拍就有 WB 命中时, 新表项直接记为已捕获 (读值用 WB 数据)
-  logic        src0_wt_hit, src1_wt_hit;
-  logic [31:0] src0_wt_hit_data, src1_wt_hit_data;
-  always_comb begin
-    src0_wt_hit      = 1'b0;
-    src0_wt_hit_data = 32'd0;
-    src1_wt_hit      = 1'b0;
-    src1_wt_hit_data = 32'd0;
-    for (int k = 0; k < 5; k++) begin
-      if (scalar_wb_vld[k] && (scalar_wb_preg[k] == src0_wt_preg)) begin
-        src0_wt_hit      = 1'b1;
-        src0_wt_hit_data = scalar_wb_data[k];
-      end
-      if (scalar_wb_vld[k] && (scalar_wb_preg[k] == src1_wt_preg)) begin
-        src1_wt_hit      = 1'b1;
-        src1_wt_hit_data = scalar_wb_data[k];
-      end
-    end
-  end
-
-  always_ff @(posedge clk or negedge rst_n) begin
-    if (!rst_n) begin
-      for (wti = 0; wti < 128; wti = wti + 1) begin
-        src0_wt_tbl[wti].vld <= 1'b0;
-        src1_wt_tbl[wti].vld <= 1'b0;
-      end
-    end else if (trap_flush_rvv) begin
-      for (wti = 0; wti < 128; wti = wti + 1) begin
-        src0_wt_tbl[wti].vld <= 1'b0;
-        src1_wt_tbl[wti].vld <= 1'b0;
-      end
-    end else begin
-      if (src0_wt_vld) begin
-        src0_wt_tbl[src0_wt_iid[6:0]].vld      <= 1'b1;
-        src0_wt_tbl[src0_wt_iid[6:0]].preg     <= src0_wt_preg;
-        src0_wt_tbl[src0_wt_iid[6:0]].captured <= src0_wt_wb | src0_wt_hit;
-        src0_wt_tbl[src0_wt_iid[6:0]].data     <= src0_wt_hit ? src0_wt_hit_data
-                                                              : src0_wt_data;
-      end
-      if (src1_wt_vld) begin
-        src1_wt_tbl[src1_wt_iid[6:0]].vld      <= 1'b1;
-        src1_wt_tbl[src1_wt_iid[6:0]].preg     <= src1_wt_preg;
-        src1_wt_tbl[src1_wt_iid[6:0]].captured <= src1_wt_wb | src1_wt_hit;
-        src1_wt_tbl[src1_wt_iid[6:0]].data     <= src1_wt_hit ? src1_wt_hit_data
-                                                              : src1_wt_data;
-      end
-      // WB: 命中尚未 captured 的项 ⇒ 捕获该指令 issue 后的第一次写回
-      for (wti = 0; wti < 128; wti = wti + 1) begin
-        if (src0_wt_tbl[wti].vld && !src0_wt_tbl[wti].captured) begin
-          for (wtj = 0; wtj < 5; wtj = wtj + 1) begin
-            if (scalar_wb_vld[wtj] &&
-                (scalar_wb_preg[wtj] == src0_wt_tbl[wti].preg)) begin
-              src0_wt_tbl[wti].captured <= 1'b1;
-              src0_wt_tbl[wti].data     <= scalar_wb_data[wtj];
-            end
-          end
-        end
-        if (src1_wt_tbl[wti].vld && !src1_wt_tbl[wti].captured) begin
-          for (wtj = 0; wtj < 5; wtj = wtj + 1) begin
-            if (scalar_wb_vld[wtj] &&
-                (scalar_wb_preg[wtj] == src1_wt_tbl[wti].preg)) begin
-              src1_wt_tbl[wti].captured <= 1'b1;
-              src1_wt_tbl[wti].data     <= scalar_wb_data[wtj];
-            end
-          end
-        end
-      end
-    end
-  end
-
-  //----------------- per-RS readiness / data fix -------------
-  logic [`NUM_ALU-1:0]     alu_rs1_rdy;
-  logic [`NUM_MUL-1:0]     mul_rs1_rdy;
-  logic [`NUM_DIV-1:0]     div_rs1_rdy;
-  logic [`NUM_PMTRDT-1:0]  pmt_rs1_rdy;
-
-  genvar gr;
-  generate
-    for (gr = 0; gr < `NUM_ALU; gr = gr + 1) begin : gen_alu_rdy
-      assign alu_rs1_rdy[gr] = !uop_rs2alu[gr].rs1_vld ||
-                                src0_wt_tbl[uop_rs2alu[gr].rs1_iid].captured;
-    end
-    for (gr = 0; gr < `NUM_MUL; gr = gr + 1) begin : gen_mul_rdy
-      assign mul_rs1_rdy[gr] = !uop_rs2mul[gr].rs1_vld ||
-                                src0_wt_tbl[uop_rs2mul[gr].rs1_iid].captured;
-    end
-    for (gr = 0; gr < `NUM_DIV; gr = gr + 1) begin : gen_div_rdy
-      assign div_rs1_rdy[gr] = !uop_rs2div[gr].rs1_vld ||
-                                src0_wt_tbl[uop_rs2div[gr].rs1_iid].captured;
-    end
-    for (gr = 0; gr < `NUM_PMTRDT; gr = gr + 1) begin : gen_pmt_rdy
-      assign pmt_rs1_rdy[gr] = !uop_rs2pmtrdt[gr].rs1_vld ||
-                                src0_wt_tbl[uop_rs2pmtrdt[gr].rs1_iid].captured;
-    end
-  endgenerate
-
-  // 修正后的 uop: x-form 的标量快照在 vs1_data[31:0] (PMT 在 rs1_data)
-  ALU_RS_t      [`NUM_ALU-1:0]     uop_rs2alu_fix;
-  MUL_RS_t      [`NUM_MUL-1:0]     uop_rs2mul_fix;
-  DIV_RS_t      [`NUM_DIV-1:0]     uop_rs2div_fix;
-  PMT_RDT_RS_t  [`NUM_PMTRDT-1:0]  uop_rs2pmtrdt_fix;
-
-  always_comb begin
-    for (int i = 0; i < `NUM_ALU; i++) begin
-      uop_rs2alu_fix[i] = uop_rs2alu[i];
-      if (uop_rs2alu[i].rs1_vld)
-        uop_rs2alu_fix[i].vs1_data[`XLEN-1:0] =
-            src0_wt_tbl[uop_rs2alu[i].rs1_iid].data;
-    end
-    for (int i = 0; i < `NUM_MUL; i++) begin
-      uop_rs2mul_fix[i] = uop_rs2mul[i];
-      if (uop_rs2mul[i].rs1_vld)
-        uop_rs2mul_fix[i].vs1_data[`XLEN-1:0] =
-            src0_wt_tbl[uop_rs2mul[i].rs1_iid].data;
-    end
-    for (int i = 0; i < `NUM_DIV; i++) begin
-      uop_rs2div_fix[i] = uop_rs2div[i];
-      if (uop_rs2div[i].rs1_vld)
-        uop_rs2div_fix[i].vs1_data[`XLEN-1:0] =
-            src0_wt_tbl[uop_rs2div[i].rs1_iid].data;
-    end
-    for (int i = 0; i < `NUM_PMTRDT; i++) begin
-      uop_rs2pmtrdt_fix[i] = uop_rs2pmtrdt[i];
-      if (uop_rs2pmtrdt[i].rs1_vld)
-        uop_rs2pmtrdt_fix[i].rs1_data =
-            src0_wt_tbl[uop_rs2pmtrdt[i].rs1_iid].data;
-    end
-  end
-
-  // 发车条件: 队头源 ready; 多 lane 保持 in-order (lane i 要求 0..i 都 ready)
-  logic [`NUM_ALU-1:0]     uop_valid_rs2alu_g;
-  logic [`NUM_MUL-1:0]     uop_valid_rs2mul_g;
-  logic [`NUM_DIV-1:0]     uop_valid_rs2div_g;
-  logic [`NUM_PMTRDT-1:0]  pmt_empty_g;
-
-  always_comb begin
-    uop_valid_rs2alu_g = 'b0;
-    if (`NUM_ALU >= 1)
-      uop_valid_rs2alu_g[0] = ~fifo_almost_empty_rs2alu[0] && alu_rs1_rdy[0];
-    if (`NUM_ALU >= 2)
-      uop_valid_rs2alu_g[1] = ~fifo_almost_empty_rs2alu[1] &&
-                              alu_rs1_rdy[0] && alu_rs1_rdy[1];
-
-    uop_valid_rs2mul_g = 'b0;
-    if (`NUM_MUL >= 1)
-      uop_valid_rs2mul_g[0] = ~fifo_almost_empty_rs2mul[0] && mul_rs1_rdy[0];
-    if (`NUM_MUL >= 2)
-      uop_valid_rs2mul_g[1] = ~fifo_almost_empty_rs2mul[1] &&
-                              mul_rs1_rdy[0] && mul_rs1_rdy[1];
-
-    uop_valid_rs2div_g = ~fifo_almost_empty_rs2div & div_rs1_rdy;
-
-    pmt_empty_g = fifo_almost_empty_rs2pmtrdt | ~pmt_rs1_rdy;
-  end
+  assign uop_valid_rs2alu = ~fifo_almost_empty_rs2alu;
+  assign uop_valid_rs2mul = ~fifo_almost_empty_rs2mul;
+  assign uop_valid_rs2div = ~fifo_almost_empty_rs2div;
 
   // PU, Process unit
     // ALU
-    assign uop_valid_rs2alu = uop_valid_rs2alu_g;
     rvv_backend_alu #(
     ) u_alu (
       // ALU_RS to ALU
@@ -1193,7 +995,7 @@ module rvv_backend
         .rst_n                      (rst_n),
         .pop                        (pop_alu2rs),
         .uop_valid                  (uop_valid_rs2alu),
-        .uop                        (uop_rs2alu_fix),
+        .uop                        (uop_rs2alu),
       // ALU to ROB  
         .result_valid               (res_valid_alu),
         .result                     (res_alu),
@@ -1209,8 +1011,8 @@ module rvv_backend
         .rst_n                      (rst_n),
       // PMTRDT_RS to PMTRDT
         .pop_ex2rs                  (pop_pmtrdt2rs),
-        .pmtrdt_uop_rs2ex           (uop_rs2pmtrdt_fix),
-        .fifo_almost_empty_rs2ex    (pmt_empty_g),
+        .pmtrdt_uop_rs2ex           (uop_rs2pmtrdt),
+        .fifo_almost_empty_rs2ex    (fifo_almost_empty_rs2pmtrdt),
       // PMT to VRF
         .rd_index_pmt2vrf           (rd_index_pmt2vrf),
         .rd_data_vrf2pmt            (rd_data_vrf2pmt),
@@ -1230,8 +1032,8 @@ module rvv_backend
         .clk                        (clk),
         .rst_n                      (rst_n),
         .trap_flush_rvv             (trap_flush_rvv),
-        .uop_valid_rs2ex            (uop_valid_rs2mul_g),
-        .mac_uop_rs2ex              (uop_rs2mul_fix),
+        .uop_valid_rs2ex            (uop_valid_rs2mul),
+        .mac_uop_rs2ex              (uop_rs2mul),
         .pop                        (pop_mul2rs),
         .res_valid_ex2rob           (res_valid_mul),
         .res_ex2rob                 (res_mul),
@@ -1239,7 +1041,6 @@ module rvv_backend
     );
     
     // DIV
-    assign uop_valid_rs2div = uop_valid_rs2div_g;
     rvv_backend_div u_div
     (  
       .clk                          (clk),
@@ -1247,7 +1048,7 @@ module rvv_backend
       // DIV_RS to DIV
       .pop                          (pop_div2rs),
       .uop_valid                    (uop_valid_rs2div),
-      .uop                          (uop_rs2div_fix),
+      .uop                          (uop_rs2div),
       // DIV to ROB
       .result_valid                 (res_valid_div),
       .result                       (res_div),

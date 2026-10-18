@@ -77,6 +77,8 @@ module RvvCore #(parameter N = 1,
   output  logic     [`NUM_LSU-1:0][`ROB_TAG_WIDTH-1:0]                    uop_lsu_rob_tag_rvv2lsu,
   output  logic     [`NUM_LSU-1:0][`UOP_INDEX_WIDTH_LSU-1:0]              uop_lsu_uop_index_rvv2lsu,
   output  logic     [`NUM_LSU-1:0][2:0]                                   uop_lsu_lsu_id_rvv2lsu,
+  // 2026-10-18 直连向量 L/S: IDU LSIQ anchor 槽号
+  output  logic     [`NUM_LSU-1:0][2:0]                                   uop_lsu_lsid_rvv2lsu,
   output  logic     [`NUM_LSU-1:0]                                        uop_lsu_first_rvv2lsu,
   output  logic     [`NUM_LSU-1:0]                                        uop_lsu_last_rvv2lsu,
   output  logic     [`NUM_LSU-1:0]                                        uop_lsu_is_store_rvv2lsu,
@@ -144,22 +146,6 @@ module RvvCore #(parameter N = 1,
   input  logic                  config_load_valid_i,
   input  RVVConfigState         config_load_data_i,
 
-  //==========================================================
-  // 标量源等待 (2026-10-17 S3b)
-  //==========================================================
-  // 每条指令的标量源: 物理号 / 是否使用 / issue 时是否已写回。
-  input  logic [N-1:0]              src0_vld_i,
-  input  logic [N-1:0][5:0]         src0_preg_i,
-  input  logic [N-1:0]              src0_wb_i,
-  input  logic [N-1:0][31:0]        src0_data_i,
-  input  logic [N-1:0]              src1_vld_i,
-  input  logic [N-1:0][5:0]         src1_preg_i,
-  input  logic [N-1:0]              src1_wb_i,
-  input  logic [N-1:0][31:0]        src1_data_i,
-  // A910 标量写回: IU pipe0/1/2、LSU pipe3、vset
-  input  logic [4:0]                scalar_wb_vld,
-  input  logic [4:0][5:0]           scalar_wb_preg,
-  input  logic [4:0][31:0]          scalar_wb_data,
   // 提交水位 / 完成 (S4 接 backend; S3 本模块内钉 0)。
   input  logic                  cmt_wmk_valid_i,
   input  logic [`ROB_TAG_WIDTH-1:0] cmt_wmk_iid_i,
@@ -187,17 +173,6 @@ module RvvCore #(parameter N = 1,
 );
   logic [N-1:0] frontend_cmd_valid;
   RVVCmd [N-1:0] frontend_cmd_data;
-  // frontend → backend 的按-iid 源等待表写口 (S3b)
-  logic [N-1:0]       src0_wt_vld;
-  logic [N-1:0][6:0]  src0_wt_iid;
-  logic [N-1:0][5:0]  src0_wt_preg;
-  logic [N-1:0]       src0_wt_wb;
-  logic [N-1:0][31:0] src0_wt_data;
-  logic [N-1:0]       src1_wt_vld;
-  logic [N-1:0][6:0]  src1_wt_iid;
-  logic [N-1:0][5:0]  src1_wt_preg;
-  logic [N-1:0]       src1_wt_wb;
-  logic [N-1:0][31:0] src1_wt_data;
   logic [$clog2(2*N + 1)-1:0] queue_capacity_internal;
   RvvFrontEnd#(.N(N), .RegDataT(RegDataT), .RegAddrT(RegAddrT)) frontend(
       .clk(clk),
@@ -229,30 +204,8 @@ module RvvCore #(parameter N = 1,
       // S3: A910 bridge 接口
       .cmd_config_state_o(cmd_config_state_o),
       .config_load_valid_i(config_load_valid_i),
-      .config_load_data_i(config_load_data_i),
-      // S3b: 源等待 + re-arm
-      .src0_vld_i(src0_vld_i),
-      .src0_preg_i(src0_preg_i),
-      .src0_wb_i(src0_wb_i),
-      .src0_data_i(src0_data_i),
-      .src1_vld_i(src1_vld_i),
-      .src1_preg_i(src1_preg_i),
-      .src1_wb_i(src1_wb_i),
-      .src1_data_i(src1_data_i),
-      .src0_wt_vld(src0_wt_vld),
-      .src0_wt_iid(src0_wt_iid),
-      .src0_wt_preg(src0_wt_preg),
-      .src0_wt_wb(src0_wt_wb),
-      .src0_wt_data(src0_wt_data),
-      .src1_wt_vld(src1_wt_vld),
-      .src1_wt_iid(src1_wt_iid),
-      .src1_wt_preg(src1_wt_preg),
-      .src1_wt_wb(src1_wt_wb),
-      .src1_wt_data(src1_wt_data)
+      .config_load_data_i(config_load_data_i)
   );
-
-  // frontend → backend 的 re-arm 脉冲 (S3b)
-
 
   //==========================================================
   //  S4: 完成/提交水位由 backend 的 ROB 驱动 (见下方 rvv_backend 例化)
@@ -288,6 +241,7 @@ module RvvCore #(parameter N = 1,
         uop_lsu_v0_data_rvv2lsu[i] = uop_lsu_rvv2lsu[i].v0_data;
         // S6: A910 LSU 需要的完整字段
         uop_lsu_rob_tag_rvv2lsu[i]  = uop_lsu_rvv2lsu[i].rob_tag;
+        uop_lsu_lsid_rvv2lsu[i]     = uop_lsu_rvv2lsu[i].lsid;
         uop_lsu_uop_index_rvv2lsu[i]= uop_lsu_rvv2lsu[i].uop_index;
         uop_lsu_first_rvv2lsu[i]    = uop_lsu_rvv2lsu[i].first_uop_valid;
         uop_lsu_last_rvv2lsu[i]     = uop_lsu_rvv2lsu[i].last_uop_valid;
@@ -420,20 +374,6 @@ module RvvCore #(parameter N = 1,
   rvv_backend backend(
       .clk(clk),
       .rst_n(rstn),
-      // S3b: 标量写回 + re-arm
-      .scalar_wb_vld(scalar_wb_vld),
-      .scalar_wb_preg(scalar_wb_preg),
-      .scalar_wb_data(scalar_wb_data),
-      .src0_wt_vld(src0_wt_vld[0]),
-      .src0_wt_iid(src0_wt_iid[0]),
-      .src0_wt_preg(src0_wt_preg[0]),
-      .src0_wt_wb(src0_wt_wb[0]),
-      .src0_wt_data(src0_wt_data[0]),
-      .src1_wt_vld(src1_wt_vld[0]),
-      .src1_wt_iid(src1_wt_iid[0]),
-      .src1_wt_preg(src1_wt_preg[0]),
-      .src1_wt_wb(src1_wt_wb[0]),
-      .src1_wt_data(src1_wt_data[0]),
       // S4: A910 完成 / 提交
       .cmt_wmk_valid(cmt_wmk_valid_i),
       .cmt_wmk_iid(cmt_wmk_iid_i),

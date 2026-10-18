@@ -55,7 +55,11 @@ module ct_idu_is_lsiq (
   output logic          lsiq_dp_pipe4_issue_vec,
   output logic [7:0]    lsiq_vec_old,            // 该 anchor 是否是 LSIQ 最老项
   output logic [7:0]    lsiq_vec_create_entry,   // 本拍建的是哪个表项 (one-hot)
-  output logic          lsiq_vec_create_vld
+  output logic          lsiq_vec_create_vld,
+  // 2026-10-18 直连向量 L/S: 把本拍 create0/1 实际落到的空闲槽 one-hot 导出,
+  // 供 is_dp 按 iid 配对后把 lsid 打进 VIQ 表项。
+  output logic [7:0]    lsiq_create0_entry,
+  output logic [7:0]    lsiq_create1_entry
 );
 
 parameter LSIQ_WIDTH             = 61;      // S7: 60→61
@@ -397,6 +401,11 @@ assign lsiq_entry_create_en[7:0] =
        {8{ctrl_lsiq_create0_en}} & lsiq_entry_create0_in[7:0]
      | {8{ctrl_lsiq_create1_en}} & lsiq_entry_create1_in[7:0];
 
+// 2026-10-18: create0/1 实际落到哪个空闲槽 (one-hot, 已按 create_en 门控)。
+// 只依赖 lsiq_entry_vld 的空闲槽编码, 不依赖 create data ⇒ 不会与 is_dp 组合环。
+assign lsiq_create0_entry[7:0] = {8{ctrl_lsiq_create0_en}} & lsiq_entry_create0_in[7:0];
+assign lsiq_create1_entry[7:0] = {8{ctrl_lsiq_create1_en}} & lsiq_entry_create1_in[7:0];
+
 assign lsiq_entry0_create_en  = lsiq_entry_create_en[0];
 assign lsiq_entry1_create_en  = lsiq_entry_create_en[1];
 assign lsiq_entry2_create_en  = lsiq_entry_create_en[2];
@@ -577,11 +586,15 @@ assign lsiq_entry_issue_en[7:0]  = lsiq_entry_ready[7:0];
 
 //---------------entry issue signals for rf pipes-----------
 //load entry ready
+// 2026-10-18: 向量 L/S anchor 永久冻结 —— 不再走 LSIQ 发射, 请求由 fill
+// 直连 LSU。这里只让标量 load/store 进入 RF 发射口。
 assign lsiq_pipe3_entry_ready[7:0]    = lsiq_entry_ready[7:0]
-                                         & lsiq_entry_load[7:0];
+                                         & lsiq_entry_load[7:0]
+                                         & ~lsiq_entry_vec[7:0];
 //store and bar entry ready
 assign lsiq_pipe4_entry_ready[7:0]    = lsiq_entry_ready[7:0]
-                                         & lsiq_entry_store[7:0];
+                                         & lsiq_entry_store[7:0]
+                                         & ~lsiq_entry_vec[7:0];
 //issue enable for rf pipes:
 //consider inst type
 assign lsiq_dp_pipe3_issue_entry[7:0] = lsiq_pipe3_entry_ready[7:0];

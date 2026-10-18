@@ -1,5 +1,5 @@
 module ct_lsu_sq_entry #(
-    parameter SQ_ENTRY   = 6,
+    parameter SQ_ENTRY   = 12,
     parameter LSIQ_ENTRY = 8,
     parameter IID_WIDTH  = 7
 )(
@@ -82,6 +82,7 @@ module ct_lsu_sq_entry #(
     input  logic                  st_da_inst_vld,
     input  logic                  st_da_vec,
     input  logic [4:0]            st_da_uop_idx,
+    input  logic [4:0]            st_da_beat_idx,
     // 2026-10-15 停用: 非对齐拆分通路整条摘掉 (secd/boundary)
     //input  logic                  st_da_secd,
     input  logic                  st_da_sq_dcache_dirty,
@@ -99,11 +100,13 @@ module ct_lsu_sq_entry #(
     input  logic [IID_WIDTH-1:0]  st_dc_iid,
     input  logic                  st_dc_vec,
     input  logic [4:0]            st_dc_uop_idx,
+    input  logic [4:0]            st_dc_beat_idx,
     input  logic [7:0]            st_dc_rot_sel_rev,
     input  logic [3:0]            st_dc_sdid,
  //   input  logic                  st_dc_sdid_hit,
     //input  logic                  st_dc_secd,
     input  logic                  st_dc_sq_data_vld,
+    input  logic [31:0]           st_dc_sq_data,       // 2026-10-18 向量 store 直连数据
 
     //==========================================================
     // WMB
@@ -197,7 +200,7 @@ module ct_lsu_sq_entry #(
     logic                  sq_entry_cmit0_iid_pre_hit;
     logic                  sq_entry_cmit1_iid_pre_hit;
     logic                  sq_entry_cmit2_iid_pre_hit;
-    logic                  sq_entry_cmit_data_not_vld;
+    // 2026-10-18: 它是模块 output (line 123), 不能在内部重复声明
   //  logic                  sq_entry_cmit_data_vld;
     logic                  sq_entry_cmit_hit0;
     logic                  sq_entry_cmit_hit1;
@@ -250,6 +253,7 @@ module ct_lsu_sq_entry #(
     // 2026-10-17 S7
     logic                  sq_entry_vec;
     logic [4:0]            sq_entry_uop_idx;
+    logic [4:0]            sq_entry_beat_idx;
     logic                  sq_entry_st_dc_bv_do_hit;
     logic                  sq_entry_st_dc_create_age_vec;
     logic                  sq_entry_st_dc_same_addr_newer;
@@ -302,6 +306,7 @@ module ct_lsu_sq_entry #(
             sq_entry_iid[IID_WIDTH-1:0]  <= st_dc_iid[IID_WIDTH-1:0];
             sq_entry_vec                 <= st_dc_vec;
             sq_entry_uop_idx[4:0]        <= st_dc_uop_idx[4:0];
+            sq_entry_beat_idx[4:0]       <= st_dc_beat_idx[4:0];
             sq_entry_sdid[3:0]           <= st_dc_sdid[3:0];
             //sq_entry_boundary            <= st_dc_boundary;
             //sq_entry_secd                <= st_dc_secd;
@@ -356,6 +361,8 @@ module ct_lsu_sq_entry #(
     always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
         if (!cpurst_b)
             sq_entry_data[31:0] <= 32'b0;
+        else if (sq_entry_create_vld && st_dc_sq_data_vld)
+            sq_entry_data[31:0] <= st_dc_sq_data[31:0];
         else if (sq_entry_data_set)
             sq_entry_data[31:0] <= sq_data_settle[31:0];
     end
@@ -466,7 +473,8 @@ module ct_lsu_sq_entry #(
                                      //(st_da_secd == sq_entry_secd) &&
                                      (st_da_iid[IID_WIDTH-1:0] == sq_entry_iid[IID_WIDTH-1:0]) &&
                                      (!st_da_vec ||
-                                      (sq_entry_uop_idx[4:0] == st_da_uop_idx[4:0]));
+                                      ((sq_entry_uop_idx[4:0]  == st_da_uop_idx[4:0]) &&
+                                       (sq_entry_beat_idx[4:0] == st_da_beat_idx[4:0])));
 
     // 2026-10-15 停用: 非对齐"第二半"表项创建 (st_dc_secd 恒 0)
     //assign sq_bond_secd_create_vld = sq_entry_vld && sq_create_success &&
@@ -497,7 +505,8 @@ module ct_lsu_sq_entry #(
                                //(sq_entry_secd == st_dc_secd) &&
                                (sq_entry_iid[IID_WIDTH-1:0] == st_dc_iid[IID_WIDTH-1:0]) &&
                                (!st_dc_vec ||
-                                (sq_entry_uop_idx[4:0] == st_dc_uop_idx[4:0]));
+                                ((sq_entry_uop_idx[4:0]  == st_dc_uop_idx[4:0]) &&
+                                 (sq_entry_beat_idx[4:0] == st_dc_beat_idx[4:0])));
 
     //==========================================================
     //            Compare dcache write port(dcwp)

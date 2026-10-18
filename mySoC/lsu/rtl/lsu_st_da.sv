@@ -46,6 +46,8 @@ module ct_lsu_st_da #(
   input  logic [6:0]   st_dc_iid,
     input  logic         st_dc_vec,
     input  logic [4:0]   st_dc_uop_idx,
+    input  logic [4:0]   st_dc_beat_idx,
+    input  logic [4:0]   st_dc_fill_id,
     input  logic         st_dc_last,
   input  logic         st_dc_inst_vld,
   input  logic [LSIQ_ENTRY-1:0] st_dc_lsid,
@@ -69,6 +71,8 @@ module ct_lsu_st_da #(
   output logic [6:0]   st_da_iid,
   output logic         st_da_vec,
   output logic [4:0]   st_da_uop_idx,
+  output logic [4:0]   st_da_beat_idx,
+  output logic [4:0]   st_da_fill_id,
   output logic         st_da_last,
   output logic [LSIQ_ENTRY-1:0] st_da_idu_beat_done,
   output logic         st_da_inst_vld,
@@ -89,7 +93,12 @@ module ct_lsu_st_da #(
   output logic [31:0]  st_da_addr,
   //output logic         st_da_boundary,      // 2026-10-15 停用
   output logic [15:0]  st_da_bytes_vld,
-  output logic         st_da_sq_no_restart
+  output logic         st_da_sq_no_restart,
+  // 2026-10-18 直连向量 L/S
+  output logic         st_da_vec_done,
+  output logic         st_da_vec_restart,
+  output logic         st_da_vec_restart_imme,
+  output logic [4:0]   st_da_vec_restart_fill_id
 );
 
 localparam int INDEX_LSB = OFFSET_WIDTH;
@@ -181,6 +190,8 @@ always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
     st_da_iid <= 7'b0;
     st_da_vec <= 1'b0;
     st_da_uop_idx <= 5'b0;
+    st_da_beat_idx <= 5'b0;
+    st_da_fill_id  <= 5'b0;
     st_da_last <= 1'b0;
     st_da_lsid <= {LSIQ_ENTRY{1'b0}};
     st_da_old <= 1'b0;
@@ -194,6 +205,8 @@ always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
     st_da_iid <= st_dc_iid;
     st_da_vec <= st_dc_vec;
     st_da_uop_idx <= st_dc_uop_idx;
+    st_da_beat_idx <= st_dc_beat_idx;
+    st_da_fill_id  <= st_dc_fill_id;
     st_da_last <= st_dc_last;
     st_da_lsid <= st_dc_lsid;
     st_da_old <= st_dc_old;
@@ -304,7 +317,10 @@ assign st_da_rb_cmit = st_da_cmit_hit0 || st_da_cmit_hit1 || st_da_cmit_hit2;
 //==========================================================
 //        Request read buffer & Compare index
 //==========================================================
-assign st_da_rb_create_vld_unmask = st_da_inst_vld && st_da_dcache_miss && !st_da_expt;
+// 2026-10-18: 向量 store **不允许建 MSHR** —— miss 时直接留在 SQ, 提交后由
+// WMB 决定写 dcache 还是写内存。
+assign st_da_rb_create_vld_unmask = st_da_inst_vld && st_da_dcache_miss &&
+                                    !st_da_expt && !st_da_vec;
 
 assign st_da_addr[31:0] = st_da_addr0[31:0];
 
@@ -322,13 +338,22 @@ assign st_da_rb_create_gateclk_en = st_da_rb_create_vld;
 assign st_da_rb_full_vld = st_da_rb_create_vld_unmask && rb_st_da_full;
 assign st_da_restart_vld = st_da_rb_full_vld;
 
+// 2026-10-18 直连向量 L/S
+wire st_da_pass_vld = st_da_inst_vld && !st_da_restart_vld;
+assign st_da_vec_done    = st_da_pass_vld && st_da_vec;
+assign st_da_vec_restart = st_da_inst_vld && st_da_vec && st_da_restart_vld;
+assign st_da_vec_restart_imme     = st_da_inst_vld && st_da_vec &&
+                                    st_da_restart_vld && !st_da_rb_full_vld;
+assign st_da_vec_restart_fill_id  = st_da_fill_id;
+
 //==========================================================
 //        Generate to WB stage signal
 //==========================================================
 // 2026-10-15 停用: 非对齐第一半标记恒 0
 //assign st_da_boundary_first = st_da_boundary && !st_da_secd;
-assign st_da_wb_cmplt_req = st_da_inst_vld && !st_da_restart_vld;// && !st_da_boundary_first;
-assign st_da_wb_spec_fail = st_da_spec_fail;
+// 2026-10-18: 向量 store beat 不发 wb cmplt / spec_fail (完成由 RVV 管)
+assign st_da_wb_cmplt_req = st_da_pass_vld && !st_da_vec;
+assign st_da_wb_spec_fail = st_da_spec_fail && !st_da_vec;
 assign st_da_wb_expt_vld = st_da_expt;
 assign st_da_wb_expt_addr= st_da_addr0;
 
@@ -342,12 +367,12 @@ assign st_da_mask_lsid[LSIQ_ENTRY-1:0] = {LSIQ_ENTRY{st_da_inst_vld}} & st_da_ls
 assign st_da_idu_rb_full[LSIQ_ENTRY-1:0] = {LSIQ_ENTRY{st_da_rb_full_vld}} & st_da_mask_lsid[LSIQ_ENTRY-1:0];
 
 // S7: 非最后 beat 不 pop (agevec/counter 在 pop 上更新)
-assign st_da_idu_pop_vld = st_da_wb_cmplt_req && (!st_da_vec || st_da_last);
+assign st_da_idu_pop_vld = st_da_pass_vld && (st_da_vec ? st_da_last : 1'b1);
 assign st_da_idu_pop_entry[LSIQ_ENTRY-1:0] = {LSIQ_ENTRY{st_da_idu_pop_vld}} & st_da_mask_lsid[LSIQ_ENTRY-1:0];
 
 // S7: 非最后 beat 完成 ⇒ 只清 anchor 的 frz
 assign st_da_idu_beat_done[LSIQ_ENTRY-1:0] =
-      {LSIQ_ENTRY{st_da_wb_cmplt_req && st_da_vec && !st_da_last}}
+      {LSIQ_ENTRY{st_da_pass_vld && st_da_vec && !st_da_last}}
       & st_da_mask_lsid[LSIQ_ENTRY-1:0];
 
 // 2026-10-15 停用: 非对齐第二半请求唤醒 IDU (boundary_first 恒 0)

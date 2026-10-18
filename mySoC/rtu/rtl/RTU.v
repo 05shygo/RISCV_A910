@@ -330,6 +330,14 @@ module RTU (
     output wire [6:0] rtu_yy_xx_commit1_iid,
     output wire [6:0] rtu_yy_xx_commit2_iid,
 
+    // ===================== 2026-10-18 提交窗口 (给向量 L/S 队列) =================
+    // 这不是退休脉冲: 只是"该 iid 已进入 ROB 头部 3 条提交窗口"的**电平**。
+    // LQ/SQ 可以用它提前弹出向量 beat 表项; RTU 自身仍然只在 cmplt 到达后退休。
+    output wire [2:0] rtu_yy_xx_win_valid,
+    output wire [6:0] rtu_yy_xx_win_iid0,
+    output wire [6:0] rtu_yy_xx_win_iid1,
+    output wire [6:0] rtu_yy_xx_win_iid2,
+
     // ===================== §6.2 异步冲刷 (给 LSU) — 2026-10-08 新增 ==============
     // C910 里这根是**调试请求**的异步冲刷 (`ct_rtu_retire.v:2005/2016`:
     // `async_flush = dbgreq_ack_jdbreq` ⇒ 打一拍给 LSU/WMB), 与指令流的冲刷无关。
@@ -494,6 +502,7 @@ module RTU (
     wire [`RTU_E_W-1:0] disp_data2;
     wire [`RTU_E_W-1:0] win0, win1, win2;
     wire [6:0] win_iid0, win_iid1, win_iid2;
+    wire [2:0] win_valid;
     wire [6:0]  rob_occ;
     wire        rob_full;
     wire        expt_entry_vld;
@@ -589,6 +598,7 @@ module RTU (
         .win_iid0           (win_iid0),
         .win_iid1           (win_iid1),
         .win_iid2           (win_iid2),
+        .win_valid          (win_valid),
         .win_q0             (win0),
         .win_q1             (win1),
         .win_q2             (win2),
@@ -933,6 +943,14 @@ module RTU (
     assign rtu_yy_xx_commit0_iid = cmt_iid_q0;
     assign rtu_yy_xx_commit1_iid = cmt_iid_q1;
     assign rtu_yy_xx_commit2_iid = cmt_iid_q2;
+
+    // 2026-10-18: 提交窗口电平 (不是退休脉冲)。
+    // 冲刷/未决冲刷/陷阱/中断拍屏蔽, 避免把将被冲掉的向量 L/S 提前放行。
+    assign rtu_yy_xx_win_valid = win_valid &
+           {3{~flushing & ~fsm_busy & ~mispred_pend & ~trap_hit & ~int_take}};
+    assign rtu_yy_xx_win_iid0 = win_iid0;
+    assign rtu_yy_xx_win_iid1 = win_iid1;
+    assign rtu_yy_xx_win_iid2 = win_iid2;
 
     // 与 dbg_commit_* 同拍的槽 iid (直接取 ROB 影子窗口头部, 见端口注释)
     assign dbg_commit_iid0 = win_iid0;

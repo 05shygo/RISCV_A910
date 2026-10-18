@@ -1,7 +1,8 @@
 module lsu_top #(
   parameter int DCACHE_SIZE = 2048,  // 1024, 2048, or 4096 bytes
   parameter int LSIQ_ENTRY = 8,
-  parameter int SQ_ENTRY    = 6,
+  parameter int SQ_ENTRY    = 12,
+  parameter int LQ_ENTRY    = 16,
   parameter int SDIQ_ENTRY  = 4,
   parameter int WMB_ENTRY   = 4,
   parameter int LFB_ADDR_ENTRY = 3,
@@ -57,6 +58,11 @@ module lsu_top #(
   input  logic [6:0]           rtu_yy_xx_commit1_iid,
   input  logic                 rtu_yy_xx_commit2,
   input  logic [6:0]           rtu_yy_xx_commit2_iid,
+  // 2026-10-18: RTU 头部 3 条提交窗口 (电平) —— 向量 LQ 提前 pop
+  input  logic [2:0]           rtu_yy_xx_win_valid,
+  input  logic [6:0]           rtu_yy_xx_win_iid0,
+  input  logic [6:0]           rtu_yy_xx_win_iid1,
+  input  logic [6:0]           rtu_yy_xx_win_iid2,
   input  logic                 rtu_lsu_async_flush,
 
   // Clock and reset
@@ -253,7 +259,35 @@ module lsu_top #(
   output logic [31:0]          lsu_rtu_wb_pipe4_expt_addr,
   output logic                 lsu_rtu_wb_pipe4_flush,
   output logic [6:0]           lsu_rtu_wb_pipe4_iid,
-  output logic                 lsu_rtu_wb_pipe4_spec_fail
+  output logic                 lsu_rtu_wb_pipe4_spec_fail,
+
+  //==========================================================
+  // 2026-10-18 直连向量 L/S: fill <-> LSU
+  //==========================================================
+  input  logic                 vec_ls_req_valid,
+  output logic                 vec_ls_req_ready,
+  input  logic                 vec_ls_req_store,
+  input  logic                 vec_ls_req_nop,
+  input  logic                 vec_ls_req_last,
+  input  logic [31:0]          vec_ls_req_addr,
+  input  logic [15:0]          vec_ls_req_bytes_vld,
+  input  logic [31:0]          vec_ls_req_wdata,
+  input  logic [2:0]           vec_ls_req_lsid,
+  input  logic [4:0]           vec_ls_req_fill_id,
+  input  logic [4:0]           vec_ls_req_uop_idx,
+  input  logic [4:0]           vec_ls_req_beat_idx,
+  input  logic [6:0]           vec_ls_req_iid,
+
+  output logic                 vec_ls_rsp_valid,
+  output logic [4:0]           vec_ls_rsp_fill_id,
+  output logic                 vec_ls_rsp_load,
+  output logic [127:0]         vec_ls_rsp_data,
+  output logic [15:0]          vec_ls_rsp_bytes_vld,
+  output logic                 vec_ls_req_done_vld,
+  output logic [4:0]           vec_ls_req_done_fill_id,
+  output logic                 vec_ls_st_done_vld,
+  output logic [4:0]           vec_ls_st_done_fill_id,
+  input  logic                 idu_lsu_cmit_vec_st_pending
 
   // Store queue wakeup
 //  output logic [LSIQ_ENTRY-1:0]sq_data_depd_wakeup,
@@ -536,6 +570,7 @@ logic st_dc_sq_create_vld;
 logic st_dc_sq_create_dp_vld;
 logic st_dc_sq_create_gateclk_en;
 logic st_dc_sq_data_vld;
+logic [31:0] st_dc_sq_data;
 // 2026-10-15 停用: logic st_dc_boundary_first;
 logic st_dc_chk_st_inst_vld;
 logic [7:0] st_dc_rot_sel_rev;
@@ -677,6 +712,7 @@ logic lq_ld_dc_full;
 // 2026-10-15 停用: logic cb_ld_dc_addr_hit;
 // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): logic sq_ld_dc_cancel_acc_req;
 logic sq_ld_dc_fwd_req;
+logic [15:0] sq_ld_dc_fwd_bytes_vld;
 // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): logic wmb_ld_dc_cancel_acc_req;
 logic wmb_ld_dc_fwd_req;
 logic [15:0] wmb_fwd_bytes_vld;
@@ -1083,6 +1119,170 @@ lsu_ld_ag #(
 );
 
 //----------------------------------------------------------
+// 2026-10-18 直连向量 L/S 前端
+//----------------------------------------------------------
+logic                          vec_ld_req;
+logic [INDEX_WIDTH-1:0]        vec_ld_tag_idx;
+logic [7:0]                    vec_ld_data_req;
+logic [DATA_INDEX_WIDTH-1:0]   vec_ld_data_low_idx;
+logic [DATA_INDEX_WIDTH-1:0]   vec_ld_data_high_idx;
+logic                          vec_st_req;
+logic [INDEX_WIDTH-1:0]        vec_st_tag_idx;
+logic [INDEX_WIDTH-1:0]        vec_st_dirty_idx;
+logic                          dc_valid;
+logic                          dc_store;
+logic                          dc_nop;
+logic                          dc_last;
+logic [31:0]                   dc_addr;
+logic [15:0]                   dc_bytes_vld;
+logic [31:0]                   dc_wdata;
+logic [2:0]                    dc_lsid;
+logic [4:0]                    dc_fill_id;
+logic [4:0]                    dc_uop_idx;
+logic [4:0]                    dc_beat_idx;
+logic [6:0]                    dc_iid;
+logic [7:0]                    vec_dc_lsid_oh;
+// 2026-10-18: uop_idx / beat_idx / fill_id 拆分
+logic [4:0]                    ld_dc_beat_idx;
+logic [4:0]                    ld_dc_fill_id;
+logic [4:0]                    ld_da_beat_idx;
+logic [4:0]                    ld_da_fill_id;
+logic [4:0]                    st_dc_beat_idx;
+logic [4:0]                    st_dc_fill_id;
+logic [4:0]                    st_da_beat_idx;
+logic [4:0]                    st_da_fill_id;
+logic                          ld_da_vec_done;
+// restart 原因 / fill_id (给 FE 的 sleep/wake)
+logic                          ld_dc_vec_restart_lq_full;
+logic                          ld_dc_vec_restart_imme;
+logic [4:0]                    ld_dc_vec_restart_fill_id;
+logic                          ld_da_vec_restart_rb_full;
+logic                          ld_da_vec_restart_imme;
+logic [4:0]                    ld_da_vec_restart_fill_id;
+logic                          st_dc_vec_restart_sq_full;
+logic [4:0]                    st_dc_vec_restart_fill_id;
+logic                          st_da_vec_restart_imme;
+logic [4:0]                    st_da_vec_restart_fill_id;
+logic                          ld_restart_any;
+logic                          st_restart_any;
+logic [4:0]                    ld_restart_fill_id_sel;
+logic [4:0]                    st_restart_fill_id_sel;
+logic                          vec_ld_raw_new;
+
+logic                          ld_dc_vec_nop;
+logic                          ld_dc_vec_restart;
+logic                          ld_da_vec_rsp_vld;
+logic [127:0]                  ld_da_vec_rsp_data;
+logic                          ld_da_vec_mshr_created;
+logic                          ld_da_vec_miss;
+logic                          ld_da_vec_restart;
+
+logic                          st_dc_vec_nop;
+logic                          st_dc_vec_restart;
+logic                          st_da_vec_done;
+logic                          st_da_vec_restart;
+
+// 2026-10-18 dcache arb VEC grant
+logic                          dcache_arb_vec_ld_sel;
+logic                          dcache_arb_vec_st_sel;
+
+// MSHR no-fill 向量响应
+logic                          rb_vec_rsp_vld;
+logic [4:0]                    rb_vec_rsp_fill_id;
+logic [6:0]                    rb_vec_rsp_iid;
+logic [4:0]                    rb_vec_rsp_uop_idx;
+logic [127:0]                  rb_vec_rsp_data;
+logic [15:0]                   rb_vec_rsp_bytes_vld;
+logic                          rb_vec_rsp_grnt;
+
+ct_lsu_vec_ls_fe #(
+  .DEPTH            (8),
+  .INDEX_WIDTH      (INDEX_WIDTH),
+  .DATA_INDEX_WIDTH (DATA_INDEX_WIDTH)
+) u_vec_ls_fe (
+  .clk              (forever_cpuclk),
+  .rst_b            (cpurst_b),
+  .vec_ls_flush     (rtu_yy_xx_flush),
+
+  .req_valid        (vec_ls_req_valid),
+  .req_ready        (vec_ls_req_ready),
+  .req_store        (vec_ls_req_store),
+  .req_nop          (vec_ls_req_nop),
+  .req_last         (vec_ls_req_last),
+  .req_addr         (vec_ls_req_addr),
+  .req_bytes_vld    (vec_ls_req_bytes_vld),
+  .req_wdata        (vec_ls_req_wdata),
+  .req_lsid         (vec_ls_req_lsid),
+  .req_fill_id      (vec_ls_req_fill_id),
+  .req_uop_idx      (vec_ls_req_uop_idx),
+  .req_beat_idx     (vec_ls_req_beat_idx),
+  .req_iid          (vec_ls_req_iid),
+
+  .vec_ld_req       (vec_ld_req),
+  .vec_ld_tag_idx   (vec_ld_tag_idx),
+  .vec_ld_data_req  (vec_ld_data_req),
+  .vec_ld_data_low_idx (vec_ld_data_low_idx),
+  .vec_ld_data_high_idx(vec_ld_data_high_idx),
+  .vec_st_req       (vec_st_req),
+  .vec_st_tag_idx   (vec_st_tag_idx),
+  .vec_st_dirty_idx (vec_st_dirty_idx),
+  .vec_ld_sel       (dcache_arb_vec_ld_sel),
+  .vec_st_sel       (dcache_arb_vec_st_sel),
+
+  .dc_valid         (dc_valid),
+  .dc_store         (dc_store),
+  .dc_nop           (dc_nop),
+  .dc_last          (dc_last),
+  .dc_addr          (dc_addr),
+  .dc_bytes_vld     (dc_bytes_vld),
+  .dc_wdata         (dc_wdata),
+  .dc_lsid          (dc_lsid),
+  .dc_fill_id       (dc_fill_id),
+  .dc_uop_idx       (dc_uop_idx),
+  .dc_beat_idx      (dc_beat_idx),
+  .dc_iid           (dc_iid),
+
+  .ld_accept        (ld_da_vec_done),
+  .ld_restart       (ld_restart_any),
+  .ld_restart_fill_id (ld_restart_fill_id_sel),
+  .ld_restart_lq_full (ld_dc_vec_restart_lq_full),
+  .ld_restart_rb_full (ld_da_vec_restart_rb_full),
+  .ld_restart_imme    (ld_dc_vec_restart_imme | ld_da_vec_restart_imme),
+  .st_accept        (st_da_vec_done),
+  .st_restart       (st_restart_any),
+  .st_restart_fill_id (st_restart_fill_id_sel),
+  .st_restart_sq_full (st_dc_vec_restart_sq_full),
+  .st_restart_imme    (st_da_vec_restart_imme),
+  .ld_lq_not_full   (lsu_idu_lq_not_full),
+  .ld_mshr_not_full (lsu_idu_rb_not_full),
+  .st_sq_not_full   (lsu_idu_sq_not_full),
+
+  .req_done_vld     (vec_ls_req_done_vld),
+  .req_done_fill_id (vec_ls_req_done_fill_id)
+);
+
+// restart 汇聚: DC 的 restart 优先 (更早一级), 带 fill_id 给 FE 匹配。
+assign ld_restart_any         = ld_dc_vec_restart | ld_da_vec_restart;
+assign ld_restart_fill_id_sel = ld_dc_vec_restart ? ld_dc_vec_restart_fill_id
+                                                  : ld_da_vec_restart_fill_id;
+assign st_restart_any         = st_dc_vec_restart | st_da_vec_restart;
+assign st_restart_fill_id_sel = st_dc_vec_restart ? st_dc_vec_restart_fill_id
+                                                  : st_da_vec_restart_fill_id;
+
+// lsid 3→8 one-hot
+always_comb begin
+  vec_dc_lsid_oh = 8'b0;
+  vec_dc_lsid_oh[dc_lsid] = 1'b1;
+end
+
+// VEC load 与 AG 里那条 store 的年龄比较 (同 lsu_ld_ag 的 raw_new 口径)
+ct_rtu_compare_iid x_vec_ld_compare_st_ag_iid (
+  .x_iid0       (st_ag_iid[6:0]),
+  .x_iid0_older (vec_ld_raw_new ),
+  .x_iid1       (dc_iid[6:0]   )
+);
+
+//----------------------------------------------------------
 // Load Data Cache
 //----------------------------------------------------------
 logic ld_dc_settle_way;
@@ -1094,6 +1294,18 @@ lsu_ld_dc #(
   .forever_cpuclk(forever_cpuclk),
   .cpurst_b(cpurst_b),
   .ld_ag_dc_inst_vld(ld_ag_dc_inst_vld),
+  // 2026-10-18 直连向量 L/S
+  .vec_ld_dc_inst_vld(dc_valid && !dc_store),
+  .vec_ld_addr(dc_addr),
+  .vec_ld_bytes_vld(dc_bytes_vld),
+  .vec_ld_iid(dc_iid),
+  .vec_ld_uop_idx(dc_uop_idx),
+  .vec_ld_beat_idx(dc_beat_idx),
+  .vec_ld_fill_id(dc_fill_id),
+  .vec_ld_lsid(vec_dc_lsid_oh),
+  .vec_ld_last(dc_last),
+  .vec_ld_nop(dc_nop),
+  .vec_ld_raw_new(vec_ld_raw_new),
   .ld_ag_inst_size(ld_ag_inst_size),
   // 2026-10-15 停用: .ld_ag_secd(ld_ag_secd),
   .ld_ag_sign_extend(ld_ag_sign_extend),
@@ -1126,6 +1338,7 @@ lsu_ld_dc #(
   // 2026-10-15 停用: .cb_ld_dc_addr_hit(cb_ld_dc_addr_hit),
   // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): .sq_ld_dc_cancel_acc_req(sq_ld_dc_cancel_acc_req),
   .sq_ld_dc_fwd_req(sq_ld_dc_fwd_req),
+  .sq_ld_dc_fwd_bytes_vld(sq_ld_dc_fwd_bytes_vld),
   // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): .wmb_ld_dc_cancel_acc_req(wmb_ld_dc_cancel_acc_req),
   .wmb_ld_dc_fwd_req(wmb_ld_dc_fwd_req),
   .wmb_fwd_bytes_vld(wmb_fwd_bytes_vld),
@@ -1169,9 +1382,15 @@ lsu_ld_dc #(
   .ld_dc_fwd_sq_vld(ld_dc_fwd_sq_vld),
   .ld_dc_fwd_wmb_vld(ld_dc_fwd_wmb_vld),
 
-  .ld_dc_lq_create_vld(ld_dc_lq_create_vld)
+  .ld_dc_lq_create_vld(ld_dc_lq_create_vld),
   // 2026-10-15 停用: .ld_dc_lq_create1_vld(ld_dc_lq_create1_vld)
-
+  .ld_dc_vec_nop(ld_dc_vec_nop),
+  .ld_dc_vec_restart(ld_dc_vec_restart),
+  .ld_dc_vec_beat_idx(ld_dc_beat_idx),
+  .ld_dc_vec_fill_id(ld_dc_fill_id),
+  .ld_dc_vec_restart_lq_full(ld_dc_vec_restart_lq_full),
+  .ld_dc_vec_restart_imme(ld_dc_vec_restart_imme),
+  .ld_dc_vec_restart_fill_id(ld_dc_vec_restart_fill_id)
 );
 
 //----------------------------------------------------------
@@ -1181,7 +1400,8 @@ logic ld_da_hit_idx_discard_req;
 lsu_ld_da #(
   .IID_WIDTH(6),
   .LSIQ_ENTRY(LSIQ_ENTRY),
-  .DC_IDX(8)
+  .DC_IDX(8),
+  .SQ_ENTRY(SQ_ENTRY)
 ) u_lsu_ld_da (
   .forever_cpuclk(forever_cpuclk),
   .cpurst_b(cpurst_b),
@@ -1193,7 +1413,10 @@ lsu_ld_da #(
   .ld_dc_sign_extend(ld_dc_sign_extend),
   .ld_dc_iid(ld_dc_iid),
   .ld_dc_vec(ld_dc_vec),
+  .ld_dc_vec_nop(ld_dc_vec_nop),
   .ld_dc_uop_idx(ld_dc_uop_idx),
+  .ld_dc_beat_idx(ld_dc_beat_idx),
+  .ld_dc_fill_id(ld_dc_fill_id),
   .ld_dc_last(ld_dc_last),
   .ld_dc_lsid(ld_dc_lsid),
   .ld_dc_old(ld_dc_old),
@@ -1256,7 +1479,13 @@ lsu_ld_da #(
   .ld_da_iid(ld_da_iid),
   .ld_da_vec(ld_da_vec),
   .ld_da_uop_idx(ld_da_uop_idx),
+  .ld_da_beat_idx(ld_da_beat_idx),
+  .ld_da_fill_id(ld_da_fill_id),
   .ld_da_last(ld_da_last),
+  .ld_da_vec_done(ld_da_vec_done),
+  .ld_da_vec_restart_rb_full(ld_da_vec_restart_rb_full),
+  .ld_da_vec_restart_imme(ld_da_vec_restart_imme),
+  .ld_da_vec_restart_fill_id(ld_da_vec_restart_fill_id),
   .ld_da_idu_beat_done(ld_da_idu_beat_done),
   .ld_da_lsid(ld_da_lsid),
   .ld_da_old(ld_da_old),
@@ -1293,7 +1522,12 @@ lsu_ld_da #(
   .ld_da_wb_data_req(ld_da_wb_data_req),
   .ld_da_wb_data(ld_da_wb_data),
   .ld_da_preg_sign_sel(ld_da_preg_sign_sel),
-  .ld_da_hit_idx_discard_req(ld_da_hit_idx_discard_req)
+  .ld_da_hit_idx_discard_req(ld_da_hit_idx_discard_req),
+  .ld_da_vec_rsp_vld(ld_da_vec_rsp_vld),
+  .ld_da_vec_rsp_data(ld_da_vec_rsp_data),
+  .ld_da_vec_mshr_created(ld_da_vec_mshr_created),
+  .ld_da_vec_miss(ld_da_vec_miss),
+  .ld_da_vec_restart(ld_da_vec_restart)
 );
 
 //----------------------------------------------------------
@@ -1445,6 +1679,18 @@ ct_lsu_st_dc u_lsu_st_dc (
   .lq_st_dc_spec_fail(lq_st_dc_spec_fail),
   .sq_st_dc_full(sq_st_dc_full),
   .sq_st_dc_inst_hit(sq_st_dc_inst_hit),
+  // 2026-10-18 直连向量 L/S
+  .vec_st_dc_inst_vld(dc_valid && dc_store),
+  .vec_st_addr(dc_addr),
+  .vec_st_bytes_vld(dc_bytes_vld),
+  .vec_st_iid(dc_iid),
+  .vec_st_uop_idx(dc_uop_idx),
+  .vec_st_beat_idx(dc_beat_idx),
+  .vec_st_fill_id(dc_fill_id),
+  .vec_st_lsid(vec_dc_lsid_oh),
+  .vec_st_last(dc_last),
+  .vec_st_nop(dc_nop),
+  .vec_st_wdata(dc_wdata),
   // 2026-10-15 停用: .st_ag_boundary(st_ag_boundary),
   .st_ag_dc_addr0(st_ag_dc_addr0),
   .st_ag_dc_bytes_vld(st_ag_dc_bytes_vld),
@@ -1466,6 +1712,8 @@ ct_lsu_st_dc u_lsu_st_dc (
   .st_dc_iid(st_dc_iid),
   .st_dc_vec(st_dc_vec),
   .st_dc_uop_idx(st_dc_uop_idx),
+  .st_dc_beat_idx(st_dc_beat_idx),
+  .st_dc_fill_id(st_dc_fill_id),
   .st_dc_last(st_dc_last),
   .st_dc_lsid(st_dc_lsid),
   .st_dc_sdid_oh(st_dc_sdid_oh),
@@ -1492,7 +1740,12 @@ ct_lsu_st_dc u_lsu_st_dc (
   .st_dc_dcwp_hit_idx(st_dc_dcwp_hit_idx),
   .st_dc_get_dcache_tag_dirty(st_dc_get_dcache_tag_dirty),
   .st_dc_spec_fail(st_dc_spec_fail),
-  .lsu_idu_has_in_sq(lsu_idu_has_in_sq)
+  .lsu_idu_has_in_sq(lsu_idu_has_in_sq),
+  .st_dc_vec_nop(st_dc_vec_nop),
+  .st_dc_vec_restart(st_dc_vec_restart),
+  .st_dc_vec_restart_sq_full(st_dc_vec_restart_sq_full),
+  .st_dc_vec_restart_fill_id(st_dc_vec_restart_fill_id),
+  .st_dc_sq_data(st_dc_sq_data)
 );
 
 
@@ -1538,6 +1791,8 @@ ct_lsu_st_da #(
   .st_dc_iid(st_dc_iid),
   .st_dc_vec(st_dc_vec),
   .st_dc_uop_idx(st_dc_uop_idx),
+  .st_dc_beat_idx(st_dc_beat_idx),
+  .st_dc_fill_id(st_dc_fill_id),
   .st_dc_last(st_dc_last),
   .st_dc_inst_vld(st_dc_inst_vld),
   .st_dc_lsid(st_dc_lsid),
@@ -1560,6 +1815,8 @@ ct_lsu_st_da #(
   .st_da_iid(st_da_iid),
   .st_da_vec(st_da_vec),
   .st_da_uop_idx(st_da_uop_idx),
+  .st_da_beat_idx(st_da_beat_idx),
+  .st_da_fill_id(st_da_fill_id),
   .st_da_last(st_da_last),
   .st_da_idu_beat_done(st_da_idu_beat_done),
   .st_da_inst_vld(st_da_inst_vld),
@@ -1580,7 +1837,11 @@ ct_lsu_st_da #(
   .st_da_addr(st_da_addr),
   // 2026-10-15 停用: .st_da_boundary(st_da_boundary),
   .st_da_bytes_vld(st_da_bytes_vld),
-  .st_da_sq_no_restart(st_da_sq_no_restart)
+  .st_da_sq_no_restart(st_da_sq_no_restart),
+  .st_da_vec_done(st_da_vec_done),
+  .st_da_vec_restart(st_da_vec_restart),
+  .st_da_vec_restart_imme(st_da_vec_restart_imme),
+  .st_da_vec_restart_fill_id(st_da_vec_restart_fill_id)
 );
 
 //----------------------------------------------------------
@@ -1614,7 +1875,8 @@ ct_lsu_st_wb u_lsu_st_wb (
 // 不会被冲掉 ⇒ 永远拿不到数据 ⇒ 等它的指令永不唤醒。详见 lsu_sq.sv 的补注。
 logic lsu_rtu_all_commit_st_data_vld;
 //logic lsu_rtu_all_commit_ld_data_vld;
-assign lsu_rtu_all_commit_data_vld = lsu_rtu_all_commit_st_data_vld;
+assign lsu_rtu_all_commit_data_vld = lsu_rtu_all_commit_st_data_vld |
+                                     idu_lsu_cmit_vec_st_pending;
                                   //   && lsu_rtu_all_commit_ld_data_vld;
 
 //----------------------------------------------------------
@@ -1692,6 +1954,7 @@ ct_lsu_sq #(
   .st_da_iid(st_da_iid),
   .st_da_vec(st_da_vec),
   .st_da_uop_idx(st_da_uop_idx),
+  .st_da_beat_idx(st_da_beat_idx),
   .st_da_inst_vld(st_da_inst_vld),
   // 2026-10-15 停用: .st_da_secd(st_da_secd),
   .st_da_sq_dcache_dirty(st_da_sq_dcache_dirty),
@@ -1705,12 +1968,14 @@ ct_lsu_sq #(
   .st_dc_iid(st_dc_iid),
   .st_dc_vec(st_dc_vec),
   .st_dc_uop_idx(st_dc_uop_idx),
+  .st_dc_beat_idx(st_dc_beat_idx),
   .st_dc_old(st_dc_old),
   .st_dc_rot_sel_rev(st_dc_rot_sel_rev),
   .st_dc_sdid(st_dc_sdid_oh),
   // 2026-10-15 停用: .st_dc_secd(st_dc_secd),
   .st_dc_sq_create_vld(st_dc_sq_create_vld),
   .st_dc_sq_data_vld(st_dc_sq_data_vld),
+  .st_dc_sq_data(st_dc_sq_data),
   .wmb_ce_addr(wmb_ce_addr),
   .wmb_ce_sq_ptr(wmb_ce_sq_ptr),
   .wmb_sq_pop_grnt(wmb_sq_pop_grnt),
@@ -1725,6 +1990,7 @@ ct_lsu_sq #(
   .sq_ld_dc_fwd_multi(sq_ld_dc_fwd_multi),
   .sq_ld_dc_fwd_multi_mask(sq_ld_dc_fwd_multi_mask),
   .sq_ld_dc_fwd_req(sq_ld_dc_fwd_req),
+  .sq_ld_dc_fwd_bytes_vld(sq_ld_dc_fwd_bytes_vld),
   .sq_ld_dc_other_discard_req(sq_ld_dc_other_discard_req),
   .sq_pop_addr(sq_pop_addr),
   .sq_pop_bytes_vld(sq_pop_bytes_vld),
@@ -1747,7 +2013,10 @@ ct_lsu_sq #(
 //----------------------------------------------------------
 // Load Queue
 //----------------------------------------------------------
-ct_lsu_lq u_lsu_lq (
+logic lq_ld_dc_less2_unused;
+ct_lsu_lq #(
+  .LQ_ENTRY(LQ_ENTRY)
+) u_lsu_lq (
   .cpurst_b(cpurst_b),
   .forever_cpuclk(forever_cpuclk),
   .ld_dc_addr0(ld_dc_addr0),
@@ -1758,9 +2027,7 @@ ct_lsu_lq u_lsu_lq (
   .ld_dc_vec(ld_dc_vec),
   .ld_dc_old(ld_dc_old),
   .ld_dc_uop_idx(ld_dc_uop_idx),
-  .ld_da_wb_cmplt_req(ld_da_wb_cmplt_req),
-  .ld_da_iid(ld_da_iid),
-  .ld_da_uop_idx(ld_da_uop_idx),
+  .ld_dc_beat_idx(ld_dc_beat_idx),
   // 2026-10-15 停用: .ld_dc_lq_create1_vld(ld_dc_lq_create1_vld),
   .ld_dc_lq_create_vld(ld_dc_lq_create_vld),
   // 2026-10-15 停用: .ld_dc_secd(ld_dc_secd),
@@ -1770,6 +2037,10 @@ ct_lsu_lq u_lsu_lq (
   .rtu_yy_xx_commit1_iid(rtu_yy_xx_commit1_iid),
   .rtu_yy_xx_commit2(rtu_yy_xx_commit2),
   .rtu_yy_xx_commit2_iid(rtu_yy_xx_commit2_iid),
+  .rtu_yy_xx_win_valid(rtu_yy_xx_win_valid),
+  .rtu_yy_xx_win_iid0(rtu_yy_xx_win_iid0),
+  .rtu_yy_xx_win_iid1(rtu_yy_xx_win_iid1),
+  .rtu_yy_xx_win_iid2(rtu_yy_xx_win_iid2),
   .rtu_yy_xx_flush(rtu_yy_xx_flush),
   .st_dc_addr0(st_dc_addr0),
   .st_dc_bytes_vld(st_dc_bytes_vld),
@@ -1779,7 +2050,7 @@ ct_lsu_lq u_lsu_lq (
   .st_dc_uop_idx(st_dc_uop_idx),
   .lq_ld_dc_full(lq_ld_dc_full),
   .lq_ld_dc_inst_hit(lq_ld_dc_inst_hit),
-  // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): .lq_ld_dc_less2(lq_ld_dc_less2),
+  .lq_ld_dc_less2(lq_ld_dc_less2_unused),
   .lq_st_dc_spec_fail(lq_st_dc_spec_fail),
   .lsu_idu_lq_not_full(lsu_idu_lq_not_full)  // out
 );
@@ -2152,6 +2423,18 @@ ct_lsu_dcache_arb #(
   .ag_dcache_arb_st_dirty_idx(ag_dcache_arb_st_dirty_idx),
   .dcache_arb_ag_ld_sel(dcache_arb_ag_ld_sel),
   .dcache_arb_ag_st_sel(dcache_arb_ag_st_sel),
+  // 2026-10-18 直连向量 L/S
+  .vec_dcache_arb_ld_req(vec_ld_req),
+  .vec_dcache_arb_ld_tag_idx(vec_ld_tag_idx),
+  .vec_dcache_arb_ld_data_req(vec_ld_data_req),
+  .vec_dcache_arb_ld_data_low_idx(vec_ld_data_low_idx),
+  .vec_dcache_arb_ld_data_high_idx(vec_ld_data_high_idx),
+  .vec_dcache_arb_st_tag_req(vec_st_req),
+  .vec_dcache_arb_st_tag_idx(vec_st_tag_idx),
+  .vec_dcache_arb_st_dirty_req(vec_st_req),
+  .vec_dcache_arb_st_dirty_idx(vec_st_dirty_idx),
+  .dcache_arb_vec_ld_sel(dcache_arb_vec_ld_sel),
+  .dcache_arb_vec_st_sel(dcache_arb_vec_st_sel),
   .dcache_arb_ld_ag_addr(dcache_arb_ld_ag_addr),
   .dcache_arb_ld_ag_borrow_addr_vld(dcache_arb_ld_ag_borrow_addr_vld),
   .dcache_arb_st_ag_addr(dcache_arb_st_ag_addr),
@@ -2325,7 +2608,7 @@ lsu_mshr #(
   .ld_da_idx(ld_da_idx),
   .ld_da_iid(ld_da_iid),
   .ld_da_vec(ld_da_vec),
-  .ld_da_uop_idx(ld_da_uop_idx),
+  .ld_da_uop_idx(ld_da_fill_id),
   .ld_da_inst_size(ld_da_inst_size),
   .ld_da_old(ld_da_old),
   .ld_da_preg(ld_da_preg),
@@ -2367,6 +2650,13 @@ lsu_mshr #(
   .rb_biu_ar_cache(rb_biu_ar_cache),
   .rb_biu_ar_prot(rb_biu_ar_prot),
   .rb_biu_ar_req(rb_biu_ar_req),
+  .rb_vec_rsp_vld(rb_vec_rsp_vld),
+  .rb_vec_rsp_fill_id(rb_vec_rsp_fill_id),
+  .rb_vec_rsp_iid(rb_vec_rsp_iid),
+  .rb_vec_rsp_uop_idx(rb_vec_rsp_uop_idx),
+  .rb_vec_rsp_data(rb_vec_rsp_data),
+  .rb_vec_rsp_bytes_vld(rb_vec_rsp_bytes_vld),
+  .rb_vec_rsp_grnt(rb_vec_rsp_grnt),
   .rb_ld_da_full(rb_ld_da_full),
   .rb_ld_da_hit_idx(rb_ld_da_hit_idx),
   // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): .rb_ld_da_merge_fail(rb_ld_da_merge_fail),
@@ -2396,5 +2686,24 @@ lsu_mshr #(
 
 // 2026-10-17 S7: 非最后 beat 完成 (load DA / store DA)
 assign lsu_idu_beat_done = ld_da_idu_beat_done | st_da_idu_beat_done;
+
+//----------------------------------------------------------
+// 2026-10-18 直连向量 L/S: 完成响应回 fill
+//----------------------------------------------------------
+// DA hit 优先; miss 的 MSHR 响应在下一拍再发 (fill 侧无条件接收)
+assign rb_vec_rsp_grnt        = rb_vec_rsp_vld && !ld_da_vec_rsp_vld && !rtu_yy_xx_flush;
+
+assign vec_ls_rsp_valid       = (ld_da_vec_rsp_vld || rb_vec_rsp_vld) && !rtu_yy_xx_flush;
+assign vec_ls_rsp_fill_id     = ld_da_vec_rsp_vld ? ld_da_fill_id[4:0]
+                                                  : rb_vec_rsp_fill_id[4:0];
+assign vec_ls_rsp_load        = 1'b1;
+assign vec_ls_rsp_data        = ld_da_vec_rsp_vld ? ld_da_vec_rsp_data[127:0]
+                                                  : rb_vec_rsp_data[127:0];
+assign vec_ls_rsp_bytes_vld   = ld_da_vec_rsp_vld ? ld_da_bytes_vld[15:0]
+                                                  : rb_vec_rsp_bytes_vld[15:0];
+
+assign vec_ls_st_done_vld     = st_da_vec_done && !rtu_yy_xx_flush;
+assign vec_ls_st_done_fill_id = st_da_fill_id[4:0];
+// vec_ls_req_done_* 由 u_vec_ls_fe 直接驱动
 
 endmodule

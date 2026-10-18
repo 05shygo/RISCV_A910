@@ -11,9 +11,7 @@ module ct_lsu_lq_entry (
     input  logic         ld_dc_vec,
     input  logic         ld_dc_old,
     input  logic [4:0]   ld_dc_uop_idx,
-    input  logic         ld_da_wb_cmplt_req,
-    input  logic [6:0]   ld_da_iid,
-    input  logic [4:0]   ld_da_uop_idx,
+    input  logic [4:0]   ld_dc_beat_idx,
     //input  logic         ld_dc_secd,
     input  logic         lq_entry_create0_vld_x,
     //input  logic         lq_entry_create1_vld_x,
@@ -23,6 +21,11 @@ module ct_lsu_lq_entry (
     input  logic [6:0]   rtu_yy_xx_commit1_iid,
     input  logic         rtu_yy_xx_commit2,
     input  logic [6:0]   rtu_yy_xx_commit2_iid,
+    // 2026-10-18: 向量 beat 提前提交窗口 (电平)
+    input  logic [2:0]   rtu_yy_xx_win_valid,
+    input  logic [6:0]   rtu_yy_xx_win_iid0,
+    input  logic [6:0]   rtu_yy_xx_win_iid1,
+    input  logic [6:0]   rtu_yy_xx_win_iid2,
     input  logic         rtu_yy_xx_flush,
     input  logic [31:0]  st_dc_addr0,
     input  logic [15:0]  st_dc_bytes_vld,
@@ -43,6 +46,7 @@ logic [6:0]  lq_entry_iid;
 logic        lq_entry_vec;
 logic        lq_entry_old;
 logic [4:0]  lq_entry_uop_idx;
+logic [4:0]  lq_entry_beat_idx;
 //logic        lq_entry_secd;     // 2026-10-15 停用: 只有非对齐第二半才是 1, 现在恒 0
 logic        lq_entry_vld;
 
@@ -105,8 +109,9 @@ begin
     // 向量 load 只在 anchor 是 LSIQ 最老项时才发 beat (RAW 双保险),
     // 而 ld_dc_old 对向量被 rf_dp 强制成 0 (保守建 LQ) ⇒ 不能直接用它,
     // 否则向量 LQ 表项永不提前 pop ⇒ 8 项 LQ 被一条向量 load 占满 ⇒ 卡死。
-    lq_entry_old              <=  ld_dc_vec ? 1'b1 : ld_dc_old;
+    lq_entry_old              <=  ld_dc_old;
     lq_entry_uop_idx[4:0]     <=  ld_dc_uop_idx[4:0];
+    lq_entry_beat_idx[4:0]    <=  ld_dc_beat_idx[4:0];
     //lq_entry_secd             <=  ld_dc_secd;
   end
   // 2026-10-15 停用: 非对齐"第二半"的 lq 表项 (地址取 addr1 / 掩码取 bytes_vld1)
@@ -137,15 +142,15 @@ assign lq_entry_cmit_vld  = (lq_entry_cmit_hit0
                                 ||  lq_entry_cmit_hit2)
                             &&  lq_entry_vld;
 
-// 2026-10-17 S7: 向量 load 的"提前 pop" —— 数据写完就释放表项 (否则 8 项 LQ
-// 会被一条多 beat 向量 load 占满)。双保险: 只有 lq_entry_old (LD 时锁存)
-// 的项才提前 pop; fill 引擎还会额外要求 anchor 是 LSIQ 最老项。
-// 标量项 (lq_entry_vec=0) 行为完全不变。
-assign lq_entry_pop_vld   = lq_entry_cmit_vld ||
-                            (lq_entry_vec && lq_entry_old &&
-                             ld_da_wb_cmplt_req &&
-                             (ld_da_iid[6:0] == lq_entry_iid[6:0]) &&
-                             (ld_da_uop_idx[4:0] == lq_entry_uop_idx[4:0]));
+// 2026-10-18: 所有 LQ 表项都只在提交时弹出。
+// 向量 beat 使用 RTU 头部 3 条提交窗口的**电平**提前 pop, 以便在指令等待
+// cmplt 期间释放 LQ 容量; 标量仍用真正的退休广播。
+wire lq_entry_win_cmit_vld = lq_entry_vec &&
+    ((rtu_yy_xx_win_valid[0] && (rtu_yy_xx_win_iid0[6:0] == lq_entry_iid[6:0])) ||
+     (rtu_yy_xx_win_valid[1] && (rtu_yy_xx_win_iid1[6:0] == lq_entry_iid[6:0])) ||
+     (rtu_yy_xx_win_valid[2] && (rtu_yy_xx_win_iid2[6:0] == lq_entry_iid[6:0])));
+
+assign lq_entry_pop_vld   = lq_entry_cmit_vld | lq_entry_win_cmit_vld;
 
 //==========================================================
 //                 lq iid check
@@ -156,7 +161,8 @@ assign lq_entry_inst_hit  = lq_entry_vld
                             //&&  (lq_entry_secd  ==  ld_dc_secd)
                             &&  (lq_entry_iid[6:0] ==  ld_dc_iid[6:0])
                             &&  (!ld_dc_vec ||
-                                 (lq_entry_uop_idx[4:0] == ld_dc_uop_idx[4:0]));
+                                 ((lq_entry_uop_idx[4:0]  == ld_dc_uop_idx[4:0]) &&
+                                  (lq_entry_beat_idx[4:0] == ld_dc_beat_idx[4:0])));
 
 //==========================================================
 //                 RAR speculation check

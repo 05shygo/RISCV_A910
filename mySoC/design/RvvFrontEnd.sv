@@ -77,33 +77,7 @@ module RvvFrontEnd#(parameter N = 4,
   output RVVConfigState [N-1:0] cmd_config_state_o,
   // 配置恢复 (S4 使用; S3 由 bridge 钉 0)
   input  logic                  config_load_valid_i,
-  input  RVVConfigState         config_load_data_i,
-
-  //==========================================================
-  // 标量源等待信息 (2026-10-17 S3b 新增)
-  //==========================================================
-  // 来自 bridge 的 VIQ head: 源物理号 / 是否使用 / issue 时是否已写回。
-  // 非 vset 的计算类指令由 vecq 立即发射, 迟到的标量写回在 backend RS 里等。
-  input  logic [N-1:0]          src0_vld_i,
-  input  logic [N-1:0][5:0]     src0_preg_i,
-  input  logic [N-1:0]          src0_wb_i,
-  input  logic [N-1:0][31:0]    src0_data_i,   // accept 当拍的 PRF 组合读值
-  input  logic [N-1:0]          src1_vld_i,
-  input  logic [N-1:0][5:0]     src1_preg_i,
-  input  logic [N-1:0]          src1_wb_i,
-  input  logic [N-1:0][31:0]    src1_data_i,
-  // accept 时把源等待信息写进 backend 的按-iid 表 (S3b)
-  //   {vld, iid, preg, captured=issue 时 wb, data=accept 拍读到的 PRF 值}
-  output logic [N-1:0]          src0_wt_vld,
-  output logic [N-1:0][6:0]     src0_wt_iid,
-  output logic [N-1:0][5:0]     src0_wt_preg,
-  output logic [N-1:0]          src0_wt_wb,
-  output logic [N-1:0][31:0]    src0_wt_data,
-  output logic [N-1:0]          src1_wt_vld,
-  output logic [N-1:0][6:0]     src1_wt_iid,
-  output logic [N-1:0][5:0]     src1_wt_preg,
-  output logic [N-1:0]          src1_wt_wb,
-  output logic [N-1:0][31:0]    src1_wt_data
+  input  RVVConfigState         config_load_data_i
 );
   localparam COUNTBITS = $clog2(N + 1);
   typedef logic [COUNTBITS-1:0] count_t;
@@ -117,14 +91,6 @@ module RvvFrontEnd#(parameter N = 4,
   logic [N-1:0] valid_inst_q;     // If the instruction in this slot is valid
   count_t valid_inst_count_q;     // The sum of valid_inst_q
   RVVInstruction inst_q [N-1:0];  // The instruction in the slot
-
-  // 与 inst_q 同步的标量源等待信息 (S3b)
-  logic [N-1:0]      src0_vld_q;
-  logic [N-1:0][5:0] src0_preg_q;
-  logic [N-1:0]      src0_wb_q;
-  logic [N-1:0]      src1_vld_q;
-  logic [N-1:0][5:0] src1_preg_q;
-  logic [N-1:0]      src1_wb_q;
 
   // State, for time being lets do not state forwarding for timing
   logic config_state_reduction;
@@ -181,56 +147,6 @@ module RvvFrontEnd#(parameter N = 4,
     for (int i = 0; i < N; i++) begin
       inst_q[i] <= inst_accepted[i] ? inst_data_i[i] : inst_q[i];
     end
-  end
-
-  // 源等待信息与 inst_q 同拍锁存 (S3b)
-  always_ff @(posedge clk or negedge rstn) begin
-    if (!rstn) begin
-      for (int i = 0; i < N; i++) begin
-        src0_vld_q[i]  <= 1'b0;
-        src0_preg_q[i] <= 6'd0;
-        src0_wb_q[i]   <= 1'b0;
-        src1_vld_q[i]  <= 1'b0;
-        src1_preg_q[i] <= 6'd0;
-        src1_wb_q[i]   <= 1'b0;
-      end
-    end else if (flush_i) begin
-      for (int i = 0; i < N; i++) begin
-        src0_vld_q[i]  <= 1'b0;
-        src0_preg_q[i] <= 6'd0;
-        src0_wb_q[i]   <= 1'b0;
-        src1_vld_q[i]  <= 1'b0;
-        src1_preg_q[i] <= 6'd0;
-        src1_wb_q[i]   <= 1'b0;
-      end
-    end else begin
-      for (int i = 0; i < N; i++) begin
-        if (inst_accepted[i]) begin
-          src0_vld_q[i]  <= src0_vld_i[i];
-          src0_preg_q[i] <= src0_preg_i[i];
-          src0_wb_q[i]   <= src0_wb_i[i];
-          src1_vld_q[i]  <= src1_vld_i[i];
-          src1_preg_q[i] <= src1_preg_i[i];
-          src1_wb_q[i]   <= src1_wb_i[i];
-        end
-      end
-    end
-  end
-
-  // accept 时写 backend 的按-iid 源等待表 (S3b)
-  // data 用 accept 当拍的 PRF 读值: 若 wb=1 它就是正确值; 若 wb=0 它只是快照,
-  // backend 会等到该 preg 的写回数据后用 WB 数据覆盖它。
-  for (genvar ga = 0; ga < N; ga++) begin : g_src_wt
-    assign src0_wt_vld[ga]  = inst_accepted[ga] && src0_vld_i[ga];
-    assign src0_wt_iid[ga]  = inst_data_i[ga].rob_tag;
-    assign src0_wt_preg[ga] = src0_preg_i[ga];
-    assign src0_wt_wb[ga]   = src0_wb_i[ga];
-    assign src0_wt_data[ga] = src0_data_i[ga];   // accept 拍组合读值, 不是影子
-    assign src1_wt_vld[ga]  = inst_accepted[ga] && src1_vld_i[ga];
-    assign src1_wt_iid[ga]  = inst_data_i[ga].rob_tag;
-    assign src1_wt_preg[ga] = src1_preg_i[ga];
-    assign src1_wt_wb[ga]   = src1_wb_i[ga];
-    assign src1_wt_data[ga] = src1_data_i[ga];   // accept 拍组合读值
   end
 
   // Update configuration architectural state
@@ -689,17 +605,12 @@ module RvvFrontEnd#(parameter N = 4,
 
       // Combine instruction + arch state into command
       unaligned_cmd_data[i].rob_tag = inst_q[i].rob_tag;
+      unaligned_cmd_data[i].lsid    = inst_q[i].lsid;
 `ifdef TB_SUPPORT
       unaligned_cmd_data[i].inst_pc = inst_q[i].pc;
 `endif
       unaligned_cmd_data[i].opcode = inst_q[i].opcode;
       unaligned_cmd_data[i].bits = inst_q[i].bits;
-      // 标量源等待信息 (S3b): issue 时的 preg / 是否使用 / 是否已写回
-      unaligned_cmd_data[i].rs1_preg = src0_preg_q[i];
-      unaligned_cmd_data[i].rs1_vld  = src0_vld_q[i];
-      unaligned_cmd_data[i].rs1_wb   = src0_wb_q[i];
-      unaligned_cmd_data[i].rs2_preg = src1_preg_q[i];
-      unaligned_cmd_data[i].rs2_wb   = src1_wb_q[i];
       unaligned_cmd_data[i].arch_state = inst_config_state[i+1];
       unaligned_cmd_data[i].arch_state.vstart = inst_config_state[i].vstart;
       // TODO: Handle rs propagation for loads/stores

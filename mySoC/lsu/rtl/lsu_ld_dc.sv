@@ -21,6 +21,18 @@ module lsu_ld_dc #(
     // LSU_LD_AG -> DC  Input
     //==========================================================
     input  logic                          ld_ag_dc_inst_vld,
+    // 2026-10-18 直连向量 L/S: VEC 请求直接注入 DC (绕过 AG)
+    input  logic                          vec_ld_dc_inst_vld,
+    input  logic [31:0]                   vec_ld_addr,
+    input  logic [15:0]                   vec_ld_bytes_vld,
+    input  logic [6:0]                    vec_ld_iid,
+    input  logic [4:0]                    vec_ld_uop_idx,
+    input  logic [4:0]                    vec_ld_beat_idx,
+    input  logic [4:0]                    vec_ld_fill_id,
+    input  logic [LSIQ_ENTRY-1:0]         vec_ld_lsid,
+    input  logic                          vec_ld_last,
+    input  logic                          vec_ld_nop,
+    input  logic                          vec_ld_raw_new,
     input  logic [1:0]                    ld_ag_inst_size,
     // 2026-10-15 停用: 非对齐拆分通路整条摘掉 (boundary/secd/acclr/bytes_vld1/addr1)
     //input  logic                          ld_ag_secd,
@@ -63,6 +75,7 @@ module lsu_ld_dc #(
     // 2026-10-15 停用: 两根都只喂已摘的 cb_merge_en
     //input  logic                          sq_ld_dc_cancel_acc_req,
     input  logic                          sq_ld_dc_fwd_req,
+    input  logic [15:0]                   sq_ld_dc_fwd_bytes_vld,   // 2026-10-18 向量前递掩码
     //input  logic                          wmb_ld_dc_cancel_acc_req,
     input  logic                          wmb_ld_dc_fwd_req,
     input  logic [15:0]                   wmb_fwd_bytes_vld,
@@ -113,10 +126,17 @@ module lsu_ld_dc #(
     output logic                          ld_dc_fwd_sq_vld,                    
     output logic                          ld_dc_fwd_wmb_vld,
 
-    output logic                          ld_dc_lq_create_vld
+    output logic                          ld_dc_lq_create_vld,
     //output logic                          ld_dc_lq_create1_vld   // 2026-10-15 停用 (只服务 cache_buffer 命中)
 
-
+    // 2026-10-18 直连向量 L/S
+    output logic                          ld_dc_vec_nop,
+    output logic                          ld_dc_vec_restart,    // 本拍 VEC 请求被 restart (前端重试)
+    output logic [4:0]                    ld_dc_vec_beat_idx,
+    output logic [4:0]                    ld_dc_vec_fill_id,
+    output logic                          ld_dc_vec_restart_lq_full,
+    output logic                          ld_dc_vec_restart_imme,
+    output logic [4:0]                    ld_dc_vec_restart_fill_id
 );
 
 // Data size constants
@@ -162,6 +182,13 @@ logic [3:0]                    ld_dc_rot_sel_final;
 
 
 logic [LSIQ_ENTRY-1:0]         ld_dc_mask_lsid;
+// 2026-10-18: VEC 注入的私有字段
+logic                          ld_dc_vec_nop_q;
+logic [4:0]                    ld_dc_beat_idx;
+logic [4:0]                    ld_dc_fill_id;
+
+assign ld_dc_vec_beat_idx = ld_dc_beat_idx;
+assign ld_dc_vec_fill_id  = ld_dc_fill_id;
 
 //====================================================================
 // Load DC valid register
@@ -174,7 +201,7 @@ always @(posedge forever_cpuclk or negedge cpurst_b) begin
     else if(rtu_yy_xx_flush) begin
         ld_dc_inst_vld <= 1'b0;
     end
-    else if(ld_ag_dc_inst_vld) begin
+    else if(ld_ag_dc_inst_vld || vec_ld_dc_inst_vld) begin
         ld_dc_inst_vld <= 1'b1;
     end
     else begin
@@ -232,6 +259,26 @@ always @(posedge forever_cpuclk or negedge cpurst_b) begin
         //ld_dc_acclr_en           <= 1'b0;
         ld_dc_raw_new            <= 1'b0;
         ld_dc_expt               <= 1'b0;
+        ld_dc_vec_nop_q          <= 1'b0;
+        ld_dc_beat_idx           <= 5'b0;
+        ld_dc_fill_id            <= 5'b0;
+    end
+    else if (vec_ld_dc_inst_vld) begin
+        ld_dc_inst_size[1:0]     <= 2'b10;          // WORD: 仅影响 sign_sel, 向量不用
+        ld_dc_sign_extend        <= 1'b0;
+        ld_dc_iid[6:0]           <= vec_ld_iid[6:0];
+        ld_dc_vec                <= 1'b1;
+        ld_dc_uop_idx[4:0]       <= vec_ld_uop_idx[4:0];
+        ld_dc_last               <= vec_ld_last;
+        ld_dc_lsid[LSIQ_ENTRY-1:0] <= vec_ld_lsid[LSIQ_ENTRY-1:0];
+        ld_dc_old                <= 1'b0;           // 强制建 LQ
+        ld_dc_preg[5:0]          <= 6'b0;
+        ld_dc_bytes_vld[15:0]    <= vec_ld_bytes_vld[15:0];
+        ld_dc_raw_new            <= vec_ld_raw_new;
+        ld_dc_expt               <= 1'b0;
+        ld_dc_vec_nop_q          <= vec_ld_nop;
+        ld_dc_beat_idx           <= vec_ld_beat_idx;
+        ld_dc_fill_id            <= vec_ld_fill_id;
     end
     else if ( ld_ag_dc_inst_vld) begin
         ld_dc_inst_size[1:0]     <= ld_ag_inst_size[1:0];
@@ -252,6 +299,9 @@ always @(posedge forever_cpuclk or negedge cpurst_b) begin
         ld_dc_raw_new            <= ld_ag_raw_new;
         // 2026-10-15 停用: bypass 通路在本仓没实现 (ld_dc_chk_ld_bypass_vld 无人使用), 整条摘掉: ld_dc_fwd_bypass_en      <= ld_ag_dc_fwd_bypass_en;
         ld_dc_expt               <= ld_ag_expt;
+        ld_dc_vec_nop_q          <= 1'b0;
+        ld_dc_beat_idx           <= 5'b0;
+        ld_dc_fill_id            <= 5'b0;
     end
 end
 
@@ -265,6 +315,9 @@ always @(posedge forever_cpuclk or negedge cpurst_b) begin
         ld_dc_addr0[31:0] <= {32{1'b0}};
     end
     // 注意：原代码 ld_ag_inst_vld 端口不存在，原设计意图应为 ld_ag_dc_inst_vld，请确认
+    else if(vec_ld_dc_inst_vld) begin
+        ld_dc_addr0[31:0] <= vec_ld_addr[31:0];
+    end
     else if(ld_ag_dc_inst_vld || dcache_arb_ld_dc_borrow_vld) begin
         ld_dc_addr0[31:0] <= ld_ag_dc_addr0[31:0];
     end
@@ -326,7 +379,9 @@ assign ld_dc_lq_create_vld      = ld_dc_inst_vld
                                 && !ld_dc_depd_imme_restart_req
                                 // 2026-10-15 停用: sq 的 depd_hit4 已摘, 这根恒 0
                                 //&& !sq_ld_dc_addr1_dep_discard
-                                && !ld_dc_expt;
+                                && !ld_dc_expt
+                                // 2026-10-18: nop 请求只驱动 LSIQ pop, 不建 LQ
+                                && !(ld_dc_vec && ld_dc_vec_nop_q);
 
 // 2026-10-15 停用: lq_create1 只服务 cache_buffer 命中 (cb_ld_dc_addr_hit), 已摘
 //assign ld_dc_lq_create1_vld     = ld_dc_inst_vld
@@ -367,7 +422,10 @@ always @( wmb_ld_dc_fwd_req
         or sq_ld_dc_fwd_req) begin
     case({sq_ld_dc_fwd_req,wmb_ld_dc_fwd_req})
         2'b11: ld_dc_fwd_bytes_vld[15:0] = 16'hffff;
-        2'b10: ld_dc_fwd_bytes_vld[15:0] = 16'hffff;
+        // 2026-10-18: 标量 load 只用低 4B, 全 1 无害; 16B 向量 load 必须用
+        // 选中 SQ 表项的真实字节掩码, 否则会把整行 16B 都覆盖成 store word。
+        2'b10: ld_dc_fwd_bytes_vld[15:0] = ld_dc_vec ? sq_ld_dc_fwd_bytes_vld[15:0]
+                                                     : 16'hffff;
         2'b01: ld_dc_fwd_bytes_vld[15:0]  = wmb_fwd_bytes_vld[15:0];
         2'b00: ld_dc_fwd_bytes_vld[15:0]  = 16'h0;
         default: ld_dc_fwd_bytes_vld[15:0] = {16{1'bx}};
@@ -461,5 +519,16 @@ end
 assign ld_dc_mask_lsid[LSIQ_ENTRY-1:0]    = {LSIQ_ENTRY{ld_dc_inst_vld}} & ld_dc_lsid[LSIQ_ENTRY-1:0];
 assign ld_dc_idu_lq_full[LSIQ_ENTRY-1:0]  = {LSIQ_ENTRY{ld_dc_lq_full_req}} & ld_dc_mask_lsid[LSIQ_ENTRY-1:0];
 assign ld_dc_imme_wakeup[LSIQ_ENTRY-1:0]  = {LSIQ_ENTRY{ld_dc_depd_imme_restart_req}} & ld_dc_mask_lsid[LSIQ_ENTRY-1:0];
+
+// 2026-10-18 直连向量 L/S: 前端重试用
+assign ld_dc_vec_nop     = ld_dc_vec_nop_q;
+assign ld_dc_vec_restart = ld_dc_inst_vld && ld_dc_vec && ld_dc_restart_vld;
+
+// 2026-10-18: restart 原因 (给前端 sleep/wake) + fill_id 配对
+assign ld_dc_vec_restart_lq_full    = ld_dc_inst_vld && ld_dc_vec &&
+                                      ld_dc_lq_full_req;
+assign ld_dc_vec_restart_imme       = ld_dc_inst_vld && ld_dc_vec &&
+                                      ld_dc_depd_imme_restart_req;
+assign ld_dc_vec_restart_fill_id    = ld_dc_fill_id;
 
 endmodule

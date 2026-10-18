@@ -17,7 +17,10 @@ module lsu_ld_da #(
     input  logic [6:0]                    ld_dc_iid,
     // 2026-10-17 S7: 向量 beat
     input  logic                          ld_dc_vec,
+    input  logic                          ld_dc_vec_nop,
     input  logic [4:0]                    ld_dc_uop_idx,
+    input  logic [4:0]                    ld_dc_beat_idx,
+    input  logic [4:0]                    ld_dc_fill_id,
     input  logic                          ld_dc_last,
     input  logic [LSIQ_ENTRY-1:0]         ld_dc_lsid,
     input  logic                          ld_dc_old,
@@ -86,7 +89,13 @@ module lsu_ld_da #(
     // 2026-10-17 S7: 向量 beat
     output logic                          ld_da_vec,
     output logic [4:0]                    ld_da_uop_idx,
+    output logic [4:0]                    ld_da_beat_idx,
+    output logic [4:0]                    ld_da_fill_id,
     output logic                          ld_da_last,
+    output logic                          ld_da_vec_done,
+    output logic                          ld_da_vec_restart_rb_full,
+    output logic                          ld_da_vec_restart_imme,
+    output logic [4:0]                    ld_da_vec_restart_fill_id,
     output logic [LSIQ_ENTRY-1:0]         ld_da_idu_beat_done,
     output logic [LSIQ_ENTRY-1:0]         ld_da_lsid,
     output logic                          ld_da_old,
@@ -129,7 +138,13 @@ module lsu_ld_da #(
     output logic                          ld_da_vb_borrow_vb,
     output logic [255:0]                  ld_da_data256,
     input  logic                          ld_dc_settle_way,
-    output logic                          ld_da_hit_idx_discard_req
+    output logic                          ld_da_hit_idx_discard_req,
+    // 2026-10-18 直连向量 L/S
+    output logic                          ld_da_vec_rsp_vld,
+    output logic [127:0]                  ld_da_vec_rsp_data,
+    output logic                          ld_da_vec_mshr_created,
+    output logic                          ld_da_vec_miss,       // 给 LQ: miss 期间不提前 pop
+    output logic                          ld_da_vec_restart     // 前端重试
 );
 
 //logic                          ld_da_cb_merge_en;   // 2026-10-15 停用: cache_buffer
@@ -172,6 +187,7 @@ logic                          ld_da_discard_from_lfb_req;
 
 logic                          ld_da_inst_vld;
 logic                          ld_da_borrow_vld;
+logic                          ld_da_vec_nop_q;
 
 logic                          ld_da_cmit_hit0;
 logic                          ld_da_cmit_hit1;
@@ -287,7 +303,10 @@ always @(posedge forever_cpuclk or negedge cpurst_b) begin
     ld_da_sign_extend       <= 1'b0;
     ld_da_iid               <= {IID_WIDTH+1{1'b0}};
     ld_da_vec               <= 1'b0;
+    ld_da_vec_nop_q         <= 1'b0;
     ld_da_uop_idx           <= 5'b0;
+    ld_da_beat_idx          <= 5'b0;
+    ld_da_fill_id           <= 5'b0;
     ld_da_last              <= 1'b0;
     ld_da_lsid              <= {LSIQ_ENTRY{1'b0}};
     ld_da_old               <= 1'b0;
@@ -314,7 +333,10 @@ always @(posedge forever_cpuclk or negedge cpurst_b) begin
     ld_da_sign_extend       <= ld_dc_sign_extend;
     ld_da_iid               <= ld_dc_iid;
     ld_da_vec               <= ld_dc_vec;
+    ld_da_vec_nop_q         <= ld_dc_vec_nop;
     ld_da_uop_idx           <= ld_dc_uop_idx;
+    ld_da_beat_idx          <= ld_dc_beat_idx;
+    ld_da_fill_id           <= ld_dc_fill_id;
     ld_da_last              <= ld_dc_last;
     ld_da_lsid              <= ld_dc_lsid;
     ld_da_old               <= ld_dc_old;
@@ -539,8 +561,10 @@ assign ld_da_data128[127:0] = ld_da_data_settle[127:0];
 //assign ld_da_cb_data[127:0]  = ld_da_dcache_pass_data128_am;
 
 // 2026-10-15 停用: boundary_first 恒 0
-//assign ld_da_wb_cmplt_req = ld_da_inst_vld && !ld_da_restart_vld & !ld_da_boundary_first;
-  assign ld_da_wb_cmplt_req = ld_da_inst_vld && !ld_da_restart_vld;
+// 2026-10-18: 向量 beat 不发 wb cmplt (完成由 RVV 在退休时统一产生);
+// 但 DA 通过本身仍要驱动 LSIQ pop / 下一 beat。
+wire ld_da_pass_vld = ld_da_inst_vld && !ld_da_restart_vld;
+assign ld_da_wb_cmplt_req = ld_da_pass_vld && !ld_da_vec;
 assign ld_da_wb_expt_vld = ld_da_expt;
 assign ld_da_wb_expt_addr[31:0] = ld_da_addr[31:0];
 assign ld_da_wb_data_req  = ld_da_wb_cmplt_req & ld_da_data_vld;
@@ -559,15 +583,19 @@ assign ld_da_rb_create_vld_unmask = ld_da_inst_vld
                                     //& !ld_da_secd
                                     & !ld_da_rb_data_vld
                                     //& (!ld_da_rb_data_vld | ld_da_boundary_after_mask)
-                                    & !ld_da_expt;
+                                    & !ld_da_expt
+                                    // 2026-10-18: nop 向量请求不动数据
+                                    & !(ld_da_vec && ld_da_vec_nop_q);
 
 //assign ld_da_boundary_after_mask = ld_da_inst_vld & ld_da_boundary & !ld_da_merge_mask & !ld_da_expt;
 //assign ld_da_boundary_first = ld_da_boundary_after_mask & !ld_da_secd;
 
-assign ld_da_discard_from_rb_req = ld_da_rb_create_vld_unmask && rb_ld_da_hit_idx;
+// 2026-10-18: 向量 load 不使用“同 set 命中就 discard 别人”的通路 —— 它直接建
+// 自己的 no-fill MSHR 项 (容量仍由 rb_full/restart 兜底)。
+assign ld_da_discard_from_rb_req = !ld_da_vec && ld_da_rb_create_vld_unmask && rb_ld_da_hit_idx;
                                    //|| ld_da_rb_merge_vld_unmask && rb_ld_da_merge_fail;
 
-assign ld_da_discard_from_lfb_req = ld_da_rb_create_vld_unmask
+assign ld_da_discard_from_lfb_req = !ld_da_vec && ld_da_rb_create_vld_unmask
                                     //|| ld_da_rb_merge_vld_unmask && !ld_da_rb_data_vld
                                    && lfb_ld_da_hit_idx;
 
@@ -654,18 +682,33 @@ assign ld_da_idu_rb_full[LSIQ_ENTRY-1:0]    = {LSIQ_ENTRY{ld_da_rb_full_vld}}
 // 2026-10-15 停用: boundary_first 恒 0 (对齐 load 一条就走完, 不存在"第一半")
 // 2026-10-17 S7: 向量 anchor 的**非最后 beat 绝不能 pop** —— agevec/counter 都
 // 在 pop 上更新, 提前拉会把 anchor 从年龄图删掉但 vld 还在。
-assign ld_da_idu_pop_vld                    = ld_da_inst_vld
-                                              //&&  !ld_da_boundary_first
-                                              &&  !ld_da_restart_vld
-                                              &&  (!ld_da_vec || ld_da_last);
+assign ld_da_idu_pop_vld                    = ld_da_pass_vld
+                                              &&  (ld_da_vec ? ld_da_last : 1'b1);
 assign ld_da_idu_pop_entry[LSIQ_ENTRY-1:0]  = {LSIQ_ENTRY{ld_da_idu_pop_vld}}
                                               & ld_da_mask_lsid[LSIQ_ENTRY-1:0];
 
 // S7: 非最后 beat 完成 ⇒ 只清 anchor 的 frz, 不动 agevec/counter
 assign ld_da_idu_beat_done[LSIQ_ENTRY-1:0]  =
-      {LSIQ_ENTRY{ld_da_inst_vld && !ld_da_restart_vld &&
-                  ld_da_vec && !ld_da_last}}
+      {LSIQ_ENTRY{ld_da_pass_vld && ld_da_vec && !ld_da_last}}
       & ld_da_mask_lsid[LSIQ_ENTRY-1:0];
+
+//----------------------------------------------------------------------------
+// 2026-10-18 直连向量 L/S: DA 完成 / miss / 重试
+//----------------------------------------------------------------------------
+assign ld_da_vec_rsp_vld      = ld_da_inst_vld && !ld_da_restart_vld &&
+                                ld_da_vec && !ld_da_vec_nop_q && ld_da_data_vld;
+assign ld_da_vec_rsp_data     = ld_da_data_unrot[127:0];
+assign ld_da_vec_mshr_created = ld_da_rb_create_vld && !rb_ld_da_full && ld_da_vec;
+assign ld_da_vec_miss         = ld_da_inst_vld && ld_da_vec && !ld_da_vec_nop_q &&
+                                !ld_da_data_vld && !ld_da_restart_vld && !ld_da_expt;
+assign ld_da_vec_restart      = ld_da_inst_vld && ld_da_vec && ld_da_restart_vld;
+
+// 2026-10-18: DA 通过请求下一 beat; restart 原因 + fill_id 给前端。
+assign ld_da_vec_done              = ld_da_inst_vld && ld_da_vec && !ld_da_restart_vld;
+assign ld_da_vec_restart_rb_full   = ld_da_inst_vld && ld_da_vec && ld_da_rb_full_req;
+assign ld_da_vec_restart_imme      = ld_da_inst_vld && ld_da_vec &&
+                                     ld_da_restart_vld && !ld_da_rb_full_req;
+assign ld_da_vec_restart_fill_id   = ld_da_fill_id;
 
 // 2026-10-15 停用: 非对齐第二半请求唤醒 IDU, 已摘
 //assign ld_da_idu_secd_vld                   = ld_da_inst_vld
