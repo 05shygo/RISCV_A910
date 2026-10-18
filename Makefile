@@ -270,7 +270,7 @@ CROSS     ?= riscv32-unknown-elf-
 ASM_SRCS  := $(wildcard $(PWD)/asm/*.S)
 ASM_BINS  := $(patsubst $(PWD)/asm/%.S,$(PWD)/bin/%.bin,$(ASM_SRCS))
 
-.PHONY: all build run run-all verdi clean help coremark asm muldiv-unit rtu-unit rtu-lsu-unit rtu-adapter-unit rtu-expt-unit iu-alu-unit iu-beu-unit iu-md-unit iu-wb-arb-unit rtu-subsys-elab biu-unit a910-elab a910-run a910-difftest a910-difftest-all a910-difftest-all_wave a910-difftest-wave verdi-difftest aiq-equiv biq-equiv lsiq-equiv ifu3-unit ifu3-ftq-unit ifu3-ras-unit ifu3-predcheck-unit ifu3-bpu-unit ifu3-ifu-unit
+.PHONY: all build run run-all verdi clean help coremark asm muldiv-unit rtu-unit rtu-lsu-unit rtu-adapter-unit rtu-expt-unit iu-alu-unit iu-beu-unit iu-md-unit iu-wb-arb-unit rtu-subsys-elab biu-unit a910-elab a910-run a910-difftest a910-difftest-all a910-difftest-all_wave a910-difftest-wave verdi-difftest aiq-equiv biq-equiv lsiq-equiv ifu3-unit ifu3-ftq-unit ifu3-ras-unit ifu3-predcheck-unit ifu3-bht-unit ifu3-sc-unit ifu3-bpu-unit ifu3-ifu-unit
 
 asm: $(ASM_BINS)
 
@@ -824,6 +824,7 @@ IFU3_BPU_BUILD := $(PWD)/obj_unit_ifu3_bpu
 IFU3_BPU_SIMV  := $(IFU3_BPU_BUILD)/simv
 IFU3_BPU_SRC   := $(IFU3_RTL)/rv32ifu3_bpu.v $(IFU3_RTL)/rv32ifu3_btb.v \
                   $(IFU3_RTL)/rv32ifu3_tage.v $(IFU3_RTL)/rv32ifu3_phr.v \
+                  $(IFU3_RTL)/rv32ifu3_bht.v $(IFU3_RTL)/rv32ifu3_sc.v \
                   $(IFU3_RTL)/rv32ifu3_ubtb.v
 IFU3_BPU_TB    := $(PWD)/tb/unit/tb_ifu3_bpu.sv
 
@@ -835,6 +836,34 @@ $(IFU3_BPU_SIMV): $(IFU3_BPU_SRC) $(IFU3_BPU_TB)
 	$(VCS) $(VCS_FLAGS) $(INC) -top tb_ifu3_bpu -o $(IFU3_BPU_SIMV) \
 	  -Mdir=$(IFU3_BPU_BUILD)/csrc -l $(IFU3_BPU_BUILD)/compile.log \
 	  $(IFU3_BPU_SRC) $(IFU3_BPU_TB)
+
+IFU3_BHT_BUILD := $(PWD)/obj_unit_ifu3_bht
+IFU3_BHT_SIMV  := $(IFU3_BHT_BUILD)/simv
+IFU3_BHT_SRC   := $(IFU3_RTL)/rv32ifu3_bht.v $(IFU3_RTL)/rv32ifu3_phr.v
+IFU3_BHT_TB    := $(PWD)/tb/unit/tb_ifu3_bht.sv
+
+ifu3-bht-unit: $(IFU3_BHT_SIMV)
+	@$(IFU3_BHT_SIMV) +vcs+lic+wait -exitstatus -no_save -l $(IFU3_BHT_BUILD)/sim.log
+
+$(IFU3_BHT_SIMV): $(IFU3_BHT_SRC) $(IFU3_BHT_TB)
+	@mkdir -p $(IFU3_BHT_BUILD)
+	$(VCS) $(VCS_FLAGS) $(INC) -top tb_ifu3_bht -o $(IFU3_BHT_SIMV) \
+	  -Mdir=$(IFU3_BHT_BUILD)/csrc -l $(IFU3_BHT_BUILD)/compile.log \
+	  $(IFU3_BHT_SRC) $(IFU3_BHT_TB)
+
+IFU3_SC_BUILD := $(PWD)/obj_unit_ifu3_sc
+IFU3_SC_SIMV  := $(IFU3_SC_BUILD)/simv
+IFU3_SC_SRC   := $(IFU3_RTL)/rv32ifu3_sc.v $(IFU3_RTL)/rv32ifu3_phr.v
+IFU3_SC_TB    := $(PWD)/tb/unit/tb_ifu3_sc.sv
+
+ifu3-sc-unit: $(IFU3_SC_SIMV)
+	@$(IFU3_SC_SIMV) +vcs+lic+wait -exitstatus -no_save -l $(IFU3_SC_BUILD)/sim.log
+
+$(IFU3_SC_SIMV): $(IFU3_SC_SRC) $(IFU3_SC_TB)
+	@mkdir -p $(IFU3_SC_BUILD)
+	$(VCS) $(VCS_FLAGS) $(INC) -top tb_ifu3_sc -o $(IFU3_SC_SIMV) \
+	  -Mdir=$(IFU3_SC_BUILD)/csrc -l $(IFU3_SC_BUILD)/compile.log \
+	  $(IFU3_SC_SRC) $(IFU3_SC_TB)
 
 IFU3_IFU_BUILD := $(PWD)/obj_unit_ifu3_ifu
 IFU3_IFU_SIMV  := $(IFU3_IFU_BUILD)/simv
@@ -851,7 +880,7 @@ $(IFU3_IFU_SIMV): $(IFU3_IFU_SRC) $(IFU3_IFU_TB)
 	  -Mdir=$(IFU3_IFU_BUILD)/csrc -l $(IFU3_IFU_BUILD)/compile.log \
 	  $(IFU3_IFU_SRC) $(IFU3_IFU_TB)
 
-ifu3-unit: ifu3-ftq-unit ifu3-ras-unit ifu3-predcheck-unit ifu3-bpu-unit ifu3-ifu-unit
+ifu3-unit: ifu3-ftq-unit ifu3-ras-unit ifu3-predcheck-unit ifu3-bht-unit ifu3-sc-unit ifu3-bpu-unit ifu3-ifu-unit
 
 # IU ALU 流水级单元台 (2026-10-08 立): IDU 的 AIQ 发射口 ↔ 老 ALU 的适配级。
 # 守三件事 (全在整核里只表现为"某条指令结果不对"、定位不到):

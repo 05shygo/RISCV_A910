@@ -20,9 +20,23 @@ make a910-difftest-all A910_IFU=3 \
 
 - **Phase 0/1/2 已完成**：FTQ、3 级 IFU、香山式 BTB/uBTB/TAGE-lite/PHR、
   BP2 S2 override、RAS、PredChecker、精确 PHR 恢复、S0 吞吐规则。
+- **2026-10-18：BHT 已例化，但默认关**（`BP_BHT=0`；`+define+IFU3_BHT` 打开）。
+  BP1 早方向用 gshare/PHR；2-bit 计数器复位为弱 not-taken（01），只有 00/11
+  才 `strong`，弱时回退 BTB base。branch_bench 上 BHT 开确实更快
+  （165,803 → 157,975 拍，条件 95.09% → 95.94%），但 **CoreMark B 上回归**
+  （8,127,847 拍 / 87.03%，见 §3.2），所以不做默认。
+- **2026-10-18：小型 path-SC 已例化并默认开**（64 set × 4 way × 6-bit，
+  ~3.97 kbit），在 BP2 用强信心覆盖 TAGE/base；`BP_SC=1`，
+  `+define+IFU3_NO_SC` 回退。branch_bench **SC only（BHT 关）**：
+  165,803 → **158,767 拍（−4.24%）**，条件 95.09% → **96.39%（+1.30pp）**，
+  条件误预测 2,843 → 2,090（−753）。
+  **当前默认预测器面积约 17.2 → 21.2 kbit（+23%）**；BHT 作为可选项再 +2,048 bit。
+  CoreMark B 上 SC-only 基本中性：基线 7,712,354 拍 / 88.84% →
+  SC-only 7,717,603 拍 / 88.81%（+0.07% 拍，−0.03pp）；BHT 则明显负收益
+  （8,127,847 拍 / 87.03%），所以 BHT 默认关。
 - A910 `a910-elab` IFU2/IFU3 均 Error/IWNF/DCTTSW/PCWM=0；
   `a910-difftest-all` **IFU2 46 PASS、IFU3 46 PASS / 0 FAIL**。
-- 5 个 IFU3 单元/定向台：`make ifu3-unit` 全 PASS。
+- 7 个 IFU3 单元/定向台：`make ifu3-unit` 全 PASS。
 - `branch_bench`：IFU3 **180,856 拍**，IFU2 192,973 拍（IFU3 快 6.3%）。
 - **完整 B CoreMark（30 iteration，`+NOVALID`）**：IFU2 **3.634/MHz，8,254,858 ticks，275,160 cycles/iter**；
   IFU3（当前默认 5/10/15/16）**3.744/MHz，8,011,507 ticks，267,049 cycles/iter**（score +3.03%）。
@@ -31,7 +45,8 @@ make a910-difftest-all A910_IFU=3 \
 - **当前前端默认**：TAGE 历史窗口 **5/10/15/16**（零面积）；i-cache 保持 **1 KB/2-way/16 B**；
   BTB 保持 **64 行**。2 KB/4 KB i-cache 与 BTB 128/256 均已实测，但面积不划算，未采用。
 - `a910-run TEST=a910_smoke A910_IFU=3` PASS。
-- Phase 3（SC/ITTAGE、override 零停拍、Fmax）未做；miniRV 未接。
+- Phase 3：**小型 path-SC 已做（2026-10-18）**；ITTAGE、override 零停拍、
+  Fmax、64-bit PHR 未做；miniRV 未接。
 
 ---
 
@@ -81,7 +96,8 @@ IBUF (复用 rv32ifu2_ibuf, 4 push / 3 pop)
 | `rv32ifu3_tage.v` | 4 张 tagged 表 × 64 set × 1 way；每项 `{tag[7:0], ctr[2:0]}` + valid；provider/alt；无 hit 回落 BTB base |
 | `rv32ifu3_ras.v` | **Phase 2 新**：16 项推测栈 + 64 项 undo log；精确回滚 |
 | `rv32ifu3_predcheck.v` | **Phase 2 新**：RV32I 预译码 + 确定错误的修正 |
-| `rv32ifu3_bht.v` | 未例化；Phase 3 A/B 对照 |
+| `rv32ifu3_bht.v` | **已例化，默认关**：256 行 × 4 slot × 2-bit gshare；索引 `pc[11:4] ^ fold(PHR, L1)`；复位 01，`strong=00/11`，弱时回退 BTB base；`+define+IFU3_BHT` 打开 |
+| `rv32ifu3_sc.v` | **已例化，默认开**：64 set × 4 way × {valid, tag 8, ctr 6}，~3.97 kbit；BP2 强信心覆盖 TAGE/base；`+define+IFU3_NO_SC` 回退 |
 
 ### 2.1 PHR
 
@@ -136,6 +152,8 @@ make ifu3-unit          # 5 个一起
 make ifu3-ftq-unit      # 随机 alloc/finish/alloc+finish/override/flush/inflight
 make ifu3-ras-unit      # 3000 block + 随机回滚 + commit
 make ifu3-predcheck-unit# JAL/ret/假 taken/cond 不修/pop_push/非对齐
+make ifu3-bht-unit      # BHT 读写索引一致 / 2-bit 饱和 / slot 独立
+make ifu3-sc-unit       # SC tag/6-bit 计数/强信心/4-way RR
 make ifu3-bpu-unit      # BTB 训练、PHR 两次推进、IU/IFU override、气泡
 make ifu3-ifu-unit      # S0 back-to-back=49/50、skid、非对齐块
 ```
@@ -151,6 +169,77 @@ make ifu3-ifu-unit      # S0 back-to-back=49/50、skid、非对齐块
 
 小用例受 3 级 IFU + 启动/重定向固定开销影响；branch_bench 上 IFU3 已快于 IFU2。
 历史阶段（Phase 1 263,128；Phase 2 早期 317,738）只作对照。
+
+#### 2026-10-18 BHT 早方向（可选，默认关）
+
+BHT 是 256 行 × 4 slot gshare（索引 `pc[11:4] ^ fold(PHR, L1)`）。
+最新版把 2-bit 计数器复位为 **01（弱 not-taken）**，只有 **00/11 才 `strong`**，
+弱时 BPU 回退 BTB base；用 `+define+IFU3_BHT` 打开，默认关。
+
+branch_bench 上 BHT 开确实有效（弱 gating 旧版）：
+
+| branch_bench | BHT 关 | BHT 开 | 变化 |
+|---|---:|---:|---:|
+| 拍数 | 165,803 | **157,975** | **−4.72%** |
+| 条件准确率 | 95.09% | **95.94%** | **+0.85pp** |
+| 条件误预测 | 2,843 | **2,347** | **−496（−17.4%）** |
+| bpu_ovr | 1,538 | 1,949 | +411 |
+
+但 **CoreMark B 上回归**（8,127,847 拍 / 87.03%，见下），原因是 tagless BHT
+只索引到 `pc[11:4]`（4 KB 别名），CoreMark 代码一大就给错早方向，
+`bpu_ovr` 从 38,633 涨到 62,085，TAGE/SC 只能晚一拍纠，override + 重取
+成本超过收益。strong gating 版 BHT+SC 在 branch_bench 上是 157,712 拍 /
+96.39%，只比 SC-only 好 0.66%，不值得为它加 2,048 bit，所以默认关。
+
+#### 2026-10-18 小型 path-SC（默认开）
+
+`rv32ifu3_sc`：64 set × 4 way，每 way `{valid, tag[7:0], ctr[5:0]}`，
+索引 `line_pc[9:4] ^ fold(PHR, SC_L=12)`，tag 含 `{line_pc[15:10], slot}`；
+BP2 只在 `hit && |ctr-32| >= THRESH`（默认 4）时覆盖 TAGE/base。
+`+define+IFU3_NO_SC` 回退。默认 BHT 关、SC 开：
+
+| branch_bench | SC 关（无 BHT） | **SC only（默认）** | 变化 |
+|---|---:|---:|---:|
+| 拍数 | 165,803 | **158,767** | **−4.24%** |
+| 条件准确率 | 95.09% | **96.39%** | **+1.30pp** |
+| 条件误预测 | 2,843 | **2,090** | **−753（−26.5%）** |
+| bpu_ovr | 1,538 | 1,032 | −506 |
+
+参考（非默认）：BHT（弱 gating）+ SC 可以到 154,633 拍 / 96.61%
+（条件误预测 1,963），但它在 CoreMark 上回归，不能做默认。
+
+阈值扫描是 **BHT 弱 gating + SC** 下做的：`THRESH=0` 会在计数器还中立时
+就覆盖，条件掉到 95.95%、161,127 拍；`THRESH=2/4/6` 分别 154,607 /
+154,633 / 154,659 拍，条件 96.61% / 96.61% / 96.60%，2–6 基本平的，
+默认取 4。`SC_L=8/12` 正常（154,622 / 154,633），`SC_L=10` 明显差
+（160,440 / 95.73%）——SC_L 需要按负载重扫。SC-only 默认下阈值/窗口
+还可以再扫一轮。
+
+SC 自身约 +3.97 kbit（64×4×15 + 64×2）；**默认（BHT 关 + SC）预测器总面积
+约 17.2 → 21.2 kbit（+23%）**；BHT 作为可选项再 +2,048 bit（→ 23.2 kbit）。
+SC 的 BP2 override 次数反而比 BHT 开时少，最终误预测和周期都降了——
+它是在 TAGE 之上做“强信心纠错”，不是替代。
+完整 46 用例见本轮验证记录。
+
+#### 2026-10-18 CoreMark B A/B（30 iteration，B 镜像）
+
+同一 B 镜像直接调 simv，`GM_MONITOR=1 +NOVALID +PROBE_PERF`：
+
+| CoreMark B | 拍数 | 条件准确率 | 条件误预测 |
+|---|---:|---:|---:|
+| **同源码基线（BHT/SC 都关）** | **7,712,354** | **88.84%** | **173,664** |
+| **SC only（当前默认）** | 7,717,603 | 88.81% | 174,278 |
+| BHT only（弱 gating） | 8,127,847 | 87.03% | 201,888 |
+| BHT + SC（弱 gating） | 8,126,046 | 87.05% | 201,675 |
+
+**BHT 在 CoreMark 上是负收益**：tagless、索引只到 `pc[11:4]`（4 KB 别名），
+CoreMark 代码一大就给错早方向；`bpu_ovr` 从基线 36,994 涨到 62,085，
+TAGE/SC 只能晚一拍纠，override + 重取成本超过收益。**BHT 已默认关**。
+
+**SC-only CoreMark 基本中性**：+5,249 拍（+0.07%）、条件 −0.03pp，
+而 branch_bench 是 −4.24% 拍 / +1.30pp。当前默认保留 SC（BHT 关），
+因为它对条件分支密集代码有实质收益，CoreMark 只差 0.07%（噪声级）；
+如果验收要求 CoreMark 严格不回退，用 `+define+IFU3_NO_SC` 关掉即可。
 
 ### 3.3 CoreMark（B 配置，30 iteration）
 
@@ -251,6 +340,8 @@ rtl/rv32ifu3_bpu.v        BPU 环 + 精确 PHR + IFU override 重启
 rtl/rv32ifu3_btb.v        块 BTB
 rtl/rv32ifu3_ubtb.v       uBTB
 rtl/rv32ifu3_tage.v       TAGE-lite
+rtl/rv32ifu3_bht.v        早方向 gshare
+rtl/rv32ifu3_sc.v         小型 path-SC (BP2 强信心覆盖)
 rtl/rv32ifu3_phr.v        PHR 折叠
 rtl/rv32ifu3_ras.v        推测栈 + undo log
 rtl/rv32ifu3_predcheck.v  RV32I 预译码 + S1 预测检查

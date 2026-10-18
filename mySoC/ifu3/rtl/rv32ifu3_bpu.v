@@ -16,10 +16,32 @@
 module rv32ifu3_bpu #(
     parameter BP_EN  = 1,
     parameter BTB_AW = 6,
+// BHT 默认关: CoreMark B 上 tagless BHT 的早方向会让 bpu_ovr 从 38k 涨到 62k,
+// 条件准确率 88.78% -> 87.03%. 保留为 A/B 实验臂, 用 +define+IFU3_BHT 打开.
+`ifdef IFU3_BHT
+    parameter BP_BHT = 1,
+`else
+    parameter BP_BHT = 0,
+`endif
     parameter [4:0] TAGE_L0 = 5'd5,
     parameter [4:0] TAGE_L1 = 5'd10,
     parameter [4:0] TAGE_L2 = 5'd15,
-    parameter [4:0] TAGE_L3 = 5'd16
+    parameter [4:0] TAGE_L3 = 5'd16,
+`ifdef IFU3_NO_SC
+    parameter BP_SC = 0,
+`else
+    parameter BP_SC = 1,
+`endif
+`ifdef IFU3_SC_L
+    parameter [4:0] SC_L      = `IFU3_SC_L,
+`else
+    parameter [4:0] SC_L      = 5'd12,
+`endif
+`ifdef IFU3_SC_THRESH
+    parameter [5:0] SC_THRESH = `IFU3_SC_THRESH
+`else
+    parameter [5:0] SC_THRESH = 6'd4
+`endif
 )(
     input  wire         clk,
     input  wire         rst,             // 高有效
@@ -115,6 +137,22 @@ rv32ifu3_btb #(
 
 wire [3:0] tage_dir;
 wire [3:0] tage_hit;
+wire [3:0] sc_dir;
+wire [3:0] sc_hit;
+wire [3:0] sc_use;
+
+// 早方向: BHT (gshare/PHR) 或 BTB per-slot 2-bit 计数器 (A/B 回退).
+// TAGE 无 provider 时也回落到同一个 base, 避免 BHT 与 TAGE 的 fallback 不一致
+// 产生无意义的 BP2 override.
+wire [3:0] bht_dir;
+wire [3:0] bht_strong;
+wire [3:0] btb_base_dir = {
+    btb_slot_ctr[7], btb_slot_ctr[5], btb_slot_ctr[3], btb_slot_ctr[1]
+};
+// BHT 只在其 2-bit 计数器强信心 (00/11) 时覆盖 BTB base; 弱时回退,
+// 避免 CoreMark 上 tagless BHT 的早期错预测把 TAGE 逼到频繁 override.
+wire [3:0] base_dir = BP_BHT ?
+    ((bht_strong & bht_dir) | (~bht_strong & btb_base_dir)) : btb_base_dir;
 
 rv32ifu3_tage #(
     .L0 (TAGE_L0),
@@ -129,9 +167,53 @@ rv32ifu3_tage #(
     .tag_line_pc (line_pc),
     .tag_phr     (bp_rd_phr_q),
     .slot_cond   (btb_slot_cond),
-    .base_dir    ({btb_slot_ctr[7], btb_slot_ctr[5], btb_slot_ctr[3], btb_slot_ctr[1]}),
+    .base_dir    (base_dir),
     .dir         (tage_dir),
     .hit_any     (tage_hit),
+    .upd_vld     (upd_vld),
+    .upd_pc      (upd_pc),
+    .upd_taken   (upd_taken),
+    .upd_is_cond (upd_is_cond),
+    .upd_phr     (upd_chk[15:0])
+);
+
+// ---------------------------------------------------------------------------
+// 小型 path-SC: 只给 BP2 的 TAGE/base 做"强信心"纠正.
+// 与 TAGE 同拍 (BP0 索引, BP1 tag/hit/ctr), 结果在 BP2 使用.
+// ---------------------------------------------------------------------------
+rv32ifu3_sc #(
+    .SC_L   (SC_L),
+    .THRESH (SC_THRESH)
+) u_sc (
+    .clk         (clk),
+    .rst         (rst),
+    .rd_line_pc  ({btb_rd_pc[31:4], 4'b0}),
+    .rd_phr      (phr_q),
+    .tag_line_pc (line_pc),
+    .tag_phr     (bp_rd_phr_q),
+    .slot_cond   (btb_slot_cond),
+    .dir         (sc_dir),
+    .hit         (sc_hit),
+    .use         (sc_use),
+    .upd_vld     (upd_vld),
+    .upd_pc      (upd_pc),
+    .upd_taken   (upd_taken),
+    .upd_is_cond (upd_is_cond),
+    .upd_phr     (upd_chk[15:0])
+);
+
+// ---------------------------------------------------------------------------
+// BHT: 早预测方向 (gshare/PHR). BP1 与 BTB slots 同拍可用.
+// 只影响 BP1 的 conditional 方向; TAGE 仍在 BP2 做 override.
+// (bht_dir 已在 TAGE 例化前声明/选择)
+// ---------------------------------------------------------------------------
+rv32ifu3_bht #(.L1(TAGE_L1)) u_bht (
+    .clk         (clk),
+    .rst         (rst),
+    .rd_line_pc  (btb_rd_pc),
+    .rd_phr      (phr_q),
+    .dir         (bht_dir),
+    .strong_v    (bht_strong),
     .upd_vld     (upd_vld),
     .upd_pc      (upd_pc),
     .upd_taken   (upd_taken),
@@ -167,12 +249,13 @@ rv32ifu3_ubtb #(
 
 // ---------------------------------------------------------------------------
 // BP1 早预测: BTB+base; uBTB 给 target/position 做兜底
+//   条件方向优先用 BHT (gshare/PHR); BP_BHT=0 时回退到 BTB 每 slot 2-bit 计数器.
 // ---------------------------------------------------------------------------
 wire [3:0] base_cand = {
-    btb_slot_vld[3] && (btb_slot_jump[3] || (btb_slot_cond[3] && btb_slot_ctr[7])) && (2'd3 >= pc_ofs),
-    btb_slot_vld[2] && (btb_slot_jump[2] || (btb_slot_cond[2] && btb_slot_ctr[5])) && (2'd2 >= pc_ofs),
-    btb_slot_vld[1] && (btb_slot_jump[1] || (btb_slot_cond[1] && btb_slot_ctr[3])) && (2'd1 >= pc_ofs),
-    btb_slot_vld[0] && (btb_slot_jump[0] || (btb_slot_cond[0] && btb_slot_ctr[1])) && (2'd0 >= pc_ofs)
+    btb_slot_vld[3] && (btb_slot_jump[3] || (btb_slot_cond[3] && base_dir[3])) && (2'd3 >= pc_ofs),
+    btb_slot_vld[2] && (btb_slot_jump[2] || (btb_slot_cond[2] && base_dir[2])) && (2'd2 >= pc_ofs),
+    btb_slot_vld[1] && (btb_slot_jump[1] || (btb_slot_cond[1] && base_dir[1])) && (2'd1 >= pc_ofs),
+    btb_slot_vld[0] && (btb_slot_jump[0] || (btb_slot_cond[0] && base_dir[0])) && (2'd0 >= pc_ofs)
 };
 
 wire       base_taken = |base_cand;
@@ -187,11 +270,7 @@ wire [31:0] base_target =
                    btb_slot_target[127: 96];
 
 wire ubtb_use = ubtb_hit && (ubtb_pos >= pc_ofs);
-wire ubtb_base_dir =
-    (ubtb_pos == 2'd0) ? (btb_slot_cond[0] && btb_slot_ctr[1]) :
-    (ubtb_pos == 2'd1) ? (btb_slot_cond[1] && btb_slot_ctr[3]) :
-    (ubtb_pos == 2'd2) ? (btb_slot_cond[2] && btb_slot_ctr[5]) :
-                         (btb_slot_cond[3] && btb_slot_ctr[7]);
+wire ubtb_base_dir = base_dir[ubtb_pos];
 wire ubtb_taken = ubtb_use && (ubtb_cond ? ubtb_base_dir : 1'b1);
 wire early_taken = (BP_EN != 0) && (ubtb_taken | base_taken);
 wire [1:0] early_slot = ubtb_taken ? ubtb_pos : base_slot;
@@ -227,16 +306,21 @@ reg [3:0]  bp2_btb_cond;
 reg [3:0]  bp2_btb_jump;
 reg [127:0] bp2_btb_target;
 reg [3:0]  bp2_tage_dir;
+reg [3:0]  bp2_sc_use;
+reg [3:0]  bp2_sc_dir;
 
 // ---------------------------------------------------------------------------
-// BP2: 用 BTB slots + TAGE dir 重算
+// BP2: 用 BTB slots + TAGE/SC dir 重算
+//   SC 只在命中且强信心时覆盖 TAGE; 否则保持 TAGE/base.
 // ---------------------------------------------------------------------------
 wire [1:0] bp2_pc_ofs = bp2_start_pc[3:2];
+wire [3:0] final_dir = (BP_SC != 0) ? ((bp2_sc_use & bp2_sc_dir) |
+                                       (~bp2_sc_use & bp2_tage_dir)) : bp2_tage_dir;
 wire [3:0] corr_cand = {
-    bp2_btb_vld[3] && (bp2_btb_jump[3] || (bp2_btb_cond[3] && bp2_tage_dir[3])) && (2'd3 >= bp2_pc_ofs),
-    bp2_btb_vld[2] && (bp2_btb_jump[2] || (bp2_btb_cond[2] && bp2_tage_dir[2])) && (2'd2 >= bp2_pc_ofs),
-    bp2_btb_vld[1] && (bp2_btb_jump[1] || (bp2_btb_cond[1] && bp2_tage_dir[1])) && (2'd1 >= bp2_pc_ofs),
-    bp2_btb_vld[0] && (bp2_btb_jump[0] || (bp2_btb_cond[0] && bp2_tage_dir[0])) && (2'd0 >= bp2_pc_ofs)
+    bp2_btb_vld[3] && (bp2_btb_jump[3] || (bp2_btb_cond[3] && final_dir[3])) && (2'd3 >= bp2_pc_ofs),
+    bp2_btb_vld[2] && (bp2_btb_jump[2] || (bp2_btb_cond[2] && final_dir[2])) && (2'd2 >= bp2_pc_ofs),
+    bp2_btb_vld[1] && (bp2_btb_jump[1] || (bp2_btb_cond[1] && final_dir[1])) && (2'd1 >= bp2_pc_ofs),
+    bp2_btb_vld[0] && (bp2_btb_jump[0] || (bp2_btb_cond[0] && final_dir[0])) && (2'd0 >= bp2_pc_ofs)
 };
 wire       corr_avail = |bp2_btb_vld;
 wire       corr_taken = |corr_cand;
@@ -313,6 +397,8 @@ always @(posedge clk) begin
         bp2_btb_jump     <= 4'd0;
         bp2_btb_target   <= 128'd0;
         bp2_tage_dir     <= 4'd0;
+        bp2_sc_use       <= 4'd0;
+        bp2_sc_dir       <= 4'd0;
     end else if (redirect) begin
         bp_rd_pc_q  <= 32'd0;
         bp_rd_phr_q <= 16'd0;
@@ -373,6 +459,8 @@ always @(posedge clk) begin
             bp2_btb_jump      <= btb_slot_jump;
             bp2_btb_target    <= btb_slot_target;
             bp2_tage_dir      <= tage_dir;
+            bp2_sc_use        <= (BP_SC != 0) ? sc_use : 4'd0;
+            bp2_sc_dir        <= sc_dir;
         end
     end else begin
         // stall: 保持 PC/valid; BP2 已在上一拍评估完
