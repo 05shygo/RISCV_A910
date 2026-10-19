@@ -54,7 +54,9 @@ ICache (复用 rv32ifu2_icache/refill; 16 B 行, 1-cycle read)
 IFU 3 级 (S0/S1/S2 各自 line 寄存器)
   S0: 1 块/拍: ICache 响应可**旁路**进 S1, 同拍再发下一块;
       S1 接不走时落 `s0_resp` skid buffer
-  S1: 4 条固定 PC + RV32I 预译码 + PredChecker; fire 时应用 RAS 动作
+      (ICache 返回拍只寄存整行/预测, 不做译码)
+  S1: RV32I 预译码 + PredChecker (用已寄存的 s1_data/s1_*);
+      修正结果沿上写回 s1_* 并停一拍, 下一拍 fire
   S2: 组 128-bit packet + 25-bit **per-lane** chk; 按 IBUF 空位推前缀;
       整块推完才 pop FTQ
   IFU override: PredChecker 发现确定错误时重写 FTQ 当前项、丢弃年轻项,
@@ -79,7 +81,7 @@ IBUF (复用 rv32ifu2_ibuf, 4 push / 3 pop)
 | `rv32ifu3_ubtb.v` | 32 项全相联 always-taken；存 `{tag, pos, is_cond, target}` |
 | `rv32ifu3_phr.v` | 16-bit PHR 组合折叠：4 表窗口 4/8/12/16，fold 到 6-bit set / 8-bit tag |
 | `rv32ifu3_tage.v` | 4 张 tagged 表 × 64 set × 1 way；每项 `{tag[7:0], ctr[2:0]}` + valid；provider/alt；无 hit 回落 BTB base |
-| `rv32ifu3_ras.v` | **Phase 2 新**：16 项推测栈 + 64 项 undo log；精确回滚 |
+| `rv32ifu3_ras.v` | **已从 IFU 移除例化**（2026-10-18）：文件保留，留给 BPU S3 的 RAS；IFU chk[24:16] 固定 0 |
 | `rv32ifu3_predcheck.v` | **Phase 2 新**：RV32I 预译码 + 确定错误的修正 |
 | `rv32ifu3_bht.v` | 未例化；Phase 3 A/B 对照 |
 
@@ -96,7 +98,12 @@ IBUF (复用 rv32ifu2_ibuf, 4 push / 3 pop)
 - 需要 `iu_btb_pc`（BEU 的 `idu_pc`）才能重算 hash；即使用一拍滞后口径，
   “快照 + 本次实际结果”仍能恢复全局索引。
 
-### 2.2 RAS
+### 2.2 RAS（已从 IFU 移除）
+
+> **2026-10-18**: IFU 不再例化 RAS。退预测已由 BTB/uBTB 直接给 target，
+> `top/top_vld` 没有任何消费者；`chk[24:16]` 在 IDU/RTU/BEU 里也没有读者
+> （只回传 `chk[15:0]` 的 PHR）。按香山分工，RAS 属于 BPU S3（状态只在
+> s3_fire 更新），后续在 BPU 重建 uRAS/RAS。以下为原 IFU RAS 设计存档。
 
 - `chk[24:19]` = 该指令动作前的 undo-log 写指针，`chk[18:16]` = 实际生效动作
   （0 none / 1 push / 2 pop / 3 pop_push）；`chk[15:0]` 仍是 PHR。
@@ -114,14 +121,13 @@ IBUF (复用 rv32ifu2_ibuf, 4 push / 3 pop)
 
 令 `f` = 块内第一条真实 CFI（`slot >= pc_ofs`），`k` = FTQ 预测 taken 的 slot：
 
-1. `f < k` 且 `f` 是 JAL/ret：f always-taken，修到 f 的 target，deliver 到 f。
+1. `k` 之前有真实 JAL `f`：JAL always-taken，修到 f 的 target，deliver 到 f。
 2. `k` 是非 CFI：假 taken；修成整块 fall-through（`taken=0, end=3,
    target=line+16`）。
-3. `k` 是 JAL/ret 且就是第一条真实 CFI：JAL target 错 / ret 的 RAS top 有效且
-   不同则修 target。
+3. `k` 就是第一条真实 CFI 且是 JAL：target 不对则修。
 4. 未预测 taken 且 `f` 是 JAL：修到 JAL 目标。
-5. 未预测 taken 且 `f` 是 ret 且 RAS top 有效：修到 RAS top。
-6. `f` 是 cond / 非 ret JALR：方向/目标不可知，**不修**。
+5. `f` 是 cond / 非 ret JALR / ret：方向或目标不可知，**不修**
+   （ret 的 target 交给 BTB/uBTB 和后端重定向）。
 
 修正时 IFU 发一拍 `ifu_ovr`：FTQ 重写当前项、`count=idx-head+1`；BPU 从修正
 target 重启、PHR 用该块块首；IFU 保留 S1 块、丢弃 S0、闸住 S2 finish/push 一拍，
@@ -252,6 +258,42 @@ rtl/rv32ifu3_btb.v        块 BTB
 rtl/rv32ifu3_ubtb.v       uBTB
 rtl/rv32ifu3_tage.v       TAGE-lite
 rtl/rv32ifu3_phr.v        PHR 折叠
-rtl/rv32ifu3_ras.v        推测栈 + undo log
+rtl/rv32ifu3_ras.v        推测栈 + undo log（已不例化，留给 BPU S3）
 rtl/rv32ifu3_predcheck.v  RV32I 预译码 + S1 预测检查
 ```
+
+## 6. 2026-10-18 Fmax 时序改造（A910 实测）
+
+**改动（全部与香山 IFU 的分级对齐）**
+
+1. **RAS 移出 IFU**：`top/top_vld` 无消费者、`chk[24:16]` 无外部读者，
+   IFU 里只剩一份推测状态和 `busy` 门控。删除例化，chk 高位填 0；
+   RAS 按香山分工属于 BPU S3，后续在 BPU 重建。
+2. **S0/S1 重排**：ICache 返回拍只把整行/预测元信息寄存进 `s1_data/s1_*`；
+   RV32I 预译码和 PredChecker 放到 S1 拍（数据/预测都已是寄存器），
+   修正值沿上写回 `s1_*`、下一拍 fire。`s1_corr_done_q` 保证每块只修一次，
+   与改前单趟检查逐拍等价。
+3. **训练口打拍**：`rtu_train_*` 在 BPU 入口统一寄存一拍，再进 BTB 写 mux、
+   TAGE 四表读改写、uBTB 32 路 CAM（香山也是 write buffer/多拍写表）。
+4. **redirect 出组合门控**：`redirect` 不再串进 `s0_issue / s1_fire /
+   ftq_finish / alloc_valid / alloc_fire / ovr_valid / refill_req`。override/
+   flush 当拍本来就由各状态机的 redirect/flush 分支优先接管，不写任何流水
+   寄存器；组合出来的 ICache 地址只会多读一行，不会被消费。
+5. 32 位 `!=`（PredChecker、BPU override 比较）改成 `|(a^b)`，避免借位链。
+
+**实测**（`synth/build_fmax_a910.tcl`，xc7k325t-2，Performance_NetDelay_high）
+
+| 配置 | top WNS / Fmax | 内部最差 | IFU 最差 |
+|---|---:|---:|---:|
+| 基线 HEAD @190MHz (5.263ns) | -7.821 / 76.43MHz | **-6.711 (IFU: BEU redirect→ICache)** | -6.711 |
+| 本轮 @190MHz | -7.657 / 77.40MHz | **-5.966 (LSU MSHR)** | -5.567 (IDU RF→FTQ/BPU) |
+| 基线 HEAD @150MHz (6.667ns) | -6.947 / 73.45MHz | **-5.430 (IFU: ICache)** | -5.430 |
+| 本轮 @150MHz | -7.078 / 72.75MHz | **-5.695 (LSU DCache)** | -4.426 (IDU RF→BPU) |
+
+- **IFU 内部寄存器到寄存器的路径已全部退出 top-500**；剩下的 IFU 相关路径
+  都是「后端 BEU redirect → IFU 状态/FTQ」的跨模块路径，源头在核内。
+- top-line WNS 由 `biu_pad_*`/`pad_biu_*` 主导（0ns I/O + ~4.1ns 时钟插入
+  skew 惩罚），看 Fmax 应看内部 WNS；本轮内部最差从 -6.711 改善到 -5.966
+  （+0.75ns）。
+- 150MHz 点的 top-line 比基线差 0.13ns 是 pad 路径的布局运气；内部最差已
+  从 IFU 换成 LSU/DCache。**下一步的 Fmax 杠杆在 LSU/RTU，不在 IFU。**
