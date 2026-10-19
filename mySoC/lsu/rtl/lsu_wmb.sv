@@ -235,7 +235,7 @@ module lsu_wmb #(
 
   (* max_fanout = 16 *) logic [WMB_ENTRY-1:0] wmb_write_dcache_ptr;
   logic [WMB_ENTRY-1:0]  wmb_dcache_req_ptr;
-  logic                  wmb_write_dcache_pop_req;
+  (* max_fanout = 16 *) logic wmb_write_dcache_pop_req;
   logic                  wmb_write_dcache_success;
   logic [PA_WIDTH-1:0]   wmb_write_dcache_addr;
   logic [127:0]          wmb_write_dcache_data;

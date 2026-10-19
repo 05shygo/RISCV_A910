@@ -113,7 +113,7 @@ module ct_lsu_st_ag #(
             st_ag_inst_vld <= 1'b0;
     end
 
-    (* max_fanout = 8 *) logic [31:0] st_ag_base;
+    (* max_fanout = 16 *) logic [31:0] st_ag_base;
     logic [31:0] st_ag_offset;
     //logic [12:0] st_ag_offset_plus;   // 2026-10-15 停用: 非对齐 +16 偏移
     logic [1:0]  st_ag_inst_size;

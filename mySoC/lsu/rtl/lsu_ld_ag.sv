@@ -128,7 +128,7 @@ logic                         ld_ag_clk;
 assign ld_ag_clk = forever_cpuclk;
 
 logic [31:0]                  ld_ag_offset;
-(* max_fanout = 8 *) logic [31:0] ld_ag_base;
+logic [31:0]                  ld_ag_base;
 
 
 //==========================================================
