@@ -347,7 +347,6 @@ module A910_cpu
   // ---------------------------------------------------------------------------
   // RTU ↔ LSU: 经适配层 (完成口 5/6 / store 重放 / 访存异常)
   // ---------------------------------------------------------------------------
-  // ---------------------------------------------------------------------------
   // 【2026-10-15】冲刷闸: "LSU 里已退休的访存都拿到数据了吗"。
   //   C910 `ct_lsu_top.v` 的同名口 = `&sq_entry_cmit_data_vld && &rb_entry_cmit_data_vld`。
   //   0 ⇒ RTU 的冲刷状态机先进 WAIT 态等它, **不发后端冲刷** —— 否则一笔"已退休、
@@ -457,6 +456,7 @@ module A910_cpu
   logic [ 63:0] preg_dealloc_mask;
 
   logic         rtu_disp_stall;
+  logic         rtu_disp_stall_nofsm;
   logic         rtu_ren_flush;
   logic         rtu_backend_flush;
   logic [32*`RTU_PREG_W-1:0] rtu_ren_recover_map;   // 宽度随 PREG 档变, 见 RTU.v 端口注
@@ -487,6 +487,7 @@ module A910_cpu
   logic         rtu_ifu_chgflw_vld;
   logic [ 31:0] rtu_ifu_chgflw_pc;
   logic         rtu_ifu_train_vld;
+  logic [  6:0] rtu_ifu_train_iid;
   logic [ 31:0] rtu_ifu_train_pc;
   logic [ 31:0] rtu_ifu_train_target;
   logic [ 24:0] rtu_ifu_train_chk;
@@ -873,7 +874,80 @@ module A910_cpu
   // ============================================================
   // IFU
   // ============================================================
-`ifdef USE_IFU3
+`ifdef USE_IFU4
+  // IFU4 BVU 只做本地 redirect; completion/wb/expt 由下面 IU_beu_pipe 负责。
+  assign beu_redirect_vld = iu_chgflw_vld;
+  assign iu_idu_ex2_pipe1_wb_preg_expand = 64'd1 << iu_idu_ex2_pipe1_wb_preg_dupx;
+
+  // IFU4 Phase 0: 结构与 ifu3 相同，用于建立独立构建/回归基线。
+  rv32ifu4_top u_rv32ifu2_top (
+    .clk                (clk),
+    .rst                (rst),
+
+    .idu_inst0_vld      (ifu_inst0_vld),
+    .idu_inst0_data     (idu_inst0_data),
+    .idu_inst0_chk      (idu_inst0_chk),
+    .idu_inst1_vld      (ifu_inst1_vld),
+    .idu_inst1_data     (idu_inst1_data),
+    .idu_inst1_chk      (idu_inst1_chk),
+    .idu_inst2_vld      (ifu_inst2_vld),
+    .idu_inst2_data     (idu_inst2_data),
+    .idu_inst2_chk      (idu_inst2_chk),
+    .idu_flush          (ifu_idu_flush),
+    .idu_accept_num     (ifu_accept_num),
+
+    .rtu_flush          (rtu_ifu_flush),
+    .rtu_chgflw_vld     (rtu_ifu_chgflw_vld),
+    .rtu_chgflw_pc      (rtu_ifu_chgflw_pc),
+    .rtu_yy_xx_flush    (rtu_yy_xx_flush),
+
+    // ---- BVU: IDU BIQ 发射口 ----
+    .biq_sel            (idu_biq_sel),
+    .biq_iid            (idu_biq_iid),
+    .biq_src0           (idu_biq_src0),
+    .biq_src1           (idu_biq_src1),
+    .biq_pc             (idu_biq_pc),
+    .biq_npc            (idu_biq_npc),
+    .biq_taken          (idu_biq_taken),
+    .biq_rslt_sel       (idu_biq_rslt_sel),
+    .biq_br_imme        (idu_biq_br_imme),
+    .biq_chk            (idu_biq_chk),
+    .bvu_redirect_in_progress (rtu_ifu_chgflw_vld),
+    .bvu_chgflw_mask    (rtu_beu_flush_chgflw_mask),
+
+    // ---- BVU 输出 ----
+    .bvu_redirect_vld   (iu_chgflw_vld),
+    .bvu_redirect_pc    (iu_chgflw_pc),
+    .bvu_btb_chk        (iu_btb_chk),
+    .bvu_btb_pc         (iu_btb_pc),
+    .bvu_btb_taken      (iu_btb_taken),
+    .bvu_btb_is_cond    (iu_btb_is_cond),
+
+    .rtu_train_vld      (rtu_ifu_train_vld),
+    .rtu_train_pc       (rtu_ifu_train_pc),
+    .rtu_train_target   (rtu_ifu_train_target),
+    .rtu_train_chk      (rtu_ifu_train_chk),
+    .rtu_train_taken    (rtu_ifu_train_taken),
+    .rtu_train_is_cond  (rtu_ifu_train_is_cond),
+    .rtu_train_is_jal   (rtu_ifu_train_is_jal),
+    .rtu_train_is_jalr  (rtu_ifu_train_is_jalr),
+    .rtu_train_iid      (rtu_ifu_train_iid),
+
+    .init_done          (ifu_init_done),
+
+    .biu_rd_req         (biu_rd_req),
+    .biu_rd_addr        (biu_rd_addr),
+    .biu_rd_id          (biu_rd_id),
+    .biu_rd_len         (biu_rd_len),
+    .biu_rd_grnt        (biu_rd_grnt),
+    .biu_rd_data_vld    (biu_rd_data_vld),
+    .biu_rd_data        (biu_rd_data),
+    .biu_rd_rid         (biu_rd_rid),
+    .biu_rd_last        (biu_rd_last),
+    .biu_rd_resp        (biu_rd_resp),
+    .biu_r_ready        (biu_r_ready)
+  );
+`elsif USE_IFU3
   // FTQ + 3 级 IFU + 香山式 BTB/TAGE；Phase 2 起带 RAS/PredChecker。
   // iu_btb_* 由 BEU 在 EX 重定向当拍驱动，用于 PHR/RAS 精确恢复。
   rv32ifu3_top u_rv32ifu2_top (
@@ -1202,6 +1276,7 @@ module A910_cpu
   .rtu_idu_rob_inst1_iid          (rtu_idu_rob_inst1_iid),
   .rtu_idu_rob_inst2_iid          (rtu_idu_rob_inst2_iid),
   .rtu_idu_rob_full               (rtu_idu_rob_full),
+  .rtu_idu_rob_full_nofsm         (rtu_disp_stall_nofsm),
   .rtu_idu_rt_recover_preg        (rtu_idu_rt_recover_preg),
   .rtu_yy_xx_flush                (rtu_yy_xx_flush),
   .idu_rtu_ir_preg0_alloc_vld     (idu_rtu_ir_preg0_alloc_vld),
@@ -2057,6 +2132,7 @@ module A910_cpu
 
     // ---- 退休点重训练 ----
     .rtu_ifu_train_vld          (rtu_ifu_train_vld),
+    .rtu_ifu_train_iid         (rtu_ifu_train_iid),
     .rtu_ifu_train_pc           (rtu_ifu_train_pc),
     .rtu_ifu_train_target       (rtu_ifu_train_target),
     .rtu_ifu_train_chk          (rtu_ifu_train_chk),
@@ -2091,6 +2167,7 @@ module A910_cpu
 
     // ===================== §6.2 重命名级 =====================
     .rtu_disp_stall             (rtu_disp_stall),
+    .rtu_disp_stall_nofsm       (rtu_disp_stall_nofsm),
     .rtu_ren_recover_vld        (rtu_ren_recover_vld),
     .rtu_ren_recover_map        (rtu_ren_recover_map),
     .rtu_ren_flush              (rtu_ren_flush),
@@ -2246,8 +2323,69 @@ module A910_cpu
   );
 
   // ------------------------------------------------------------
-  // BEU (完成口 3, 写回 pipe1)
+  // BEU (完成口 3, 写回 pipe1) —— IFU4 下由前端 BVU 接管
   // ------------------------------------------------------------
+`ifdef USE_IFU4
+  // IFU4: completion/wb/expt 仍在 IU 本地; redirect 由 IFU BVU 负责。
+  IU_beu_pipe u_iu_beu_pipe (
+    .cpu_clk            (clk),
+    .cpu_rst            (rst),
+    .idu_flush          (rtu_yy_xx_flush),
+
+    // IDU BIQ 发射口
+    .idu_sel            (idu_biq_sel),
+    .idu_iid            (idu_biq_iid),
+    .idu_src0           (idu_biq_src0),
+    .idu_src1           (idu_biq_src1),
+    .idu_pc             (idu_biq_pc),
+    .idu_npc            (idu_biq_npc),
+    .idu_taken          (idu_biq_taken),
+    .idu_rslt_sel       (idu_biq_rslt_sel),
+    .idu_br_imme        (idu_biq_br_imme),
+    .idu_dst_vld        (idu_biq_dst_vld),
+    .idu_dst_preg       (idu_biq_dst_preg),
+    .idu_chk            (idu_biq_chk),
+
+    // 重定向握手
+    .redirect_in_progress (rtu_ifu_chgflw_vld),  // RTU 本拍在发 trap/mret
+    .chgflw_mask          (rtu_beu_flush_chgflw_mask),
+
+    // 写回 IDU (pipe1)
+    .wb_preg_vld        (iu_idu_ex2_pipe1_wb_preg_vld),
+    .wb_preg_data       (iu_idu_ex2_pipe1_wb_preg_data),
+    .wb_preg_expand     (),
+    .wb_preg_dupx       (iu_idu_ex2_pipe1_wb_preg_dupx),
+    .wb_preg_vld_dupx   (iu_idu_ex2_pipe1_wb_preg_vld_dupx),
+
+    // 完成 / 解析 → RTU
+    .cmplt_vld          (cmplt_vld3),
+    .cmplt_iid          (cmplt_iid3),
+    .resolve_vld        (resolve_vld),
+    .resolve_iid        (resolve_iid),
+    .resolve_taken      (resolve_taken),
+    .resolve_mispred    (resolve_mispred),
+    .resolve_target     (resolve_target),
+
+    // 重定向 → RTU / IFU
+    .beu_redirect_vld   (),
+    .iu_chgflw_vld      (),
+    .iu_chgflw_pc       (),
+    .iu_btb_chk         (),
+    .iu_btb_pc          (),
+    .iu_btb_taken       (),
+    .iu_btb_is_cond     (),
+
+    // 异常源: 取指地址非对齐
+    .expt_vld           (other_expt_vld),
+    .expt_iid           (other_expt_iid),
+    .expt_cause         (other_expt_cause),
+    .expt_tval          (other_expt_tval),
+
+    // 观察口
+    .o_actual_npc       (),
+    .o_br_taken         ()
+  );
+`else
   IU_beu_pipe u_iu_beu_pipe (
     .cpu_clk            (clk),
     .cpu_rst            (rst),
@@ -2306,6 +2444,7 @@ module A910_cpu
     .o_actual_npc       (),
     .o_br_taken         ()
   );
+`endif
 
   // ------------------------------------------------------------
   // MUL/DIV (完成口 4, 写回 pipe2)

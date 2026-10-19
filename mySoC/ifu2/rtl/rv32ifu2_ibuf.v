@@ -130,24 +130,62 @@ assign count = cnt_q;                  // 直接给全宽: 截位会让"满队�
 assign full  = (space == 0);
 
 // ---------------------------------------------------------------------------
-// 写入端口: 队尾 = head + cnt
+// 写入端口: 寄存器化 one-hot 写指针 (2026-10-19)
+//
+// 原来队尾 = head_q + cnt_q, 再用动态下标写 ent_q[w*]。综合/布局后这是一张
+// 8→(W×8) 的写译码: head/cnt 的地址位扇出到所有表项位 (routed: fo=332/466,
+// 9.4ns 纯 route), 是 IFU 内部最差路径。
+//
+// 改成 one-hot 写指针:
+//   * wptr_q 是寄存器, 指向下一个空位;
+//   * 4 条写 lane 的使能 = wptr_q 的常量左旋 0/1/2/3 (纯连线, 无译码);
+//   * push 时 wptr_q 左旋 acc_push 位 (0..4); pop 不改变队尾;
+//   * 不变式: wptr_q = 1 << ((head_q + cnt_q) mod DEPTH), 与旧 w0 逐位等价。
+//
+// 使能源从"组合译码网"变成"寄存器位": 可按 max_fanout 复制, 贴着表项摆放,
+// 高扇出长走线从写地址路径里消失。
 // ---------------------------------------------------------------------------
-wire [AW-1:0] w0 = head_q + cnt_q[AW-1:0];
-wire [AW-1:0] w1 = w0 + {{(AW-1){1'b0}}, 1'b1};
-wire [AW-1:0] w2 = w0 + 2'd2;
-wire [AW-1:0] w3 = w0 + 2'd3;
+(* max_fanout = 16 *) reg [DEPTH-1:0] wptr_q;
+
+wire [DEPTH-1:0] wl0 = wptr_q;                                  // tail + 0
+wire [DEPTH-1:0] wl1 = {wptr_q[DEPTH-2:0], wptr_q[DEPTH-1]};    // tail + 1
+wire [DEPTH-1:0] wl2 = {wl1[DEPTH-2:0], wl1[DEPTH-1]};          // tail + 2
+wire [DEPTH-1:0] wl3 = {wl2[DEPTH-2:0], wl2[DEPTH-1]};          // tail + 3
+wire [DEPTH-1:0] wptr4 = {wl3[DEPTH-2:0], wl3[DEPTH-1]};        // tail + 4
+
+wire [DEPTH-1:0] wptr_nxt = (acc_push == 3'd0) ? wptr_q :
+                            (acc_push == 3'd1) ? wl1    :
+                            (acc_push == 3'd2) ? wl2    :
+                            (acc_push == 3'd3) ? wl3    : wptr4;
+
+genvar e;
+generate
+for (e = 0; e < DEPTH; e = e + 1) begin : g_ent
+    // 同一表项最多被一条 lane 命中 (w0..w3 是 4 个连续且互异的 one-hot 位)
+    wire we0 = push_mask[0] & wl0[e];
+    wire we1 = push_mask[1] & wl1[e];
+    wire we2 = push_mask[2] & wl2[e];
+    wire we3 = push_mask[3] & wl3[e];
+    always @(posedge clk) begin
+        if (!(rst | flush)) begin
+            if (we0) ent_q[e] <= push_data0;
+            if (we1) ent_q[e] <= push_data1;
+            if (we2) ent_q[e] <= push_data2;
+            if (we3) ent_q[e] <= push_data3;
+        end
+    end
+end
+endgenerate
 
 always @(posedge clk) begin
     if (rst | flush) begin
         head_q <= {AW{1'b0}};
         cnt_q  <= {(AW+2){1'b0}};
+        wptr_q <= {{(DEPTH-1){1'b0}}, 1'b1};              // 空队列: 队尾 = 0
     end else begin
-        if (push_mask[0]) ent_q[w0] <= push_data0;
-        if (push_mask[1]) ent_q[w1] <= push_data1;
-        if (push_mask[2]) ent_q[w2] <= push_data2;
-        if (push_mask[3]) ent_q[w3] <= push_data3;
         head_q <= head_q + pop_eff;                       // ← 截断后的实际条数
         cnt_q  <= cnt_q + acc_push - pop_eff;
+        wptr_q <= wptr_nxt;
     end
 end
 

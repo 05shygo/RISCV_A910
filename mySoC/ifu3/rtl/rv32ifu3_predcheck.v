@@ -96,7 +96,8 @@ always @(*) begin
         end
         // 3) 预测 taken 就是第一条真实 CFI 的 JAL, target 不对
         else if (k_vld && (f_i == k_i) && k_jal) begin
-            if (pred_target != k_target) begin
+            // 32 位 != 会被综合成借位链; 显式 XOR 归约
+            if (|(pred_target ^ k_target)) begin
                 corr_valid    = 1'b1;
                 corr_taken    = 1'b1;
                 corr_slot     = k_sel;

@@ -137,6 +137,7 @@ module RTU_commit (
 
     // ---- 退休点重训练 (阶段 4b, 2026-10-02 接上) ----
     output wire                train_vld,
+    output wire [  6:0]        train_iid,      // IFU4: 退休分支 iid, 现场从 IFU BPiQ 读
     output wire [31:0]         train_pc,
     output wire [31:0]         train_target,   // = 表项的 TARGET (真实后继 PC, BTB 用)
     output wire [24:0]         train_chk,
@@ -224,8 +225,6 @@ module RTU_commit (
     //    陷阱要照常发交付脉冲 (ena=0), 所以 `rv0` 在那一拍必须是 1。
     wire rp_head = (rpv0 | rp_now) & ~trap_hit;
 
-    // 「同拍解析」项 —— 照 `rp_now` (store 重放) 的同一套写法。
-    // ⚠️ 比较 iid 要连 wrap 位一起比 (7 位整值相等), 与 `rp_now` 一致。
     wire mis_now0 = resolve_vld & resolve_mispred & (resolve_iid == win_iid0);
     wire mis_now1 = resolve_vld & resolve_mispred & (resolve_iid == win_iid1);
     wire mis_now2 = resolve_vld & resolve_mispred & (resolve_iid == win_iid2);
@@ -295,9 +294,14 @@ module RTU_commit (
     assign mispred_hit = (mis0 & ~(rpv0 | rp_now)) | (mis1 & ~rpv0 & ~rpv1 & ~rp_now)
                        | (mis2 & ~rpv0 & ~rpv1 & ~rpv2 & ~rp_now);
 
+`ifdef USE_IFU4
+    // D13: 误预测的慢路不重启前端 ⇒ 这里的目标只有训练用途, 现场在 BPiQ
+    assign mispred_target = 32'd0;
+`else
     assign mispred_target = (mis0 & ~(rpv0 | rp_now))        ? win0[`RTU_E_TARGET] :
                             (mis1 & ~rpv0 & ~rpv1 & ~rp_now) ? win1[`RTU_E_TARGET] :
                                                                win2[`RTU_E_TARGET];
+`endif
 
     assign flush_trig = trap_hit | int_take | mret_hit | replay_hit | mispred_hit;
     assign flush_src  = trap_hit    ? `RTU_FS_EXPT   :
@@ -514,7 +518,10 @@ module RTU_commit (
     // =======================================================================
     localparam TR_D = 4;
 
+    // IFU4: 训练现场在 BPiQ, 退休 FIFO 只排 iid; 其余前端保留宽队列。
     reg  [2:0]  q_cnt;
+    reg  [ 6:0] q_iid [0:TR_D-1];
+`ifndef USE_IFU4
     reg  [31:0] q_pc  [0:TR_D-1];
     reg  [31:0] q_tgt [0:TR_D-1];
     reg  [24:0] q_chk [0:TR_D-1];
@@ -522,8 +529,11 @@ module RTU_commit (
     reg         q_cnd [0:TR_D-1];
     reg         q_jal [0:TR_D-1];
     reg         q_jlr [0:TR_D-1];
+`endif
 
     reg  [2:0]  nq_cnt;
+    reg  [ 6:0] nq_iid [0:TR_D-1];
+`ifndef USE_IFU4
     reg  [31:0] nq_pc  [0:TR_D-1];
     reg  [31:0] nq_tgt [0:TR_D-1];
     reg  [24:0] nq_chk [0:TR_D-1];
@@ -531,93 +541,151 @@ module RTU_commit (
     reg         nq_cnd [0:TR_D-1];
     reg         nq_jal [0:TR_D-1];
     reg         nq_jlr [0:TR_D-1];
+`endif
 
-    // 直通: 队列空 + 本拍有控制转移 ⇒ 最老那条当拍就走 (不占队列, 零延迟)
-    wire [1:0]  tr_old = tr[0] ? 2'd0 : tr[1] ? 2'd1 : 2'd2;
-    wire        bp     = (q_cnt == 3'd0) & any_tr;
-    wire        pop    = (q_cnt != 3'd0);                 // 队非空 ⇒ 每拍吐一条
+    // -----------------------------------------------------------------------
+    // [R16.2] C1: 已提交分支先寄存一拍, 再进训练 FIFO
+    //
+    // 原来 push_en (= commit_vld & br) 直接驱动紧凑化/写口, 使
+    // `win_iid_q -> 判退 -> q_tgt/q_chk D` 成为 RTU 头顶 (ETO 臂 -1.31)。
+    // 现在本拍所有已提交分支先打进 s_* 级, 下一拍再从 s_* 出队/入 FIFO。
+    // 训练晚一拍不影响正确性 (FIFO 里存的是已退休分支的架构事实);
+    // 深度 4 与"丢最年轻"策略不变。
+    // -----------------------------------------------------------------------
+    reg  [2:0]  s_cnt;
+    reg  [ 6:0] s_iid [0:2];
+`ifndef USE_IFU4
+    reg  [31:0] s_pc  [0:2];
+    reg  [31:0] s_tgt [0:2];
+    reg  [24:0] s_chk [0:2];
+    reg         s_tkn [0:2];
+    reg         s_cnd [0:2];
+    reg         s_jal [0:2];
+    reg         s_jlr [0:2];
+`endif
 
-    // 进队列的: 除"直通那条"之外的其余控制转移
-    wire [2:0]  push_en = tr & ~(bp ? (3'b001 << tr_old) : 3'b000);
+    reg  [2:0]  s_n;
+    reg  [5:0]  s_sel;
+    reg  [ 6:0] sc_iid [0:2];
+`ifndef USE_IFU4
+    reg  [31:0] sc_pc  [0:2];
+    reg  [31:0] sc_tgt [0:2];
+    reg  [24:0] sc_chk [0:2];
+    reg         sc_tkn [0:2];
+    reg         sc_cnd [0:2];
+    reg         sc_jal [0:2];
+    reg         sc_jlr [0:2];
+`endif
 
-    // 输出 (直通取窗口里最老的; 否则取队头 q_*[0])
-    wire [1:0]  osel = bp ? tr_old : 2'd0;
-    assign train_vld    = bp | pop;
-    assign train_pc     = bp ? ((osel == 2'd0) ? win0[`RTU_E_PC]     :
-                                (osel == 2'd1) ? win1[`RTU_E_PC]     : win2[`RTU_E_PC])     : q_pc[0];
-    // `TARGET` 是 BEU 在解析那拍写回表项的真实后继 PC (= EX 的 `actual_npc`),
-    // 也就是原来 `iu_btb_target` 的驱动源。不跳的条件分支它就是 pc+4 ——
-    // BTB 的"不跳"训练用不上目标, 由 upd_taken 决定写不写。
-    assign train_target = bp ? ((osel == 2'd0) ? win0[`RTU_E_TARGET] :
-                                (osel == 2'd1) ? win1[`RTU_E_TARGET] : win2[`RTU_E_TARGET]) : q_tgt[0];
-    assign train_chk    = bp ? ((osel == 2'd0) ? win0[`RTU_E_CHK]    :
-                                (osel == 2'd1) ? win1[`RTU_E_CHK]    : win2[`RTU_E_CHK])    : q_chk[0];
-    assign train_taken  = bp ? ((osel == 2'd0) ? win0[`RTU_E_TAKEN]  :
-                                (osel == 2'd1) ? win1[`RTU_E_TAKEN]  : win2[`RTU_E_TAKEN])  : q_tkn[0];
-    assign train_is_jal = bp ? tr_jal[osel]  : q_jal[0];
-    assign train_is_jalr= bp ? tr_jalr[osel] : q_jlr[0];
-    assign train_is_cond= bp ? tr_cnd[osel]  : q_cnd[0];
-
-    // ---------------- 队列的下一拍 ----------------
-    reg  [2:0]  n_acc;            // 本拍要进队列的条数 (0..3)
-    reg  [5:0]  acc_sel;          // 紧凑化之后, 第 j 条对应哪条车道 (3 × 2bit)
-    reg  [31:0] a_pc  [0:2];      // 按紧凑序排好的待入队数据
-    reg  [31:0] a_tgt [0:2];
-    reg  [24:0] a_chk [0:2];
-    reg         a_tkn [0:2];
-    reg         a_cnd [0:2];
-    reg         a_jal [0:2];
-    reg         a_jlr [0:2];
-
-    integer k, j;
-
+    integer si, sj, k;
     always @(*) begin
-        // ① 紧凑化: 把"要进队列的车道"按程序序压成 0,1,2 号
-        // ⚠️ `acc_sel` 必须**无条件先清 0**: 它在 n_acc==0 那几档不被赋值, 不初始化
-        //    综合会推出一排锁存器 (仿真看不出来 —— n_push==0 时它根本不被使用)。
-        n_acc   = 3'd0;
-        acc_sel = 6'd0;
-        if (push_en[0]) begin acc_sel[2*n_acc +: 2] = 2'd0; n_acc = n_acc + 3'd1; end
-        if (push_en[1]) begin acc_sel[2*n_acc +: 2] = 2'd1; n_acc = n_acc + 3'd1; end
-        if (push_en[2]) begin acc_sel[2*n_acc +: 2] = 2'd2; n_acc = n_acc + 3'd1; end
-        for (j = 0; j < 3; j = j + 1) begin
-            a_pc [j] = (acc_sel[2*j +: 2] == 2'd0) ? win0[`RTU_E_PC]     :
-                       (acc_sel[2*j +: 2] == 2'd1) ? win1[`RTU_E_PC]     : win2[`RTU_E_PC];
-            a_tgt[j] = (acc_sel[2*j +: 2] == 2'd0) ? win0[`RTU_E_TARGET] :
-                       (acc_sel[2*j +: 2] == 2'd1) ? win1[`RTU_E_TARGET] : win2[`RTU_E_TARGET];
-            a_chk[j] = (acc_sel[2*j +: 2] == 2'd0) ? win0[`RTU_E_CHK]    :
-                       (acc_sel[2*j +: 2] == 2'd1) ? win1[`RTU_E_CHK]    : win2[`RTU_E_CHK];
-            a_tkn[j] = (acc_sel[2*j +: 2] == 2'd0) ? win0[`RTU_E_TAKEN]  :
-                       (acc_sel[2*j +: 2] == 2'd1) ? win1[`RTU_E_TAKEN]  : win2[`RTU_E_TAKEN];
-            a_cnd[j] = tr_cnd [acc_sel[2*j +: 2]];
-            a_jal[j] = tr_jal [acc_sel[2*j +: 2]];
-            a_jlr[j] = tr_jalr[acc_sel[2*j +: 2]];
+        s_n   = 3'd0;
+        s_sel = 6'd0;
+        if (tr[0]) begin s_sel[0 +: 2] = 2'd0; s_n = s_n + 3'd1; end
+        if (tr[1]) begin s_sel[2*s_n +: 2] = 2'd1; s_n = s_n + 3'd1; end
+        if (tr[2]) begin s_sel[2*s_n +: 2] = 2'd2; s_n = s_n + 3'd1; end
+        for (sj = 0; sj < 3; sj = sj + 1) begin
+            sc_iid[sj] = (s_sel[2*sj +: 2] == 2'd0) ? win_iid0 :
+                         (s_sel[2*sj +: 2] == 2'd1) ? win_iid1 : win_iid2;
+`ifndef USE_IFU4
+            sc_pc [sj] = (s_sel[2*sj +: 2] == 2'd0) ? win0[`RTU_E_PC]     :
+                         (s_sel[2*sj +: 2] == 2'd1) ? win1[`RTU_E_PC]     : win2[`RTU_E_PC];
+            sc_tgt[sj] = (s_sel[2*sj +: 2] == 2'd0) ? win0[`RTU_E_TARGET] :
+                         (s_sel[2*sj +: 2] == 2'd1) ? win1[`RTU_E_TARGET] : win2[`RTU_E_TARGET];
+            sc_chk[sj] = (s_sel[2*sj +: 2] == 2'd0) ? win0[`RTU_E_CHK]    :
+                         (s_sel[2*sj +: 2] == 2'd1) ? win1[`RTU_E_CHK]    : win2[`RTU_E_CHK];
+            sc_tkn[sj] = (s_sel[2*sj +: 2] == 2'd0) ? win0[`RTU_E_TAKEN] :
+                         (s_sel[2*sj +: 2] == 2'd1) ? win1[`RTU_E_TAKEN] : win2[`RTU_E_TAKEN];
+            sc_cnd[sj] = tr_cnd [s_sel[2*sj +: 2]];
+            sc_jal[sj] = tr_jal [s_sel[2*sj +: 2]];
+            sc_jlr[sj] = tr_jalr[s_sel[2*sj +: 2]];
+`endif
         end
     end
 
-    // 队列腾出的位置 (pop 之后) 与放得下的条数
-    wire [2:0] n_cnp = pop ? (q_cnt - 3'd1) : q_cnt;
-    wire [2:0] space = 3'd4 - n_cnp;
-    wire [2:0] n_push= (n_acc <= space) ? n_acc : space;
-    wire [2:0] n_drop= n_acc - n_push;
+    always @(posedge cpu_clk or posedge cpu_rst) begin
+        if (cpu_rst) begin
+            s_cnt <= 3'd0;
+            for (si = 0; si < 3; si = si + 1) begin
+                s_iid[si] <= 7'd0;
+`ifndef USE_IFU4
+                s_pc[si] <= 32'd0; s_tgt[si] <= 32'd0; s_chk[si] <= 25'd0;
+                s_tkn[si] <= 1'b0; s_cnd[si] <= 1'b0; s_jal[si] <= 1'b0; s_jlr[si] <= 1'b0;
+`endif
+            end
+        end else begin
+            s_cnt <= s_n;
+            for (si = 0; si < 3; si = si + 1) begin
+                s_iid[si] <= sc_iid[si];
+`ifndef USE_IFU4
+                s_pc[si] <= sc_pc[si]; s_tgt[si] <= sc_tgt[si]; s_chk[si] <= sc_chk[si];
+                s_tkn[si] <= sc_tkn[si]; s_cnd[si] <= sc_cnd[si];
+                s_jal[si] <= sc_jal[si]; s_jlr[si] <= sc_jlr[si];
+`endif
+            end
+        end
+    end
 
+    // 出队: 队非空吐队头; 队空且暂存级非空, 直通暂存级最老那条.
+    wire        bp     = (q_cnt == 3'd0) & (s_cnt != 3'd0);
+    wire        pop    = (q_cnt != 3'd0);
+    wire [2:0]  s_take = bp ? 3'd1 : 3'd0;
+    wire [2:0]  n_cnp  = pop ? (q_cnt - 3'd1) : q_cnt;
+    wire [2:0]  avail  = s_cnt - s_take;
+    wire [2:0]  space  = 3'd4 - n_cnp;
+    wire [2:0]  n_push = (avail <= space) ? avail : space;
+    wire [2:0]  n_drop = avail - n_push;
+
+    assign train_vld    = bp | pop;
+    assign train_iid    = bp ? s_iid[0] : q_iid[0];
+`ifdef USE_IFU4
+    // 现场由 IFU4 的 BPiQ 按 iid 提供, 这些宽口不再使用
+    assign train_pc     = 32'd0;
+    assign train_target = 32'd0;
+    assign train_chk    = 25'd0;
+    assign train_taken  = 1'b0;
+    assign train_is_jal = 1'b0;
+    assign train_is_jalr= 1'b0;
+    assign train_is_cond= 1'b0;
+`else
+    assign train_pc     = bp ? s_pc [0] : q_pc [0];
+    assign train_target = bp ? s_tgt[0] : q_tgt[0];
+    assign train_chk    = bp ? s_chk[0] : q_chk[0];
+    assign train_taken  = bp ? s_tkn[0] : q_tkn[0];
+    assign train_is_jal = bp ? s_jal[0] : q_jal[0];
+    assign train_is_jalr= bp ? s_jlr[0] : q_jlr[0];
+    assign train_is_cond= bp ? s_cnd[0] : q_cnd[0];
+`endif
+
+    // ---------------- 队列的下一拍 ----------------
+    reg  [2:0]  nq_cnt;
     always @(*) begin
-        // ② 下一拍: 前 n_cnp 项来自"pop 之后的残余", 接着放本拍接受的, 剩下清 0
-        //    (pop 是 0/1, 残余的源下标就是 k + pop)
         for (k = 0; k < TR_D; k = k + 1) begin
             if (k < n_cnp) begin
+                nq_iid[k] = q_iid[k + pop];
+`ifndef USE_IFU4
                 nq_pc [k] = q_pc [k + pop];  nq_tgt[k] = q_tgt[k + pop];
                 nq_chk[k] = q_chk[k + pop];  nq_tkn[k] = q_tkn[k + pop];
                 nq_cnd[k] = q_cnd[k + pop];  nq_jal[k] = q_jal[k + pop];
                 nq_jlr[k] = q_jlr[k + pop];
+`endif
             end else if (k < (n_cnp + n_push)) begin
-                nq_pc [k] = a_pc [k - n_cnp]; nq_tgt[k] = a_tgt[k - n_cnp];
-                nq_chk[k] = a_chk[k - n_cnp]; nq_tkn[k] = a_tkn[k - n_cnp];
-                nq_cnd[k] = a_cnd[k - n_cnp]; nq_jal[k] = a_jal[k - n_cnp];
-                nq_jlr[k] = a_jlr[k - n_cnp];
+                nq_iid[k] = s_iid[s_take + (k - n_cnp)];
+`ifndef USE_IFU4
+                nq_pc [k] = s_pc [s_take + (k - n_cnp)];
+                nq_tgt[k] = s_tgt[s_take + (k - n_cnp)];
+                nq_chk[k] = s_chk[s_take + (k - n_cnp)];
+                nq_tkn[k] = s_tkn[s_take + (k - n_cnp)];
+                nq_cnd[k] = s_cnd[s_take + (k - n_cnp)];
+                nq_jal[k] = s_jal[s_take + (k - n_cnp)];
+                nq_jlr[k] = s_jlr[s_take + (k - n_cnp)];
+`endif
             end else begin
+                nq_iid[k] = 7'd0;
+`ifndef USE_IFU4
                 nq_pc [k] = 32'd0; nq_tgt[k] = 32'd0; nq_chk[k] = 25'd0;
                 nq_tkn[k] = 1'b0;  nq_cnd[k] = 1'b0;  nq_jal[k] = 1'b0; nq_jlr[k] = 1'b0;
+`endif
             end
         end
         nq_cnt = n_cnp + n_push;
@@ -627,15 +695,21 @@ module RTU_commit (
         if (cpu_rst) begin
             q_cnt <= 3'd0;
             for (k = 0; k < TR_D; k = k + 1) begin
+                q_iid[k] <= 7'd0;
+`ifndef USE_IFU4
                 q_pc[k] <= 32'd0; q_tgt[k] <= 32'd0; q_chk[k] <= 25'd0;
                 q_tkn[k] <= 1'b0; q_cnd[k] <= 1'b0; q_jal[k] <= 1'b0; q_jlr[k] <= 1'b0;
+`endif
             end
         end else begin
             q_cnt <= nq_cnt;
             for (k = 0; k < TR_D; k = k + 1) begin
+                q_iid[k] <= nq_iid[k];
+`ifndef USE_IFU4
                 q_pc[k] <= nq_pc[k]; q_tgt[k] <= nq_tgt[k]; q_chk[k] <= nq_chk[k];
                 q_tkn[k] <= nq_tkn[k]; q_cnd[k] <= nq_cnd[k];
                 q_jal[k] <= nq_jal[k]; q_jlr[k] <= nq_jlr[k];
+`endif
             end
         end
     end

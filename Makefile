@@ -956,18 +956,19 @@ rtu-subsys-elab:
 A910_BUILD := $(PWD)/obj_a910
 A910_LOG   := $(A910_BUILD)/elab.log
 
-# A910 的前端二选一:
+# A910 的前端三选一:
 #   A910_IFU=2  ifu2 (基线, 默认)
-#   A910_IFU=3  ifu3 (FTQ + 3 级 IFU; Phase 0 预测关闭)
+#   A910_IFU=3  ifu3 (FTQ + 3 级 IFU)
+#   A910_IFU=4  ifu4 (A76 式前端; Phase 0 先与 ifu3 行为一致)
 # ⚠️ A910 规则不认全局 IFU; 必须用 A910_IFU, 否则会静默沿用 ifu2。
 A910_IFU ?= 2
-ifeq ($(filter $(A910_IFU),2 3),)
-$(error A910_IFU 只能是 2 或 3, 当前是 '$(A910_IFU)')
+ifeq ($(filter $(A910_IFU),2 3 4),)
+$(error A910_IFU 只能是 2 / 3 / 4, 当前是 '$(A910_IFU)')
 endif
 ifeq ($(A910_IFU),2)
 A910_IFU_SRC := $(wildcard $(PWD)/mySoC/ifu2/rtl/*.v)
 A910_IFU_DEF := +define+USE_IFU2
-else
+else ifeq ($(A910_IFU),3)
 # 只复用 ICache/refill/spram/IBUF/BIU; ifu2 的 BTB/BHT/TAGE/RAS 不再参与编译。
 A910_IFU_SRC := $(filter-out \
                   $(PWD)/mySoC/ifu2/rtl/rv32ifu2_top.v \
@@ -978,6 +979,18 @@ A910_IFU_SRC := $(filter-out \
                   $(wildcard $(PWD)/mySoC/ifu2/rtl/*.v)) \
                 $(wildcard $(PWD)/mySoC/ifu3/rtl/*.v)
 A910_IFU_DEF := +define+USE_IFU3
+else
+# ifu4: 同样复用 ifu2 的 ICache/refill/spram/IBUF/BIU。
+# Phase 0 额外定义 USE_IFU3，让 TB 的 ifu3 专属探针/force 继续生效。
+A910_IFU_SRC := $(filter-out \
+                  $(PWD)/mySoC/ifu2/rtl/rv32ifu2_top.v \
+                  $(PWD)/mySoC/ifu2/rtl/rv32ifu2_btb.v \
+                  $(PWD)/mySoC/ifu2/rtl/rv32ifu2_bht.v \
+                  $(PWD)/mySoC/ifu2/rtl/rv32ifu2_tage.v \
+                  $(PWD)/mySoC/ifu2/rtl/rv32ifu2_ras.v, \
+                  $(wildcard $(PWD)/mySoC/ifu2/rtl/*.v)) \
+                $(wildcard $(PWD)/mySoC/ifu4/rtl/*.v)
+A910_IFU_DEF := +define+USE_IFU4 +define+USE_IFU3
 endif
 A910_DEFS := $(A910_IFU_DEF)
 
@@ -1133,9 +1146,11 @@ $(A910_DT_SIMV): $(A910_SRC) $(A910_DT_TB) $(DPIC) $(CSRC_GM) $(DCACHE_CFG) $(A9
 # 整套顺序核用例 × A910 difftest, 末尾给一张 PASS/FAIL 总表。
 # 每个用例一行; 失败的在 /tmp/a910_dt/<用例>.log 里有完整对照。
 # ⚠️ coremark 不在默认列表里 (千万拍级, 且它靠外设 MONITOR 收尾, 本台没接外设)
+# ⚠️ coremark_c4 / coremark_i1 是 CoreMark 的迭代变体, 同样是千万拍级; 留在列表里
+#    只会在 200k 拍上限下必然超时 (不是失配), 默认一起跳过。
 # ⚠️ npu_loop / npu_smoke: NPU 还在做 (2026-10-14: npu_loop 第 6 条退休就失配),
 #    先排除, 免得整套总表被两条在做中的用例染红。NPU 收尾后从这行删掉即可。
-A910_DT_SKIP ?= coremark start peri trap npu_loop npu_smoke
+A910_DT_SKIP ?= coremark coremark_c4 coremark_i1 start peri trap npu_loop npu_smoke
 
 # ---------------------------------------------------------------------------
 # AIQ 参数化等价自检 (2026-10-16): 新版 ct_idu_is_aiq (generate 通用版, AIQ_ENTRY

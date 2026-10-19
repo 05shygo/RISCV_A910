@@ -2674,3 +2674,72 @@ D2.2~D2.5 ───→ 别人模块的活；RTU 侧接口已经留好，只需�
 **为什么 D1.2/D3 能提前做**：它们的验收判据不是"跑分变好"，而是"**阶段 1 行为一位不变**
 + 阶段 2 语义正确"。前者可以用一次性等价 TB 机器证明（两版并排逐位比对），
 后者有 C910 的现成范本对照 —— 不需要等重命名级接上。
+
+## 11. 2026-10-18 Fmax: ROB 影子窗口重填 (R1)
+
+**问题**：A910+ifu3 的 190MHz 实现里，RTU 内部最差路径是
+`cmt_iid_q2 → LSU SQ commit 比较 → lsu_rtu_all_commit_data_vld → RTU_flush F1 闸门
+→ flush_lvl → ROB 窗口 q_reg`，13 级逻辑里 **91% 是走线**。RTU top-500 里 68 条
+（190MHz）/81 条（150MHz）都收敛到影子窗口 q_reg；`D5` 的注释说“大 mux 选择子只
+来自寄存器”，但重填选择 `rld_idx = rptr + pop_n` 的 `pop_n` 是组合的
+（`RTU_commit.v:323-325`），重填数据 `rob_d[rld_idx]` 又是 64 份 entry_d 组合逻辑的
+64:1 mux。
+
+**改动**（`RTU_ROB.v` / `RTU_ROB_entry.v`）：
+
+- 重填数据改为 **寄存的 `rob_q[rld_idx]`**，再在窗口级补同一拍的
+  dispatch / cmplt / resolve / replay 更新；`RTU_ROB_entry` 的写入优先级从
+  `reload > 自更新` 改成 `(reload + 自更新)`（`base = reload_en ? reload_data : q`）。
+- 派遣覆盖：`rld_idx` 撞上 create pointer 时（ROB 快空）用 `disp_data` 覆盖，与阵列
+  项的 disp 优先一致；`flush_lvl` 时重填数据强制 0（由 `flush_clr` 兜底）。
+- 自更新比较改用“装载后那一项”的 iid（`rld_idx` + 新 wrap）；被派遣覆盖的项不叠更新。
+- 64:1 mux 仍然存在，但数据端从 64 份 `entry_d` 组合锥变成寄存器 Q；窗口级只剩
+  一次 3:1 派遣覆盖和 9 个 iid 比较器。
+
+**实测**（xc7k325t-2，Performance_NetDelay_high，A910+ifu3 最终前端）：
+
+| 口径 | 改前 | R1 | 变化 |
+|---|---:|---:|---:|
+| 190MHz top WNS / Fmax | -7.657 / 77.40MHz | **-7.434 / 78.76MHz** | +0.22ns |
+| 190MHz RTU 内部最差 | -5.906 | **-5.185** | **+0.72ns** |
+| 190MHz RTU→RTU top-500 条数 | 68 | **24** | -65% |
+| 190MHz RTU→IDU LSIQ 条数 | 20 | **0** | 全退出 |
+| 150MHz top WNS / Fmax | -7.078 / 72.75MHz | **-6.490 / 76.01MHz** | +0.59ns / +4.5% |
+| 150MHz RTU→RTU top-500 条数 | 81 | **0** | 全退出 |
+| LUT / FF (impl) | 76,419 / 35,229 | 75,825 / 35,175 | **-594 / -54** |
+
+- R1 后全局内部最差换成了 **LSU**（190MHz: LFB→DCache -5.991；150MHz: pad_biu_rid→LFB -5.244）。
+- 功能：`a910-difftest-all` **46/46 PASS**；addi/branch_bench/sw/jalr/beq 周期数与改前
+  逐位相同（branch_bench 181,459）。
+- ⚠️ `make rtu-unit`（tb_rtu_rob）在当前工具链下**本身已不可用**：原始 RTL 也会在
+  240ns 出现 `rptr/occ = X`，且 `obj_unit_rtu/simv` 早已编不过（TB 里
+  `flg_of(...)[...]` / `wb_lfsr_next()[7:0]` 是非法语法）。R1 的验证以整核 difftest 为准。
+
+### 11.1 R3（紧接 R1）：flush 只清 VLD/CMPLT/REPLAY
+
+R1 之后 RTU 剩余最差 -5.185 的结构是 **flush 广播**：`cmt_iid_q1 → LSU SQ →
+RTU_flush → flush_lvl → 64 个 ROB 表项`。其中一根 **fo=1025 的网单网走线
+6.387ns**，终点是每一位的 `entry_d` mux（`flush_clr ? 0 : ...`）。
+
+**改动**（`RTU_ROB_entry.v`）：flush 不再清整项，只清 `VLD/CMPLT/REPLAY`
+三个控制位（`FLUSH_CLR_MASK`）；其余 122 位在 flush 拍取 `d_nof`（保持或
+更新都行 —— VLD=0 时不会被判退/窗口读，下次 dispatch 会全量覆盖）。
+判退只看 VLD、CMPLT、REPLAY，所以功能等价。
+
+**实测**：
+
+| 口径 | R1 | R1+R3 |
+|---|---:|---:|
+| 190MHz top WNS / Fmax | -7.434 / 78.76MHz | -7.520 / 78.23MHz（布局噪声） |
+| 190MHz 内部最差 | LSU LFB→DCache -5.991 | **RTU rptr→u_preg/tap_num0 -5.173** |
+| 190MHz IFU 最差 | IDU RF→FTQ -5.683 | **IDU RF→IFU s0_resp CE -4.829** |
+| 150MHz top WNS / Fmax | -6.490 / 76.01MHz | **-5.763 / 80.45MHz** |
+| 150MHz 内部最差 | pad_biu_rid→LFB -5.244 | **pad_biu_rvalid→MSHR -4.035** |
+| LUT / FF (impl) | 75,825 / 35,175 | 76,216 / 35,303 |
+
+- 150MHz 点 **+1.12ns / Fmax +5.8%**；190MHz 内部最差 **-5.991 → -5.173（+0.818ns）**，
+  top-line 差 0.09ns 属布局噪声（AXI pad 主导）。去掉 flush 广播后 RTU 的新瓶颈变成
+  **R2 的 RTU→IDU→preg 回路**：
+  `rptr → u_flush/flush_src → rtu_disp_stall → IDU is_ctrl/is_dp → u_preg/tap_num0`
+  （-5.173；逻辑 1.0ns / route 9.0ns）。
+- 功能：`a910-difftest-all` **46/46 PASS**；addi/branch_bench/sw/jalr/beq 周期不变。

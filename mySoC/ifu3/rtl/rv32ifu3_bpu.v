@@ -71,6 +71,42 @@ module rv32ifu3_bpu #(
 );
 
 // ---------------------------------------------------------------------------
+// 训练口打拍: rtu_train_* 是 RTU -> IFU 的跨模块输入, 直接进 BTB 写 mux、
+// TAGE 四表读改写和 uBTB 32 路 CAM/优先级会拉长跨模块路径。香山同样用
+// write buffer / 多拍写表。这里统一寄存一拍, 只增加训练延迟, 不改取指周期。
+// ---------------------------------------------------------------------------
+reg         upd_vld_q;
+reg [ 31:0] upd_pc_q;
+reg [ 31:0] upd_target_q;
+reg         upd_taken_q;
+reg         upd_is_cond_q;
+reg         upd_is_jal_q;
+reg         upd_is_jalr_q;
+reg [ 24:0] upd_chk_q;
+
+always @(posedge clk) begin
+    if (rst) begin
+        upd_vld_q     <= 1'b0;
+        upd_pc_q      <= 32'd0;
+        upd_target_q  <= 32'd0;
+        upd_taken_q   <= 1'b0;
+        upd_is_cond_q <= 1'b0;
+        upd_is_jal_q  <= 1'b0;
+        upd_is_jalr_q <= 1'b0;
+        upd_chk_q     <= 25'd0;
+    end else begin
+        upd_vld_q     <= upd_vld;
+        upd_pc_q      <= upd_pc;
+        upd_target_q  <= upd_target;
+        upd_taken_q   <= upd_taken;
+        upd_is_cond_q <= upd_is_cond;
+        upd_is_jal_q  <= upd_is_jal;
+        upd_is_jalr_q <= upd_is_jalr;
+        upd_chk_q     <= upd_chk;
+    end
+end
+
+// ---------------------------------------------------------------------------
 // 预测环寄存器 (必须先声明: 下面的 BTB/TAGE/uBTB 例化会用到)
 // ---------------------------------------------------------------------------
 reg [31:0] bp_rd_pc_q;
@@ -104,13 +140,13 @@ rv32ifu3_btb #(
     .slot_jump   (btb_slot_jump),
     .slot_ctr    (btb_slot_ctr),
     .slot_target (btb_slot_target),
-    .upd_vld     (upd_vld),
-    .upd_pc      (upd_pc),
-    .upd_target  (upd_target),
-    .upd_taken   (upd_taken),
-    .upd_is_cond (upd_is_cond),
-    .upd_is_jal  (upd_is_jal),
-    .upd_is_jalr (upd_is_jalr)
+    .upd_vld     (upd_vld_q),
+    .upd_pc      (upd_pc_q),
+    .upd_target  (upd_target_q),
+    .upd_taken   (upd_taken_q),
+    .upd_is_cond (upd_is_cond_q),
+    .upd_is_jal  (upd_is_jal_q),
+    .upd_is_jalr (upd_is_jalr_q)
 );
 
 wire [3:0] tage_dir;
@@ -132,11 +168,11 @@ rv32ifu3_tage #(
     .base_dir    ({btb_slot_ctr[7], btb_slot_ctr[5], btb_slot_ctr[3], btb_slot_ctr[1]}),
     .dir         (tage_dir),
     .hit_any     (tage_hit),
-    .upd_vld     (upd_vld),
-    .upd_pc      (upd_pc),
-    .upd_taken   (upd_taken),
-    .upd_is_cond (upd_is_cond),
-    .upd_phr     (upd_chk[15:0])
+    .upd_vld     (upd_vld_q),
+    .upd_pc      (upd_pc_q),
+    .upd_taken   (upd_taken_q),
+    .upd_is_cond (upd_is_cond_q),
+    .upd_phr     (upd_chk_q[15:0])
 );
 
 wire        ubtb_hit;
@@ -156,13 +192,13 @@ rv32ifu3_ubtb #(
     .pos         (ubtb_pos),
     .is_cond     (ubtb_cond),
     .target      (ubtb_target),
-    .upd_vld     (upd_vld),
-    .upd_pc      (upd_pc),
-    .upd_target  (upd_target),
-    .upd_taken   (upd_taken),
-    .upd_is_cond (upd_is_cond),
-    .upd_is_jal  (upd_is_jal),
-    .upd_is_jalr (upd_is_jalr)
+    .upd_vld     (upd_vld_q),
+    .upd_pc      (upd_pc_q),
+    .upd_target  (upd_target_q),
+    .upd_taken   (upd_taken_q),
+    .upd_is_cond (upd_is_cond_q),
+    .upd_is_jal  (upd_is_jal_q),
+    .upd_is_jalr (upd_is_jalr_q)
 );
 
 // ---------------------------------------------------------------------------
@@ -252,12 +288,13 @@ wire [31:0] corr_target_raw =
 wire [31:0] corr_target = corr_taken ? corr_target_raw : (bp2_line_pc + 32'd16);
 
 // taken/未 taken 不一致本身就是 override; slot/target 只在两边都 taken 时才有意义
+// 32 位 != 会被综合成借位链; 显式 XOR 归约
+wire corr_tgt_ne = |(corr_target ^ bp2_early_target);
 wire corr_diff = corr_avail &&
                  ((corr_taken != bp2_early_taken) ||
                   (corr_taken && bp2_early_taken &&
-                   ((corr_slot != bp2_early_slot) ||
-                    (corr_target != bp2_early_target))));
-assign ovr_valid = bp2_valid && corr_diff && !redirect && (BP_EN != 0);
+                   ((corr_slot != bp2_early_slot) || corr_tgt_ne)));
+assign ovr_valid = bp2_valid && corr_diff && (BP_EN != 0);
 assign ovr_idx = bp2_idx;
 assign ovr_taken = corr_taken;
 assign ovr_taken_slot = corr_taken ? corr_slot : 2'd3;
@@ -276,14 +313,14 @@ wire [31:0] corr_next_pc = corr_target;
 // 分配 / 环控制
 // ---------------------------------------------------------------------------
 wire stall = bp_q_valid && !alloc_ready && !ovr_valid && !ifu_ovr_valid;
-wire alloc_fire = bp_q_valid && !redirect && !ovr_valid && !ifu_ovr_valid && alloc_ready;
+wire alloc_fire = bp_q_valid && !ovr_valid && !ifu_ovr_valid && alloc_ready;
 
 assign btb_rd_pc = ifu_ovr_valid ? ifu_ovr_target :
                    ovr_valid ? corr_next_pc :
                    (stall ? bp_rd_pc_q :
                     (bp_q_valid ? next_pc : bp_hold_pc));
 
-assign alloc_valid      = bp_q_valid && !redirect && !ovr_valid && !ifu_ovr_valid;
+assign alloc_valid      = bp_q_valid && !ovr_valid && !ifu_ovr_valid;
 assign alloc_start_pc   = bp_rd_pc_q;
 assign alloc_taken      = early_taken;
 assign alloc_taken_slot = early_taken ? early_slot : 2'd3;

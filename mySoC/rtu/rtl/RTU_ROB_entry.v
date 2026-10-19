@@ -45,15 +45,24 @@ module RTU_ROB_entry (
     input  wire                flush_clr,
 
     output wire [`RTU_E_W-1:0] entry_q,
-    output wire [`RTU_E_W-1:0] entry_d
+    output wire [`RTU_E_W-1:0] entry_d,
+    // [R21] 自更新后的值 (= q + 本拍完成/解析/重放, 不含 disp/pop/flush 优先级)。
+    // bank 用它把 head 的动态位在**同拍**送给判退, 窗口不再做完成匹配。
+    output wire [`RTU_E_W-1:0] entry_upd
 );
 
     reg [`RTU_E_W-1:0] q;
     reg [`RTU_E_W-1:0] upd;
 
     // ---- 自更新 (完成 / 解析) ----
+    // [R1 2026-10-18] reload 也走这里: 影子窗口重填取的是阵列项的**寄存 q**,
+    // 这一拍阵列项的后沿值 = q + 同一拍的完成/解析/重放更新。所以 base 在
+    // reload 时取 reload_data, 再把更新叠上去 (原来是 reload 直接覆盖自更新,
+    // 因为当时的 reload_data 是 rob_d —— 已含更新的下一拍值)。
+    wire [`RTU_E_W-1:0] base = reload_en ? reload_data : q;
+
     always @(*) begin
-        upd = q;
+        upd = base;
         if (cmplt_hit) begin
             upd[`RTU_E_CMPLT] = 1'b1;
         end
@@ -61,28 +70,39 @@ module RTU_ROB_entry (
             upd[`RTU_E_REPLAY] = 1'b1;   // 只置不清: 清由 pop/flush 负责 (那两条都写 0)
         end
         if (resolve_hit) begin
+`ifndef USE_IFU4
             upd[`RTU_E_TARGET]  = resolve_target;
             upd[`RTU_E_TAKEN]   = resolve_taken;
+`endif
             upd[`RTU_E_MISPRED] = resolve_mispred;
         end
     end
 
     // ---- 写入优先级 ----
-    // 优先级: flush > disp > pop > reload > 自更新。
-    //   * flush 高于一切 (FLUSH_2 与指针复位同拍);
+    // 优先级: disp > pop > (reload + 自更新); flush 只清 VLD/CMPLT/REPLAY。
+    //   * [R3 2026-10-18] 原来 flush 清整项: `flush_clr` 进 125-bit 的**每一位**
+    //     mux, 实测是一根 fo≈1025、单网走线 6.4ns 的广播网, 也是 RTU 剩下的
+    //     最差路径。功能上判退/窗口只看 VLD; CMPLT/REPLAY 一起清是为了不留
+    //     "有效"残影。其余数据位在 flush 拍取 d_nof (保持或更新) 都无所谓 ——
+    //     VLD=0 时不会被读, 下次 dispatch 会全量覆盖。
     //   * disp 与 pop 不会撞: 弹出的下标是 [rptr, rptr+pop_n), 派遣的是
     //     [rptr+occ, ...), 而 pop_n <= occ, 两个区间不相交;
-    //   * pop 高于 reload: 影子窗口只 reload 不 pop, 顺序在这里只是防御。
-    assign entry_d = flush_clr ? {`RTU_E_W{1'b0}} :
-                     disp_en   ? disp_data           :
-                     pop_en    ? {`RTU_E_W{1'b0}}    :
-                     reload_en ? reload_data         : upd;
+    //   * reload 只在影子窗口用, 它与自更新是叠加关系 (见上)。
+    localparam [`RTU_E_W-1:0] FLUSH_CLR_MASK =
+        ({{(`RTU_E_W-1){1'b0}},1'b1} << `RTU_E_VLD) |
+        ({{(`RTU_E_W-1){1'b0}},1'b1} << `RTU_E_CMPLT) |
+        ({{(`RTU_E_W-1){1'b0}},1'b1} << `RTU_E_REPLAY);
+
+    wire [`RTU_E_W-1:0] d_nof = disp_en ? disp_data :
+                                pop_en  ? {`RTU_E_W{1'b0}} : upd;
+    assign entry_d = flush_clr ? (d_nof & ~FLUSH_CLR_MASK) : d_nof;
 
     always @(posedge cpu_clk or posedge cpu_rst) begin
         if (cpu_rst) q <= {`RTU_E_W{1'b0}};
         else         q <= entry_d;
     end
 
-    assign entry_q = q;
+    assign entry_q   = q;
+    assign entry_upd = upd;
 
 endmodule

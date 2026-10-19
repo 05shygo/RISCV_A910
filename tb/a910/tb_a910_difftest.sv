@@ -28,6 +28,26 @@
 // ===========================================================================
 module tb_a910_difftest;
 
+  // [R14] ROB 改为 8 bank × 8 entry: 逻辑下标 idx -> bank=idx[2:0], row=idx[5:3]。
+  // 调试口保持旧 `rob_q[idx]` 的语义, 按映射取对应 bank 内的表项。
+  function automatic [124:0] dbg_rob_entry(input [5:0] idx);
+    reg [2:0] b, r;
+    begin
+      b = idx[2:0];
+      r = idx[5:3];
+      case (b)
+        3'd0: dbg_rob_entry = dut.u_rtu.u_rob.g_bank[0].u_bank.e_q[r];
+        3'd1: dbg_rob_entry = dut.u_rtu.u_rob.g_bank[1].u_bank.e_q[r];
+        3'd2: dbg_rob_entry = dut.u_rtu.u_rob.g_bank[2].u_bank.e_q[r];
+        3'd3: dbg_rob_entry = dut.u_rtu.u_rob.g_bank[3].u_bank.e_q[r];
+        3'd4: dbg_rob_entry = dut.u_rtu.u_rob.g_bank[4].u_bank.e_q[r];
+        3'd5: dbg_rob_entry = dut.u_rtu.u_rob.g_bank[5].u_bank.e_q[r];
+        3'd6: dbg_rob_entry = dut.u_rtu.u_rob.g_bank[6].u_bank.e_q[r];
+        default: dbg_rob_entry = dut.u_rtu.u_rob.g_bank[7].u_bank.e_q[r];
+      endcase
+    end
+  endfunction
+
   // -------------------------------------------------------------------------
   // 黄金模型 (DPI-C): 与 tb_miniRV_dpi.sv 用的是同一份，参数也一样
   // -------------------------------------------------------------------------
@@ -2254,6 +2274,8 @@ module tb_a910_difftest;
   integer p_cnd_tot = 0, p_cnd_mis = 0;
   integer p_jal_tot = 0, p_jal_mis = 0;
   integer p_jlr_tot = 0, p_jlr_mis = 0;
+  // 退休流指纹: A/B 两侧必须逐位相同 (PC + 写回值), 防止"周期变了但指令流也变了"。
+  longint unsigned perf_crc = 64'hcbf2_9ce4_8422_2325;
   integer perf_rob_zero = 0, perf_fe_idle = 0, perf_fe_idle_nf = 0, perf_cyc = 0;
   // 派遣/退休的宽度直方图 —— 3 发射到底发几条? `disp_vld` 是**前缀有效**
   // (`RTU.v:525` `disp_acc[1] = disp_acc[0] & disp1_vld`), 所以按位求和 = 条数。
@@ -2347,15 +2369,34 @@ module tb_a910_difftest;
         p_br_tot = p_br_tot + 1;
         if (dut.u_rtu.u_commit.mis2) p_br_mis = p_br_mis + 1;
       end
-      if (dut.u_rtu.u_commit.tr_cnd[0]) begin p_cnd_tot = p_cnd_tot + 1; if (dut.u_rtu.u_commit.mis0) p_cnd_mis = p_cnd_mis + 1; end
-      if (dut.u_rtu.u_commit.tr_cnd[1]) begin p_cnd_tot = p_cnd_tot + 1; if (dut.u_rtu.u_commit.mis1) p_cnd_mis = p_cnd_mis + 1; end
-      if (dut.u_rtu.u_commit.tr_cnd[2]) begin p_cnd_tot = p_cnd_tot + 1; if (dut.u_rtu.u_commit.mis2) p_cnd_mis = p_cnd_mis + 1; end
-      if (dut.u_rtu.u_commit.tr_jal[0]) begin p_jal_tot = p_jal_tot + 1; if (dut.u_rtu.u_commit.mis0) p_jal_mis = p_jal_mis + 1; end
-      if (dut.u_rtu.u_commit.tr_jal[1]) begin p_jal_tot = p_jal_tot + 1; if (dut.u_rtu.u_commit.mis1) p_jal_mis = p_jal_mis + 1; end
-      if (dut.u_rtu.u_commit.tr_jal[2]) begin p_jal_tot = p_jal_tot + 1; if (dut.u_rtu.u_commit.mis2) p_jal_mis = p_jal_mis + 1; end
-      if (dut.u_rtu.u_commit.tr_jalr[0]) begin p_jlr_tot = p_jlr_tot + 1; if (dut.u_rtu.u_commit.mis0) p_jlr_mis = p_jlr_mis + 1; end
-      if (dut.u_rtu.u_commit.tr_jalr[1]) begin p_jlr_tot = p_jlr_tot + 1; if (dut.u_rtu.u_commit.mis1) p_jlr_mis = p_jlr_mis + 1; end
-      if (dut.u_rtu.u_commit.tr_jalr[2]) begin p_jlr_tot = p_jlr_tot + 1; if (dut.u_rtu.u_commit.mis2) p_jlr_mis = p_jlr_mis + 1; end
+      // ⚠️ tr_cnd/tr_jal/tr_jalr 是**未按 commit_vld 门控**的原始 flag 数组;
+      //    直接按拍累加会把"停在窗口里但本拍不退休"的槽重复计数 ⇒ 时序一变
+      //    分类表就变。这里显式与 commit_vld 相与, 得到退休点口径。
+      if (dut.u_rtu.u_commit.commit_vld[0] && dut.u_rtu.u_commit.tr_cnd[0]) begin p_cnd_tot = p_cnd_tot + 1; if (dut.u_rtu.u_commit.mis0) p_cnd_mis = p_cnd_mis + 1; end
+      if (dut.u_rtu.u_commit.commit_vld[1] && dut.u_rtu.u_commit.tr_cnd[1]) begin p_cnd_tot = p_cnd_tot + 1; if (dut.u_rtu.u_commit.mis1) p_cnd_mis = p_cnd_mis + 1; end
+      if (dut.u_rtu.u_commit.commit_vld[2] && dut.u_rtu.u_commit.tr_cnd[2]) begin p_cnd_tot = p_cnd_tot + 1; if (dut.u_rtu.u_commit.mis2) p_cnd_mis = p_cnd_mis + 1; end
+      if (dut.u_rtu.u_commit.commit_vld[0] && dut.u_rtu.u_commit.tr_jal[0]) begin p_jal_tot = p_jal_tot + 1; if (dut.u_rtu.u_commit.mis0) p_jal_mis = p_jal_mis + 1; end
+      if (dut.u_rtu.u_commit.commit_vld[1] && dut.u_rtu.u_commit.tr_jal[1]) begin p_jal_tot = p_jal_tot + 1; if (dut.u_rtu.u_commit.mis1) p_jal_mis = p_jal_mis + 1; end
+      if (dut.u_rtu.u_commit.commit_vld[2] && dut.u_rtu.u_commit.tr_jal[2]) begin p_jal_tot = p_jal_tot + 1; if (dut.u_rtu.u_commit.mis2) p_jal_mis = p_jal_mis + 1; end
+      if (dut.u_rtu.u_commit.commit_vld[0] && dut.u_rtu.u_commit.tr_jalr[0]) begin p_jlr_tot = p_jlr_tot + 1; if (dut.u_rtu.u_commit.mis0) p_jlr_mis = p_jlr_mis + 1; end
+      if (dut.u_rtu.u_commit.commit_vld[1] && dut.u_rtu.u_commit.tr_jalr[1]) begin p_jlr_tot = p_jlr_tot + 1; if (dut.u_rtu.u_commit.mis1) p_jlr_mis = p_jlr_mis + 1; end
+      if (dut.u_rtu.u_commit.commit_vld[2] && dut.u_rtu.u_commit.tr_jalr[2]) begin p_jlr_tot = p_jlr_tot + 1; if (dut.u_rtu.u_commit.mis2) p_jlr_mis = p_jlr_mis + 1; end
+      // 退休流指纹: 每拍把 3 个提交槽的 {PC, ena, 写回值} 混进 CRC。
+      if (dut.u_rtu.u_commit.commit_vld[0])
+        perf_crc = (perf_crc << 7) ^ perf_crc ^
+                   {dut.u_rtu.u_commit.commit_pc0[31:0],
+                    dut.u_rtu.u_commit.commit_ena[0],
+                    dut.u_rtu.u_commit.commit_ena[0] ? dut.u_rtu.u_commit.commit_value0[31:0] : 32'd0};
+      if (dut.u_rtu.u_commit.commit_vld[1])
+        perf_crc = (perf_crc << 7) ^ perf_crc ^
+                   {dut.u_rtu.u_commit.commit_pc1[31:0],
+                    dut.u_rtu.u_commit.commit_ena[1],
+                    dut.u_rtu.u_commit.commit_ena[1] ? dut.u_rtu.u_commit.commit_value1[31:0] : 32'd0};
+      if (dut.u_rtu.u_commit.commit_vld[2])
+        perf_crc = (perf_crc << 7) ^ perf_crc ^
+                   {dut.u_rtu.u_commit.commit_pc2[31:0],
+                    dut.u_rtu.u_commit.commit_ena[2],
+                    dut.u_rtu.u_commit.commit_ena[2] ? dut.u_rtu.u_commit.commit_value2[31:0] : 32'd0};
       if (dut.u_rtu.u_commit.flush_trig)  perf_flush    = perf_flush + 1;
       perf_rob_sum = perf_rob_sum + dut.u_rtu.u_rob.occ;
       if (dut.u_rtu.u_rob.occ > perf_rob_max) perf_rob_max = dut.u_rtu.u_rob.occ;
@@ -2519,6 +2560,7 @@ module tb_a910_difftest;
                p_br_tot, p_br_mis,
                p_br_tot ? (p_br_tot - p_br_mis) * 100.0 / p_br_tot : 0.0,
                perf_mispred);
+      $display("  commit CRC        : %016h", perf_crc);
       $display("  冲刷 (flush_trig) : %0d 次", perf_flush);
       $display("  ROB 占用          : 均值 %0.1f / 64, 峰值 %0d, 空 %0d 拍 (%.1f%%)",
                perf_cyc ? perf_rob_sum * 1.0 / perf_cyc : 0.0, perf_rob_max,
@@ -2643,20 +2685,23 @@ module tb_a910_difftest;
     void'($value$plusargs("HD_LO=%d", hd_lo));
     void'($value$plusargs("HD_HI=%d", hd_hi));
   end
+  reg [124:0] dbg_head;
   always @(posedge clk) begin
     if (!rst && $test$plusargs("PROBE_HEAD") && cycles >= hd_lo && cycles <= hd_hi
-        && (cycles % 200) == 0)
+        && (cycles % 200) == 0) begin
+      dbg_head = dbg_rob_entry(dut.u_rtu.u_rob.rptr);
       $display("  [HEAD] T%0d rptr=%0d iid=%0d pc=%08x vld=%b cmplt=%b flags=%b dst_preg=%0d old_preg=%0d occ=%0d free=%0d",
                cycles,
                dut.u_rtu.u_rob.rptr,
                {dut.u_rtu.u_rob.rptr_msb, dut.u_rtu.u_rob.rptr},
-               dut.u_rtu.u_rob.rob_q[dut.u_rtu.u_rob.rptr][120:89],
-               dut.u_rtu.u_rob.rob_q[dut.u_rtu.u_rob.rptr][123],
-               dut.u_rtu.u_rob.rob_q[dut.u_rtu.u_rob.rptr][122],
-               dut.u_rtu.u_rob.rob_q[dut.u_rtu.u_rob.rptr][12:6],
-               dut.u_rtu.u_rob.rob_q[dut.u_rtu.u_rob.rptr][26:20],
-               dut.u_rtu.u_rob.rob_q[dut.u_rtu.u_rob.rptr][19:13],
+               dbg_head[120:89],
+               dbg_head[123],
+               dbg_head[122],
+               dbg_head[12:6],
+               dbg_head[26:20],
+               dbg_head[19:13],
                dut.u_rtu.u_rob.occ, dut.u_rtu.u_preg.free_cnt);
+    end
   end
 
   // [FSRC] **这次 flush 是哪来的** —— 回答"为什么会来这次冲刷"
@@ -3231,11 +3276,19 @@ module tb_a910_difftest;
       $display("  [BEU] T%0d sel=%b pc=%08x npc=%08x taken=%b sel=%b | src0=%08x src1/imm=%08x",
                cycles, dut.idu_biq_sel, dut.idu_biq_pc, dut.idu_biq_npc, dut.idu_biq_taken,
                dut.idu_biq_rslt_sel, dut.idu_biq_src0, dut.idu_biq_src1);
+`ifdef USE_IFU4
+      $display("        实际: actual_npc=%08x mismatch=%b mispred=%b | chgflw_vld=%b chgflw_pc=%08x",
+               dut.u_rv32ifu2_top.u_bvu.actual_npc,
+               dut.u_rv32ifu2_top.u_bvu.u_beu.npc_mismatch,
+               dut.u_rv32ifu2_top.u_bvu.mispredict,
+               dut.iu_chgflw_vld, dut.iu_chgflw_pc);
+`else
       $display("        实际: actual_npc=%08x mismatch=%b mispred=%b | chgflw_vld=%b chgflw_pc=%08x",
                dut.u_iu_beu_pipe.o_actual_npc,
                dut.u_iu_beu_pipe.u_beu.npc_mismatch,
                dut.u_iu_beu_pipe.mispredict,
                dut.iu_chgflw_vld, dut.iu_chgflw_pc);
+`endif
     end
   end
 

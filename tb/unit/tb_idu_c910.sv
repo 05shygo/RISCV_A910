@@ -252,8 +252,10 @@ module tb_idu_c910;
   assign iu_idu_aiq1_stall                = 1'b0;
 
   // ROB 不满 ⇒ 允许派遣; 不冲刷; 乘除单元不忙
+  logic  rtu_idu_rob_full_nofsm;
   assign md_unit_stall    = 1'b0;
   assign rtu_idu_rob_full = 1'b0;
+  assign rtu_idu_rob_full_nofsm = 1'b0;
   assign rtu_yy_xx_flush  = 1'b0;
   assign md_unit_stall    = 1'b0;   // 乘除单元不忙
   // LSU 队列的"不满"指示: 接 1 (接 0 会让 LSIQ 建不进去, 走不到派遣)
@@ -313,6 +315,7 @@ module tb_idu_c910;
     .rtu_csr_src_raddr                (rtu_csr_src_raddr               ),
     .iu_idu_aiq1_stall                (iu_idu_aiq1_stall               ),
     .rtu_idu_rob_full                 (rtu_idu_rob_full                ),
+    .rtu_idu_rob_full_nofsm           (rtu_idu_rob_full_nofsm          ),
     .rtu_yy_xx_flush                  (rtu_yy_xx_flush                 ),
     .md_unit_stall                    (md_unit_stall                   ),
     .lsu_idu_lq_not_full              (lsu_idu_lq_not_full             ),
