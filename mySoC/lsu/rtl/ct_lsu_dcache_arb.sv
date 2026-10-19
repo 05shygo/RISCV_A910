@@ -147,11 +147,11 @@ module ct_lsu_dcache_arb #(
   //==========================================================
   // Dcache array interfaces
   //==========================================================
-  output logic         lsu_dcache_ld_tag_sel_b,
-  output logic         lsu_dcache_ld_tag_gwen_b,
-  output logic [1:0]   lsu_dcache_ld_tag_wen_b,
+  (* max_fanout = 8 *) output logic    lsu_dcache_ld_tag_sel_b,
+  (* max_fanout = 8 *) output logic    lsu_dcache_ld_tag_gwen_b,
+  (* max_fanout = 8 *) output logic [1:0] lsu_dcache_ld_tag_wen_b,
   output logic         lsu_dcache_ld_tag_gateclk_en,
-  output logic [INDEX_WIDTH-1:0]  lsu_dcache_ld_tag_idx,
+  (* max_fanout = 8 *) output logic [INDEX_WIDTH-1:0] lsu_dcache_ld_tag_idx,
   output logic [LD_TAG_WIDTH-1:0]  lsu_dcache_ld_tag_din,
 
   output logic         lsu_dcache_st_tag_sel_b,
@@ -168,12 +168,12 @@ module ct_lsu_dcache_arb #(
   output logic [INDEX_WIDTH-1:0]  lsu_dcache_st_dirty_idx,
   output logic [4:0]   lsu_dcache_st_dirty_din,
 
-  output logic [7:0]   lsu_dcache_ld_data_sel_b,
-  output logic [7:0]   lsu_dcache_ld_data_gwen_b,
-  output logic [31:0]  lsu_dcache_ld_data_wen_b,
+  (* max_fanout = 8 *) output logic [7:0]  lsu_dcache_ld_data_sel_b,
+  (* max_fanout = 8 *) output logic [7:0]  lsu_dcache_ld_data_gwen_b,
+  (* max_fanout = 16 *) output logic [31:0] lsu_dcache_ld_data_wen_b,
   output logic [7:0]   lsu_dcache_ld_data_gateclk_en,
-  output logic [DATA_INDEX_WIDTH-1:0]  lsu_dcache_ld_data_low_idx,
-  output logic [DATA_INDEX_WIDTH-1:0]  lsu_dcache_ld_data_high_idx,
+  (* max_fanout = 8 *) output logic [DATA_INDEX_WIDTH-1:0] lsu_dcache_ld_data_low_idx,
+  (* max_fanout = 8 *) output logic [DATA_INDEX_WIDTH-1:0] lsu_dcache_ld_data_high_idx,
   output logic [127:0] lsu_dcache_ld_data_low_din,
   output logic [127:0] lsu_dcache_ld_data_high_din,
 

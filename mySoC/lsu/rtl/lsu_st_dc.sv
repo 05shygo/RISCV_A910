@@ -23,7 +23,8 @@ module ct_lsu_st_dc #(
     input  logic         sq_st_dc_inst_hit,
 
     // from ST AG
-    input  logic         st_ag_boundary,
+    // 2026-10-15 停用: 非对齐拆分通路整条摘掉 (boundary/secd)
+    //input  logic         st_ag_boundary,
     input  logic [31:0]  st_ag_dc_addr0,
     input  logic [15:0]  st_ag_dc_bytes_vld,
     input  logic         st_ag_dc_inst_vld,
@@ -34,12 +35,12 @@ module ct_lsu_st_dc #(
     input  logic         st_ag_old,
     input  logic         st_ag_expt,
     input  logic [3:0]  st_ag_sdid_oh,
-    input  logic         st_ag_secd,
+    //input  logic         st_ag_secd,
 
     // outputs
     output logic         st_dc_inst_vld,
     output logic         st_dc_borrow_vld,
-    output logic         st_dc_secd,
+    //output logic         st_dc_secd,          // 2026-10-15 停用
     output logic [6:0]   st_dc_iid,
     output logic [LSIQ_ENTRY-1:0]  st_dc_lsid,
     output logic [3:0]  st_dc_sdid_oh,
@@ -47,14 +48,14 @@ module ct_lsu_st_dc #(
     output logic         st_dc_expt,
     output logic [15:0]  st_dc_bytes_vld,
     output logic [3:0]   st_dc_rot_sel,
-    output logic         st_dc_boundary,
+    //output logic         st_dc_boundary,      // 2026-10-15 停用
     output logic [31:0]  st_dc_addr0,
  //   output logic [3:0]   st_dc_sdid,
     output logic         st_dc_sq_create_vld,
     output logic         st_dc_sq_create_dp_vld,
     output logic         st_dc_sq_create_gateclk_en,
     output logic         st_dc_sq_data_vld,
-    output logic         st_dc_boundary_first,
+    //output logic         st_dc_boundary_first,  // 2026-10-15 停用
     output logic         st_dc_chk_st_inst_vld,
     output logic [7:0]   st_dc_rot_sel_rev,
     output logic         st_dc_da_inst_vld,
@@ -102,7 +103,7 @@ module ct_lsu_st_dc #(
 
     always_ff @(posedge forever_cpuclk or negedge cpurst_b) begin
         if (!cpurst_b) begin
-            st_dc_secd                    <= 1'b0;
+            //st_dc_secd                    <= 1'b0;
             st_dc_iid[6:0]                <= 7'b0;
             st_dc_lsid[LSIQ_ENTRY-1:0]    <= {LSIQ_ENTRY{1'b0}};
             st_dc_sdid_oh[SDIQ_ENTRY-1:0] <= {SDIQ_ENTRY{1'b0}};
@@ -110,10 +111,10 @@ module ct_lsu_st_dc #(
             st_dc_expt                    <= 1'b0;
             st_dc_bytes_vld[15:0]         <= 16'b0;
             st_dc_rot_sel[3:0]            <= 4'b0;
-            st_dc_boundary                <= 1'b0;
+            //st_dc_boundary                <= 1'b0;
         end
         else if (st_ag_inst_vld) begin
-            st_dc_secd                    <= st_ag_secd;
+            //st_dc_secd                    <= st_ag_secd;
             st_dc_iid[6:0]                <= st_ag_iid[6:0];
             st_dc_lsid[LSIQ_ENTRY-1:0]    <= st_ag_lsid[LSIQ_ENTRY-1:0];
             st_dc_sdid_oh[SDIQ_ENTRY-1:0] <= st_ag_sdid_oh[SDIQ_ENTRY-1:0];
@@ -121,7 +122,7 @@ module ct_lsu_st_dc #(
             st_dc_expt                    <= st_ag_expt;
             st_dc_bytes_vld[15:0]         <= st_ag_dc_bytes_vld[15:0];
             st_dc_rot_sel[3:0]            <= st_ag_dc_rot_sel[3:0];
-            st_dc_boundary                <= st_ag_boundary;
+            //st_dc_boundary                <= st_ag_boundary;
         end
     end
     // 2026-10-08 修: 这里原来有一行裸的 `st_ag_expt` (提交 3e605a0 把一个空行粘贴成了
@@ -164,7 +165,8 @@ assign st_dc_dcwp_hit_idx = 1'b0;
    
     assign st_dc_sq_data_vld = 1'b0;
 
-    assign st_dc_boundary_first = st_dc_boundary && !st_dc_secd;
+    // 2026-10-15 停用: 非对齐第一半标记
+    //assign st_dc_boundary_first = st_dc_boundary && !st_dc_secd;
 
     //==========================================================
     //        Generate check signal to lq/ld_dc stage
@@ -239,7 +241,9 @@ assign st_dc_dcwp_hit_idx = 1'b0;
     assign st_dc_idu_sq_full[LSIQ_ENTRY-1:0] = {LSIQ_ENTRY{st_dc_sq_full_vld}} &
                                                  st_dc_mask_lsid[LSIQ_ENTRY-1:0];
 
-    assign lsu_idu_has_in_sq[SDIQ_ENTRY-1:0] = {SDIQ_ENTRY{st_dc_sq_create_vld & (!st_dc_boundary | st_dc_secd) & !sq_st_dc_full}} &
+    // 2026-10-15 停用: 原式还有 `& (!st_dc_boundary | st_dc_secd)`, 两项恒 0 ⇒ 恒真
+    assign lsu_idu_has_in_sq[SDIQ_ENTRY-1:0] = {SDIQ_ENTRY{st_dc_sq_create_vld & !sq_st_dc_full}} &
+                                                //  & (!st_dc_boundary | st_dc_secd)
                                                 st_dc_sdid_oh[SDIQ_ENTRY-1:0];
                                        
 

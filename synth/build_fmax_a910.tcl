@@ -2,11 +2,13 @@
 # A910 + ifu3 的 Fmax 测量 —— xc7k325tffg900-2
 #
 # 用法:
-#   vivado -mode batch -source synth/build_fmax_a910.tcl -tclargs <period_ns> <synth|impl> [ifu2|ifu3|ifu4]
+#   vivado -mode batch -source synth/build_fmax_a910.tcl -tclargs <period_ns> <synth|impl> [ifu2|ifu3] [banks|grid]
 #
 #   period_ns : create_clock 的目标周期 (ns)。190MHz -> 5.263; 150MHz -> 6.667
-#   synth|impl: 只到综合 / 跑到 route_design (Fmax 要 impl 才算数)
-#   ifu2|ifu3|ifu4 : 前端配置, 默认 ifu3
+#   synth|impl: 只到综合 / 实现。impl 先跑到 phys_opt_design，再执行
+#               lsu_repl.tcl 的 LSU 定向复制，最后 route_design (Fmax 要 impl 才算数)
+#   ifu2|ifu3 : 前端配置, 默认 ifu3
+#   banks|grid: 可选 Pblock 布局约束 (impl 阶段), 默认不加
 #
 # 配置口径 = Makefile 的 `A910_IFU=<n>` 那条线 (见 Makefile:958-989):
 #   A910_cpu 顶层, RTU_PREG64, DCACHE_2KB (DCACHE_SIZE 默认 2048)
@@ -120,7 +122,13 @@ if {$IFU eq "ifu3"} {
     # UBTB: 与仿真口径对齐 (branch_bench 基线 = UBTB_ENT=0).
     set DEFS [list USE_IFU4 USE_IFU3 RTU_PREG64 DCACHE_2KB IFU4_UBTB_ENT=$UBTB]
 } else {
-    set DEFS [list USE_IFU2 BP_PRED=1 BP_GHR_W=16 RTU_PREG64 DCACHE_2KB]
+    # REDIRECT_PIPE: 与 Makefile 的 A910_IFU=2 规则对齐 (EX 重定向在 IFU 打拍).
+    # PRED=tage (默认, 与 ifu3 对比) / gshare (A910 仿真默认: BP_PRED 不定义).
+    if {$PRED eq "gshare"} {
+        set DEFS [list USE_IFU2 REDIRECT_PIPE RTU_PREG64 DCACHE_2KB]
+    } else {
+        set DEFS [list USE_IFU2 REDIRECT_PIPE BP_PRED=1 BP_GHR_W=16 RTU_PREG64 DCACHE_2KB]
+    }
 }
 set_property verilog_define $DEFS [get_filesets sources_1]
 set_property include_dirs [list [file join $ROOT mySoC] [file join $ROOT vsrc] \
@@ -151,6 +159,9 @@ add_files -fileset constrs_1 $xdc
 # ---------------------------------------------------------------------------
 set_property strategy Flow_PerfOptimized_high [get_runs synth_1]
 set_property strategy Performance_NetDelay_high [get_runs impl_1]
+# [R11] RTU 内部 150MHz 目标: 快速臂实测 ExtraTimingOpt 比
+# ExtraNetDelay_high 的内部最差好 ~1.1ns、top 好 ~0.9ns。
+set_property STEPS.PLACE_DESIGN.ARGS.DIRECTIVE ExtraTimingOpt [get_runs impl_1]
 # FANOUT > 0: 全局综合扇出上限 (synth_design -fanout_limit).
 if {$FANOUT > 0} {
     puts "SYNTH FANOUT LIMIT = $FANOUT"
@@ -161,9 +172,6 @@ if {$FLAT ne "rebuilt"} {
     puts "FLATTEN_HIERARCHY = $FLAT"
     set_property STEPS.SYNTH_DESIGN.ARGS.FLATTEN_HIERARCHY $FLAT [get_runs synth_1]
 }
-# [R11] RTU 内部 150MHz 目标: 快速臂实测 ExtraTimingOpt 比
-# ExtraNetDelay_high 的内部最差好 ~1.1ns、top 好 ~0.9ns。
-set_property STEPS.PLACE_DESIGN.ARGS.DIRECTIVE ExtraTimingOpt [get_runs impl_1]
 
 launch_runs synth_1 -jobs 8
 wait_on_run synth_1
@@ -180,12 +188,16 @@ if {$MODE eq "impl" && $PB ne "none"} {
 }
 
 if {$MODE eq "impl"} {
-    launch_runs impl_1 -to_step route_design -jobs 8
+    # 跑到 phys_opt_design 后打开 checkpoint, 由 lsu_repl.tcl 做 LSU 定向复制
+    # (内含 phys_opt_design -force_replication_on_nets 与 route_design)。
+    launch_runs impl_1 -to_step phys_opt_design -jobs 8
     wait_on_run impl_1
     if {[get_property PROGRESS [get_runs impl_1]] ne "100%"} {
         error "impl_1 FAILED: [get_property STATUS [get_runs impl_1]]"
     }
-    open_run impl_1
+    set physopt_dcp [file join $PROJ_DIR ${PROJ_NAME}.runs impl_1 top_a910_fmax_physopt.dcp]
+    open_checkpoint $physopt_dcp
+    source [file join $SP lsu_repl.tcl]
 } else {
     open_run synth_1
 }

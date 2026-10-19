@@ -75,7 +75,8 @@ module ct_idu_is_lsiq #(
   input  logic         lsu_idu_lsiq_pop_vld,
   input  logic [LSIQ_ENTRY-1:0] lsu_idu_rb_full,
   input  logic         lsu_idu_rb_not_full,
-  input  logic [LSIQ_ENTRY-1:0] lsu_idu_secd,
+  // 2026-10-19 停用: 非对齐第二半链路整条摘除, IDU 不再接收 LSU 的 secd
+  //input  logic [LSIQ_ENTRY-1:0] lsu_idu_secd,
   input  logic [LSIQ_ENTRY-1:0] lsu_idu_sq_full,
   input  logic         lsu_idu_sq_not_full,
   input  logic [LSIQ_ENTRY-1:0] lsu_idu_imme_wakeup,
@@ -87,11 +88,12 @@ module ct_idu_is_lsiq #(
   output logic         lsiq_rf_pipe3_issue_en,
   output logic         lsiq_rf_pipe4_issue_en,
   output logic [59:0]  lsiq_dp_pipe3_entry_read_data,
-  output logic         lsiq_pipe3_entry_unalign_2nd,
+  // 2026-10-19 停用: 非对齐第二半标记 (随非对齐硬件一并摘除)
+  //output logic         lsiq_pipe3_entry_unalign_2nd,
   output logic         lsiq_pipe3_entry_old,
   output logic [LSIQ_ENTRY-1:0] lsiq_dp_pipe3_issue_entry,
   output logic [59:0]  lsiq_dp_pipe4_entry_read_data,
-  output logic         lsiq_pipe4_entry_unalign_2nd,
+  //output logic         lsiq_pipe4_entry_unalign_2nd,
   output logic         lsiq_pipe4_entry_old,
   output logic [LSIQ_ENTRY-1:0] lsiq_dp_pipe4_issue_entry
 );
@@ -150,7 +152,8 @@ initial $display("[IDU-LSIQ] ENTRY=%0d CNT_W=%0d  (判据: 应与 +define+LSIQ_E
   logic [LSIQ_ENTRY-1:0]  lsiq_pipe4_entry_ready;
 
   // unalign
-  logic [LSIQ_ENTRY-1:0]  unalign_2nd;
+  // 2026-10-19 停用: 非对齐第二半标记
+  //logic [LSIQ_ENTRY-1:0]  unalign_2nd;
 
   // pop
   logic [LSIQ_ENTRY-1:0]  lsiq_entry_pop_cur_entry;
@@ -170,7 +173,8 @@ initial $display("[IDU-LSIQ] ENTRY=%0d CNT_W=%0d  (判据: 应与 +define+LSIQ_E
   logic                   lsiq_entry_lq_full_set       [LSIQ_ENTRY-1:0];
   logic                   lsiq_entry_sq_full_set       [LSIQ_ENTRY-1:0];
   logic                   lsiq_entry_rb_full_set       [LSIQ_ENTRY-1:0];
-  logic                   lsiq_entry_unalign_2nd_set   [LSIQ_ENTRY-1:0];
+  // 2026-10-19 停用: 非对齐第二半置位 (来源 lsu_idu_secd 已摘)
+  //logic                   lsiq_entry_unalign_2nd_set   [LSIQ_ENTRY-1:0];
   logic                   lsiq_entry_old               [LSIQ_ENTRY-1:0];
 
   // 【补齐】create load/store 信号
@@ -322,32 +326,32 @@ assign p4_sel_onehot = (lsiq_dp_pipe4_issue_entry[LSIQ_ENTRY-1:0] != {LSIQ_ENTRY
 always_comb
 begin
   lsiq_dp_pipe3_entry_read_data[LSIQ_WIDTH-1:0] = {LSIQ_WIDTH{1'bx}};
-  lsiq_pipe3_entry_unalign_2nd = 1'bx;
+  // 2026-10-19 停用: lsiq_pipe3_entry_unalign_2nd = 1'bx;
   lsiq_pipe3_entry_old         = 1'bx;
   lsiq_dp_pipe4_entry_read_data[LSIQ_WIDTH-1:0] = {LSIQ_WIDTH{1'bx}};
-  lsiq_pipe4_entry_unalign_2nd = 1'bx;
+  // 2026-10-19 停用: lsiq_pipe4_entry_unalign_2nd = 1'bx;
   lsiq_pipe4_entry_old         = 1'bx;
   for (int k = 0; k < LSIQ_ENTRY; k++) begin
     if (lsiq_dp_pipe3_issue_entry[k]) begin
       lsiq_dp_pipe3_entry_read_data[LSIQ_WIDTH-1:0] = lsiq_entry_read_data[k][LSIQ_WIDTH-1:0];
-      lsiq_pipe3_entry_unalign_2nd = unalign_2nd[k];
+      // 2026-10-19 停用: lsiq_pipe3_entry_unalign_2nd = unalign_2nd[k];
       lsiq_pipe3_entry_old         = lsiq_entry_old[k];
     end
     if (lsiq_dp_pipe4_issue_entry[k]) begin
       lsiq_dp_pipe4_entry_read_data[LSIQ_WIDTH-1:0] = lsiq_entry_read_data[k][LSIQ_WIDTH-1:0];
-      lsiq_pipe4_entry_unalign_2nd = unalign_2nd[k];
+      // 2026-10-19 停用: lsiq_pipe4_entry_unalign_2nd = unalign_2nd[k];
       lsiq_pipe4_entry_old         = lsiq_entry_old[k];
     end
   end
   // 非 one-hot ⇒ 回 X (见上面第 2 条注释)
   if (!p3_sel_onehot) begin
     lsiq_dp_pipe3_entry_read_data[LSIQ_WIDTH-1:0] = {LSIQ_WIDTH{1'bx}};
-    lsiq_pipe3_entry_unalign_2nd = 1'bx;
+    // 2026-10-19 停用: lsiq_pipe3_entry_unalign_2nd = 1'bx;
     lsiq_pipe3_entry_old         = 1'bx;
   end
   if (!p4_sel_onehot) begin
     lsiq_dp_pipe4_entry_read_data[LSIQ_WIDTH-1:0] = {LSIQ_WIDTH{1'bx}};
-    lsiq_pipe4_entry_unalign_2nd = 1'bx;
+    // 2026-10-19 停用: lsiq_pipe4_entry_unalign_2nd = 1'bx;
     lsiq_pipe4_entry_old         = 1'bx;
   end
 end
@@ -409,7 +413,8 @@ for (gi = 0; gi < LSIQ_ENTRY; gi = gi + 1) begin : g_lsiq_entry
     assign lsiq_entry_lq_full_set[gi]     = lsu_idu_lq_full[gi];
     assign lsiq_entry_sq_full_set[gi]     = lsu_idu_sq_full[gi];
     assign lsiq_entry_rb_full_set[gi]     = lsu_idu_rb_full[gi];
-    assign lsiq_entry_unalign_2nd_set[gi] = lsu_idu_secd[gi];
+    // 2026-10-19 停用: 非对齐第二半置位 (lsu_idu_secd 不再接收)
+    //assign lsiq_entry_unalign_2nd_set[gi] = lsu_idu_secd[gi];
 
     //==========================================================
     //             LSU Issue Queue Entry Instance
@@ -445,10 +450,10 @@ for (gi = 0; gi < LSIQ_ENTRY; gi = gi + 1) begin : g_lsiq_entry
       .x_rb_full_set                    (lsiq_entry_rb_full_set[gi]       ),
       .x_rdy                            (lsiq_entry_ready[gi]             ),
       .x_read_data                      (lsiq_entry_read_data[gi]         ),
-      .unalign_2nd                      (unalign_2nd[gi]                  ),
+      // 2026-10-19 停用: .unalign_2nd                    (unalign_2nd[gi]                  ),
       .x_sq_full_set                    (lsiq_entry_sq_full_set[gi]       ),
       .x_store                          (lsiq_entry_store[gi]             ),
-      .x_unalign_2nd_set                (lsiq_entry_unalign_2nd_set[gi]   ),
+      // 2026-10-19 停用: .x_unalign_2nd_set              (lsiq_entry_unalign_2nd_set[gi]   ),
       .x_vld                            (lsiq_entry_vld[gi]               ),
       .old                              (lsiq_entry_old[gi]               )
     );

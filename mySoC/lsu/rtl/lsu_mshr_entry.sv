@@ -18,7 +18,8 @@ module lsu_mshr_entry #(
     input  logic         cpurst_b,
     input  logic         forever_cpuclk,
     input  logic [31:0]  ld_da_addr,
-    input  logic         ld_da_boundary_after_mask,
+    // 2026-10-15 停用: 只服务非对齐拆分 (跨行 load 的第二半并进已建好的 RB 表项)
+    //input  logic         ld_da_boundary_after_mask,
     input  logic [15:0]  ld_da_bytes_vld,
     input  logic [31:0]  ld_da_data_ori,
     input  logic [7:0]   ld_da_data_rot_sel,
@@ -29,7 +30,7 @@ module lsu_mshr_entry #(
     input  logic         ld_da_rb_cmit,
     input  logic         ld_da_rb_data_vld,
     input  logic         ld_da_rb_discard_grnt,
-    input  logic         ld_da_rb_merge_vld,
+    //input  logic         ld_da_rb_merge_vld,
     input  logic         ld_da_sign_extend,
     input  logic [3:0]   rb_biu_ar_id,
     input  logic         rb_entry_biu_pe_req_grnt_x,
@@ -50,7 +51,7 @@ module lsu_mshr_entry #(
     input  logic [31:0]  sq_pop_addr,
     input  logic [31:0]  st_da_addr,
     input  logic [15:0]  st_da_bytes_vld,
-    input  logic         st_da_dcache_hit,
+    // 2026-10-15 停用: 死亡声明 (无驱动无负载, 与本次非对齐摘除无关的既有残留): input  logic         st_da_dcache_hit,
     input  logic [6:0]   st_da_iid,
     input  logic         st_da_rb_cmit,
     input  logic [31:0]  wmb_ce_addr,
@@ -104,7 +105,7 @@ logic        rb_entry_secd;
 logic        rb_entry_sign_extend;
 logic        rb_entry_st;
 logic [3:0]  rb_entry_state;
-logic        rb_entry_wb_cmplt_success;
+// 2026-10-15 停用: 死亡声明 (无驱动无负载, 与本次非对齐摘除无关的既有残留): logic        rb_entry_wb_cmplt_success;
 logic        rb_entry_wb_data_success;
 
 // ---------------- internal combinational/wire signals ----------------
@@ -221,7 +222,7 @@ begin
     rb_entry_bytes_vld[15:0]  <=  ld_da_bytes_vld[15:0];
     rb_entry_iid[6:0]         <=  ld_da_iid[6:0];
     rb_entry_sign_extend      <=  ld_da_sign_extend;
-    rb_entry_boundary         <=  ld_da_boundary_after_mask;
+    //rb_entry_boundary         <=  ld_da_boundary_after_mask;   // 2026-10-15 停用 (恒 0)
     rb_entry_preg[5:0]        <=  ld_da_preg[5:0];
     rb_entry_st               <=  1'b0;
     rb_entry_inst_size[1:0]   <=  ld_da_inst_size[1:0];
@@ -232,7 +233,7 @@ begin
     rb_entry_bytes_vld[15:0]  <=  ld_da_bytes_vld[15:0];
     rb_entry_iid[6:0]         <=  ld_da_iid[6:0];
     rb_entry_sign_extend      <=  ld_da_sign_extend;
-    rb_entry_boundary         <=  ld_da_boundary_after_mask;
+    //rb_entry_boundary         <=  ld_da_boundary_after_mask;   // 2026-10-15 停用 (恒 0)
     rb_entry_preg[5:0]        <=  ld_da_preg[5:0];
     rb_entry_st               <=  1'b0;
     rb_entry_inst_size[1:0]   <=  ld_da_inst_size[1:0];
@@ -422,7 +423,7 @@ assign rb_entry_cmit_set  = (rb_entry_cmit_hit0
 // &CombBeg; @579
 always @( rb_entry_state[3:0]
        or rb_entry_ld_create_vld
-       or ld_da_boundary_after_mask
+       //or ld_da_boundary_after_mask     // 2026-10-15 停用
        or ld_da_rb_data_vld
        or rb_entry_create_vld
        or rb_entry_flush_clear
@@ -435,9 +436,10 @@ begin
 rb_entry_next_state[3:0]  = IDLE;
 case(rb_entry_state[3:0])
   IDLE:
-    if(rb_entry_ld_create_vld &&  ld_da_boundary_after_mask &&  ld_da_rb_data_vld)
-      rb_entry_next_state[3:0]  = WAIT_MERGE;
-    else if(rb_entry_create_vld)
+    // 2026-10-15 停用: boundary_after_mask 恒 0 ⇒ 不再进 WAIT_MERGE
+    //if(rb_entry_ld_create_vld &&  ld_da_boundary_after_mask &&  ld_da_rb_data_vld)
+    //  rb_entry_next_state[3:0]  = WAIT_MERGE;
+    if(rb_entry_create_vld)
       rb_entry_next_state[3:0]  = REQ_BIU;
     else
       rb_entry_next_state[3:0]  = IDLE;
@@ -597,8 +599,10 @@ assign rb_entry_iid_hit         = rb_entry_iid[6:0] ==  ld_da_iid[6:0];
 assign rb_entry_ld_merge_pre    = (rb_entry_state[3:0] ==  WAIT_MERGE)
                                   &&  rb_entry_iid_hit;
 
-assign rb_entry_ld_merge_vld    = ld_da_rb_merge_vld
-                                  &&  rb_entry_ld_merge_pre;
+// 2026-10-15 停用: ld_da_rb_merge_vld 已摘 (非对齐第二半并数据)
+//assign rb_entry_ld_merge_vld    = ld_da_rb_merge_vld
+//                                  &&  rb_entry_ld_merge_pre;
+  assign rb_entry_ld_merge_vld    = 1'b0;
 
 //------------------boundary depd vld-----------------------
 assign rb_entry_merge_fail      = rb_entry_iid_hit
