@@ -457,6 +457,7 @@ module A910_cpu
   logic [ 63:0] preg_dealloc_mask;
 
   logic         rtu_disp_stall;
+  logic         rtu_disp_stall_nofsm;
   logic         rtu_ren_flush;
   logic         rtu_backend_flush;
   logic [32*`RTU_PREG_W-1:0] rtu_ren_recover_map;   // 宽度随 PREG 档变, 见 RTU.v 端口注
@@ -1202,6 +1203,7 @@ module A910_cpu
   .rtu_idu_rob_inst1_iid          (rtu_idu_rob_inst1_iid),
   .rtu_idu_rob_inst2_iid          (rtu_idu_rob_inst2_iid),
   .rtu_idu_rob_full               (rtu_idu_rob_full),
+  .rtu_idu_rob_full_nofsm         (rtu_disp_stall_nofsm),
   .rtu_idu_rt_recover_preg        (rtu_idu_rt_recover_preg),
   .rtu_yy_xx_flush                (rtu_yy_xx_flush),
   .idu_rtu_ir_preg0_alloc_vld     (idu_rtu_ir_preg0_alloc_vld),
@@ -2091,6 +2093,7 @@ module A910_cpu
 
     // ===================== §6.2 重命名级 =====================
     .rtu_disp_stall             (rtu_disp_stall),
+    .rtu_disp_stall_nofsm       (rtu_disp_stall_nofsm),
     .rtu_ren_recover_vld        (rtu_ren_recover_vld),
     .rtu_ren_recover_map        (rtu_ren_recover_map),
     .rtu_ren_flush              (rtu_ren_flush),

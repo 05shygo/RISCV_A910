@@ -152,6 +152,16 @@
 //   触发一次 `RTU_FS_REPLAY` 冲刷 + 从它的 PC 重取。见 RTU_commit 的仲裁注释。
 `define RTU_E_REPLAY   124
 
+// ---- [R21] bank head 动态位总线: 窗口不再自更新完成/解析/重放, 判退每拍从
+//      bank head 的**下一拍值**实时读。36 bit = {replay, cmplt, target[31:0],
+//      taken, mispred}。VLD 仍由窗口自己保存 (派遣/弹出/冲刷语义)。
+`define RTU_DYN_W        36
+`define RTU_DYN_REPLAY   35
+`define RTU_DYN_CMPLT    34
+`define RTU_DYN_TARGET   33:2
+`define RTU_DYN_TAKEN    1
+`define RTU_DYN_MISPRED  0
+
 // ---- 冲刷来源 (D11 的优先级: 异常/中断 > mret > 误预测) ----
 // ⚠️ 2026-10-08: 由 2 位扩到 3 位 —— 加了第 5 类 `REPLAY` (LSU 报的 store 重放)。
 `define RTU_FS_EXPT     3'd0

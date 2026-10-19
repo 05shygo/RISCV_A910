@@ -87,6 +87,8 @@ module ct_idu_is_ctrl (
   input  logic         div_ctrl_full_updt,
 
   input  logic         rtu_idu_rob_full,
+  // [R10] 同一组原因去掉 RTU 冲刷 FSM busy, 只给 IR 级 alloc/RAT 写
+  input  logic         rtu_idu_rob_full_nofsm,
   input  logic         rtu_yy_xx_flush,
 
   input  logic         sdiq_ctrl_1_left_updt,
@@ -139,6 +141,7 @@ module ct_idu_is_ctrl (
 */
   output logic         ctrl_is_inst2_vld,
   output logic         ctrl_is_stall,
+  output logic         ctrl_is_stall_nofsm,   // [R10] 不含冲刷 FSM busy
 
   output logic [1:0]   ctrl_xx_is_inst0_sel,
 
@@ -224,6 +227,8 @@ logic        ctrl_is_iq_full_updt;
 logic        ctrl_is_iq_full;
 logic        ctrl_is_rob_full;
 logic        ctrl_is_dis_stall;
+logic        ctrl_is_rob_full_nofsm;
+logic        ctrl_is_dis_stall_nofsm;
 
 //==========================================================
 //                IS pipeline registers
@@ -430,9 +435,16 @@ assign ctrl_dp_dis_inst2_preg_vld = is_dis_inst2_vld
                                   && dp_ctrl_is_inst2_dst_vld;
 
 // ---- 派遣记录用: 裸的车道有效 (不串 dst_vld), 见端口表的说明 ----
-assign ctrl_dp_dis_inst0_vld = is_dis_inst0_vld && !ctrl_is_dis_stall;
-assign ctrl_dp_dis_inst1_vld = is_dis_inst1_vld && !ctrl_is_dis_stall;
-assign ctrl_dp_dis_inst2_vld = is_dis_inst2_vld && !ctrl_is_dis_stall;
+// [R8 2026-10-18] 只串 IQ 满, **不再串 RTU 的 stall**:
+//   原来 `!ctrl_is_dis_stall` 把 rtu_disp_stall 组合进这三根 valid, 而 valid
+//   又进 RTU 的 disp_acc → ROB 全部表项数据 mux, 于是
+//   FSM → RTU stall → IDU is_ctrl → RTU/ROB 形成一条跨模块长路 (150MHz 下
+//   -3.335ns, RTU 内部 5369 条违约)。
+//   IDU 自己仍用完整 stall 保持流水 (is_inst/is_dis 的 CE 与 IQ create 都不变);
+//   RTU 侧用本地的 rtu_disp_stall 对这三根裸 valid 做接受门控, 见 RTU.v。
+assign ctrl_dp_dis_inst0_vld = is_dis_inst0_vld && !ctrl_is_iq_full;
+assign ctrl_dp_dis_inst1_vld = is_dis_inst1_vld && !ctrl_is_iq_full;
+assign ctrl_dp_dis_inst2_vld = is_dis_inst2_vld && !ctrl_is_iq_full;
 
 
 //==========================================================
@@ -586,8 +598,18 @@ assign ctrl_is_rob_full = is_dis_inst0_vld && rtu_idu_rob_full;
 
 assign ctrl_is_dis_stall = ctrl_is_rob_full || ctrl_is_iq_full;
 
+// [R10] 去掉冲刷 busy 的同款停派: 只用于 IR 级 preg alloc/RAT 写。
+//   冲刷时 IR 指令本来就会被 ren_recover 冲掉, 它的分配请求若被 FSM 组合
+//   门控, 就会把 FSM → IDU → u_preg/tap/st 拉成一条长路。分配请求在 F1
+//   保持 1 是安全的: RTU_preg 的 tap 在 flush_busy 时清零并停补号
+//   (`hold_alloc`), 五态表由 flush_lvl_q 整表恢复。
+assign ctrl_is_rob_full_nofsm = is_dis_inst0_vld && rtu_idu_rob_full_nofsm;
+
+assign ctrl_is_dis_stall_nofsm = ctrl_is_rob_full_nofsm || ctrl_is_iq_full;
+
 assign ctrl_dp_is_dis_stall = ctrl_is_dis_stall;
 
 assign ctrl_is_stall = ctrl_is_dis_stall;
+assign ctrl_is_stall_nofsm = ctrl_is_dis_stall_nofsm;
 
 endmodule

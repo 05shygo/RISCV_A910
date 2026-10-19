@@ -58,6 +58,7 @@ module RTU_flush (
     input  wire         beu_redirect_vld,// D13: EX 级真的发出误预测重定向的那一拍
 
     output wire         fsm_busy,        // 非 IDLE: 判退要停
+    output wire         freeze_nxt,      // 下一拍 busy (per-bank 同沿副本, 无延迟)
     output wire         flushing,        // 含 T 拍: 冻派遣 + 屏蔽 BEU
     output wire         mispred_pend,    // D13: 有未决快路重定向 (T_ex+1 .. F2)
     output wire         core_redirect,   // T 拍: 核内重定向事件 (= flush_trig, 含误预测)
@@ -194,6 +195,9 @@ module RTU_flush (
     //   改回名实一致, 这里的一个 `~` 必须同步删掉。
     // ---------------------------------------------------------------------
     assign fsm_busy = ~idle;
+    // [R23] 下一拍 busy: 让每 bank 用同一 D 的本地副本驱动 clear/reload,
+    // 把原来 489 负载的单根 fsm_busy 网拆成 8 个本地寄存器。
+    assign freeze_nxt = (idle & flush_trig) | (f1 & ~f1_go);
     assign flushing = flush_trig | ~idle;
 
     // T+1 这一拍: 后端冲刷 + 重命名恢复 **同时** 发生 (原来是 F1/F2 两拍)。

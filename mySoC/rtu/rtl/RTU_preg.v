@@ -127,6 +127,12 @@ module RTU_preg (
 
     // ---- 冲刷 (FLUSH_2) ----
     input  wire        flush_lvl,
+    // [R8 2026-10-18] FSM 非 IDLE (寄存器级)。tap 的清零/停补用它, 不再用当拍
+    //   flush_lvl —— 后者上游是 LSU 的 commit-data 闸门 (`blocked`), 实测
+    //   150MHz 下 cmt_iid_q1 -> tap_num/st 是 -3.300ns, 且网 fo 上百。
+    //   F1 期间判退/派遣都冻结, 提前清 tap 安全; 被闸门挡住时 F1 保持,
+    //   tap 也保持清空, 数据到齐后照同一沿推进。
+    input  wire        flush_busy,
 
     // ---- 输出 (2026-10-07 起都是**寄存值** = 门房 tap 里备着的号) ----
     output wire [`RTU_PREG_W-1:0] rtu_preg_alloc0,
@@ -155,6 +161,55 @@ module RTU_preg (
     reg  [6:0]  free_cnt_q;
     // 写回门 (2026-10-13): 每个号一位 "生产者写回了没有"。见下面 `wb_ok_ext` 那段长注。
     reg  [`RTU_NUM_PREG-1:0] wb_ok;
+
+    // -----------------------------------------------------------------------
+    // [R4 2026-10-18] 退休事件打拍 + one-hot 译码 (同 ARM Enyo
+    // `enyo_rn_general.sv:5623` 的 reclaimed_reg*_q -> reclaimed_reg*_decoded)。
+    //
+    // 五态表的旧写法是拿 `ret_dst_pregK == i` 对每个 preg 各比一次 —— 6 位号在
+    // 64 项上重复扇出 (实测 dst_preg[4] 的网 fo=123、单网走线 5.15ns)。这里照
+    // Enyo: 号先寄存一拍, 再用 `1<<num` 译成独热, 逐项更新只看独热的 1 位。
+    //
+    // ⚠️ AMT 写口**不**走这组寄存值 (见文件末尾): trap/mispred 同拍的 F1 恢复
+    //    要用当拍提交映射, 晚一拍 AMT 就来不及。
+    // ⚠️ 打拍后事件在 T+2 沿落地; flush 必须同步推迟一拍 (`flush_lvl_q`, 见下),
+    //    否则两者在同一沿撞上, 需要做跨 lane 优先级的合并。
+    // -----------------------------------------------------------------------
+    reg  [2:0]  ev_arch_vld;
+    reg  [2:0]  ev_free_vld;
+    reg  [2:0]  ev_kill_vld;
+    reg  [`RTU_PREG_W-1:0] ev_dst0, ev_dst1, ev_dst2;
+    reg  [`RTU_PREG_W-1:0] ev_old0, ev_old1, ev_old2;
+
+    always @(posedge cpu_clk or posedge cpu_rst) begin
+        if (cpu_rst) begin
+            ev_arch_vld <= 3'd0;
+            ev_free_vld <= 3'd0;
+            ev_kill_vld <= 3'd0;
+            ev_dst0 <= {`RTU_PREG_W{1'b0}}; ev_dst1 <= {`RTU_PREG_W{1'b0}};
+            ev_dst2 <= {`RTU_PREG_W{1'b0}};
+            ev_old0 <= {`RTU_PREG_W{1'b0}}; ev_old1 <= {`RTU_PREG_W{1'b0}};
+            ev_old2 <= {`RTU_PREG_W{1'b0}};
+        end else begin
+            ev_arch_vld <= ret_arch_vld;
+            ev_free_vld <= ret_free_vld;
+            ev_kill_vld <= ret_kill_vld;
+            ev_dst0 <= ret_dst_preg0; ev_dst1 <= ret_dst_preg1; ev_dst2 <= ret_dst_preg2;
+            ev_old0 <= ret_old_preg0; ev_old1 <= ret_old_preg1; ev_old2 <= ret_old_preg2;
+        end
+    end
+
+    // [R5] 五态表 / free_cnt 的冲刷动作推迟一拍 (同 Enyo `flush_u1_q`)。
+    //      tap 清零改用寄存器级 `flush_busy`, hold_alloc 把分配门房压住
+    //      (F1 + 冲刷后一拍), 防止从"尚未冲刷的 free_pool"补号 —— 否则号被
+    //      sel_oh 标 WF_ALLOC 的同沿又被 flush 分支置 FREE, 而 tap 已经发出去了
+    //      -> 双分配。
+    reg         flush_lvl_q;
+    always @(posedge cpu_clk or posedge cpu_rst) begin
+        if (cpu_rst) flush_lvl_q <= 1'b0;
+        else         flush_lvl_q <= flush_lvl;
+    end
+    wire hold_alloc = flush_busy | flush_lvl_q;
 
     integer     i;
     integer     k;
@@ -330,6 +385,35 @@ module RTU_preg (
             assign killable_vec[gr] = (st[gr] == `RTU_P_ALLOC) || (st[gr] == `RTU_P_WFALLOC);
         end
     endgenerate
+
+    // -----------------------------------------------------------------------
+    // [R4] 寄存后的号 -> 独热 (每路一份译码, 而不是每个 preg 各比一次)
+    //   kill_oh 还并上 killable_vec (陷阱只 kill 分配出去过的号); 与状态表、计数
+    //   同源, 保证账目一致。
+    // -----------------------------------------------------------------------
+    function [`RTU_NUM_PREG-1:0] preg_oh;
+        input [`RTU_PREG_W-1:0] num;
+        begin
+            preg_oh = {{(`RTU_NUM_PREG-1){1'b0}}, 1'b1} << num;
+        end
+    endfunction
+
+    wire [`RTU_NUM_PREG-1:0] dst_oh0 = preg_oh(ev_dst0);
+    wire [`RTU_NUM_PREG-1:0] dst_oh1 = preg_oh(ev_dst1);
+    wire [`RTU_NUM_PREG-1:0] dst_oh2 = preg_oh(ev_dst2);
+    wire [`RTU_NUM_PREG-1:0] old_oh0 = preg_oh(ev_old0);
+    wire [`RTU_NUM_PREG-1:0] old_oh1 = preg_oh(ev_old1);
+    wire [`RTU_NUM_PREG-1:0] old_oh2 = preg_oh(ev_old2);
+
+    wire [`RTU_NUM_PREG-1:0] arch_oh0 = {`RTU_NUM_PREG{ev_arch_vld[0]}} & dst_oh0;
+    wire [`RTU_NUM_PREG-1:0] arch_oh1 = {`RTU_NUM_PREG{ev_arch_vld[1]}} & dst_oh1;
+    wire [`RTU_NUM_PREG-1:0] arch_oh2 = {`RTU_NUM_PREG{ev_arch_vld[2]}} & dst_oh2;
+    wire [`RTU_NUM_PREG-1:0] free_oh0 = {`RTU_NUM_PREG{ev_free_vld[0]}} & old_oh0;
+    wire [`RTU_NUM_PREG-1:0] free_oh1 = {`RTU_NUM_PREG{ev_free_vld[1]}} & old_oh1;
+    wire [`RTU_NUM_PREG-1:0] free_oh2 = {`RTU_NUM_PREG{ev_free_vld[2]}} & old_oh2;
+    wire [`RTU_NUM_PREG-1:0] kill_oh0 = {`RTU_NUM_PREG{ev_kill_vld[0]}} & dst_oh0 & killable_vec;
+    wire [`RTU_NUM_PREG-1:0] kill_oh1 = {`RTU_NUM_PREG{ev_kill_vld[1]}} & dst_oh1 & killable_vec;
+    wire [`RTU_NUM_PREG-1:0] kill_oh2 = {`RTU_NUM_PREG{ev_kill_vld[2]}} & dst_oh2 & killable_vec;
     // ⚠️ 两道门一起判: **掩码撤下 且 已写回** 才准回池。
     //    这一个向量同时喂状态表那一支与 `n_freed` 计数器 (本文件的既有纪律: 两处
     //    各判各的 = 账目慢慢偏)。
@@ -379,10 +463,13 @@ module RTU_preg (
 
     // 本拍要给哪几路**补号** (= 从这个边沿起, 把选中的 FREE 装进门房)。
     // 池子的 WF_ALLOC 标记跟着它走, 不再跟着"本拍请求"走 —— 号一进 tap 就出池了。
+    // [R5] flush 沿与紧随的一拍压住补号: 这两拍 st 还没被冲刷 (T+1) 或刚被冲刷
+    //      (T+2 沿), 从旧 free_pool 选的号会在同一沿被 flush 分支改回 FREE, 而
+    //      tap 已经把它发给 IDU -> 双分配。hold 结束后 st 已是冲刷后状态。
     wire [2:0] pop_lane;
-    assign pop_lane[0] = !tap_vld0 | take_lane[0] | tap_hit0;
-    assign pop_lane[1] = !tap_vld1 | take_lane[1] | tap_hit1;
-    assign pop_lane[2] = !tap_vld2 | take_lane[2] | tap_hit2;
+    assign pop_lane[0] = ~hold_alloc & (!tap_vld0 | take_lane[0] | tap_hit0);
+    assign pop_lane[1] = ~hold_alloc & (!tap_vld1 | take_lane[1] | tap_hit1);
+    assign pop_lane[2] = ~hold_alloc & (!tap_vld2 | take_lane[2] | tap_hit2);
 
     // 可分配池 = 全表里处于 FREE 的那些。
     // ⚠️ 2026-10-02 (D1.2): 窗口是**全部 96 项**, 不再是 p32..p95 —— 初始映射被顶掉
@@ -440,15 +527,109 @@ module RTU_preg (
     wire [`RTU_NUM_PREG-1:0] sel1_oh = (free_pool & ~fd64) & ~sel0_oh;   // 最低 —— 与 sel0 并行
     wire [`RTU_NUM_PREG-1:0] v1      = free_pool & ~sel0_oh;
 
-    // 第 2 路 (次高) 挂在第 0 路后面: 先去最高再找最高; 第 1 路的掩码仍在末端
-    wire [`RTU_NUM_PREG-1:0] vu1  = v1 >> 1;
-    wire [`RTU_NUM_PREG-1:0] vu2  = vu1  | (vu1  >> 1);
-    wire [`RTU_NUM_PREG-1:0] vu4  = vu2  | (vu2  >> 2);
-    wire [`RTU_NUM_PREG-1:0] vu8  = vu4  | (vu4  >> 4);
-    wire [`RTU_NUM_PREG-1:0] vu16 = vu8  | (vu8  >> 8);
-    wire [`RTU_NUM_PREG-1:0] vu32 = vu16 | (vu16 >> 16);
-    wire [`RTU_NUM_PREG-1:0] vu64 = vu32 | (vu32 >> 32);
-    wire [`RTU_NUM_PREG-1:0] sel2_oh = (v1 & ~vu64) & ~sel1_oh;
+    // 第 2 路 (次高): [R18] 索引域 top-2 锦标赛, 与 lane0 的 fu 树**并行**。
+    //   旧写法: v1 = free & ~最高, 再串一棵 6 级 "any above" 树 (fu64+vu64 共
+    //   ~13 级)。这里 6 级合并同时得到 {最高, 次高}: 每节点 {vld, ge2, first,
+    //   second}, right=高编号半区。lane2 = 次高 & ~最低 (只有 2 个空闲时次高
+    //   就是最低, 被掩掉)。语义与原式逐位相同 (30 万随机向量 + 20 万 RTL 随机)。
+    wire [`RTU_NUM_PREG-1:0] sel2_oh;
+
+    generate
+    if (`RTU_NUM_PREG == 64) begin : g_sel2_top2
+        wire [63:0] l0_vld = free_pool;
+        wire [5:0]  l0_first  [0:63];
+        wire [5:0]  l0_second [0:63];
+        genvar gt;
+          for (gt=0; gt<64; gt=gt+1) begin : g_l0
+            assign l0_first[gt]  = gt[5:0];
+            assign l0_second[gt] = 6'd0;
+          end
+
+        wire [31:0] l1_vld, l1_ge2;
+        wire [5:0]  l1_first [0:31], l1_second[0:31];
+          for (gt=0; gt<32; gt=gt+1) begin : g_l1
+            wire av = l0_vld[2*gt];
+            wire bv = l0_vld[2*gt+1];
+            assign l1_vld[gt]    = av | bv;
+            assign l1_ge2[gt]    = bv & av;
+            assign l1_first[gt]  = bv ? l0_first[2*gt+1] : l0_first[2*gt];
+            assign l1_second[gt] = bv ? (av ? l0_first[2*gt] : 6'd0) : l0_second[2*gt];
+          end
+
+        wire [15:0] l2_vld, l2_ge2;
+        wire [5:0]  l2_first [0:15], l2_second[0:15];
+          for (gt=0; gt<16; gt=gt+1) begin : g_l2
+            wire av = l1_vld[2*gt];
+            wire bv = l1_vld[2*gt+1];
+            wire ag = l1_ge2[2*gt];
+            wire bg = l1_ge2[2*gt+1];
+            assign l2_vld[gt]    = av | bv;
+            assign l2_ge2[gt]    = bv ? (bg | av) : ag;
+            assign l2_first[gt]  = bv ? l1_first[2*gt+1] : l1_first[2*gt];
+            assign l2_second[gt] = bv ? (bg ? l1_second[2*gt+1] : (av ? l1_first[2*gt] : 6'd0))
+                                      : l1_second[2*gt];
+          end
+
+        wire [7:0] l3_vld, l3_ge2;
+        wire [5:0] l3_first [0:7], l3_second[0:7];
+          for (gt=0; gt<8; gt=gt+1) begin : g_l3
+            wire av = l2_vld[2*gt];
+            wire bv = l2_vld[2*gt+1];
+            wire ag = l2_ge2[2*gt];
+            wire bg = l2_ge2[2*gt+1];
+            assign l3_vld[gt]    = av | bv;
+            assign l3_ge2[gt]    = bv ? (bg | av) : ag;
+            assign l3_first[gt]  = bv ? l2_first[2*gt+1] : l2_first[2*gt];
+            assign l3_second[gt] = bv ? (bg ? l2_second[2*gt+1] : (av ? l2_first[2*gt] : 6'd0))
+                                      : l2_second[2*gt];
+          end
+
+        wire [3:0] l4_vld, l4_ge2;
+        wire [5:0] l4_first [0:3], l4_second[0:3];
+          for (gt=0; gt<4; gt=gt+1) begin : g_l4
+            wire av = l3_vld[2*gt];
+            wire bv = l3_vld[2*gt+1];
+            wire ag = l3_ge2[2*gt];
+            wire bg = l3_ge2[2*gt+1];
+            assign l4_vld[gt]    = av | bv;
+            assign l4_ge2[gt]    = bv ? (bg | av) : ag;
+            assign l4_first[gt]  = bv ? l3_first[2*gt+1] : l3_first[2*gt];
+            assign l4_second[gt] = bv ? (bg ? l3_second[2*gt+1] : (av ? l3_first[2*gt] : 6'd0))
+                                      : l3_second[2*gt];
+          end
+
+        wire [1:0] l5_vld, l5_ge2;
+        wire [5:0] l5_first [0:1], l5_second[0:1];
+          for (gt=0; gt<2; gt=gt+1) begin : g_l5
+            wire av = l4_vld[2*gt];
+            wire bv = l4_vld[2*gt+1];
+            wire ag = l4_ge2[2*gt];
+            wire bg = l4_ge2[2*gt+1];
+            assign l5_vld[gt]    = av | bv;
+            assign l5_ge2[gt]    = bv ? (bg | av) : ag;
+            assign l5_first[gt]  = bv ? l4_first[2*gt+1] : l4_first[2*gt];
+            assign l5_second[gt] = bv ? (bg ? l4_second[2*gt+1] : (av ? l4_first[2*gt] : 6'd0))
+                                      : l4_second[2*gt];
+          end
+
+        wire r_vld  = l5_vld[0] | l5_vld[1];
+        wire r_ge2  = l5_vld[1] ? (l5_ge2[1] | l5_vld[0]) : l5_ge2[0];
+        wire [5:0] r_second = l5_vld[1] ? (l5_ge2[1] ? l5_second[1] :
+                                          (l5_vld[0] ? l5_first[0] : 6'd0))
+                                        : l5_second[0];
+        assign sel2_oh = r_ge2 ? ((64'd1 << r_second) & ~sel1_oh) : 64'd0;
+    end else begin : g_sel2_legacy
+        // 96 档: 保持原串行树 (A910 只用 64 档, 这里保证单元台/其他配置不变)
+        wire [`RTU_NUM_PREG-1:0] vu1  = v1 >> 1;
+        wire [`RTU_NUM_PREG-1:0] vu2  = vu1  | (vu1  >> 1);
+        wire [`RTU_NUM_PREG-1:0] vu4  = vu2  | (vu2  >> 2);
+        wire [`RTU_NUM_PREG-1:0] vu8  = vu4  | (vu4  >> 4);
+        wire [`RTU_NUM_PREG-1:0] vu16 = vu8  | (vu8  >> 8);
+        wire [`RTU_NUM_PREG-1:0] vu32 = vu16 | (vu16 >> 16);
+        wire [`RTU_NUM_PREG-1:0] vu64 = vu32 | (vu32 >> 32);
+        assign sel2_oh = (v1 & ~vu64) & ~sel1_oh;
+    end
+    endgenerate
 
     // ⚠️ 先把每个候选池声明出来再用 —— 本仓有"先用后声明造 1 位隐式线网"的前科
     //    (cpu/sim/rtl_patch/README.md 与 §9 的 R7), 症状是**语义静默错**而不是报错。
@@ -558,12 +739,12 @@ module RTU_preg (
     //    契约上不可达 (陷阱那条的 dst_preg 必然 ALLOC), 但闸门该按语义写, 不按
     //    "目前只有三态"写。
     // -----------------------------------------------------------------------
-    wire [2:0] kill_hit = { ret_kill_vld[2] & killable_vec[ret_dst_preg2],
-                            ret_kill_vld[1] & killable_vec[ret_dst_preg1],
-                            ret_kill_vld[0] & killable_vec[ret_dst_preg0] };
+    wire [2:0] kill_hit = { |kill_oh2, |kill_oh1, |kill_oh0 };
 
     // -----------------------------------------------------------------------
     // 五态表更新 (优先级: 冲刷 > 退休 > 释放落下 > 派遣确认 > 本拍选中 > 保持)
+    // [R4] 退休三支改看**寄存事件的独热** (ev_*); 跨 lane 顺序仍是"年轻车道赢"
+    //      (lane2 -> 1 -> 0), 与旧写法逐位等价。
     // -----------------------------------------------------------------------
     always @(*) begin
         for (i = 0; i < `RTU_NUM_PREG; i = i + 1) begin
@@ -588,8 +769,10 @@ module RTU_preg (
             //    发射、写回全是对的, 极难定位。
             if (i == 0) begin
                 nst[i] = `RTU_P_ARCH;
-            end else if (flush_lvl) begin
+            end else if (flush_lvl_q) begin
                 // 冲刷: 没退休的一律回 FREE, 架构态不动。
+                // ⚠️ [R5] 用推迟一拍的 flush_lvl_q —— 寄存事件在 T+2 沿落地,
+                //    冲刷在 T+3 沿落地, 两者不在同一沿, 不需要跨 lane 合并。
                 // ⚠️ **掩码那一道门**在冲刷里绕过是有理由的, 不是漏了: 同一次冲刷里
                 //    IDU 把 SDIQ 表项的 vld 与掩码寄存器一起清掉
                 //    (ct_idu_is_sdiq_entry.sv:115 / ct_idu_is_sdiq.sv:398-399),
@@ -605,25 +788,19 @@ module RTU_preg (
                 //    仍被挡着的 RELEASE **原样留着**, 等门自己开。
                 nst[i] = (st[i] == `RTU_P_ARCH)    ? `RTU_P_ARCH :
                          rel_keep_vec[i]           ? `RTU_P_RELEASE : `RTU_P_FREE;
-            end else if ((ret_arch_vld[2] && (ret_dst_preg2 == i))) begin
+            end else if (arch_oh2[i]) begin
                 nst[i] = `RTU_P_ARCH;
-            end else if ((kill_hit[2] && (ret_dst_preg2 == i)) ||
-                         (ret_free_vld[2] && (ret_old_preg2 == i))) begin
+            end else if (kill_oh2[i] || free_oh2[i]) begin
                 // 退休释放**一律先落 RELEASE** (无条件, 不看掩码): 见文件头与端口注释。
-                nst[i] = (ret_free_vld[2] && (ret_old_preg2 == i)) ? `RTU_P_RELEASE
-                                                                   : `RTU_P_FREE;
-            end else if ((ret_arch_vld[1] && (ret_dst_preg1 == i))) begin
+                nst[i] = free_oh2[i] ? `RTU_P_RELEASE : `RTU_P_FREE;
+            end else if (arch_oh1[i]) begin
                 nst[i] = `RTU_P_ARCH;
-            end else if ((kill_hit[1] && (ret_dst_preg1 == i)) ||
-                         (ret_free_vld[1] && (ret_old_preg1 == i))) begin
-                nst[i] = (ret_free_vld[1] && (ret_old_preg1 == i)) ? `RTU_P_RELEASE
-                                                                   : `RTU_P_FREE;
-            end else if ((ret_arch_vld[0] && (ret_dst_preg0 == i))) begin
+            end else if (kill_oh1[i] || free_oh1[i]) begin
+                nst[i] = free_oh1[i] ? `RTU_P_RELEASE : `RTU_P_FREE;
+            end else if (arch_oh0[i]) begin
                 nst[i] = `RTU_P_ARCH;
-            end else if ((kill_hit[0] && (ret_dst_preg0 == i)) ||
-                         (ret_free_vld[0] && (ret_old_preg0 == i))) begin
-                nst[i] = (ret_free_vld[0] && (ret_old_preg0 == i)) ? `RTU_P_RELEASE
-                                                                   : `RTU_P_FREE;
+            end else if (kill_oh0[i] || free_oh0[i]) begin
+                nst[i] = free_oh0[i] ? `RTU_P_RELEASE : `RTU_P_FREE;
             end else if (rel_go_vec[i]) begin
                 // **电平**, 不是脉冲: 释放请求那一拍只把号挂进 RELEASE, 真正回池
                 // 发生在这里 —— 掩码把这个号撤下来的那一拍。必须有这一支:
@@ -673,7 +850,9 @@ module RTU_preg (
             tap_vld0 <= 1'b0; tap_num0 <= 7'd0;
             tap_vld1 <= 1'b0; tap_num1 <= 7'd0;
             tap_vld2 <= 1'b0; tap_num2 <= 7'd0;
-        end else if (flush_lvl) begin
+        end else if (flush_busy) begin
+            // [R8] 寄存器级冲刷窗 (F1, 可能因 LSU commit-data 闸门拉长);
+            //      五态表的实际 FREE 化仍由 flush_lvl_q 晚一拍做。
             tap_vld0 <= 1'b0; tap_num0 <= 7'd0;
             tap_vld1 <= 1'b0; tap_num1 <= 7'd0;
             tap_vld2 <= 1'b0; tap_num2 <= 7'd0;
@@ -772,7 +951,8 @@ module RTU_preg (
         //    (改之前 RELEASE 一律归 FREE, 所以只减 arch_cnt 就够了。)
         //    ⚠️ `arch_cnt` 与 `rel_keep_vec` 都是组合、取**边沿前**的 st[] ——
         //       与那两支看的同一帧。
-        else if (flush_lvl)   free_cnt_q <= `RTU_NUM_PREG - arch_cnt
+        // [R5] 与状态表同一帧: 用推迟一拍的 flush_lvl_q, 此时 st 已含 T 拍退休事件。
+        else if (flush_lvl_q) free_cnt_q <= `RTU_NUM_PREG - arch_cnt
                                             - $countones(rel_keep_vec);
         // ⚠️ 加减**必须在 8 位里算** (n_freed/n_alloc 已是 8 位 ⇒ 表达式宽度 8):
         //    见上面那条位宽注释, 7 位中间值会回绕。

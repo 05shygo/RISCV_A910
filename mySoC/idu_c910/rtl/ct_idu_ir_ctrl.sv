@@ -9,6 +9,7 @@ module ct_idu_ir_ctrl (
   input  logic         ctrl_id_pipedown_inst2_vld,
   input  logic         ctrl_is_inst2_vld,
   input  logic         ctrl_is_stall,
+  input  logic         ctrl_is_stall_nofsm,   // [R10] 不含冲刷 FSM busy
   input  logic [1:0]   ctrl_xx_is_inst0_sel,
   input  logic [6:0]   dp_ctrl_ir_inst0_ctrl_info,
   input  logic         dp_ctrl_ir_inst0_dst_vld,
@@ -71,6 +72,7 @@ module ct_idu_ir_ctrl (
   output logic [1:0]   ctrl_ir_pre_dis_sdiq_create1_sel,
   output logic         ctrl_ir_stage_stall,
   output logic         ctrl_ir_stall,
+  output logic         ctrl_ir_alloc_stall,   // [R10] 只给 alloc/RAT 写
   output logic         ctrl_rt_inst0_vld,
   output logic         ctrl_rt_inst1_vld,
   output logic         ctrl_rt_inst2_vld,
@@ -276,19 +278,22 @@ assign ctrl_ir_stage_stall  = ctrl_ir_preg_stall;
 
 assign ctrl_ir_stall = ir_inst0_vld && (ctrl_is_stall || ctrl_ir_stage_stall);
 
+// [R10] preg alloc / RAT 写用它: 不含 RTU 冲刷 FSM. 流水保持仍用上面那根。
+assign ctrl_ir_alloc_stall = ir_inst0_vld && (ctrl_is_stall_nofsm || ctrl_ir_stage_stall);
+
 //==========================================================
 //  Allocate signal for Ptag pool / PST preg / LSU pcfifo
 //==========================================================
 assign idu_rtu_ir_preg0_alloc_vld = ir_inst0_vld
-                                    && !ctrl_ir_stall
+                                    && !ctrl_ir_alloc_stall
                                     && dp_ctrl_ir_inst0_dst_vld
                                     && !dp_ctrl_ir_inst0_dst_x0;
 assign idu_rtu_ir_preg1_alloc_vld = ir_inst1_vld
-                                    && !ctrl_ir_stall
+                                    && !ctrl_ir_alloc_stall
                                     && dp_ctrl_ir_inst1_dst_vld
                                     && !dp_ctrl_ir_inst1_dst_x0;
 assign idu_rtu_ir_preg2_alloc_vld = ir_inst2_vld
-                                    && !ctrl_ir_stall
+                                    && !ctrl_ir_alloc_stall
                                     && dp_ctrl_ir_inst2_dst_vld
                                     && !dp_ctrl_ir_inst2_dst_x0
                                     && !ctrl_xx_is_inst0_sel[0];

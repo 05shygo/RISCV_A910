@@ -353,6 +353,11 @@ module RTU (
                                             //   冲刷窗口 / 未决快路重定向
                                             //   ⚠️ 只依赖寄存器 (P8); 消费时必须
                                             //   "停前端 + 给 EX 灌气泡"成对拉
+    // [R10 2026-10-18] 同一组停派原因, **去掉冲刷 FSM busy**. 给 IDU 的
+    //   preg alloc / RAT 写用: 那两条由 flush 时的 RAT 整表 recover 兜底,
+    //   不能再把 FSM 组合进 IDU -> preg tap 的分配握手 (150MHz 下
+    //   FSM -> IDU ctrl_ir_stall -> alloc_vld -> u_preg/tap/st -2.93ns)。
+    output wire        rtu_disp_stall_nofsm,
     output wire        rtu_ren_recover_vld, // 恢复映射有效 (与 _map 同拍)
     // 32 × `RTU_PREG_W` bit AMT, `[`RTU_PREG_W*l +: `RTU_PREG_W]` = x_l 的映射。
     // ⚠️ 宽度**随配置变** (64 档 32×6 = 192 / 96 档 224): 这么切才有意义 ——
@@ -456,6 +461,7 @@ module RTU (
     wire        flushing;                    // 冲刷窗口 (含 T 拍)
     wire        mispred_pend;                // D13: 有未决快路重定向 (T_ex+1 .. F2)
     wire        fsm_busy;
+    wire        freeze_nxt;
 
     // 引出口: 与喂给 RTU_commit 的 `fsm_busy` 是同一根 (2026-10-12)
     assign rtu_flush_busy = fsm_busy;
@@ -473,7 +479,6 @@ module RTU (
     wire [2:0]  disp_acc;
     wire [2:0]  disp_wrap;
     wire [5:0]  cptr_idx;                    // 创造指针的二进制下标 (派遣回执)
-    wire [2:0]  disp_vld_raw;
     // ---- 表项里的 preg 字段: 显式零扩展到 `RTU_PREG_EW ----------------
     // ⚠️⚠️ 这一步**不能省**。表项位域固定 `RTU_PREG_EW`(7) 位, 而端口是
     //    `RTU_PREG_W`。64 档下若直接拼 6 位的 disp*_dst_preg, 拼接会比
@@ -521,11 +526,15 @@ module RTU (
     // =======================================================================
     // 派遣车道: 收口成程序序前缀 (§6 的硬约定 1; 允许少于 3 条, 不许跳号)
     // =======================================================================
-    assign disp_acc[0] = disp0_vld & ~flushing;
+    // [R8 2026-10-18] IDU 给来的 disp*_vld 只扣了 IQ 满 (见 ct_idu_is_ctrl),
+    //   所有 RTU 侧停派原因在这里**本地**合并。这样 rtu_disp_stall 不再经
+    //   IDU 的 is_ctrl 组合回 ROB 表项数据 mux —— 150MHz 下那圈是
+    //   FSM → IDU → RTU/ROB -3.335ns (RTU 内部 5369 条)。
+    //   行为与旧式 "IDU 用 !rtu_disp_stall 扣 valid + RTU 再扣 fsm_busy" 等价:
+    //   T 拍(flush 决策拍, fsm_busy=0) 照放一拍, F1 把这一刻的指令冲掉。
+    assign disp_acc[0] = disp0_vld & ~rtu_disp_stall;
     assign disp_acc[1] = disp_acc[0] & disp1_vld;
     assign disp_acc[2] = disp_acc[1] & disp2_vld;
-
-    assign disp_vld_raw = {disp2_vld, disp1_vld, disp0_vld};
 
     // 表项拼装 (位序 = RTU_define.vh 里那张图, 一个字都不能错)
     // ⚠️⚠️ 字段顺序必须与 `RTU_define.vh` 的位域表**逐行对齐**, 而且必须**写满
@@ -562,8 +571,11 @@ module RTU (
     RTU_ROB u_rob (
         .cpu_clk            (cpu_clk),
         .cpu_rst            (cpu_rst),
-        .flushing           (flushing),
-        .disp_vld           (disp_vld_raw),
+        .disp_freeze        (fsm_busy),   // [R6] 派遣冻结口径 = 寄存器级, 不含 T 拍
+        .freeze_nxt         (freeze_nxt), // [R23] per-bank flush 副本的下一拍值
+        // [R8] 传**本地已门控**的车道 (含 rob_full/csr/mispred); ROB 内再扣
+        //      disp_freeze 是冗余但无害 (disp_acc=1 时 fsm_busy 必为 0)。
+        .disp_vld           (disp_acc),
         .disp_data0         (disp_data0),
         .disp_data1         (disp_data1),
         .disp_data2         (disp_data2),
@@ -809,6 +821,7 @@ module RTU (
         .preg_dealloc_mask  (preg_dealloc_mask),
         .preg_wb_mask       (preg_wb_mask_i),
         .flush_lvl          (flush_lvl),
+        .flush_busy         (fsm_busy),
         .rtu_preg_alloc0    (rtu_preg_alloc0),
         .rtu_preg_alloc1    (rtu_preg_alloc1),
         .rtu_preg_alloc2    (rtu_preg_alloc2),
@@ -849,6 +862,7 @@ module RTU (
         .lsu_all_commit_data_vld(lsu_rtu_all_commit_data_vld),
         .beu_redirect_vld(beu_redirect_vld),
         .fsm_busy       (fsm_busy),
+        .freeze_nxt     (freeze_nxt),
         .flushing       (flushing),
         .mispred_pend   (mispred_pend),
         .core_redirect  (rtu_core_redirect),
@@ -888,7 +902,25 @@ module RTU (
     // ⚠️ mispred_pend 是**寄存器** (见 RTU_flush) —— P8 要求这一项不许把
     //    beu_redirect_vld 组合进来 (那会造出"EX 控制锥 -> 前端捕获使能"的新长链,
     //    而 r3 的绑定路径正是 ex_csr_op -> U_ID_EX/*_reg/CE 那一族)。
-    assign rtu_disp_stall = rob_full | csr_inflight | flushing | mispred_pend;
+    //
+    // [R6 2026-10-18] 原来这里还有一项**组合的** `flushing = flush_trig | ~idle`,
+    // 它把队头表项 -> flush_trig -> IDU -> preg tap/五态表 串成一个组合环
+    // (r3 实测最差 -5.173, R4/R5 后源头换成 expt_iid, -5.353)。改用
+    // `fsm_busy` (FSM 状态, 纯寄存器) 后, T 拍放行、T+1..F1 冻结 —— 与 ARM Enyo
+    // `ct_rn_flush_pndg`(寄存)+`flush_u1_q` 同一形态, 由 T+1 的 backend_flush
+    // 把 T 拍进 IDU/ROB 的指令冲掉。
+    // ⚠️ `flushing` 仍原样送给 beu_mask (BEU 屏蔽必须从 T 拍起), 这里只动派遣。
+    // [R10] 拆成 "非冲刷原因" 和 "+冲刷 busy" 两根:
+    //   * rtu_disp_stall      : 前端停派 + IDU 流水保持 (含 F1);
+    //   * rtu_disp_stall_nofsm: 只给 IDU 的 preg alloc/RAT 写, 不含 F1。
+    //     F1 里那条 IR 指令本来就会被 ren_recover 冲掉, 它的分配不该把
+    //     FSM 状态组合进 u_preg 的 tap/st 数据面 (A76 的 flush 也是寄存级,
+    //     free-list 恢复由 flush_u1_q 单独做, 不在 rename 请求路径上)。
+    // [R13] mispred_pend 也不进 alloc/RAT 那一路: 这段时间分配的号/改的名
+    //   都会被随后的 F1 冲刷 + RAT 整表 recover 回收 (BEU 重定向一定会发冲刷)。
+    //   流水保持 (rtu_disp_stall) 仍含它, 所以 IR/IS 不会前进、IQ 不会创建。
+    assign rtu_disp_stall_nofsm = rob_full | csr_inflight;
+    assign rtu_disp_stall = rtu_disp_stall_nofsm | fsm_busy | mispred_pend;
 
     // =======================================================================
     // 其余提交点副作用与 retire 计数
