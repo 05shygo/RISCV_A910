@@ -182,8 +182,11 @@ wire [127:0] refill_data;
 wire         refill_busy;
 wire         refill_req;
 
+// ⚠️ 不用 redirect 门控: 回填是路径无关的 (填一行以后可能用到), 而 redirect
+// 来自 BEU, 横跨大半个芯片, 组合进 refill 请求会变成跨模块长路径。
+// redirect 当拍的 IFU 状态由各状态机的 redirect 分支清掉, 回填事务本身无害。
 assign refill_req = ifu_ic_req_active & ~ic_q_hit & ~refill_busy &
-                    ic_init_done & ~redirect;
+                    ic_init_done;
 
 rv32ifu2_icache #(
     .IC_BYTES  (IC_BYTES),

@@ -408,6 +408,7 @@ module RTU_subsys (
     wire [6:0] rtu_disp_iid1                         ;   // 内部
     wire [6:0] rtu_disp_iid2                         ;   // 内部
     wire rtu_disp_stall                        ;   // 内部
+    wire rtu_disp_stall_nofsm                  ;   // 内部 [R10]
     wire [5:0] rtu_idu_alloc_preg0                   ;   // 内部
     wire rtu_idu_alloc_preg0_vld               ;   // 内部
     wire [5:0] rtu_idu_alloc_preg1                   ;   // 内部
@@ -570,6 +571,7 @@ module RTU_subsys (
     .rtu_beu_retire_iid                 (rtu_beu_retire_iid                ),
     .rtu_beu_flush_chgflw_mask          (rtu_beu_flush_chgflw_mask         ),
     .rtu_disp_stall                     (rtu_disp_stall                    ),
+    .rtu_disp_stall_nofsm               (rtu_disp_stall_nofsm              ),
     .rtu_ren_recover_vld                (rtu_ren_recover_vld               ),
     .rtu_ren_recover_map                (rtu_ren_recover_map               ),
     .rtu_ren_flush                      (rtu_ren_flush                     ),
@@ -654,6 +656,7 @@ module RTU_subsys (
     .rtu_idu_rob_inst1_iid              (rtu_idu_rob_inst1_iid             ),
     .rtu_idu_rob_inst2_iid              (rtu_idu_rob_inst2_iid             ),
     .rtu_idu_rob_full                   (rtu_idu_rob_full                  ),
+    .rtu_idu_rob_full_nofsm             (rtu_disp_stall_nofsm              ),
     .rtu_idu_rt_recover_preg            (rtu_idu_rt_recover_preg           ),
     .rtu_yy_xx_flush                    (rtu_yy_xx_flush                   ),
     .idu_rtu_ir_preg0_alloc_vld         (idu_rtu_ir_preg0_alloc_vld        ),

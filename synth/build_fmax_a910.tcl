@@ -2,12 +2,13 @@
 # A910 + ifu3 的 Fmax 测量 —— xc7k325tffg900-2
 #
 # 用法:
-#   vivado -mode batch -source synth/build_fmax_a910.tcl -tclargs <period_ns> <synth|impl> [ifu2|ifu3]
+#   vivado -mode batch -source synth/build_fmax_a910.tcl -tclargs <period_ns> <synth|impl> [ifu2|ifu3] [banks|grid]
 #
 #   period_ns : create_clock 的目标周期 (ns)。190MHz -> 5.263; 150MHz -> 6.667
 #   synth|impl: 只到综合 / 实现。impl 先跑到 phys_opt_design，再执行
 #               lsu_repl.tcl 的 LSU 定向复制，最后 route_design (Fmax 要 impl 才算数)
 #   ifu2|ifu3 : 前端配置, 默认 ifu3
+#   banks|grid: 可选 Pblock 布局约束 (impl 阶段), 默认不加
 #
 # 配置口径 = Makefile 的 `A910_IFU=<n>` 那条线 (见 Makefile:958-989):
 #   A910_cpu 顶层, RTU_PREG64, DCACHE_2KB (DCACHE_SIZE 默认 2048)
@@ -31,10 +32,12 @@
 set PERIOD 5.263
 set MODE   "impl"
 set IFU    "ifu3"
+set PB     "none"
 
 if {[llength $argv] >= 1} { set PERIOD [lindex $argv 0] }
 if {[llength $argv] >= 2} { set MODE   [lindex $argv 1] }
 if {[llength $argv] >= 3} { set IFU    [lindex $argv 2] }
+if {[llength $argv] >= 4} { set PB     [lindex $argv 3] }
 if {$MODE ne "synth" && $MODE ne "impl"} {
     error "MODE 只能是 synth 或 impl, 当前是 '$MODE'"
 }
@@ -53,6 +56,7 @@ puts "================================================================"
 # 工程目录带 a910_<ifu> 前缀: 与 miniRV 的 fmax_<mode>_<period>ns 分开,
 # 同名周期的不同配置也不会互相删目录。
 set PROJ_NAME "fmax_a910_${IFU}_${MODE}_${PERIOD}ns"
+if {$PB ne "none"} { append PROJ_NAME "_${PB}" }
 set PROJ_DIR  [file join $SP "vivado" $PROJ_NAME]
 if {[file exists $PROJ_DIR]} {
     if {[catch {file delete -force $PROJ_DIR} err]} {
@@ -137,6 +141,9 @@ add_files -fileset constrs_1 $xdc
 # ---------------------------------------------------------------------------
 set_property strategy Flow_PerfOptimized_high [get_runs synth_1]
 set_property strategy Performance_NetDelay_high [get_runs impl_1]
+# [R11] RTU 内部 150MHz 目标: 快速臂实测 ExtraTimingOpt 比
+# ExtraNetDelay_high 的内部最差好 ~1.1ns、top 好 ~0.9ns。
+set_property STEPS.PLACE_DESIGN.ARGS.DIRECTIVE ExtraTimingOpt [get_runs impl_1]
 
 launch_runs synth_1 -jobs 8
 wait_on_run synth_1
@@ -144,10 +151,20 @@ if {[get_property PROGRESS [get_runs synth_1]] ne "100%"} {
     error "synth_1 FAILED: [get_property STATUS [get_runs synth_1]]"
 }
 
+# 可选 Pblock: 在 impl 的 opt_design 之前把布局脚本挂进 run。
+if {$MODE eq "impl" && $PB ne "none"} {
+    set pb_tcl [file join $ROOT synth "pblock_a910_${PB}.tcl"]
+    if {![file exists $pb_tcl]} { error "缺少 Pblock 脚本: $pb_tcl" }
+    set_property STEPS.OPT_DESIGN.TCL.PRE $pb_tcl [get_runs impl_1]
+    puts "impl_1 OPT_DESIGN.TCL.PRE = $pb_tcl"
+}
+
 if {$MODE eq "impl"} {
+    # 跑到 phys_opt_design 后打开 checkpoint, 由 lsu_repl.tcl 做 LSU 定向复制
+    # (内含 phys_opt_design -force_replication_on_nets 与 route_design)。
     launch_runs impl_1 -to_step phys_opt_design -jobs 8
     wait_on_run impl_1
-    if {[string match "*FAILED*" [get_property STATUS [get_runs impl_1]]]} {
+    if {[get_property PROGRESS [get_runs impl_1]] ne "100%"} {
         error "impl_1 FAILED: [get_property STATUS [get_runs impl_1]]"
     }
     set physopt_dcp [file join $PROJ_DIR ${PROJ_NAME}.runs impl_1 top_a910_fmax_physopt.dcp]
@@ -178,6 +195,18 @@ if {[catch {
         puts "S0 report: 找不到 s0_*start_pc_reg, 跳过"
     }
 } err]} { puts "S0 report skipped: $err" }
+
+# RTU 内部 (from/to 都在 u_cpu/u_rtu 内) 的最差 slack / 违约条数。
+# 150MHz 的验收口径: 这条路径族必须 0 条 / 正 slack (top WNS 是 AXI pad 主导)。
+set rtu_cells [get_cells -hier -quiet -filter {NAME =~ "u_cpu/u_rtu/*"}]
+set rtu_ps    [get_timing_paths -delay_type max -max_paths 20000 \
+                   -from $rtu_cells -to $rtu_cells -slack_lesser_than 0]
+puts "RTU_INT_VIOL_N=[llength $rtu_ps]"
+set rtu_worst [get_property SLACK [get_timing_paths -delay_type max -max_paths 1 \
+                   -from $rtu_cells -to $rtu_cells]]
+puts "RTU_INT_WORST=$rtu_worst"
+report_timing -delay_type max -from $rtu_cells -to $rtu_cells \
+    -max_paths 100 -file [file join $PROJ_DIR rtu_int.rpt]
 
 set wns  [get_property SLACK [get_timing_paths -delay_type max -max_paths 1]]
 set fmax [expr {1000.0 / ($PERIOD - $wns)}]

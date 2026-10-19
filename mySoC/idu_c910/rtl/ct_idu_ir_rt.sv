@@ -6,6 +6,8 @@ module ct_idu_ir_rt (
   input  logic         forever_cpuclk,
   input  logic         cpurst_b,
   input  logic         ctrl_ir_stall,
+  // [R10] IR 级 alloc/RAT 写专用: 不含 RTU 冲刷 FSM busy (流水保持仍用 ctrl_ir_stall)
+  input  logic         ctrl_ir_alloc_stall,
   // [0]=pipedown2 (顺延): 本拍 IR 车道 2 的指令**发不出去**, 会回灌到车道 0 再改一次名。
   // 与 ct_idu_ir_ctrl 的 `idu_rtu_ir_preg2_alloc_vld` 用**同一根信号** (同拍同域),
   // 两边必须一起门 —— 见下面 `inst2_write_en` 的说明。
@@ -177,14 +179,14 @@ ct_rtu_expand_32  x_ct_rtu_expand_32_dp_rt_inst2_dst_reg_lsb (
 );
 
 assign inst0_write_en              = ctrl_rt_inst0_vld
-                                     && !ctrl_ir_stall
+                                     && !ctrl_ir_alloc_stall
                                      && !rt_recover_updt_vld
                                      &&  dp_rt_inst0_dst_vld;
 assign reg_write0_en[31:0]         = dp_rt_inst0_dst_reg_lsb_expand[31:0]
                                      & {32{inst0_write_en}};
 
 assign inst1_write_en              = ctrl_rt_inst1_vld
-                                     && !ctrl_ir_stall
+                                     && !ctrl_ir_alloc_stall
                                      && !rt_recover_updt_vld
                                      &&  dp_rt_inst1_dst_vld;
 assign reg_write1_en[31:0]         = dp_rt_inst1_dst_reg_lsb_expand[31:0]
@@ -206,9 +208,11 @@ assign reg_write1_en[31:0]         = dp_rt_inst1_dst_reg_lsb_expand[31:0]
 // 这一条与 `ct_idu_ir_ctrl.idu_rtu_ir_preg2_alloc_vld` (本文件外的另一半) 是
 // **同一处 bug 的两半**, 必须同时门掉: 只门分配请求 ⇒ 写进去的是没分配出去的号;
 // 只门写表 ⇒ 白抽一个号 (无害但漏号)。见 doc/a910_difftest_zh.md §4.6。
+// [R10] 两半统一改用 `ctrl_ir_alloc_stall` (不含冲刷 FSM): 仍是同拍同域, 只是
+//   把 FSM busy 从 alloc/RAT 数据面挪走; 冲刷时的写由 ren_recover 整表覆盖。
 // ---------------------------------------------------------------------------
 assign inst2_write_en              = ctrl_rt_inst2_vld
-                                     && !ctrl_ir_stall
+                                     && !ctrl_ir_alloc_stall
                                      && !rt_recover_updt_vld
                                      && !ctrl_xx_is_inst0_sel[0]
                                      &&  dp_rt_inst2_dst_vld;

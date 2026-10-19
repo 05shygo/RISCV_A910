@@ -34,6 +34,8 @@ module ct_idu_top(
   input  logic [6:0]   rtu_idu_rob_inst1_iid,
   input  logic [6:0]   rtu_idu_rob_inst2_iid,
   input  logic         rtu_idu_rob_full,
+  // [R10] 同一组停派原因去掉冲刷 FSM busy, 只给 IR 级 preg alloc/RAT 写用
+  input  logic         rtu_idu_rob_full_nofsm,
   input  logic [191:0] rtu_idu_rt_recover_preg,
   input  logic         rtu_yy_xx_flush,
   output logic         idu_rtu_ir_preg0_alloc_vld,
@@ -375,6 +377,7 @@ logic [24:0]  dp_id_pipedown_inst2_chk;
 
 // IR Stage control signals
 logic        ctrl_ir_stall;
+logic        ctrl_ir_alloc_stall;   // [R10] 不含冲刷 FSM, 只给 alloc/RAT 写
 logic        ctrl_ir_pipedown;
 //logic        ctrl_ir_inst2_vld;
 logic        ctrl_ir_pre_dis_aiq0_create0_en;
@@ -467,6 +470,7 @@ logic [5:0]  rt_dp_inst2_rel_preg;
 
 // IS Stage control signals
 logic        ctrl_is_stall;
+logic        ctrl_is_stall_nofsm;   // [R10] 去掉冲刷 FSM busy
 logic        ctrl_is_inst2_vld;
 // 语义(照 ct_idu_id_dp 的 case)：2'b10 = 三条都取自 IFU 的 0/1/2 车道(1:1 打包)；
 // 2'b01 = IR 级只放行了两条，inst2 顺延成新的 inst0(走 crtl_ir_inst2_data 旁路)。
@@ -698,6 +702,7 @@ ct_idu_ir_ctrl x_ct_idu_ir_ctrl (
   .ctrl_id_pipedown_inst2_vld            (id_ir_inst2_vld),
   .ctrl_is_inst2_vld                     (ctrl_is_inst2_vld),
   .ctrl_is_stall                         (ctrl_is_stall),
+  .ctrl_is_stall_nofsm                   (ctrl_is_stall_nofsm),
   .ctrl_xx_is_inst0_sel                  (ctrl_xx_is_inst0_sel),
   .dp_ctrl_ir_inst0_ctrl_info            (dp_ctrl_ir_inst0_ctrl_info),
   .dp_ctrl_ir_inst0_dst_vld              (dp_ctrl_ir_inst0_dst_vld),
@@ -738,6 +743,7 @@ ct_idu_ir_ctrl x_ct_idu_ir_ctrl (
   .ctrl_ir_pre_dis_sdiq_create1_sel      (ctrl_ir_pre_dis_sdiq_create1_sel),
   .ctrl_ir_stage_stall                   (ctrl_ir_stage_stall),
   .ctrl_ir_stall                          (ctrl_ir_stall),
+  .ctrl_ir_alloc_stall                    (ctrl_ir_alloc_stall),
   .ctrl_rt_inst0_vld                     (ctrl_rt_inst0_vld),
   .ctrl_rt_inst1_vld                     (ctrl_rt_inst1_vld),
   .ctrl_rt_inst2_vld                     (ctrl_rt_inst2_vld),
@@ -834,6 +840,7 @@ ct_idu_ir_rt x_ct_idu_ir_rt (
   .forever_cpuclk                        (forever_cpuclk),//2026-10-08 补: 改名表的时钟
   .cpurst_b                              (cpurst_b),
   .ctrl_ir_stall                              (ctrl_ir_stall),
+  .ctrl_ir_alloc_stall                        (ctrl_ir_alloc_stall),
   .ctrl_xx_is_inst0_sel                  (ctrl_xx_is_inst0_sel),//顺延那拍不写改名表
   .ctrl_rt_inst0_vld                     (ctrl_rt_inst0_vld),//2026-10-08 补: 原来是空连接
   .ctrl_rt_inst1_vld                     (ctrl_rt_inst1_vld),
@@ -940,6 +947,7 @@ ct_idu_is_ctrl x_ct_idu_is_ctrl (
   .div_ctrl_1_left_updt                  (div_ctrl_1_left_updt),
   .div_ctrl_full_updt                    (div_ctrl_full_updt),
   .rtu_idu_rob_full                      (rtu_idu_rob_full),
+  .rtu_idu_rob_full_nofsm                (rtu_idu_rob_full_nofsm),
   .rtu_yy_xx_flush                       (rtu_yy_xx_flush),
   .sdiq_ctrl_1_left_updt                 (sdiq_ctrl_1_left_updt),
   .sdiq_ctrl_full_updt                   (sdiq_ctrl_full_updt),
@@ -980,6 +988,7 @@ ct_idu_is_ctrl x_ct_idu_is_ctrl (
   */
   .ctrl_is_inst2_vld                     (ctrl_is_inst2_vld),
   .ctrl_is_stall                         (ctrl_is_stall),
+  .ctrl_is_stall_nofsm                   (ctrl_is_stall_nofsm),
   .ctrl_xx_is_inst0_sel                  (ctrl_xx_is_inst0_sel),
   // ---- 派遣记录: 本路真的派发 (2026-10-08 新增) ----
   .ctrl_dp_dis_inst0_vld                 (ctrl_dp_dis_inst0_vld),

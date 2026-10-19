@@ -28,6 +28,26 @@
 // ===========================================================================
 module tb_a910_difftest;
 
+  // [R14] ROB 改为 8 bank × 8 entry: 逻辑下标 idx -> bank=idx[2:0], row=idx[5:3]。
+  // 调试口保持旧 `rob_q[idx]` 的语义, 按映射取对应 bank 内的表项。
+  function automatic [124:0] dbg_rob_entry(input [5:0] idx);
+    reg [2:0] b, r;
+    begin
+      b = idx[2:0];
+      r = idx[5:3];
+      case (b)
+        3'd0: dbg_rob_entry = dut.u_rtu.u_rob.g_bank[0].u_bank.e_q[r];
+        3'd1: dbg_rob_entry = dut.u_rtu.u_rob.g_bank[1].u_bank.e_q[r];
+        3'd2: dbg_rob_entry = dut.u_rtu.u_rob.g_bank[2].u_bank.e_q[r];
+        3'd3: dbg_rob_entry = dut.u_rtu.u_rob.g_bank[3].u_bank.e_q[r];
+        3'd4: dbg_rob_entry = dut.u_rtu.u_rob.g_bank[4].u_bank.e_q[r];
+        3'd5: dbg_rob_entry = dut.u_rtu.u_rob.g_bank[5].u_bank.e_q[r];
+        3'd6: dbg_rob_entry = dut.u_rtu.u_rob.g_bank[6].u_bank.e_q[r];
+        default: dbg_rob_entry = dut.u_rtu.u_rob.g_bank[7].u_bank.e_q[r];
+      endcase
+    end
+  endfunction
+
   // -------------------------------------------------------------------------
   // 黄金模型 (DPI-C): 与 tb_miniRV_dpi.sv 用的是同一份，参数也一样
   // -------------------------------------------------------------------------
@@ -2644,20 +2664,23 @@ module tb_a910_difftest;
     void'($value$plusargs("HD_LO=%d", hd_lo));
     void'($value$plusargs("HD_HI=%d", hd_hi));
   end
+  reg [124:0] dbg_head;
   always @(posedge clk) begin
     if (!rst && $test$plusargs("PROBE_HEAD") && cycles >= hd_lo && cycles <= hd_hi
-        && (cycles % 200) == 0)
+        && (cycles % 200) == 0) begin
+      dbg_head = dbg_rob_entry(dut.u_rtu.u_rob.rptr);
       $display("  [HEAD] T%0d rptr=%0d iid=%0d pc=%08x vld=%b cmplt=%b flags=%b dst_preg=%0d old_preg=%0d occ=%0d free=%0d",
                cycles,
                dut.u_rtu.u_rob.rptr,
                {dut.u_rtu.u_rob.rptr_msb, dut.u_rtu.u_rob.rptr},
-               dut.u_rtu.u_rob.rob_q[dut.u_rtu.u_rob.rptr][120:89],
-               dut.u_rtu.u_rob.rob_q[dut.u_rtu.u_rob.rptr][123],
-               dut.u_rtu.u_rob.rob_q[dut.u_rtu.u_rob.rptr][122],
-               dut.u_rtu.u_rob.rob_q[dut.u_rtu.u_rob.rptr][12:6],
-               dut.u_rtu.u_rob.rob_q[dut.u_rtu.u_rob.rptr][26:20],
-               dut.u_rtu.u_rob.rob_q[dut.u_rtu.u_rob.rptr][19:13],
+               dbg_head[120:89],
+               dbg_head[123],
+               dbg_head[122],
+               dbg_head[12:6],
+               dbg_head[26:20],
+               dbg_head[19:13],
                dut.u_rtu.u_rob.occ, dut.u_rtu.u_preg.free_cnt);
+    end
   end
 
   // [FSRC] **这次 flush 是哪来的** —— 回答"为什么会来这次冲刷"
