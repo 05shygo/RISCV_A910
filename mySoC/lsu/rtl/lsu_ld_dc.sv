@@ -22,19 +22,20 @@ module lsu_ld_dc #(
     //==========================================================
     input  logic                          ld_ag_dc_inst_vld,
     input  logic [1:0]                    ld_ag_inst_size,
-    input  logic                          ld_ag_secd,
+    // 2026-10-15 停用: 非对齐拆分通路整条摘掉 (boundary/secd/acclr/bytes_vld1/addr1)
+    //input  logic                          ld_ag_secd,
     input  logic                          ld_ag_sign_extend,
     input  logic [6:0]                    ld_ag_iid,
     input  logic [LSIQ_ENTRY-1:0]         ld_ag_lsid,
     input  logic                          ld_ag_old,
     input  logic [5:0]                    ld_ag_preg,
-    input  logic                          ld_ag_boundary,
-    input  logic                          ld_ag_acclr_en,
-    input  logic                          ld_ag_dc_fwd_bypass_en,
-    input  logic [15:0]                   ld_ag_bytes_vld1,
+    //input  logic                          ld_ag_boundary,
+    //input  logic                          ld_ag_acclr_en,
+    // 2026-10-15 停用: bypass 通路在本仓没实现 (ld_dc_chk_ld_bypass_vld 无人使用), 整条摘掉: input  logic                          ld_ag_dc_fwd_bypass_en,
+    //input  logic [15:0]                   ld_ag_bytes_vld1,
     input  logic [15:0]                   ld_ag_bytes_vld,
     input  logic                          ld_ag_raw_new,
-    input  logic [27:0]                   ld_ag_addr1_to4,
+    //input  logic [27:0]                   ld_ag_addr1_to4,
     input  logic [31:0]                   ld_ag_dc_addr0,
     input  logic                          ld_ag_expt,
 
@@ -46,47 +47,52 @@ module lsu_ld_dc #(
     input  logic [31:0]                   st_dc_addr0,
     input  logic                          lq_ld_dc_inst_hit,
     input  logic                          lq_ld_dc_full,
-    input  logic                          lq_ld_dc_less2,
-    input  logic [INDEX_WIDTH-1:0]        dcache_idx,
+    // 2026-10-15 停用: 只喂 create1 那条 lq_full 项 (create1 已摘)
+    //input  logic                          lq_ld_dc_less2,
+    // 2026-10-15 停用: 只喂 cb_create_hit_idx (cache_buffer 已摘) ⇒ 本模块不再用
+    //input  logic [INDEX_WIDTH-1:0]        dcache_idx,
     input  logic                          dcache_arb_ld_dc_borrow_vld,
     input  logic                          dcache_arb_ld_dc_settle_way,
     input  logic [45:0]                   dcache_lsu_ld_tag_dout,
-    input  logic                          cb_ld_dc_addr_hit,
-    input  logic                          sq_ld_dc_cancel_acc_req,
+    // 2026-10-15 停用: cache_buffer 已摘, 该口不再有意义
+    //input  logic                          cb_ld_dc_addr_hit,
+    // 2026-10-15 停用: 两根都只喂已摘的 cb_merge_en
+    //input  logic                          sq_ld_dc_cancel_acc_req,
     input  logic                          sq_ld_dc_fwd_req,
-    input  logic                          wmb_ld_dc_cancel_acc_req,
+    //input  logic                          wmb_ld_dc_cancel_acc_req,
     input  logic                          wmb_ld_dc_fwd_req,
     input  logic [15:0]                   wmb_fwd_bytes_vld,
     input  logic                          rtu_yy_xx_flush,
-    input  logic                          sq_ld_dc_addr1_dep_discard,
+    // 2026-10-15 停用: sq 的 depd_hit4 已摘 ⇒ 这根恒 0, lq_create_vld 里那一项已注释
+    //input  logic                          sq_ld_dc_addr1_dep_discard,
 
     //==========================================================
     // LSU_LD_DC -> DA / 对外 Output
     //==========================================================
     output logic                          ld_dc_da_inst_vld,
-    output logic                          ld_dc_borrow_vld,
+    (* max_fanout = 32 *) output logic    ld_dc_borrow_vld,
     output logic                          ld_dc_settle_way,                 
     output logic [1:0]                    ld_dc_inst_size,
-    output logic [27:0]                   ld_dc_addr1_to4,
-    output logic                          ld_dc_boundary,
-    output logic                          ld_dc_secd,
+    //output logic [27:0]                   ld_dc_addr1_to4,   // 2026-10-15 停用
+    //output logic                          ld_dc_boundary,    // 2026-10-15 停用
+    //output logic                          ld_dc_secd,        // 2026-10-15 停用
     output logic                          ld_dc_sign_extend,
     output logic [6:0]                    ld_dc_iid,
     output logic [LSIQ_ENTRY-1:0]         ld_dc_lsid,
     output logic                          ld_dc_old,
     output logic [5:0]                    ld_dc_preg,
     output logic [15:0]                   ld_dc_bytes_vld,
-    output logic [15:0]                   ld_dc_bytes_vld1,
-    output logic                          ld_dc_acclr_en,
-    output logic                          ld_dc_da_cb_merge_en,
+    //output logic [15:0]                   ld_dc_bytes_vld1,      // 2026-10-15 停用
+    //output logic                          ld_dc_acclr_en,        // 2026-10-15 停用
+    //output logic                          ld_dc_da_cb_merge_en,  // 2026-10-15 停用 (cache_buffer)
     output logic                          ld_dc_raw_new,
     output logic [31:0]                   ld_dc_addr0,
     output logic                          ld_dc_expt,
-    output logic                          ld_dc_cb_addr_create_vld,
-    output logic [27:0]                   ld_dc_cb_addr_tto4,
+    //output logic                          ld_dc_cb_addr_create_vld,  // 2026-10-15 停用
+    //output logic [27:0]                   ld_dc_cb_addr_tto4,        // 2026-10-15 停用
     output logic                          ld_dc_chk_ld_inst_vld,
-    output logic                          ld_dc_chk_ld_addr1_vld,
-    output logic                          ld_dc_chk_ld_bypass_vld,
+    //output logic                          ld_dc_chk_ld_addr1_vld,    // 2026-10-15 停用
+    // 2026-10-15 停用: bypass 通路在本仓没实现 (ld_dc_chk_ld_bypass_vld 无人使用), 整条摘掉: output logic                          ld_dc_chk_ld_bypass_vld,
     output logic [LSIQ_ENTRY-1:0]         ld_dc_idu_lq_full,
     output logic [LSIQ_ENTRY-1:0]         ld_dc_imme_wakeup,
     output logic                          ld_dc_hit_low_region,
@@ -99,8 +105,8 @@ module lsu_ld_dc #(
     output logic                          ld_dc_fwd_sq_vld,                    
     output logic                          ld_dc_fwd_wmb_vld,
 
-    output logic                          ld_dc_lq_create_vld,
-    output logic                          ld_dc_lq_create1_vld
+    output logic                          ld_dc_lq_create_vld
+    //output logic                          ld_dc_lq_create1_vld   // 2026-10-15 停用 (只服务 cache_buffer 命中)
 
 
 );
@@ -113,19 +119,19 @@ localparam logic [1:0] WORD  = 2'b10;
 //====================================================================
 // 内部信号声明（时序寄存器 + 组合逻辑信号）
 //====================================================================
-logic                          ld_dc_inst_vld;
+(* max_fanout = 32 *) logic    ld_dc_inst_vld;
 logic                          ld_dc_inst_chk_vld;
 logic                          ld_dc_restart_vld;
 logic                          ld_dc_depd_imme_restart_req;
 logic                          ld_dc_depd_st_dc;
 logic                          ld_dc_depd_st_dc2;
-logic                          ld_dc_depd_st_dc3;
-logic                          ld_dc_fwd_bypass_en;
+//logic                          ld_dc_depd_st_dc3;      // 2026-10-15 停用: 只喂 cb_merge_en
+// 2026-10-15 停用: bypass 通路在本仓没实现 (ld_dc_chk_ld_bypass_vld 无人使用), 整条摘掉: logic                          ld_dc_fwd_bypass_en;
 logic                          ld_dc_lq_full_req;
 
 logic [31:0]                   ld_dc_cmp_st_dc_addr0;
 logic                          ld_dc_raw_addr_tto4_hit;
-logic                          ld_dc_raw_addr1_tto4_hit;
+//logic                          ld_dc_raw_addr1_tto4_hit;   // 2026-10-15 停用: addr1 已摘
 logic                          ld_dc_raw_do_hit;
 
 
@@ -144,7 +150,7 @@ logic                          ld_dc_hit_way1;
 logic [3:0]                    ld_dc_rot_sel_final;
 
 
-logic                          cb_create_hit_idx;
+//logic                          cb_create_hit_idx;   // 2026-10-15 停用: cache_buffer 相关
 
 
 logic [LSIQ_ENTRY-1:0]         ld_dc_mask_lsid;
@@ -201,35 +207,36 @@ end
 always @(posedge forever_cpuclk or negedge cpurst_b) begin
     if (!cpurst_b) begin
         ld_dc_inst_size[1:0]     <= 2'b0;
-        ld_dc_addr1_to4[27:0]    <= 28'b0;
-        ld_dc_boundary           <= 1'b0;
-        ld_dc_secd               <= 1'b0;
+        // 2026-10-15 停用: addr1_to4 / boundary / secd / bytes_vld1 / acclr_en 已摘
+        //ld_dc_addr1_to4[27:0]    <= 28'b0;
+        //ld_dc_boundary           <= 1'b0;
+        //ld_dc_secd               <= 1'b0;
         ld_dc_sign_extend        <= 1'b0;
         ld_dc_iid[6:0]           <= 7'b0;
         ld_dc_lsid[LSIQ_ENTRY-1:0] <= {LSIQ_ENTRY{1'b0}};
         ld_dc_old                <= 1'b0;
         ld_dc_preg[5:0]          <= 7'b0;
         ld_dc_bytes_vld[15:0]    <= 16'b0;
-        ld_dc_bytes_vld1[15:0]   <= 16'b0;
-        ld_dc_acclr_en           <= 1'b0;
+        //ld_dc_bytes_vld1[15:0]   <= 16'b0;
+        //ld_dc_acclr_en           <= 1'b0;
         ld_dc_raw_new            <= 1'b0;
         ld_dc_expt               <= 1'b0;
     end
     else if ( ld_ag_dc_inst_vld) begin
         ld_dc_inst_size[1:0]     <= ld_ag_inst_size[1:0];
-        ld_dc_addr1_to4[27:0]    <= ld_ag_addr1_to4[27:0];
-        ld_dc_boundary           <= ld_ag_boundary;
-        ld_dc_secd               <= ld_ag_secd;
+        //ld_dc_addr1_to4[27:0]    <= ld_ag_addr1_to4[27:0];
+        //ld_dc_boundary           <= ld_ag_boundary;
+        //ld_dc_secd               <= ld_ag_secd;
         ld_dc_sign_extend        <= ld_ag_sign_extend;
         ld_dc_iid[6:0]           <= ld_ag_iid[6:0];
         ld_dc_lsid[LSIQ_ENTRY-1:0] <= ld_ag_lsid[LSIQ_ENTRY-1:0];
         ld_dc_old                <= ld_ag_old; // 原代码写 ld_ag_oldest，输入端口只有 ld_ag_old，注意核对RTL
         ld_dc_preg[5:0]          <= ld_ag_preg[5:0];
         ld_dc_bytes_vld[15:0]    <= ld_ag_bytes_vld[15:0];
-        ld_dc_bytes_vld1[15:0]   <= ld_ag_bytes_vld1[15:0];
-        ld_dc_acclr_en           <= ld_ag_acclr_en;
+        //ld_dc_bytes_vld1[15:0]   <= ld_ag_bytes_vld1[15:0];
+        //ld_dc_acclr_en           <= ld_ag_acclr_en;
         ld_dc_raw_new            <= ld_ag_raw_new;
-        ld_dc_fwd_bypass_en      <= ld_ag_dc_fwd_bypass_en;
+        // 2026-10-15 停用: bypass 通路在本仓没实现 (ld_dc_chk_ld_bypass_vld 无人使用), 整条摘掉: ld_dc_fwd_bypass_en      <= ld_ag_dc_fwd_bypass_en;
         ld_dc_expt               <= ld_ag_expt;
     end
 end
@@ -256,22 +263,24 @@ end
 //               Generate check signal to lq/sq/wmb
 //==========================================================
 assign ld_dc_chk_ld_inst_vld    = ld_dc_inst_vld && !ld_dc_expt;
-assign ld_dc_chk_ld_addr1_vld   = ld_dc_inst_vld && ld_dc_acclr_en && !ld_dc_expt;
+// 2026-10-15 停用: 只服务非对齐第二半 (acclr_en) 的 RAW 检查
+//assign ld_dc_chk_ld_addr1_vld   = ld_dc_inst_vld && ld_dc_acclr_en && !ld_dc_expt;
 
 //==========================================================
 //                   RAW speculation check
 //==========================================================
 assign ld_dc_inst_chk_vld       = ld_dc_inst_vld && !ld_dc_expt;
 
-assign ld_dc_chk_ld_bypass_vld    = ld_dc_chk_ld_inst_vld
-                                    &&  ld_dc_fwd_bypass_en
-                                    && !ld_dc_expt;
+// 2026-10-15 停用: bypass 通路在本仓没实现 (ld_dc_chk_ld_bypass_vld 无人使用), 整条摘掉: assign ld_dc_chk_ld_bypass_vld    = ld_dc_chk_ld_inst_vld
+                                    // 2026-10-15 停用: bypass 通路在本仓没实现 (ld_dc_chk_ld_bypass_vld 无人使用), 整条摘掉: &&  ld_dc_fwd_bypass_en
+                                    // 2026-10-15 停用: bypass 通路在本仓没实现 (ld_dc_chk_ld_bypass_vld 无人使用), 整条摘掉: && !ld_dc_expt;
 //-----------addr compare---------------
 //addr0 compare
 assign ld_dc_cmp_st_dc_addr0[31:0] = st_dc_addr0[31:0];
 assign ld_dc_raw_addr_tto4_hit     = (ld_dc_addr0[31:4] == ld_dc_cmp_st_dc_addr0[31:4]);
 // for cache buffer
-assign ld_dc_raw_addr1_tto4_hit    = (ld_dc_addr1_to4[27:0] == ld_dc_cmp_st_dc_addr0[31:4]);
+// 2026-10-15 停用: addr1 已摘
+//assign ld_dc_raw_addr1_tto4_hit    = (ld_dc_addr1_to4[27:0] == ld_dc_cmp_st_dc_addr0[31:4]);
 
 //-----------bytes_vld compare----------
 assign ld_dc_raw_do_hit     = |(ld_dc_bytes_vld[15:0] & st_dc_bytes_vld[15:0]);
@@ -285,10 +294,11 @@ assign ld_dc_depd_st_dc2    = ld_dc_inst_chk_vld
 
 //------------------situation 3-----------------------------
 // when ld addr hit st, then do not get data from merge buffer
-assign ld_dc_depd_st_dc3    = ld_dc_inst_chk_vld
-                            && ld_dc_raw_new
-                            && st_dc_chk_st_inst_vld
-                            && ld_dc_raw_addr1_tto4_hit;
+// 2026-10-15 停用: 只喂 cb_merge_en (cache_buffer 已摘)
+//assign ld_dc_depd_st_dc3    = ld_dc_inst_chk_vld
+//                            && ld_dc_raw_new
+//                            && st_dc_chk_st_inst_vld
+//                            && ld_dc_raw_addr1_tto4_hit;
 
 //------------------combine---------------------------------
 assign ld_dc_depd_st_dc     = ld_dc_depd_st_dc2;
@@ -300,22 +310,25 @@ assign ld_dc_lq_create_vld      = ld_dc_inst_vld
                                 && !ld_dc_old
                                 && !lq_ld_dc_inst_hit
                                 && !ld_dc_depd_imme_restart_req
-                                && !sq_ld_dc_addr1_dep_discard
+                                // 2026-10-15 停用: sq 的 depd_hit4 已摘, 这根恒 0
+                                //&& !sq_ld_dc_addr1_dep_discard
                                 && !ld_dc_expt;
 
-assign ld_dc_lq_create1_vld     = ld_dc_inst_vld
-                                && !ld_dc_old
-                                && !lq_ld_dc_inst_hit
-                                && !ld_dc_depd_imme_restart_req
-                                && cb_ld_dc_addr_hit
-                                && !sq_ld_dc_addr1_dep_discard
-                                && !ld_dc_expt;
+// 2026-10-15 停用: lq_create1 只服务 cache_buffer 命中 (cb_ld_dc_addr_hit), 已摘
+//assign ld_dc_lq_create1_vld     = ld_dc_inst_vld
+//                                && !ld_dc_old
+//                                && !lq_ld_dc_inst_hit
+//                                && !ld_dc_depd_imme_restart_req
+//                                && cb_ld_dc_addr_hit
+//                                && !sq_ld_dc_addr1_dep_discard
+//                                && !ld_dc_expt;
 
 //==========================================================
 //                   Restart signal
 //==========================================================
-assign ld_dc_lq_full_req      = ld_dc_lq_create_vld && lq_ld_dc_full
-                                || ld_dc_lq_create1_vld && lq_ld_dc_less2;
+// 2026-10-15 停用: create1 通路已摘 ⇒ 去掉后半项 (lq_ld_dc_less2 随之不再被本模块使用)
+assign ld_dc_lq_full_req      = ld_dc_lq_create_vld && lq_ld_dc_full;
+                                //|| ld_dc_lq_create1_vld && lq_ld_dc_less2;
 
 assign ld_dc_depd_imme_restart_req = ld_dc_depd_st_dc;
 assign ld_dc_restart_vld        = ld_dc_lq_full_req || ld_dc_depd_imme_restart_req;
@@ -409,23 +422,24 @@ end
 //            Generage to cache buffer signal
 //==========================================================
 //------------------addr prepare----------------
-assign ld_dc_cb_addr_tto4[27:0] = ld_dc_addr0[31:4];
-assign cb_create_hit_idx   = (ld_dc_addr0[INDEX_MSB:INDEX_LSB] == dcache_idx[INDEX_WIDTH-1:0]);
+// 2026-10-15 停用: 整段都是 cache_buffer (跨行 load 的上一拍数据缓冲) 的握手信号, 已随它一同摘掉
+//assign ld_dc_cb_addr_tto4[27:0] = ld_dc_addr0[31:4];
+//assign cb_create_hit_idx   = (ld_dc_addr0[INDEX_MSB:INDEX_LSB] == dcache_idx[INDEX_WIDTH-1:0]);
 // &Force("output","ld_dc_cb_addr_create_vld"); @1131
-assign ld_dc_cb_addr_create_vld = ld_dc_inst_vld
-                                && ld_dc_acclr_en
-                                && !ld_dc_restart_vld
-                                && cb_create_hit_idx
-                                && !rtu_yy_xx_flush
-                                && !ld_dc_expt;
-
-assign ld_dc_da_cb_merge_en     = ld_dc_acclr_en
-                                && cb_ld_dc_addr_hit
-                                && !ld_dc_depd_st_dc3
-                                && !sq_ld_dc_cancel_acc_req
-                                && !wmb_ld_dc_cancel_acc_req
-                                && !lq_ld_dc_inst_hit
-                                && !ld_dc_expt;
+//assign ld_dc_cb_addr_create_vld = ld_dc_inst_vld
+//                                && ld_dc_acclr_en
+//                                && !ld_dc_restart_vld
+//                                && cb_create_hit_idx
+//                                && !rtu_yy_xx_flush
+//                                && !ld_dc_expt;
+//
+//assign ld_dc_da_cb_merge_en     = ld_dc_acclr_en
+//                                && cb_ld_dc_addr_hit
+//                                && !ld_dc_depd_st_dc3
+//                                && !sq_ld_dc_cancel_acc_req
+//                                && !wmb_ld_dc_cancel_acc_req
+//                                && !lq_ld_dc_inst_hit
+//                                && !ld_dc_expt;
 
 //==========================================================
 //      Generage lsiq signal (renamed in lsu_restart.vp)

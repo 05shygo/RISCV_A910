@@ -76,7 +76,6 @@ module tb_idu_c910;
   wire [11:0] lsu_idu_lq_full;
   wire [11:0] lsu_idu_rb_full;
   wire [11:0] lsu_idu_sq_full;
-  wire [11:0] lsu_idu_secd;
   wire [11:0] lsu_idu_imme_wakeup;
   wire       lsu_idu_lsiq_pop_vld;
   wire       lsu_idu_lsiq_pop0_vld;
@@ -128,19 +127,15 @@ module tb_idu_c910;
   wire [ 5:0] idu_lsu_ld_preg;
   wire [31:0] idu_lsu_ld_src0;
   wire [11:0] idu_lsu_ld_offset;
-  wire [12:0] idu_lsu_ld_offset_plus;
   wire       idu_lsu_ld_sign_extend;
   wire [ 1:0] idu_lsu_ld_inst_size;
-  wire       idu_lsu_ld_unalign_2nd;
   wire [11:0] idu_lsu_ld_lch_entry;
   wire       idu_lsu_ld_oldest;
   wire       idu_lsu_st_sel;
   wire [ 6:0] idu_lsu_st_iid;
   wire [31:0] idu_lsu_st_src0;
   wire [11:0] idu_lsu_st_offset;
-  wire [12:0] idu_lsu_st_offset_plus;
   wire [ 1:0] idu_lsu_st_inst_size;
-  wire       idu_lsu_st_unalign_2nd;
   wire [11:0] idu_lsu_st_lch_entry;
   wire       idu_lsu_st_oldest;
   wire [ 3:0] idu_lsu_st_sdiq_entry;
@@ -239,7 +234,6 @@ module tb_idu_c910;
   assign lsu_idu_lq_full                  = 12'b0;
   assign lsu_idu_rb_full                  = 12'b0;
   assign lsu_idu_sq_full                  = 12'b0;
-  assign lsu_idu_secd                     = 12'b0;
   assign lsu_idu_imme_wakeup              = 12'b0;
   assign lsu_idu_lsiq_pop_vld             = 1'b0;
   assign lsu_idu_lsiq_pop0_vld            = 1'b0;
@@ -301,7 +295,6 @@ module tb_idu_c910;
     .lsu_idu_lq_full                  (lsu_idu_lq_full                 ),
     .lsu_idu_rb_full                  (lsu_idu_rb_full                 ),
     .lsu_idu_sq_full                  (lsu_idu_sq_full                 ),
-    .lsu_idu_secd                     (lsu_idu_secd                    ),
     .lsu_idu_imme_wakeup              (lsu_idu_imme_wakeup             ),
     .lsu_idu_lsiq_pop_vld             (lsu_idu_lsiq_pop_vld            ),
     .lsu_idu_lsiq_pop0_vld            (lsu_idu_lsiq_pop0_vld           ),
@@ -366,19 +359,15 @@ module tb_idu_c910;
     .idu_lsu_ld_preg                  (idu_lsu_ld_preg                 ),
     .idu_lsu_ld_src0                  (idu_lsu_ld_src0                 ),
     .idu_lsu_ld_offset                (idu_lsu_ld_offset               ),
-    .idu_lsu_ld_offset_plus           (idu_lsu_ld_offset_plus          ),
     .idu_lsu_ld_sign_extend           (idu_lsu_ld_sign_extend          ),
     .idu_lsu_ld_inst_size             (idu_lsu_ld_inst_size            ),
-    .idu_lsu_ld_unalign_2nd           (idu_lsu_ld_unalign_2nd          ),
     .idu_lsu_ld_lch_entry             (idu_lsu_ld_lch_entry            ),
     .idu_lsu_ld_oldest                (idu_lsu_ld_oldest               ),
     .idu_lsu_st_sel                   (idu_lsu_st_sel                  ),
     .idu_lsu_st_iid                   (idu_lsu_st_iid                  ),
     .idu_lsu_st_src0                  (idu_lsu_st_src0                 ),
     .idu_lsu_st_offset                (idu_lsu_st_offset               ),
-    .idu_lsu_st_offset_plus           (idu_lsu_st_offset_plus          ),
     .idu_lsu_st_inst_size             (idu_lsu_st_inst_size            ),
-    .idu_lsu_st_unalign_2nd           (idu_lsu_st_unalign_2nd          ),
     .idu_lsu_st_lch_entry             (idu_lsu_st_lch_entry            ),
     .idu_lsu_st_oldest                (idu_lsu_st_oldest               ),
     .idu_lsu_st_sdiq_entry            (idu_lsu_st_sdiq_entry           ),

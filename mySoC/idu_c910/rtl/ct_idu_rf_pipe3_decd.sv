@@ -16,7 +16,8 @@ limitations under the License.
 module ct_idu_rf_pipe3_decd (
   input  logic [31:0]  pipe3_decd_opcode,
   output logic [11:0]  pipe3_decd_offset,
-  output logic [12:0]  pipe3_decd_offset_plus,
+  // 2026-10-15 停用: offset_plus (非对齐拆分用的 +16 偏移), 只服务非对齐
+  //output logic [12:0]  pipe3_decd_offset_plus,
   output logic         pipe3_decd_sign_extend,
   output logic [1:0]   pipe3_decd_inst_size
 );
@@ -88,7 +89,8 @@ end
 //==========================================================
 //              Offset Plus 计算
 //==========================================================
+// 2026-10-15 停用: 现在跑的测试里不会出现非对齐访问, LSU 也不再收 offset_plus ⇒ 整段摘掉
 // 保留原逻辑：符号扩展后加 16（用于某些微架构的非对齐访存或 Cache line 边界处理）
-assign pipe3_decd_offset_plus[12:0] = {pipe3_decd_offset[11], pipe3_decd_offset[11:0]} + 13'h10;
+//assign pipe3_decd_offset_plus[12:0] = {pipe3_decd_offset[11], pipe3_decd_offset[11:0]} + 13'h10;
 
 endmodule

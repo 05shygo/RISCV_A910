@@ -78,7 +78,8 @@ module ct_idu_top(
   input  logic         lsu_idu_rb_not_full,
   input  logic [`LSIQ_NUM-1:0]   lsu_idu_sq_full,
   input  logic         lsu_idu_sq_not_full,
-  input  logic [`LSIQ_NUM-1:0]   lsu_idu_secd,
+  // 2026-10-19 停用: 非对齐第二半链路整条摘除, IDU 不再接收 LSU 的 secd
+  //input  logic [`LSIQ_NUM-1:0]   lsu_idu_secd,
   input  logic [`LSIQ_NUM-1:0]   lsu_idu_imme_wakeup,
   input  logic         lsu_idu_lsiq_pop_vld,
   input  logic         lsu_idu_lsiq_pop0_vld,
@@ -144,10 +145,11 @@ module ct_idu_top(
   output logic [5:0]   idu_lsu_ld_preg,
   output logic [31:0]  idu_lsu_ld_src0,
   output logic [11:0]  idu_lsu_ld_offset,
-  output logic [12:0]  idu_lsu_ld_offset_plus,
+  // 2026-10-19 停用: 非对齐拆分用 offset_plus / 第二半标记
+  //output logic [12:0]  idu_lsu_ld_offset_plus,
   output logic         idu_lsu_ld_sign_extend,
   output logic [1:0]   idu_lsu_ld_inst_size,
-  output logic         idu_lsu_ld_unalign_2nd,
+  //output logic         idu_lsu_ld_unalign_2nd,
   output logic [`LSIQ_NUM-1:0]   idu_lsu_ld_lch_entry,
   output logic         idu_lsu_ld_oldest,
 
@@ -159,9 +161,9 @@ module ct_idu_top(
 //  output logic [5:0]   idu_lsu_st_preg,
   output logic [31:0]  idu_lsu_st_src0,
   output logic [11:0]  idu_lsu_st_offset,
-  output logic [12:0]  idu_lsu_st_offset_plus,
+  //output logic [12:0]  idu_lsu_st_offset_plus,
   output logic [1:0]   idu_lsu_st_inst_size,
-  output logic         idu_lsu_st_unalign_2nd,
+  //output logic         idu_lsu_st_unalign_2nd,
   output logic [`LSIQ_NUM-1:0]   idu_lsu_st_lch_entry,
   output logic         idu_lsu_st_oldest,
   output logic [3:0]   idu_lsu_st_sdiq_entry,
@@ -1180,7 +1182,7 @@ ct_idu_is_lsiq x_ct_idu_is_lsiq (
   .lsu_idu_imme_wakeup(lsu_idu_imme_wakeup),
   .lsu_idu_rb_full                       (lsu_idu_rb_full),//in
   .lsu_idu_rb_not_full                   (lsu_idu_rb_not_full),//in
-  .lsu_idu_secd                          (lsu_idu_secd),//in
+  // 2026-10-19 停用: .lsu_idu_secd        (lsu_idu_secd),//in
   .lsu_idu_sq_full                       (lsu_idu_sq_full),//in
   .lsu_idu_sq_not_full                   (lsu_idu_sq_not_full),//in
   .lsu_idu_wb_pipe3_wb_preg_dupx                              (lsu_idu_wb_pipe3_wb_preg_dupx),//in
@@ -1191,11 +1193,11 @@ ct_idu_is_lsiq x_ct_idu_is_lsiq (
   .lsiq_rf_pipe3_issue_en                (lsiq_xx_pipe3_issue_en),
   .lsiq_rf_pipe4_issue_en                (lsiq_xx_pipe4_issue_en),
   .lsiq_dp_pipe3_entry_read_data            (lsiq_dp_pipe3_entry_read_data),
-  .lsiq_pipe3_entry_unalign_2nd          (lsiq_pipe3_entry_unalign_2nd),
+  // 2026-10-19 停用: .lsiq_pipe3_entry_unalign_2nd (lsiq_pipe3_entry_unalign_2nd),
   .lsiq_pipe3_entry_old                  (lsiq_pipe3_entry_old),
   .lsiq_dp_pipe3_issue_entry            (lsiq_dp_pipe3_issue_entry),
   .lsiq_dp_pipe4_entry_read_data            (lsiq_dp_pipe4_entry_read_data),
-  .lsiq_pipe4_entry_unalign_2nd          (lsiq_pipe4_entry_unalign_2nd),
+  // 2026-10-19 停用: .lsiq_pipe4_entry_unalign_2nd (lsiq_pipe4_entry_unalign_2nd),
   .lsiq_pipe4_entry_old                  (lsiq_pipe4_entry_old),
   .lsiq_dp_pipe4_issue_entry            (lsiq_dp_pipe4_issue_entry)
 
@@ -1340,7 +1342,7 @@ ct_idu_rf_dp x_ct_idu_rf_dp (
   .lsiq_dp_pipe3_issue_entry             (lsiq_dp_pipe3_issue_entry),
   .lsiq_dp_pipe3_issue_read_data         (lsiq_dp_pipe3_entry_read_data),
   .lsiq_xx_pipe3_issue_en                              (lsiq_xx_pipe3_issue_en),
-  .lsiq_pipe3_entry_unalign_2nd          (lsiq_pipe3_entry_unalign_2nd),
+  // 2026-10-19 停用: .lsiq_pipe3_entry_unalign_2nd (lsiq_pipe3_entry_unalign_2nd),
   .lsiq_pipe3_entry_old                  (lsiq_pipe3_entry_old),
   .prf_dp_rf_pipe3_src0_data                              (prf_dp_rf_pipe3_src0_data),
   .dp_prf_rf_pipe3_src0_preg                              (dp_prf_rf_pipe3_src0_preg),
@@ -1348,16 +1350,16 @@ ct_idu_rf_dp x_ct_idu_rf_dp (
   .idu_lsu_ld_preg                       (idu_lsu_ld_preg),//out
   .idu_lsu_ld_src0                       (idu_lsu_ld_src0),//out
   .idu_lsu_ld_offset                     (idu_lsu_ld_offset),//out
-  .idu_lsu_ld_offset_plus                (idu_lsu_ld_offset_plus),//out
+  // 2026-10-19 停用: .idu_lsu_ld_offset_plus (idu_lsu_ld_offset_plus),//out
   .idu_lsu_ld_sign_extend                (idu_lsu_ld_sign_extend),//out
   .idu_lsu_ld_inst_size                  (idu_lsu_ld_inst_size),//out
-  .idu_lsu_ld_unalign_2nd                (idu_lsu_ld_unalign_2nd),//out
+  // 2026-10-19 停用: .idu_lsu_ld_unalign_2nd (idu_lsu_ld_unalign_2nd),//out
   .idu_lsu_ld_lch_entry                  (idu_lsu_ld_lch_entry),//out
   .idu_lsu_ld_oldest                     (idu_lsu_ld_oldest),//out
   .lsiq_dp_pipe4_issue_entry             (lsiq_dp_pipe4_issue_entry),
   .lsiq_dp_pipe4_issue_read_data         (lsiq_dp_pipe4_entry_read_data),
   .lsiq_xx_pipe4_issue_en                              (lsiq_xx_pipe4_issue_en),
-  .lsiq_pipe4_entry_unalign_2nd          (lsiq_pipe4_entry_unalign_2nd),
+  // 2026-10-19 停用: .lsiq_pipe4_entry_unalign_2nd (lsiq_pipe4_entry_unalign_2nd),
   .lsiq_pipe4_entry_old                  (lsiq_pipe4_entry_old),
   .prf_dp_rf_pipe4_src0_data                              (prf_dp_rf_pipe4_src0_data),
   .dp_prf_rf_pipe4_src0_preg                              (dp_prf_rf_pipe4_src0_preg),
@@ -1365,9 +1367,9 @@ ct_idu_rf_dp x_ct_idu_rf_dp (
  // .idu_lsu_st_preg                       (idu_lsu_st_preg),//out
   .idu_lsu_st_src0                       (idu_lsu_st_src0),//out
   .idu_lsu_st_offset                     (idu_lsu_st_offset),//out
-  .idu_lsu_st_offset_plus                (idu_lsu_st_offset_plus),//out
+  // 2026-10-19 停用: .idu_lsu_st_offset_plus (idu_lsu_st_offset_plus),//out
   .idu_lsu_st_inst_size                  (idu_lsu_st_inst_size),//out
-  .idu_lsu_st_unalign_2nd                (idu_lsu_st_unalign_2nd),//out
+  // 2026-10-19 停用: .idu_lsu_st_unalign_2nd (idu_lsu_st_unalign_2nd),//out
   .idu_lsu_st_lch_entry                  (idu_lsu_st_lch_entry),//out
   .idu_lsu_st_oldest                     (idu_lsu_st_oldest),//out
   .idu_lsu_st_sdiq_entry                 (idu_lsu_st_sdiq_entry),//out

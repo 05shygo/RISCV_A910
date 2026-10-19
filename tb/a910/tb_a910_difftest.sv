@@ -197,7 +197,7 @@ module tb_a910_difftest;
                dut.u_lsu_top.st_ag_dc_addr0, dut.u_lsu_top.st_ag_old,
                dut.u_lsu_top.st_dc_inst_vld, dut.u_lsu_top.st_dc_iid,
                dut.u_lsu_top.st_da_inst_vld, dut.u_lsu_top.st_da_iid,
-               dut.u_lsu_top.st_wb_inst_vld, 0,
+               dut.u_lsu_top.u_lsu_st_wb.st_wb_inst_vld, 0,
                dut.u_lsu_top.sq_st_dc_full, dut.u_lsu_top.sq_st_dc_inst_hit);
   end
 
@@ -373,11 +373,11 @@ module tb_a910_difftest;
   //   盯: st_dc 的 boundary/secd/create/sdid + LSU 回给 IDU 的 has_in_sq 脉冲 + SDIQ 状态。
   always @(posedge clk) begin
     if (!rst && $test$plusargs("PROBE_BD") && cycles >= stl_lo && cycles <= stl_hi)
-      $display("  [BD] T%0d | st_dc vld=%b iid=%0d addr=%08x bnd=%b secd=%b first=%b create=%b sdio=%b sqdvld=%b full=%b | pulse=%b | sdiq v=%b has=%b issue=%b | sq vld=%b cmit=%b notdvld=%b",
+      $display("  [BD] T%0d | st_dc vld=%b iid=%0d addr=%08x create=%b sdio=%b sqdvld=%b full=%b | pulse=%b | sdiq v=%b has=%b issue=%b | sq vld=%b cmit=%b notdvld=%b",
         cycles,
         dut.u_lsu_top.st_dc_inst_vld, dut.u_lsu_top.st_dc_iid, dut.u_lsu_top.st_dc_addr0,
-        dut.u_lsu_top.st_dc_boundary, dut.u_lsu_top.st_dc_secd,
-        dut.u_lsu_top.st_dc_boundary_first, dut.u_lsu_top.st_dc_sq_create_vld,
+        // 2026-10-19: bnd/secd/first 三个探针随非对齐硬件停用一并去掉
+        dut.u_lsu_top.st_dc_sq_create_vld,
         dut.u_lsu_top.st_dc_sdid_oh, dut.u_lsu_top.st_dc_sq_data_vld,
         dut.u_lsu_top.sq_st_dc_full,
         dut.u_lsu_top.lsu_idu_has_in_sq,
@@ -448,7 +448,8 @@ module tb_a910_difftest;
   //   imme_wakeup 清) + LSU 回的 secd/pop/imme_wakeup + st_da 的 secd 生成条件。
   always @(posedge clk) begin
     if (!rst && $test$plusargs("PROBE_LSIQ") && cycles >= stl_lo && cycles <= stl_hi)
-      $display("  [LSIQ] T%0d | p4_is=%b p4en=%b iid=%0d | rdy=%b vld=%b sto=%b un2=%b | frz=%b(0..7) | secd=%b popvld=%b popent=%b immwk=%b | stda secd_vld=%b bnd_first=%b rst=%b",
+      // 2026-10-19: un2/secd 两个探针随非对齐链路摘除
+      $display("  [LSIQ] T%0d | p4_is=%b p4en=%b iid=%0d | rdy=%b vld=%b sto=%b | frz=%b(0..7) | popvld=%b popent=%b immwk=%b | stda rst=%b",
         cycles,
         dut.u_ct_idu_top.x_ct_idu_is_lsiq.lsiq_dp_pipe4_issue_entry,
         dut.u_ct_idu_top.lsiq_xx_pipe4_issue_en,
@@ -456,7 +457,6 @@ module tb_a910_difftest;
         dut.u_ct_idu_top.x_ct_idu_is_lsiq.lsiq_entry_ready,
         dut.u_ct_idu_top.x_ct_idu_is_lsiq.lsiq_entry_vld,
         dut.u_ct_idu_top.x_ct_idu_is_lsiq.lsiq_entry_store,
-        dut.u_ct_idu_top.x_ct_idu_is_lsiq.unalign_2nd,
         {dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[7].u_ct_idu_is_lsiq_entry.frz,
          dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[6].u_ct_idu_is_lsiq_entry.frz,
          dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[5].u_ct_idu_is_lsiq_entry.frz,
@@ -465,11 +465,10 @@ module tb_a910_difftest;
          dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[2].u_ct_idu_is_lsiq_entry.frz,
          dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[1].u_ct_idu_is_lsiq_entry.frz,
          dut.u_ct_idu_top.x_ct_idu_is_lsiq.g_lsiq_entry[0].u_ct_idu_is_lsiq_entry.frz},
-        dut.lsu_idu_secd, dut.u_ct_idu_top.lsu_idu_lsiq_pop_vld,
+        dut.u_ct_idu_top.lsu_idu_lsiq_pop_vld,
         dut.u_ct_idu_top.lsu_idu_lsiq_pop_entry,
         dut.u_ct_idu_top.lsu_idu_imme_wakeup,
-        dut.u_lsu_top.u_lsu_st_da.st_da_idu_secd_vld,
-        dut.u_lsu_top.u_lsu_st_da.st_da_boundary_first,
+        // 2026-10-19: st_da_idu_secd_vld / st_da_boundary_first 随非对齐硬件停用一并去掉
         dut.u_lsu_top.u_lsu_st_da.st_da_restart_vld);
   end
 
@@ -678,7 +677,7 @@ module tb_a910_difftest;
   // [SDQ] IDU 的 SDIQ (store data 发射队列): 有没有 entry 可以发 / 为什么发不出去
   always @(posedge clk) begin
     if (!rst && $test$plusargs("PROBE_SDQ") && cycles >= 2680 && cycles <= 2700)
-      $display("  [SDQ] T%0d vld=%b rdy=%b ready=%b older=%b issue_en=%b | sel=%b id=%b src0=%08x | SQe0.sdid=%0d hit=%b",
+      $display("  [SDQ] T%0d vld=%b rdy=%b ready=%b older=%b issue_en=%b | sel=%b id=%b src0=%08x | SQe0.sdid=%0d",
                cycles,
                dut.u_ct_idu_top.x_ct_idu_is_sdiq.sdiq_entry_vld,
                {dut.u_ct_idu_top.x_ct_idu_is_sdiq.sdiq_entry3_rdy,
@@ -690,8 +689,7 @@ module tb_a910_difftest;
                dut.u_ct_idu_top.x_ct_idu_is_sdiq.sdiq_entry_issue_en,
                dut.idu_lsu_sdiq_sel, dut.idu_lsu_rf_pipe5_sdiq_entry,
                dut.idu_lsu_rf_pipe5_src0,
-               dut.u_lsu_top.u_lsu_sq.gen_sq_entry[0].x_ct_lsu_sq_entry.sq_entry_sdid,
-               dut.u_lsu_top.u_lsu_sq.gen_sq_entry[0].x_ct_lsu_sq_entry.sq_entry_st_data_sdid_hit);
+               dut.u_lsu_top.u_lsu_sq.gen_sq_entry[0].x_ct_lsu_sq_entry.sq_entry_sdid);
   end
 
 
@@ -881,7 +879,7 @@ module tb_a910_difftest;
           dut.u_lsu_top.dcache_arb_st_dc_borrow_vld,
           dut.u_lsu_top.u_lsu_st_ag.st_ag_dc_addr0);
       // load 在 DA 级: 是命中 dcache 还是 discard 到 LFB
-      if (cycles >= 150500 && dut.u_lsu_top.ld_da_inst_vld)
+      if (cycles >= 150500 && dut.u_lsu_top.u_lsu_ld_da.ld_da_inst_vld)
         $display("  [LDL] T%0d ld_da addr=%08x idx=%02x hit=%b | disc_req=%b disc_grnt=%b lsid=%b | lfb_idxmask=%b aevld=%b",
           cycles,
           dut.u_lsu_top.u_lsu_ld_da.ld_da_addr,
@@ -993,7 +991,7 @@ module tb_a910_difftest;
         dut.u_lsu_top.u_lsu_mshr.gen_mshr_entry[3].u_mshr_entry.rb_entry_dest_vld,
         dut.u_lsu_top.rb_ld_wb_data_req, dut.u_lsu_top.rb_ld_wb_cmplt_req,
         dut.u_lsu_top.rb_ld_wb_data_iid, dut.u_lsu_top.rb_ld_wb_data,
-        dut.u_lsu_top.ld_da_inst_vld, dut.u_lsu_top.ld_da_iid,
+        dut.u_lsu_top.u_lsu_ld_da.ld_da_inst_vld, dut.u_lsu_top.ld_da_iid,
         dut.u_lsu_top.u_lsu_ld_da.ld_da_addr,
         dut.u_lsu_top.ld_da_rb_create_vld, dut.u_lsu_top.ld_da_hit_idx_discard_req,
         dut.u_lsu_top.u_lsu_ld_da.ld_da_rb_data_vld);
@@ -1173,7 +1171,7 @@ module tb_a910_difftest;
                dut.u_lsu_top.ld_dc_fwd_sq_vld, dut.u_lsu_top.ld_dc_fwd_wmb_vld,
                dut.u_lsu_top.ld_dc_da_data_rot_sel, dut.u_lsu_top.dcache_lsu_ld_tag_dout);
     if (!rst && $test$plusargs("PROBE_RGN")
-        && dut.u_lsu_top.ld_da_inst_vld
+        && dut.u_lsu_top.u_lsu_ld_da.ld_da_inst_vld
         && dut.u_lsu_top.ld_da_addr0 >= 32'h0000_fa80
         && dut.u_lsu_top.ld_da_addr0 <  32'h0000_fac0)
       $display("  [R20-LDA] T%0d iid=%0d addr=%08x wb_data=%08x wb_req=%b banks=%08x%08x%08x%08x%08x%08x%08x%08x",
@@ -1405,10 +1403,10 @@ module tb_a910_difftest;
         && dut.u_lsu_top.ld_da_wb_data_req
         && dut.u_lsu_top.ld_da_addr0 >= 32'h0000_fa80
         && dut.u_lsu_top.ld_da_addr0 <  32'h0000_fac0)
-      $display("  [R20-LDB] T%0d iid=%0d addr=%08x wb_data=%08x (半字=%04x) cb_merge=%b fwd_sq=%b fwd_wmb=%b hit=%b",
+      // 2026-10-19: cb_merge 随非对齐 cache_buffer 通路停用而摘除
+      $display("  [R20-LDB] T%0d iid=%0d addr=%08x wb_data=%08x (半字=%04x) fwd_sq=%b fwd_wmb=%b hit=%b",
                cycles, dut.u_lsu_top.ld_da_iid, dut.u_lsu_top.ld_da_addr0,
                dut.u_lsu_top.ld_da_wb_data, dut.u_lsu_top.ld_da_wb_data[15:0],
-               dut.u_lsu_top.u_lsu_ld_da.ld_da_merge_from_cb,
                dut.u_lsu_top.ld_dc_fwd_sq_vld, dut.u_lsu_top.ld_dc_fwd_wmb_vld,
                dut.u_lsu_top.ld_dc_dcache_hit);
   end
@@ -1433,6 +1431,8 @@ module tb_a910_difftest;
   end
 
   // ---- 1f) 缓存缓冲 (ct_lsu_cache_buffer): ld_da 可能拿它里面的**上一次**数据 ----
+  // 2026-10-19: 非对齐硬件停用后 lsu_top 不再例化 cache_buffer, 该探针一并注释
+  /*
   reg cb_vld_q = 0;
   always @(posedge clk) begin
     if (!rst && $test$plusargs("PROBE_RGN")) begin
@@ -1444,6 +1444,7 @@ module tb_a910_difftest;
       cb_vld_q <= dut.u_lsu_top.u_ct_lsu_cache_buffer.cb_vld;
     end
   end
+  */
 
   // ---- 2c) SQ 表项的 dcache 记录位 + info_vld (整区, 变化即打) ----
   //   info_vld=0 时 `sq_entry_dcache_update_vld` 被闸掉 ⇒ 建表那一拍正好来一次回填的话,
@@ -2051,9 +2052,9 @@ module tb_a910_difftest;
                dut.u_rtu.u_commit.sq_stall, dut.u_rtu.u_commit.sq_rdy0,
                dut.u_rtu.u_commit.sq_rdy1, dut.u_rtu.u_commit.sq_rdy2,
                dut.u_rtu.u_commit.int_pending);
-      $display("        LSU: ld_da_vld=%b lsid=%0d secd=%b wb_cmplt_req=%b | ld_wb_inst_vld=%b pipe3_wb_preg_vld=%b | LFB: r_vld=%b r_id=%b id_hit=%b data_vld=%b create_vld=%b entry_id=%0d r_last=%b arready=%b",
+      // 2026-10-15: 去掉 secd 探针 (ld_da_secd 已随非对齐硬件摘除)
+      $display("        LSU: ld_da_vld=%b lsid=%0d wb_cmplt_req=%b | ld_wb_inst_vld=%b pipe3_wb_preg_vld=%b | LFB: r_vld=%b r_id=%b id_hit=%b data_vld=%b create_vld=%b entry_id=%0d r_last=%b arready=%b",
                dut.u_lsu_top.u_lsu_ld_da.ld_da_inst_vld, dut.u_lsu_top.u_lsu_ld_da.ld_da_lsid,
-               dut.u_lsu_top.u_lsu_ld_da.ld_da_secd,
                dut.u_lsu_top.ld_da_wb_cmplt_req, dut.u_lsu_top.ld_wb_inst_vld,
                dut.lsu_rtu_wb_pipe3_wb_preg_vld,
                dut.u_lsu_top.u_lsu_lfb.biu_lsu_r_vld, dut.u_lsu_top.u_lsu_lfb.biu_lsu_r_id,
@@ -2086,7 +2087,7 @@ module tb_a910_difftest;
                dut.idu_lsu_ld_lch_entry, dut.idu_lsu_st_lch_entry);
       $display("       LSU ld: ag_vld=%b ag_iid=%0d ag_lsid=%b | da_vld=%b da_iid=%0d | lfb_wkq=%b lfb_hit_idx=%b create=%b vld=%b",
                dut.u_lsu_top.u_lsu_ld_ag.ld_ag_inst_vld, dut.u_lsu_top.ld_ag_iid, dut.u_lsu_top.ld_ag_lsid,
-               dut.u_lsu_top.ld_da_inst_vld, dut.u_lsu_top.ld_da_iid,
+               dut.u_lsu_top.u_lsu_ld_da.ld_da_inst_vld, dut.u_lsu_top.ld_da_iid,
                dut.u_lsu_top.u_lsu_lfb.lfb_wakeup_queue, dut.u_lsu_top.u_lsu_lfb.lfb_ld_da_hit_idx,
                dut.u_lsu_top.u_lsu_lfb.lfb_data_create_vld, dut.u_lsu_top.u_lsu_lfb.lfb_data_entry_vld);
     end
@@ -2112,7 +2113,7 @@ module tb_a910_difftest;
                dut.idu_lsu_ld_sel, dut.idu_lsu_ld_iid,
                dut.u_lsu_top.u_lsu_ld_ag.ld_ag_inst_vld, dut.u_lsu_top.ld_ag_iid,
                dut.u_lsu_top.ld_ag_lsid,
-               dut.u_lsu_top.ld_da_inst_vld, dut.u_lsu_top.ld_da_iid);
+               dut.u_lsu_top.u_lsu_ld_da.ld_da_inst_vld, dut.u_lsu_top.ld_da_iid);
   end
 
   // 【临时诊断】LSIQ 全部 8 个表项逐拍 dump —— `+PROBE_LSIQ8`
@@ -2163,7 +2164,7 @@ module tb_a910_difftest;
                dut.u_lsu_top.u_lsu_ld_ag.ld_ag_stall_restart_entry);
       $display("       LSU: ld_ag v=%b iid=%0d lsid=%b | ld_da v=%b iid=%0d lsid=%b | lq_vld=%b rb_vld=%b | ld_lch=%b st_lch=%b | st_ag v=%b iid=%0d",
                dut.u_lsu_top.u_lsu_ld_ag.ld_ag_inst_vld, dut.u_lsu_top.ld_ag_iid, dut.u_lsu_top.ld_ag_lsid,
-               dut.u_lsu_top.ld_da_inst_vld, dut.u_lsu_top.ld_da_iid, dut.u_lsu_top.ld_da_lsid,
+               dut.u_lsu_top.u_lsu_ld_da.ld_da_inst_vld, dut.u_lsu_top.ld_da_iid, dut.u_lsu_top.ld_da_lsid,
                dut.u_lsu_top.u_lsu_lq.lq_entry_vld, dut.u_lsu_top.u_lsu_lfb.lfb_addr_entry_vld,
                dut.idu_lsu_ld_lch_entry, dut.idu_lsu_st_lch_entry,
                dut.u_lsu_top.st_ag_inst_vld, dut.u_lsu_top.st_ag_iid);
@@ -2712,7 +2713,8 @@ module tb_a910_difftest;
   // 【临时诊断】总线 AW/W 两侧 + BIU 写通道 FSM —— `+PROBE_BUS` (窗由 STL_LO/STL_HI 给)
   always @(posedge clk) begin
     if (!rst && $test$plusargs("PROBE_BUS") && cycles >= stl_lo && cycles <= stl_hi)
-      $display("  [BUS] T%0d aw_req st=%b vict=%b | w_req st=%b vict=%b | wmb_aw=%b wmb_w=%b | vb_hit=%b lfb_hit=%b wbiu_unmask=%b wdata_req=%b | FSM st=%0d sel=%b aw_done=%b w_done=%b | pad awv=%b awr=%b wv=%b wr=%b wl=%b",
+      // 2026-10-19: BIU 写通道重写后 wr_state/wr_sel_st/aw_done/w_done 已不存在, 去掉这四项
+      $display("  [BUS] T%0d aw_req st=%b vict=%b | w_req st=%b vict=%b | wmb_aw=%b wmb_w=%b | vb_hit=%b lfb_hit=%b wbiu_unmask=%b wdata_req=%b | pad awv=%b awr=%b wv=%b wr=%b wl=%b",
                cycles,
                dut.u_lsu_top.u_ct_lsu_bus_arb.lsu_biu_aw_st_req,
                dut.u_lsu_top.u_ct_lsu_bus_arb.lsu_biu_aw_vict_req,
@@ -2724,10 +2726,6 @@ module tb_a910_difftest;
                dut.u_lsu_top.u_lsu_wmb.lfb_wmb_write_req_hit_idx,
                dut.u_lsu_top.u_lsu_wmb.wmb_write_biu_req_unmask,
                dut.u_lsu_top.u_lsu_wmb.wmb_data_req,
-               dut.u_ct_biu_top.u_ct_biu_write_channel.wr_state,
-               dut.u_ct_biu_top.u_ct_biu_write_channel.wr_sel_st,
-               dut.u_ct_biu_top.u_ct_biu_write_channel.aw_done,
-               dut.u_ct_biu_top.u_ct_biu_write_channel.w_done,
                dut.biu_pad_awvalid, dut.pad_biu_awready,
                dut.biu_pad_wvalid, dut.pad_biu_wready, dut.biu_pad_wlast);
     if (!rst && $test$plusargs("PROBE_BUS") && cycles >= stl_lo && cycles <= stl_hi)
@@ -2833,9 +2831,8 @@ module tb_a910_difftest;
                dut.u_lsu_top.lsu_dcache_ld_data_gwen_b,
                dut.u_lsu_top.lsu_dcache_ld_data_sel_b);
       if (dut.u_lsu_top.u_lsu_ld_da.ld_da_inst_vld)
-        $display("  [LDC] T%0d iid=%0d addr=%08x secd=%b hit=%b way=%b fwd=%b expt=%b | data_vld=%b cmplt_req=%b data_req=%b | disc_lfb=%b rb_create=%b",                 cycles, dut.u_lsu_top.u_lsu_ld_da.ld_da_iid,
+        $display("  [LDC] T%0d iid=%0d addr=%08x hit=%b way=%b fwd=%b expt=%b | data_vld=%b cmplt_req=%b data_req=%b | disc_lfb=%b rb_create=%b",                 cycles, dut.u_lsu_top.u_lsu_ld_da.ld_da_iid,
                  dut.u_lsu_top.u_lsu_ld_da.ld_da_addr,
-                 dut.u_lsu_top.u_lsu_ld_da.ld_da_secd,
                  dut.u_lsu_top.u_lsu_ld_da.ld_da_dcache_hit,
                  dut.u_lsu_top.u_lsu_ld_da.ld_da_settle_way,
                  dut.u_lsu_top.u_lsu_ld_da.ld_da_fwd_vld,
@@ -2846,12 +2843,10 @@ module tb_a910_difftest;
                  dut.u_lsu_top.u_lsu_ld_da.ld_da_discard_from_lfb_req,
                  dut.u_lsu_top.u_lsu_ld_da.ld_da_rb_create_vld);
       if (dut.u_lsu_top.u_lsu_ld_da.ld_da_inst_vld)
-        $display("  [LDA] T%0d iid=%0d preg=%0d addr=%08x | cb_vld=%b cb_data=%08x | rb_vld=%b | rot=%0d | d256lo=%032x d256hi=%032x | wb_req=%b wb_data=%08x",
+        $display("  [LDA] T%0d iid=%0d preg=%0d addr=%08x | rb_vld=%b | rot=%0d | d256lo=%032x d256hi=%032x | wb_req=%b wb_data=%08x",
                  cycles, dut.u_lsu_top.u_lsu_ld_da.ld_da_iid,
                  dut.u_lsu_top.u_lsu_ld_da.ld_da_preg,
                  dut.u_lsu_top.u_lsu_ld_da.ld_da_addr,
-                 dut.u_lsu_top.u_lsu_ld_da.ld_da_cb_data_vld,
-                 dut.u_lsu_top.u_lsu_ld_da.ld_da_cb_data,
                  dut.u_lsu_top.u_lsu_ld_da.ld_da_rb_data_vld,
                  dut.u_lsu_top.u_lsu_ld_da.ld_da_data_rot_sel,
                  dut.u_lsu_top.u_lsu_ld_da.ld_da_data256[127:0],
@@ -3348,11 +3343,10 @@ module tb_a910_difftest;
                  dut.u_lsu_top.u_lsu_ld_ag.ld_ag_stall_vld,
                  dut.u_lsu_top.u_lsu_ld_ag.ld_ag_stall_ori,
                  dut.u_lsu_top.u_lsu_ld_ag.ld_ag_dc_inst_vld);
-        $display("  [LSU] T%0d ld_sel=%b ld_iid=%0d | dc2da=%b da_vld=%b secd=%b da_wb_req=%b | wb_pre=%b wb_vld=%b wb_iid=%0d",
+        $display("  [LSU] T%0d ld_sel=%b ld_iid=%0d | dc2da=%b da_vld=%b da_wb_req=%b | wb_pre=%b wb_vld=%b wb_iid=%0d",
                  cycles, dut.idu_lsu_ld_sel, dut.idu_lsu_ld_iid,
                  dut.u_lsu_top.u_lsu_ld_da.ld_dc_da_inst_vld,
                  dut.u_lsu_top.u_lsu_ld_da.ld_da_inst_vld,
-                 dut.u_lsu_top.u_lsu_ld_da.ld_da_secd,
                  dut.u_lsu_top.ld_da_wb_cmplt_req,
                  dut.u_lsu_top.u_lsu_ld_wb.ld_wb_pre_inst_vld,
                  dut.u_lsu_top.ld_wb_inst_vld, dut.u_lsu_top.rb_ld_wb_iid);

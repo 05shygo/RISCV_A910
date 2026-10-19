@@ -142,7 +142,7 @@ logic         vb_data_vld;
 
 // rcl state machine
 logic [2:0]  vb_rcl_sm_next_state;
-logic [2:0]  vb_rcl_sm_state;
+(* max_fanout = 16 *) logic [2:0] vb_rcl_sm_state;
 logic        vb_rcl_sm_dcache_way;
 
 // data writeback state machine

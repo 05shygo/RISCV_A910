@@ -306,13 +306,13 @@ module RTU_subsys (
     wire [1:0] idu_lsu_ld_inst_size                  ;   // 内部
     wire [11:0] idu_lsu_ld_lch_entry                  ;   // 内部
     wire [11:0] idu_lsu_ld_offset                     ;   // 内部
-    wire [12:0] idu_lsu_ld_offset_plus                ;   // 内部
+    // 2026-10-19 停用: wire [12:0] idu_lsu_ld_offset_plus                ;   // 内部
     wire idu_lsu_ld_oldest                     ;   // 内部
     wire [5:0] idu_lsu_ld_preg                       ;   // 内部
     wire idu_lsu_ld_sel                        ;   // 内部
     wire idu_lsu_ld_sign_extend                ;   // 内部
     wire [31:0] idu_lsu_ld_src0                       ;   // 内部
-    wire idu_lsu_ld_unalign_2nd                ;   // 内部
+    // 2026-10-19 停用: wire idu_lsu_ld_unalign_2nd                ;   // 内部
     wire [3:0] idu_lsu_rf_pipe5_sdiq_entry           ;   // 内部
     wire [31:0] idu_lsu_rf_pipe5_src0                 ;   // 内部
     wire idu_lsu_sdiq_sel                      ;   // 内部
@@ -320,12 +320,12 @@ module RTU_subsys (
     wire [1:0] idu_lsu_st_inst_size                  ;   // 内部
     wire [11:0] idu_lsu_st_lch_entry                  ;   // 内部
     wire [11:0] idu_lsu_st_offset                     ;   // 内部
-    wire [12:0] idu_lsu_st_offset_plus                ;   // 内部
+    // 2026-10-19 停用: wire [12:0] idu_lsu_st_offset_plus                ;   // 内部
     wire idu_lsu_st_oldest                     ;   // 内部
     wire [3:0] idu_lsu_st_sdiq_entry                 ;   // 内部
     wire idu_lsu_st_sel                        ;   // 内部
     wire [31:0] idu_lsu_st_src0                       ;   // 内部
-    wire idu_lsu_st_unalign_2nd                ;   // 内部
+    // 2026-10-19 停用: wire idu_lsu_st_unalign_2nd                ;   // 内部
     wire [24:0] idu_rtu_disp0_chk                     ;   // 内部
     wire [11:0] idu_rtu_disp0_csr_addr                ;   // 内部
     wire [4:0] idu_rtu_disp0_csr_imm                 ;   // 内部
@@ -376,7 +376,7 @@ module RTU_subsys (
     wire [11:0] lsu_idu_pop_entry                     ;   // 内部
     wire [11:0] lsu_idu_rb_full                       ;   // 内部
     wire lsu_idu_rb_not_full                   ;   // 内部
-    wire [11:0] lsu_idu_secd                          ;   // 内部
+    // 2026-10-19 停用: wire [11:0] lsu_idu_secd                          ;   // 内部
     wire [11:0] lsu_idu_sq_full                       ;   // 内部
     wire lsu_idu_sq_not_full                   ;   // 内部
     wire [31:0] lsu_idu_wb_pipe3_wb_preg_data         ;   // 内部
@@ -686,7 +686,8 @@ module RTU_subsys (
     .lsu_idu_rb_not_full                (lsu_idu_rb_not_full               ),
     .lsu_idu_sq_full                    (lsu_idu_sq_full                   ),
     .lsu_idu_sq_not_full                (lsu_idu_sq_not_full               ),
-    .lsu_idu_secd                       (lsu_idu_secd                      ),
+    // 2026-10-19 停用: .lsu_idu_secd                       (lsu_idu_secd                      ),
+
     .lsu_idu_imme_wakeup                (lsu_idu_imme_wakeup               ),
     .lsu_idu_lsiq_pop_vld               (lsu_idu_lsiq_pop_vld              ),
     .lsu_idu_lsiq_pop0_vld              (lsu_idu_lsiq_pop0_vld             ),
@@ -727,19 +728,23 @@ module RTU_subsys (
     .idu_lsu_ld_preg                    (idu_lsu_ld_preg                   ),
     .idu_lsu_ld_src0                    (idu_lsu_ld_src0                   ),
     .idu_lsu_ld_offset                  (idu_lsu_ld_offset                 ),
-    .idu_lsu_ld_offset_plus             (idu_lsu_ld_offset_plus            ),
+    // 2026-10-19 停用: .idu_lsu_ld_offset_plus             (idu_lsu_ld_offset_plus            ),
+
     .idu_lsu_ld_sign_extend             (idu_lsu_ld_sign_extend            ),
     .idu_lsu_ld_inst_size               (idu_lsu_ld_inst_size              ),
-    .idu_lsu_ld_unalign_2nd             (idu_lsu_ld_unalign_2nd            ),
+    // 2026-10-19 停用: .idu_lsu_ld_unalign_2nd             (idu_lsu_ld_unalign_2nd            ),
+
     .idu_lsu_ld_lch_entry               (idu_lsu_ld_lch_entry              ),
     .idu_lsu_ld_oldest                  (idu_lsu_ld_oldest                 ),
     .idu_lsu_st_sel                     (idu_lsu_st_sel                    ),
     .idu_lsu_st_iid                     (idu_lsu_st_iid                    ),
     .idu_lsu_st_src0                    (idu_lsu_st_src0                   ),
     .idu_lsu_st_offset                  (idu_lsu_st_offset                 ),
-    .idu_lsu_st_offset_plus             (idu_lsu_st_offset_plus            ),
+    // 2026-10-19 停用: .idu_lsu_st_offset_plus             (idu_lsu_st_offset_plus            ),
+
     .idu_lsu_st_inst_size               (idu_lsu_st_inst_size              ),
-    .idu_lsu_st_unalign_2nd             (idu_lsu_st_unalign_2nd            ),
+    // 2026-10-19 停用: .idu_lsu_st_unalign_2nd             (idu_lsu_st_unalign_2nd            ),
+
     .idu_lsu_st_lch_entry               (idu_lsu_st_lch_entry              ),
     .idu_lsu_st_oldest                  (idu_lsu_st_oldest                 ),
     .idu_lsu_st_sdiq_entry              (idu_lsu_st_sdiq_entry             ),
@@ -822,24 +827,28 @@ module RTU_subsys (
       .LFB_DATA_ENTRY(1)) u_lsu (
     .idu_lsu_ld_sel                     (idu_lsu_ld_sel                    ),
     .idu_lsu_ld_inst_size               (idu_lsu_ld_inst_size              ),
-    .idu_lsu_ld_unalign_2nd             (idu_lsu_ld_unalign_2nd            ),
+    // 2026-10-19 停用: .idu_lsu_ld_unalign_2nd             (idu_lsu_ld_unalign_2nd            ),
+
     .idu_lsu_ld_sign_extend             (idu_lsu_ld_sign_extend            ),
     .idu_lsu_ld_iid                     (idu_lsu_ld_iid                    ),
     .idu_lsu_ld_lch_entry               (idu_lsu_ld_lch_entry              ),
     .idu_lsu_ld_oldest                  (idu_lsu_ld_oldest                 ),
     .idu_lsu_ld_preg                    (idu_lsu_ld_preg                   ),
     .idu_lsu_ld_offset                  (idu_lsu_ld_offset                 ),
-    .idu_lsu_ld_offset_plus             (idu_lsu_ld_offset_plus            ),
+    // 2026-10-19 停用: .idu_lsu_ld_offset_plus             (idu_lsu_ld_offset_plus            ),
+
     .idu_lsu_ld_src                     (idu_lsu_ld_src0                   ),   // 交付侧名字多个 0
     .idu_lsu_st_sel                     (idu_lsu_st_sel                    ),
     .idu_lsu_st_inst_size               (idu_lsu_st_inst_size              ),
-    .idu_lsu_st_unalign_2nd             (idu_lsu_st_unalign_2nd            ),
+    // 2026-10-19 停用: .idu_lsu_st_unalign_2nd             (idu_lsu_st_unalign_2nd            ),
+
     .idu_lsu_st_iid                     (idu_lsu_st_iid                    ),
     .idu_lsu_st_lch_entry               (idu_lsu_st_lch_entry              ),
     .idu_lsu_st_sdiq_entry              (idu_lsu_st_sdiq_entry             ),
     .idu_lsu_st_oldest                  (idu_lsu_st_oldest                 ),
     .idu_lsu_st_offset                  (idu_lsu_st_offset                 ),
-    .idu_lsu_st_offset_plus             (idu_lsu_st_offset_plus            ),
+    // 2026-10-19 停用: .idu_lsu_st_offset_plus             (idu_lsu_st_offset_plus            ),
+
     .idu_lsu_st_src0                    (idu_lsu_st_src0                   ),
     .idu_lsu_rf_pipe5_src0              (idu_lsu_rf_pipe5_src0             ),
     .idu_lsu_sdiq_sel                   (idu_lsu_sdiq_sel                  ),
@@ -905,7 +914,8 @@ module RTU_subsys (
     .lsu_idu_lsiq_pop0_vld              (lsu_idu_lsiq_pop0_vld             ),
     .lsu_idu_lsiq_pop1_vld              (lsu_idu_lsiq_pop1_vld             ),
     .lsu_idu_pop_entry                  (lsu_idu_pop_entry                 ),
-    .lsu_idu_secd                       (lsu_idu_secd                      ),
+    // 2026-10-19 停用: .lsu_idu_secd                       (lsu_idu_secd                      ),
+
     .lsu_idu_lq_full                    (lsu_idu_lq_full                   ),
     .lsu_idu_lq_not_full                (lsu_idu_lq_not_full               ),
     .lsu_idu_rb_full                    (lsu_idu_rb_full                   ),

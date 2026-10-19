@@ -18,13 +18,14 @@ module ct_lsu_lq (
     input  logic         cpurst_b,
     input  logic         forever_cpuclk,
     input  logic [31:0]  ld_dc_addr0,
-    input  logic [27:0]  ld_dc_addr1_to4,
+    // 2026-10-15 停用: 非对齐"第二半"表项 (addr1/bytes_vld1/create1/secd) 整条摘掉
+    //input  logic [27:0]  ld_dc_addr1_to4,
     input  logic [15:0]  ld_dc_bytes_vld,
-    input  logic [15:0]  ld_dc_bytes_vld1,
+    //input  logic [15:0]  ld_dc_bytes_vld1,
     input  logic [6:0]   ld_dc_iid,
-    input  logic         ld_dc_lq_create1_vld,
+    //input  logic         ld_dc_lq_create1_vld,
     input  logic         ld_dc_lq_create_vld,
-    input  logic         ld_dc_secd,
+    //input  logic         ld_dc_secd,
     input  logic         rtu_yy_xx_commit0,
     input  logic [6:0]   rtu_yy_xx_commit0_iid,
     input  logic         rtu_yy_xx_commit1,
@@ -50,9 +51,9 @@ genvar i;
 logic [7:0]  lq_create_ptr0;
 logic [7:0]  lq_create_ptr1;
 logic        lq_create_success;
-logic        lq_create1_success;
+//logic        lq_create1_success;         // 2026-10-15 停用
 logic [7:0]  lq_entry_create0_vld;
-logic [7:0]  lq_entry_create1_vld;
+//logic [7:0]  lq_entry_create1_vld;       // 2026-10-15 停用
 logic [7:0]  lq_entry_inst_hit;
 logic [7:0]  lq_entry_raw_spec_fail;
 logic [7:0]  lq_entry_vld;
@@ -67,13 +68,13 @@ generate
       .cpurst_b                 (cpurst_b),
       .forever_cpuclk           (forever_cpuclk),
       .ld_dc_addr0              (ld_dc_addr0),
-      .ld_dc_addr1_to4          (ld_dc_addr1_to4),
+      //.ld_dc_addr1_to4          (ld_dc_addr1_to4),
       .ld_dc_bytes_vld          (ld_dc_bytes_vld),
-      .ld_dc_bytes_vld1         (ld_dc_bytes_vld1),
+      //.ld_dc_bytes_vld1         (ld_dc_bytes_vld1),
       .ld_dc_iid                (ld_dc_iid),
-      .ld_dc_secd               (ld_dc_secd),
+      //.ld_dc_secd               (ld_dc_secd),
       .lq_entry_create0_vld_x   (lq_entry_create0_vld[i]),
-      .lq_entry_create1_vld_x   (lq_entry_create1_vld[i]),
+      //.lq_entry_create1_vld_x   (lq_entry_create1_vld[i]),
       .rtu_yy_xx_commit0        (rtu_yy_xx_commit0),
       .rtu_yy_xx_commit0_iid    (rtu_yy_xx_commit0_iid),
       .rtu_yy_xx_commit1        (rtu_yy_xx_commit1),
@@ -136,19 +137,21 @@ assign lq_full = &lq_entry_vld[7:0];
 //==========================================================
 //                 Generate create pointer
 //==========================================================
+// 2026-10-15 停用: 末项 `&& !ld_dc_lq_create1_vld` 恒为真 (create1 已摘)
 assign lq_create_success  = ld_dc_lq_create_vld
                             &&  !rtu_yy_xx_flush
-                            &&  (!lq_ld_dc_less2 
-                                 || !lq_ld_dc_full && !ld_dc_lq_create1_vld);
+                            &&  ( !lq_ld_dc_less2
+                                  || !lq_ld_dc_full );//&& !ld_dc_lq_create1_vld);
 
-assign lq_create1_success = lq_create_success
-                            && ld_dc_lq_create1_vld;
+// 2026-10-15 停用: create1 (非对齐第二半) 的表项创建
+//assign lq_create1_success = lq_create_success
+//                            && ld_dc_lq_create1_vld;
 
 assign lq_entry_create0_vld[7:0] = {8{lq_create_success}}
                                    & lq_create_ptr0[7:0];
 
-assign lq_entry_create1_vld[7:0] = {8{lq_create1_success}}
-                                   & lq_create_ptr1[7:0];
+//assign lq_entry_create1_vld[7:0] = {8{lq_create1_success}}
+//                                   & lq_create_ptr1[7:0];
 
 //==========================================================
 //                 Generate interface

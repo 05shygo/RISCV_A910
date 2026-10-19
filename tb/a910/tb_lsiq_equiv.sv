@@ -43,7 +43,8 @@ module tb_lsiq_equiv;
   logic         new_left, new_full, new_p3en, new_p4en;
   logic         ref_left, ref_full, ref_p3en, ref_p4en;
   logic [59:0]  new_p3rd, new_p4rd, ref_p3rd, ref_p4rd;
-  logic         new_p3un, new_p3old, new_p4un, new_p4old;
+  // 2026-10-19 停用: new 侧非对齐第二半标记已摘除
+  logic         new_p3old, new_p4old;
   logic         ref_p3un, ref_p3old, ref_p4un, ref_p4old;
   logic [N-1:0] new_p3iss, new_p4iss, ref_p3iss, ref_p4iss;
 
@@ -71,7 +72,7 @@ module tb_lsiq_equiv;
     .lsu_idu_lsiq_pop_vld              (pop_vld   ),
     .lsu_idu_rb_full                   (rb_full   ),
     .lsu_idu_rb_not_full               (rb_nf     ),
-    .lsu_idu_secd                      (secd      ),
+    // 2026-10-19 停用: .lsu_idu_secd    (secd      ),
     .lsu_idu_sq_full                   (sq_full   ),
     .lsu_idu_sq_not_full               (sq_nf     ),
     .lsu_idu_imme_wakeup               (imme_wakeup),
@@ -83,11 +84,11 @@ module tb_lsiq_equiv;
     .lsiq_rf_pipe3_issue_en            (new_p3en  ),
     .lsiq_rf_pipe4_issue_en            (new_p4en  ),
     .lsiq_dp_pipe3_entry_read_data     (new_p3rd  ),
-    .lsiq_pipe3_entry_unalign_2nd      (new_p3un  ),
+    // 2026-10-19 停用: .lsiq_pipe3_entry_unalign_2nd (new_p3un),
     .lsiq_pipe3_entry_old              (new_p3old ),
     .lsiq_dp_pipe3_issue_entry         (new_p3iss ),
     .lsiq_dp_pipe4_entry_read_data     (new_p4rd  ),
-    .lsiq_pipe4_entry_unalign_2nd      (new_p4un  ),
+    // 2026-10-19 停用: .lsiq_pipe4_entry_unalign_2nd (new_p4un),
     .lsiq_pipe4_entry_old              (new_p4old ),
     .lsiq_dp_pipe4_issue_entry         (new_p4iss )
   );
@@ -252,8 +253,7 @@ module tb_lsiq_equiv;
         $display("  [MISMATCH] cyc=%0d  p4_read_data: new=%h ref=%h", cyc, new_p4rd, ref_p4rd);
         errs = errs + 1;
       end
-      chk("p3_unalign_2nd", new_p3un,  ref_p3un );
-      chk("p4_unalign_2nd", new_p4un,  ref_p4un );
+      // 2026-10-19 停用: new 侧不再有非对齐第二半标记, ref 侧该输出 (恒 0 或 x) 不再参与比对
       chk("p3_old",         new_p3old, ref_p3old);
       chk("p4_old",         new_p4old, ref_p4old);
       if (u_new.lsiq_entry_cnt !== u_ref.lsiq_entry_cnt) begin
@@ -316,7 +316,7 @@ module tb_lsiq_equiv;
       lq_full     = $urandom();
       sq_full     = $urandom();
       rb_full     = $urandom();
-      secd        = $urandom();
+      secd        = '0;   // 2026-10-19: new 侧不再接收 secd, 令 ref 侧也恒 0 以保持等价
       imme_wakeup = $urandom();
       lq_nf = (($urandom() % 100) < 60);
       sq_nf = (($urandom() % 100) < 60);

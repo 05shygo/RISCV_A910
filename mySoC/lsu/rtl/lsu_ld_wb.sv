@@ -135,8 +135,8 @@ assign ld_wb_pre_data_iid[6:0]  = {7{ld_wb_da_data_grnt}} & ld_da_iid[6:0]
 assign ld_wb_pre_preg[5:0]      = {7{ld_wb_da_data_grnt}} & ld_da_preg[5:0]
                                   | {7{ld_wb_rb_data_grnt}} & rb_ld_wb_preg[5:0];
 
-assign ld_wb_pre_preg_expand[63:0] = {96{ld_wb_da_data_grnt}} & ld_da_preg_expand[63:0]
-                                     | {96{ld_wb_rb_data_grnt}} & rb_ld_wb_preg_expand[63:0];
+assign ld_wb_pre_preg_expand[63:0] = {64{ld_wb_da_data_grnt}} & ld_da_preg_expand[63:0]
+                                     | {64{ld_wb_rb_data_grnt}} & rb_ld_wb_preg_expand[63:0];
 
 assign ld_wb_pre_data[31:0]     = ld_da_wb_data_req
                                   ? ld_da_wb_data[31:0]
@@ -245,7 +245,7 @@ begin
   if (!cpurst_b)
   begin
     ld_wb_data_preg[5:0]          <=  7'b0;
-    ld_wb_data_preg_expand[63:0]  <=  96'b0;
+    ld_wb_data_preg_expand[63:0]  <=  64'b0;
     ld_wb_preg_sign_sel[3:0]      <=  4'b0;
   end
   else if(ld_wb_pre_data_vld)

@@ -10,26 +10,27 @@ module lsu_top #(
   // IDU to LSU - Load interface
   input  logic                 idu_lsu_ld_sel,
   input  logic [1:0]           idu_lsu_ld_inst_size,
-  input  logic                 idu_lsu_ld_unalign_2nd,
+  // 2026-10-19 停用: 非对齐通路整体摘除 (IDU 侧也已不再产生这些信号)
+  //input  logic                 idu_lsu_ld_unalign_2nd,
   input  logic                 idu_lsu_ld_sign_extend,
   input  logic [6:0]           idu_lsu_ld_iid,
   input  logic [LSIQ_ENTRY-1:0] idu_lsu_ld_lch_entry,
   input  logic                 idu_lsu_ld_oldest,
   input  logic [5:0]           idu_lsu_ld_preg,
   input  logic [11:0]          idu_lsu_ld_offset,
-  input  logic [12:0]          idu_lsu_ld_offset_plus,
+  //input  logic [12:0]          idu_lsu_ld_offset_plus,
   input  logic [31:0]          idu_lsu_ld_src,
 
   // IDU to LSU - Store interface
   input  logic                 idu_lsu_st_sel,
   input  logic [1:0]           idu_lsu_st_inst_size,
-  input  logic                 idu_lsu_st_unalign_2nd,
+  //input  logic                 idu_lsu_st_unalign_2nd,
   input  logic [6:0]           idu_lsu_st_iid,
   input  logic [LSIQ_ENTRY-1:0] idu_lsu_st_lch_entry,
   input  logic [SDIQ_ENTRY-1:0] idu_lsu_st_sdiq_entry,
   input  logic                 idu_lsu_st_oldest,
   input  logic [11:0]          idu_lsu_st_offset,
-  input  logic [12:0]          idu_lsu_st_offset_plus,
+  //input  logic [12:0]          idu_lsu_st_offset_plus,
   input  logic [31:0]          idu_lsu_st_src0,
 
   input  logic [31:0]          idu_lsu_rf_pipe5_src0,  // in
@@ -189,7 +190,8 @@ module lsu_top #(
   output logic                 lsu_idu_lsiq_pop0_vld,
   output logic                 lsu_idu_lsiq_pop1_vld,
   output logic [LSIQ_ENTRY-1:0]lsu_idu_pop_entry,
-  output logic [LSIQ_ENTRY-1:0]lsu_idu_secd,
+  // 2026-10-19 停用: 非对齐第二半唤醒 (IDU 侧已不再接收)
+  //output logic [LSIQ_ENTRY-1:0]lsu_idu_secd,
 
   output logic [LSIQ_ENTRY-1:0]lsu_idu_lq_full,
   output logic                 lsu_idu_lq_not_full,
@@ -283,10 +285,14 @@ assign lsu_idu_pop_entry[LSIQ_ENTRY-1:0] = ld_da_idu_pop_entry[LSIQ_ENTRY-1:0] |
                               st_da_idu_pop_entry[LSIQ_ENTRY-1:0];  
 
 
-logic [LSIQ_ENTRY-1:0]st_da_idu_secd;
-logic [LSIQ_ENTRY-1:0]ld_da_idu_secd;
-assign lsu_idu_secd[LSIQ_ENTRY-1:0] = st_da_idu_secd[LSIQ_ENTRY-1:0] |
-                              ld_da_idu_secd[LSIQ_ENTRY-1:0];
+// 2026-10-19 停用: LD/ST 两侧的非对齐第二半唤醒都已摘, 端口 lsu_idu_secd 也已从 lsu_top
+//   与 ct_idu_top 两端删除 (IDU 侧不再接收 secd, 见 ct_idu_is_lsiq.sv)
+//logic [LSIQ_ENTRY-1:0]st_da_idu_secd;
+//logic [LSIQ_ENTRY-1:0]ld_da_idu_secd;
+//assign lsu_idu_secd[LSIQ_ENTRY-1:0] = st_da_idu_secd[LSIQ_ENTRY-1:0] |
+//                              ld_da_idu_secd[LSIQ_ENTRY-1:0];
+// 2026-10-19 停用: 端口已摘除, 无需恒 0 驱动
+//assign lsu_idu_secd[LSIQ_ENTRY-1:0] = {LSIQ_ENTRY{1'b0}};
 
 logic [LSIQ_ENTRY-1:0]ld_dc_idu_lq_full;
 assign lsu_idu_lq_full = ld_dc_idu_lq_full[LSIQ_ENTRY-1:0];
@@ -378,11 +384,11 @@ logic         bus_arb_rb_ar_sel;
 logic                        dcache_arb_ld_ag_borrow_addr_vld;
 logic [31:0]                 dcache_arb_ld_ag_addr;
 logic                        ld_dc_lq_create_vld;
-logic                        ld_dc_lq_create1_vld;
+// 2026-10-15 停用: logic                        ld_dc_lq_create1_vld;
 logic [SQ_ENTRY-1:0]         sq_ld_dc_fwd_id;
-logic                        ld_da_cb_ld_inst_vld;
-logic                        ld_da_cb_data_vld;
-logic [127:0]                ld_da_cb_data;
+// 2026-10-15 停用: logic                        ld_da_cb_ld_inst_vld;
+// 2026-10-15 停用: logic                        ld_da_cb_data_vld;
+// 2026-10-15 停用: logic [127:0]                ld_da_cb_data;
 logic                        lq_st_dc_spec_fail;
 logic                        st_da_sq_no_restart;
 logic                        wmb_sq_pop_to_ce_grnt;
@@ -419,7 +425,7 @@ logic                        lfb_pop_depd_ff;
 logic                        lfb_wmb_read_req_hit_idx;
 logic                        lfb_wmb_write_req_hit_idx;
 logic [255:0]                ld_da_data256;
-logic [19:0]                 st_da_vb_feedback_addr_tto12;
+// 2026-10-15 停用: 死亡声明 (无驱动无负载, 与本次非对齐摘除无关的既有残留): logic [19:0]                 st_da_vb_feedback_addr_tto12;
 logic                        dcache_arb_ag_st_sel;
 logic [31:0]                 dcache_arb_st_ag_addr;
 logic                        dcache_arb_st_ag_borrow_addr_vld;
@@ -427,18 +433,18 @@ logic                        dcache_arb_st_ag_borrow_addr_vld;
 // Load AG to DC
 logic ld_ag_dc_inst_vld;
 logic [1:0] ld_ag_inst_size;
-logic ld_ag_secd;
+// 2026-10-15 停用: logic ld_ag_secd;
 logic ld_ag_sign_extend;
 logic [6:0] ld_ag_iid;
 logic [LSIQ_ENTRY-1:0] ld_ag_lsid;
 logic ld_ag_old;
 logic [5:0] ld_ag_preg;
-logic ld_ag_boundary;
-logic ld_ag_acclr_en;
-logic ld_ag_dc_fwd_bypass_en;
-logic [15:0] ld_ag_bytes_vld1;
+// 2026-10-15 停用: logic ld_ag_boundary;
+// 2026-10-15 停用: logic ld_ag_acclr_en;
+// 2026-10-15 停用: bypass 通路在本仓没实现 (ld_dc_chk_ld_bypass_vld 无人使用), 整条摘掉: logic ld_ag_dc_fwd_bypass_en;
+// 2026-10-15 停用: logic [15:0] ld_ag_bytes_vld1;
 logic [15:0] ld_ag_bytes_vld;
-logic [27:0] ld_ag_addr1_to4;
+// 2026-10-15 停用: logic [27:0] ld_ag_addr1_to4;
 logic [31:0] ld_ag_dc_addr0;
 logic ld_ag_raw_new;
 
@@ -455,10 +461,10 @@ logic [DATA_INDEX_WIDTH-1:0] ag_dcache_arb_ld_data_high_idx;
 logic dcache_arb_ag_ld_sel;
 logic dcache_arb_ld_dc_borrow_vld;
 logic dcache_arb_ld_dc_settle_way;
-logic [1:0] dcache_arb_ld_dc_borrow_db;
+// 2026-10-15 停用: 死亡声明 (无驱动无负载, 与本次非对齐摘除无关的既有残留): logic [1:0] dcache_arb_ld_dc_borrow_db;
 
 // Store AG outputs
-logic st_ag_boundary;
+// 2026-10-15 停用: logic st_ag_boundary;
 logic [31:0] st_ag_dc_addr0;
 logic [15:0] st_ag_dc_bytes_vld;
 logic st_ag_dc_inst_vld;
@@ -468,7 +474,7 @@ logic st_ag_inst_vld;
 logic [LSIQ_ENTRY-1:0] st_ag_lsid;
 logic st_ag_old;
 logic [SDIQ_ENTRY-1:0] st_ag_sdid_oh;
-logic st_ag_secd;
+// 2026-10-15 停用: logic st_ag_secd;
 
 
 // Store AG to DCache arbiter
@@ -485,7 +491,7 @@ logic dcache_arb_st_dc_borrow_vld;
 // Store DC outputs
 logic st_dc_inst_vld;
 logic st_dc_borrow_vld;
-logic st_dc_secd;
+// 2026-10-15 停用: logic st_dc_secd;
 logic [6:0] st_dc_iid;
 logic [LSIQ_ENTRY-1:0] st_dc_lsid;
 logic [SDIQ_ENTRY-1:0] st_dc_sdid_oh;
@@ -493,13 +499,13 @@ logic st_dc_old;
 logic st_dc_expt;
 logic [15:0] st_dc_bytes_vld;
 logic [3:0] st_dc_rot_sel;
-logic st_dc_boundary;
+// 2026-10-15 停用: logic st_dc_boundary;
 logic [31:0] st_dc_addr0;
 logic st_dc_sq_create_vld;
 logic st_dc_sq_create_dp_vld;
 logic st_dc_sq_create_gateclk_en;
 logic st_dc_sq_data_vld;
-logic st_dc_boundary_first;
+// 2026-10-15 停用: logic st_dc_boundary_first;
 logic st_dc_chk_st_inst_vld;
 logic [7:0] st_dc_rot_sel_rev;
 logic st_dc_da_inst_vld;
@@ -530,21 +536,21 @@ logic st_da_rb_cmit;
 logic st_da_rb_create_dp_vld;
 logic st_da_rb_create_gateclk_en;
 logic st_da_rb_create_vld;
-logic st_da_secd;
+// 2026-10-15 停用: logic st_da_secd;
 logic st_da_sq_dcache_dirty;
 logic st_da_sq_dcache_valid;
 logic st_da_sq_dcache_way;
-logic [TAG_WIDTH+INDEX_WIDTH-1:0] st_da_vb_feedback_addr_tto_offset;
+// 2026-10-15 停用: 死亡声明 (无驱动无负载, 与本次非对齐摘除无关的既有残留): logic [TAG_WIDTH+INDEX_WIDTH-1:0] st_da_vb_feedback_addr_tto_offset;
 logic st_da_wb_cmplt_req;
 logic st_da_wb_spec_fail;
 logic st_da_wb_expt_vld;
 logic [31:0] st_da_wb_expt_addr;
 logic [31:0] st_da_addr;
-logic st_da_boundary;
+// 2026-10-15 停用: logic st_da_boundary;
 logic [15:0] st_da_bytes_vld;
 
 // Store WB output
-logic st_wb_inst_vld;
+// 2026-10-15 停用: 死亡声明 (无驱动无负载, 与本次非对齐摘除无关的既有残留): logic st_wb_inst_vld;
 
 // DCache write ports
 logic dcache_dirty_gwen;
@@ -589,16 +595,16 @@ logic [INDEX_WIDTH-1:0] lsu_dcache_st_dirty_idx;
 logic [4:0] lsu_dcache_st_dirty_din;
 
 // Load DC outputs
-logic ld_dc_stall_vld;
-logic ld_dc_lq_full_vld;
-logic ld_dc_lq_full_req;
+// 2026-10-15 停用: 死亡声明 (无驱动无负载, 与本次非对齐摘除无关的既有残留): logic ld_dc_stall_vld;
+// 2026-10-15 停用: 死亡声明 (无驱动无负载, 与本次非对齐摘除无关的既有残留): logic ld_dc_lq_full_vld;
+// 2026-10-15 停用: 死亡声明 (无驱动无负载, 与本次非对齐摘除无关的既有残留): logic ld_dc_lq_full_req;
 logic ld_dc_da_inst_vld;
 logic ld_dc_borrow_vld;
-logic [1:0] ld_dc_borrow_db;
+// 2026-10-15 停用: 死亡声明 (无驱动无负载, 与本次非对齐摘除无关的既有残留): logic [1:0] ld_dc_borrow_db;
 logic [1:0] ld_dc_inst_size;
-logic [27:0] ld_dc_addr1_to4;
-logic ld_dc_boundary;
-logic ld_dc_secd;
+// 2026-10-15 停用: logic [27:0] ld_dc_addr1_to4;
+// 2026-10-15 停用: logic ld_dc_boundary;
+// 2026-10-15 停用: logic ld_dc_secd;
 logic ld_dc_sign_extend;
 logic [6:0] ld_dc_iid;
 logic [LSIQ_ENTRY-1:0] ld_dc_lsid;
@@ -606,15 +612,15 @@ logic ld_dc_old;
 logic [5:0] ld_dc_preg;
 logic ld_dc_expt;
 logic [15:0] ld_dc_bytes_vld;
-logic [15:0] ld_dc_bytes_vld1;
-logic ld_dc_acclr_en;
-logic ld_dc_da_cb_merge_en;
+// 2026-10-15 停用: logic [15:0] ld_dc_bytes_vld1;
+// 2026-10-15 停用: logic ld_dc_acclr_en;
+// 2026-10-15 停用: logic ld_dc_da_cb_merge_en;
 logic ld_dc_raw_new;
 logic [31:0] ld_dc_addr0;
-logic ld_dc_cb_addr_create_vld;
+// 2026-10-15 停用: logic ld_dc_cb_addr_create_vld;
 logic ld_dc_chk_ld_inst_vld;
-logic ld_dc_chk_ld_addr1_vld;
-logic ld_dc_chk_ld_bypass_vld;
+// 2026-10-15 停用: logic ld_dc_chk_ld_addr1_vld;
+// 2026-10-15 停用: bypass 通路在本仓没实现 (ld_dc_chk_ld_bypass_vld 无人使用), 整条摘掉: logic ld_dc_chk_ld_bypass_vld;
 logic ld_dc_hit_low_region;
 logic ld_dc_hit_high_region;
 logic ld_dc_dcache_hit;
@@ -623,20 +629,20 @@ logic [3:0] ld_dc_preg_sign_sel;
 logic [15:0] ld_dc_fwd_bytes_vld;
 logic ld_dc_fwd_sq_vld;
 logic ld_dc_fwd_wmb_vld;
-logic [27:0] ld_dc_cb_addr_tto4;
+// 2026-10-15 停用: logic [27:0] ld_dc_cb_addr_tto4;
 logic lsu_dcache_ld_xx_gwen;
 
 // Placeholder signals for modules not yet implemented (to be connected by user)
 logic lq_ld_dc_inst_hit;
 logic lq_ld_dc_full;
-logic lq_ld_dc_less2;
-logic cb_ld_dc_addr_hit;
-logic sq_ld_dc_cancel_acc_req;
+// 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): logic lq_ld_dc_less2;
+// 2026-10-15 停用: logic cb_ld_dc_addr_hit;
+// 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): logic sq_ld_dc_cancel_acc_req;
 logic sq_ld_dc_fwd_req;
-logic wmb_ld_dc_cancel_acc_req;
+// 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): logic wmb_ld_dc_cancel_acc_req;
 logic wmb_ld_dc_fwd_req;
 logic [15:0] wmb_fwd_bytes_vld;
-logic sq_ld_dc_addr1_dep_discard;
+// 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): logic sq_ld_dc_addr1_dep_discard;
 logic sq_st_dc_full;
 logic sq_st_dc_inst_hit;
 
@@ -719,42 +725,42 @@ logic [3:0] ld_da_preg_sign_sel;
 logic ld_da_wb_cmplt_req;
 logic [31:0] ld_da_wb_data;
 logic ld_da_wb_data_req;
-logic ld_da_wb_spec_fail;
+// 2026-10-15 停用: 死亡声明 (无驱动无负载, 与本次非对齐摘除无关的既有残留): logic ld_da_wb_spec_fail;
 logic ld_da_st_da_hit_idx;
-logic ld_da_inst_vld;
-logic [1:0] ld_da_borrow_vld;
-logic [7:0] ld_da_borrow_db;
+// 2026-10-15 停用: 死亡声明 (无驱动无负载, 与本次非对齐摘除无关的既有残留): logic ld_da_inst_vld;
+// 2026-10-15 停用: 死亡声明 (无驱动无负载, 与本次非对齐摘除无关的既有残留): logic [1:0] ld_da_borrow_vld;
+// 2026-10-15 停用: 死亡声明 (无驱动无负载, 与本次非对齐摘除无关的既有残留): logic [7:0] ld_da_borrow_db;
 logic [1:0] ld_da_inst_size;
-logic ld_da_boundary;
-logic ld_da_secd;
+// 2026-10-15 停用: logic ld_da_boundary;
+// 2026-10-15 停用: logic ld_da_secd;
 logic ld_da_sign_extend;
 logic [LSIQ_ENTRY-1:0] ld_da_lsid;
 logic ld_da_old;
 logic [15:0] ld_da_bytes_vld;
-logic [15:0] ld_da_bytes_vld1;
-logic ld_da_acclr_en;
+// 2026-10-15 停用: logic [15:0] ld_da_bytes_vld1;
+// 2026-10-15 停用: logic ld_da_acclr_en;
 logic ld_da_raw_new;
 logic [31:0] ld_da_addr0;
-logic ld_da_cb_addr_create_vld;
+// 2026-10-15 停用: logic ld_da_cb_addr_create_vld;
 logic ld_da_rb_data_vld;
 logic ld_da_rb_discard_grnt;
 logic ld_da_lfb_discard_grnt;
 logic ld_da_rb_cmit;
-logic ld_da_boundary_after_mask;
+// 2026-10-15 停用: logic ld_da_boundary_after_mask;
 logic [4:0] ld_da_idx;
 //logic ld_da_discard_wmb;
 
 // CB (Combine Buffer) signals
-logic cb_ld_da_data_vld;
-logic [127:0] cb_ld_da_data;
+// 2026-10-15 停用: logic cb_ld_da_data_vld;
+// 2026-10-15 停用: logic [127:0] cb_ld_da_data;
 
 // SQ to LD_DA signals
 logic sq_ld_dc_other_discard_req;
 logic sq_ld_dc_data_discard_req;
-logic sq_ld_dc_fwd_bypass_req;
+// 2026-10-15 停用: 死亡声明 (无驱动无负载, 与本次非对齐摘除无关的既有残留): logic sq_ld_dc_fwd_bypass_req;
 logic sq_ld_dc_fwd_multi;
 logic sq_ld_dc_fwd_multi_mask;
-logic sq_ld_dc_fwd_bypass_multi;
+// 2026-10-15 停用: 死亡声明 (无驱动无负载, 与本次非对齐摘除无关的既有残留): logic sq_ld_dc_fwd_bypass_multi;
 logic [31:0] sq_ld_da_fwd_data;
 
 // Additional SQ signals
@@ -768,11 +774,11 @@ logic ld_da_sq_global_discard_vld;
 logic [127:0] wmb_ld_da_fwd_data;
 
 // SD (Store Data) signals
-logic sd_ex1_inst_vld;
+// 2026-10-15 停用: bypass 通路在本仓没实现 (ld_dc_chk_ld_bypass_vld 无人使用), 整条摘掉: logic sd_ex1_inst_vld;
 
 // MSHR/RB to LD_DA signals
 logic rb_ld_da_hit_idx;
-logic rb_ld_da_merge_fail;
+// 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): logic rb_ld_da_merge_fail;
 logic rb_ld_da_full;
 
 // LFB to LD_DA signals
@@ -823,7 +829,7 @@ logic wmb_rb_biu_req_hit_idx;
 
 // LD_DA to RB signals
 logic ld_da_rb_create_vld;
-logic ld_da_rb_merge_vld;
+// 2026-10-15 停用: logic ld_da_rb_merge_vld;
 logic [7:0] ld_da_data_rot_sel;
 
 // Load WB outputs (placeholder)
@@ -981,37 +987,37 @@ lsu_ld_ag #(
   .cpurst_b(cpurst_b),
   .idu_lsu_ld_sel(idu_lsu_ld_sel),//in
   .idu_lsu_ld_inst_size(idu_lsu_ld_inst_size),//in
-  .idu_lsu_ld_unalign_2nd(idu_lsu_ld_unalign_2nd),//in
+  //.idu_lsu_ld_unalign_2nd(idu_lsu_ld_unalign_2nd),//in  // 2026-10-15 停用
   .idu_lsu_ld_sign_extend(idu_lsu_ld_sign_extend),//in
   .idu_lsu_ld_iid(idu_lsu_ld_iid),//in
   .idu_lsu_ld_lch_entry(idu_lsu_ld_lch_entry),//in
   .idu_lsu_ld_oldest(idu_lsu_ld_oldest),//in
   .idu_lsu_ld_preg(idu_lsu_ld_preg),//in
   .idu_lsu_ld_offset(idu_lsu_ld_offset),//in
-  .idu_lsu_ld_offset_plus(idu_lsu_ld_offset_plus),//in
+  //.idu_lsu_ld_offset_plus(idu_lsu_ld_offset_plus),//in  // 2026-10-15 停用
   .idu_lsu_ld_src(idu_lsu_ld_src),//in
   .rtu_yy_xx_flush(rtu_yy_xx_flush),//in
-  .rtu_yy_xx_commit0(rtu_yy_xx_commit0),//in
-  .rtu_yy_xx_commit0_iid(rtu_yy_xx_commit0_iid),//in
-  .rtu_yy_xx_commit1(rtu_yy_xx_commit1),//in
-  .rtu_yy_xx_commit1_iid(rtu_yy_xx_commit1_iid),//in
-  .rtu_yy_xx_commit2(rtu_yy_xx_commit2),//in
-  .rtu_yy_xx_commit2_iid(rtu_yy_xx_commit2_iid),//in
+  // 2026-10-15 停用: 对应端口已摘, 连线一并注释: .rtu_yy_xx_commit0(rtu_yy_xx_commit0),//in
+  // 2026-10-15 停用: 对应端口已摘, 连线一并注释: .rtu_yy_xx_commit0_iid(rtu_yy_xx_commit0_iid),//in
+  // 2026-10-15 停用: 对应端口已摘, 连线一并注释: .rtu_yy_xx_commit1(rtu_yy_xx_commit1),//in
+  // 2026-10-15 停用: 对应端口已摘, 连线一并注释: .rtu_yy_xx_commit1_iid(rtu_yy_xx_commit1_iid),//in
+  // 2026-10-15 停用: 对应端口已摘, 连线一并注释: .rtu_yy_xx_commit2(rtu_yy_xx_commit2),//in
+  // 2026-10-15 停用: 对应端口已摘, 连线一并注释: .rtu_yy_xx_commit2_iid(rtu_yy_xx_commit2_iid),//in
   .st_ag_iid(st_ag_iid),
   .dcache_arb_ld_ag_borrow_addr_vld(dcache_arb_ld_ag_borrow_addr_vld),
   .dcache_arb_ld_ag_addr(dcache_arb_ld_ag_addr),
   .dcache_arb_ag_ld_sel(dcache_arb_ag_ld_sel),
   .ld_ag_dc_inst_vld(ld_ag_dc_inst_vld),
   .ld_ag_inst_size(ld_ag_inst_size),
-  .ld_ag_secd(ld_ag_secd),
+  // 2026-10-15 停用: .ld_ag_secd(ld_ag_secd),
   .ld_ag_sign_extend(ld_ag_sign_extend),
   .ld_ag_iid(ld_ag_iid),
   .ld_ag_lsid(ld_ag_lsid),
   .ld_ag_old(ld_ag_old),
   .ld_ag_preg(ld_ag_preg),
-  .ld_ag_boundary(ld_ag_boundary),
-  .ld_ag_acclr_en(ld_ag_acclr_en),
-  .ld_ag_dc_fwd_bypass_en(ld_ag_dc_fwd_bypass_en),
+  // 2026-10-15 停用: .ld_ag_boundary(ld_ag_boundary),
+  // 2026-10-15 停用: .ld_ag_acclr_en(ld_ag_acclr_en),
+  // 2026-10-15 停用: bypass 通路在本仓没实现 (ld_dc_chk_ld_bypass_vld 无人使用), 整条摘掉: .ld_ag_dc_fwd_bypass_en(ld_ag_dc_fwd_bypass_en),
   .ld_ag_expt(ld_ag_expt),
   .ag_dcache_arb_ld_tag_gateclk_en(ag_dcache_arb_ld_tag_gateclk_en),
   .ag_dcache_arb_ld_tag_req(ag_dcache_arb_ld_tag_req),
@@ -1020,9 +1026,9 @@ lsu_ld_ag #(
   .ag_dcache_arb_ld_data_req(ag_dcache_arb_ld_data_req),
   .ag_dcache_arb_ld_data_low_idx(ag_dcache_arb_ld_data_low_idx),
   .ag_dcache_arb_ld_data_high_idx(ag_dcache_arb_ld_data_high_idx),
-  .ld_ag_bytes_vld1(ld_ag_bytes_vld1),
+  // 2026-10-15 停用: .ld_ag_bytes_vld1(ld_ag_bytes_vld1),
   .ld_ag_bytes_vld(ld_ag_bytes_vld),
-  .ld_ag_addr1_to4(ld_ag_addr1_to4),
+  // 2026-10-15 停用: .ld_ag_addr1_to4(ld_ag_addr1_to4),
   .ld_ag_dc_addr0(ld_ag_dc_addr0),
   .ld_ag_raw_new(ld_ag_raw_new),
   .ld_ag_stall_restart_entry(ld_ag_stall_restart_entry)
@@ -1041,46 +1047,46 @@ lsu_ld_dc #(
   .cpurst_b(cpurst_b),
   .ld_ag_dc_inst_vld(ld_ag_dc_inst_vld),
   .ld_ag_inst_size(ld_ag_inst_size),
-  .ld_ag_secd(ld_ag_secd),
+  // 2026-10-15 停用: .ld_ag_secd(ld_ag_secd),
   .ld_ag_sign_extend(ld_ag_sign_extend),
   .ld_ag_iid(ld_ag_iid),
   .ld_ag_lsid(ld_ag_lsid),
   .ld_ag_old(ld_ag_old),
   .ld_ag_preg(ld_ag_preg),
-  .ld_ag_boundary(ld_ag_boundary),
-  .ld_ag_acclr_en(ld_ag_acclr_en),
-  .ld_ag_dc_fwd_bypass_en(ld_ag_dc_fwd_bypass_en),
+  // 2026-10-15 停用: .ld_ag_boundary(ld_ag_boundary),
+  // 2026-10-15 停用: .ld_ag_acclr_en(ld_ag_acclr_en),
+  // 2026-10-15 停用: bypass 通路在本仓没实现 (ld_dc_chk_ld_bypass_vld 无人使用), 整条摘掉: .ld_ag_dc_fwd_bypass_en(ld_ag_dc_fwd_bypass_en),
   .ld_ag_expt(ld_ag_expt),
-  .ld_ag_bytes_vld1(ld_ag_bytes_vld1),
+  // 2026-10-15 停用: .ld_ag_bytes_vld1(ld_ag_bytes_vld1),
   .ld_ag_bytes_vld(ld_ag_bytes_vld),
   .ld_ag_raw_new(ld_ag_raw_new),
-  .ld_ag_addr1_to4(ld_ag_addr1_to4),
+  // 2026-10-15 停用: .ld_ag_addr1_to4(ld_ag_addr1_to4),
   .ld_ag_dc_addr0(ld_ag_dc_addr0),
   .st_dc_chk_st_inst_vld(st_dc_chk_st_inst_vld),
   .st_dc_bytes_vld(st_dc_bytes_vld),
   .st_dc_addr0(st_dc_addr0),
   .lq_ld_dc_inst_hit(lq_ld_dc_inst_hit),
   .lq_ld_dc_full(lq_ld_dc_full),
-  .lq_ld_dc_less2(lq_ld_dc_less2),
-  .dcache_idx(dcache_idx),
+  // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): .lq_ld_dc_less2(lq_ld_dc_less2),
+  // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): .dcache_idx(dcache_idx),
   .dcache_arb_ld_dc_borrow_vld(dcache_arb_ld_dc_borrow_vld),
   .dcache_arb_ld_dc_settle_way(dcache_arb_ld_dc_settle_way),
   .dcache_lsu_ld_tag_dout(dcache_lsu_ld_tag_dout),
-  .cb_ld_dc_addr_hit(cb_ld_dc_addr_hit),
-  .sq_ld_dc_cancel_acc_req(sq_ld_dc_cancel_acc_req),
+  // 2026-10-15 停用: .cb_ld_dc_addr_hit(cb_ld_dc_addr_hit),
+  // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): .sq_ld_dc_cancel_acc_req(sq_ld_dc_cancel_acc_req),
   .sq_ld_dc_fwd_req(sq_ld_dc_fwd_req),
-  .wmb_ld_dc_cancel_acc_req(wmb_ld_dc_cancel_acc_req),
+  // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): .wmb_ld_dc_cancel_acc_req(wmb_ld_dc_cancel_acc_req),
   .wmb_ld_dc_fwd_req(wmb_ld_dc_fwd_req),
   .wmb_fwd_bytes_vld(wmb_fwd_bytes_vld),
   .rtu_yy_xx_flush(rtu_yy_xx_flush),
-  .sq_ld_dc_addr1_dep_discard(sq_ld_dc_addr1_dep_discard),
+  // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): .sq_ld_dc_addr1_dep_discard(sq_ld_dc_addr1_dep_discard),
   .ld_dc_da_inst_vld(ld_dc_da_inst_vld),
   .ld_dc_borrow_vld(ld_dc_borrow_vld),
   .ld_dc_settle_way(ld_dc_settle_way),
   .ld_dc_inst_size(ld_dc_inst_size),
-  .ld_dc_addr1_to4(ld_dc_addr1_to4),
-  .ld_dc_boundary(ld_dc_boundary),
-  .ld_dc_secd(ld_dc_secd),
+  // 2026-10-15 停用: .ld_dc_addr1_to4(ld_dc_addr1_to4),
+  // 2026-10-15 停用: .ld_dc_boundary(ld_dc_boundary),
+  // 2026-10-15 停用: .ld_dc_secd(ld_dc_secd),
   .ld_dc_sign_extend(ld_dc_sign_extend),
   .ld_dc_iid(ld_dc_iid),
   .ld_dc_lsid(ld_dc_lsid),
@@ -1088,16 +1094,16 @@ lsu_ld_dc #(
   .ld_dc_preg(ld_dc_preg),
   .ld_dc_expt(ld_dc_expt),
   .ld_dc_bytes_vld(ld_dc_bytes_vld),
-  .ld_dc_bytes_vld1(ld_dc_bytes_vld1),
-  .ld_dc_acclr_en(ld_dc_acclr_en),
-  .ld_dc_da_cb_merge_en(ld_dc_da_cb_merge_en),
+  // 2026-10-15 停用: .ld_dc_bytes_vld1(ld_dc_bytes_vld1),
+  // 2026-10-15 停用: .ld_dc_acclr_en(ld_dc_acclr_en),
+  // 2026-10-15 停用: .ld_dc_da_cb_merge_en(ld_dc_da_cb_merge_en),
   .ld_dc_raw_new(ld_dc_raw_new),
   .ld_dc_addr0(ld_dc_addr0),
-  .ld_dc_cb_addr_create_vld(ld_dc_cb_addr_create_vld),
-  .ld_dc_cb_addr_tto4(ld_dc_cb_addr_tto4),
+  // 2026-10-15 停用: .ld_dc_cb_addr_create_vld(ld_dc_cb_addr_create_vld),
+  // 2026-10-15 停用: .ld_dc_cb_addr_tto4(ld_dc_cb_addr_tto4),
   .ld_dc_chk_ld_inst_vld(ld_dc_chk_ld_inst_vld),
-  .ld_dc_chk_ld_addr1_vld(ld_dc_chk_ld_addr1_vld),
-  .ld_dc_chk_ld_bypass_vld(ld_dc_chk_ld_bypass_vld),
+  // 2026-10-15 停用: .ld_dc_chk_ld_addr1_vld(ld_dc_chk_ld_addr1_vld),
+  // 2026-10-15 停用: bypass 通路在本仓没实现 (ld_dc_chk_ld_bypass_vld 无人使用), 整条摘掉: .ld_dc_chk_ld_bypass_vld(ld_dc_chk_ld_bypass_vld),
   .ld_dc_idu_lq_full(ld_dc_idu_lq_full),//out
   .ld_dc_imme_wakeup(ld_dc_imme_wakeup),//out
   .ld_dc_hit_low_region(ld_dc_hit_low_region),
@@ -1109,8 +1115,8 @@ lsu_ld_dc #(
   .ld_dc_fwd_sq_vld(ld_dc_fwd_sq_vld),
   .ld_dc_fwd_wmb_vld(ld_dc_fwd_wmb_vld),
 
-  .ld_dc_lq_create_vld(ld_dc_lq_create_vld),
-  .ld_dc_lq_create1_vld(ld_dc_lq_create1_vld)
+  .ld_dc_lq_create_vld(ld_dc_lq_create_vld)
+  // 2026-10-15 停用: .ld_dc_lq_create1_vld(ld_dc_lq_create1_vld)
 
 );
 
@@ -1128,8 +1134,8 @@ lsu_ld_da #(
   .ld_dc_da_inst_vld(ld_dc_da_inst_vld),
   .ld_dc_borrow_vld(ld_dc_borrow_vld),
   .ld_dc_inst_size(ld_dc_inst_size),
-  .ld_dc_boundary(ld_dc_boundary),
-  .ld_dc_secd(ld_dc_secd),
+  // 2026-10-15 停用: .ld_dc_boundary(ld_dc_boundary),
+  // 2026-10-15 停用: .ld_dc_secd(ld_dc_secd),
   .ld_dc_sign_extend(ld_dc_sign_extend),
   .ld_dc_iid(ld_dc_iid),
   .ld_dc_lsid(ld_dc_lsid),
@@ -1138,12 +1144,12 @@ lsu_ld_da #(
   .ld_dc_expt(ld_dc_expt),
  // .ld_dc_addr1_to4(ld_dc_addr1_to4),
   .ld_dc_bytes_vld(ld_dc_bytes_vld),
-  .ld_dc_bytes_vld1(ld_dc_bytes_vld1),
-  .ld_dc_acclr_en(ld_dc_acclr_en),
-  .ld_dc_da_cb_merge_en(ld_dc_da_cb_merge_en),
+  // 2026-10-15 停用: .ld_dc_bytes_vld1(ld_dc_bytes_vld1),
+  // 2026-10-15 停用: .ld_dc_acclr_en(ld_dc_acclr_en),
+  // 2026-10-15 停用: .ld_dc_da_cb_merge_en(ld_dc_da_cb_merge_en),
   .ld_dc_raw_new(ld_dc_raw_new),
   .ld_dc_addr0(ld_dc_addr0),
-  .ld_dc_cb_addr_create_vld(ld_dc_cb_addr_create_vld),
+  // 2026-10-15 停用: .ld_dc_cb_addr_create_vld(ld_dc_cb_addr_create_vld),
   .rtu_yy_xx_flush(rtu_yy_xx_flush),
   .dcache_lsu_ld_data_bank0_dout(dcache_lsu_ld_data_bank0_dout),
   .dcache_lsu_ld_data_bank1_dout(dcache_lsu_ld_data_bank1_dout),
@@ -1166,17 +1172,17 @@ lsu_ld_da #(
   .ld_da_sq_data_discard_vld(ld_da_sq_data_discard_vld),
   .ld_da_sq_fwd_multi_vld(ld_da_sq_fwd_multi_vld),
   .ld_da_sq_global_discard_vld(ld_da_sq_global_discard_vld),
-  .cb_ld_da_data_vld(cb_ld_da_data_vld),
-  .cb_ld_da_data(cb_ld_da_data),
+  // 2026-10-15 停用: .cb_ld_da_data_vld(cb_ld_da_data_vld),
+  // 2026-10-15 停用: .cb_ld_da_data(cb_ld_da_data),
   .sq_ld_dc_other_discard_req(sq_ld_dc_other_discard_req),
   .sq_ld_dc_data_discard_req(sq_ld_dc_data_discard_req),
   .sq_ld_dc_fwd_multi(sq_ld_dc_fwd_multi),
   .sq_ld_dc_fwd_multi_mask(sq_ld_dc_fwd_multi_mask),
   .sq_ld_da_fwd_data(sq_ld_da_fwd_data),
   .wmb_ld_da_fwd_data(wmb_ld_da_fwd_data),
-  .sd_ex1_inst_vld(sd_ex1_inst_vld),
+  // 2026-10-15 停用: bypass 通路在本仓没实现 (ld_dc_chk_ld_bypass_vld 无人使用), 整条摘掉: .sd_ex1_inst_vld(sd_ex1_inst_vld),
   .rb_ld_da_hit_idx(rb_ld_da_hit_idx),
-  .rb_ld_da_merge_fail(rb_ld_da_merge_fail),
+  // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): .rb_ld_da_merge_fail(rb_ld_da_merge_fail),
   .lfb_ld_da_hit_idx(lfb_ld_da_hit_idx),
   .rb_ld_da_full(rb_ld_da_full),
   .rtu_yy_xx_commit0(rtu_yy_xx_commit0),
@@ -1187,36 +1193,36 @@ lsu_ld_da #(
   .rtu_yy_xx_commit2_iid(rtu_yy_xx_commit2_iid),
   .ld_da_discard_wmb(1'b0),
   .ld_da_inst_size(ld_da_inst_size),
-  .ld_da_boundary(ld_da_boundary),
-  .ld_da_secd(ld_da_secd),
+  // 2026-10-15 停用: .ld_da_boundary(ld_da_boundary),
+  // 2026-10-15 停用: .ld_da_secd(ld_da_secd),
   .ld_da_sign_extend(ld_da_sign_extend),
   .ld_da_iid(ld_da_iid),
   .ld_da_lsid(ld_da_lsid),
   .ld_da_old(ld_da_old),
   .ld_da_preg(ld_da_preg),
   .ld_da_bytes_vld(ld_da_bytes_vld),
-  .ld_da_bytes_vld1(ld_da_bytes_vld1),
-  .ld_da_acclr_en(ld_da_acclr_en),
+  // 2026-10-15 停用: .ld_da_bytes_vld1(ld_da_bytes_vld1),
+  // 2026-10-15 停用: .ld_da_acclr_en(ld_da_acclr_en),
   .ld_da_raw_new(ld_da_raw_new),
   .ld_da_addr0(ld_da_addr0),
-  .ld_da_cb_addr_create_vld(ld_da_cb_addr_create_vld),
+  // 2026-10-15 停用: .ld_da_cb_addr_create_vld(ld_da_cb_addr_create_vld),
   .ld_da_rb_data_vld(ld_da_rb_data_vld),
   .ld_da_rb_discard_grnt(ld_da_rb_discard_grnt),
   .ld_da_lfb_discard_grnt(ld_da_lfb_discard_grnt),
   .ld_da_rb_cmit(ld_da_rb_cmit),
   .ld_da_addr(ld_da_addr),
-  .ld_da_boundary_after_mask(ld_da_boundary_after_mask),
+  // 2026-10-15 停用: .ld_da_boundary_after_mask(ld_da_boundary_after_mask),
   .ld_da_idx(ld_da_idx),
-  .ld_da_rb_merge_vld(ld_da_rb_merge_vld),
+  // 2026-10-15 停用: .ld_da_rb_merge_vld(ld_da_rb_merge_vld),
   .ld_da_rb_create_vld(ld_da_rb_create_vld),
   .ld_da_data_rot_sel(ld_da_data_rot_sel),
-  .ld_da_cb_ld_inst_vld(ld_da_cb_ld_inst_vld),
-  .ld_da_cb_data_vld(ld_da_cb_data_vld),
-  .ld_da_cb_data(ld_da_cb_data),
+  // 2026-10-15 停用: .ld_da_cb_ld_inst_vld(ld_da_cb_ld_inst_vld),
+  // 2026-10-15 停用: .ld_da_cb_data_vld(ld_da_cb_data_vld),
+  // 2026-10-15 停用: .ld_da_cb_data(ld_da_cb_data),
   .ld_da_idu_rb_full(ld_da_idu_rb_full),
   .ld_da_idu_pop_vld(ld_da_idu_pop_vld),
   .ld_da_idu_pop_entry(ld_da_idu_pop_entry),
-  .ld_da_idu_secd(ld_da_idu_secd),
+  // 2026-10-15 停用: .ld_da_idu_secd(ld_da_idu_secd),
   .ld_da_vb_borrow_vb(ld_da_vb_borrow_vb),
   .ld_da_data256(ld_da_data256),
   .ld_dc_settle_way(ld_dc_settle_way),
@@ -1280,6 +1286,18 @@ ct_lsu_ld_wb #(
   .lsu_idu_wb_pipe3_wb_preg_iid(lsu_idu_wb_pipe3_wb_preg_iid)
 );
 
+// ═══════════════════════════════════════════════════════════════════════════
+// 2026-10-15 停用: cache_buffer (跨行 load 的"上一拍 128bit 行"缓冲) 整体不再需要
+//   —— 它只服务非对齐/跨界 load: 把第一条(高地址那半)读到的整行留给下一条 merge。
+//   现在非对齐不会出现 ⇒ 注释例化, 三根输出恒 0:
+//     cb_ld_dc_addr_hit = 0 ⇒ ld_dc 的 lq_create1 / raw_addr1 比较 / cb_merge_en 全失活
+//     cb_ld_da_data_vld = 0 ⇒ ld_da 的 merge_from_cb 失活
+//   模块源文件 ct_lsu_cache_buffer.sv 保留在原地 (只注释例化, 不删文件)。
+// ═══════════════════════════════════════════════════════════════════════════
+// 2026-10-15 停用: assign cb_ld_da_data[127:0] = 128'b0;
+// 2026-10-15 停用: assign cb_ld_da_data_vld    = 1'b0;
+// 2026-10-15 停用: assign cb_ld_dc_addr_hit    = 1'b0;
+/*
 ct_lsu_cache_buffer u_ct_lsu_cache_buffer (
     .cpurst_b                  (cpurst_b),
     .dcache_idx                (dcache_idx),
@@ -1295,6 +1313,7 @@ ct_lsu_cache_buffer u_ct_lsu_cache_buffer (
     .cb_ld_da_data_vld         (cb_ld_da_data_vld),
     .cb_ld_dc_addr_hit         (cb_ld_dc_addr_hit)
 );
+*/
 
 //----------------------------------------------------------
 // Store Address Generation
@@ -1307,13 +1326,13 @@ ct_lsu_st_ag #(
   .forever_cpuclk(forever_cpuclk),
   .idu_lsu_st_sel(idu_lsu_st_sel),
   .idu_lsu_st_inst_size(idu_lsu_st_inst_size),
-  .idu_lsu_st_unalign_2nd(idu_lsu_st_unalign_2nd),
+  //.idu_lsu_st_unalign_2nd(idu_lsu_st_unalign_2nd),  // 2026-10-15 停用
   .idu_lsu_st_iid(idu_lsu_st_iid),
   .idu_lsu_st_lch_entry(idu_lsu_st_lch_entry),
   .idu_lsu_st_sdiq_entry(idu_lsu_st_sdiq_entry),
   .idu_lsu_st_oldest(idu_lsu_st_oldest),
   .idu_lsu_st_offset(idu_lsu_st_offset),
-  .idu_lsu_st_offset_plus(idu_lsu_st_offset_plus),
+  //.idu_lsu_st_offset_plus(idu_lsu_st_offset_plus),  // 2026-10-15 停用
   .idu_lsu_st_src0(idu_lsu_st_src0),
   .rtu_yy_xx_flush(rtu_yy_xx_flush),
   .dcache_arb_ag_st_sel(dcache_arb_ag_st_sel),
@@ -1325,7 +1344,7 @@ ct_lsu_st_ag #(
   .ag_dcache_arb_st_tag_gateclk_en(ag_dcache_arb_st_tag_gateclk_en),
   .ag_dcache_arb_st_tag_idx(ag_dcache_arb_st_tag_idx),
   .ag_dcache_arb_st_tag_req(ag_dcache_arb_st_tag_req),
-  .st_ag_boundary(st_ag_boundary),
+  // 2026-10-15 停用: .st_ag_boundary(st_ag_boundary),
   .st_ag_dc_addr0(st_ag_dc_addr0),
   .st_ag_dc_bytes_vld(st_ag_dc_bytes_vld),
   .st_ag_dc_inst_vld(st_ag_dc_inst_vld),
@@ -1336,7 +1355,7 @@ ct_lsu_st_ag #(
   .st_ag_old(st_ag_old),
   .st_ag_expt(st_ag_expt),
   .st_ag_sdid_oh(st_ag_sdid_oh),
-  .st_ag_secd(st_ag_secd),
+  // 2026-10-15 停用: .st_ag_secd(st_ag_secd),
   .st_ag_stall_restart_entry(st_ag_stall_restart_entry)
 );
 
@@ -1357,7 +1376,7 @@ ct_lsu_st_dc #(
   .lq_st_dc_spec_fail(lq_st_dc_spec_fail),
   .sq_st_dc_full(sq_st_dc_full),
   .sq_st_dc_inst_hit(sq_st_dc_inst_hit),
-  .st_ag_boundary(st_ag_boundary),
+  // 2026-10-15 停用: .st_ag_boundary(st_ag_boundary),
   .st_ag_dc_addr0(st_ag_dc_addr0),
   .st_ag_dc_bytes_vld(st_ag_dc_bytes_vld),
   .st_ag_dc_inst_vld(st_ag_dc_inst_vld),
@@ -1368,10 +1387,10 @@ ct_lsu_st_dc #(
   .st_ag_old(st_ag_old),
   .st_ag_expt(st_ag_expt),
   .st_ag_sdid_oh(st_ag_sdid_oh),
-  .st_ag_secd(st_ag_secd),
+  // 2026-10-15 停用: .st_ag_secd(st_ag_secd),
   .st_dc_inst_vld(st_dc_inst_vld),
   .st_dc_borrow_vld(st_dc_borrow_vld),
-  .st_dc_secd(st_dc_secd),
+  // 2026-10-15 停用: .st_dc_secd(st_dc_secd),
   .st_dc_iid(st_dc_iid),
   .st_dc_lsid(st_dc_lsid),
   .st_dc_sdid_oh(st_dc_sdid_oh),
@@ -1379,14 +1398,14 @@ ct_lsu_st_dc #(
   .st_dc_expt(st_dc_expt),
   .st_dc_bytes_vld(st_dc_bytes_vld),
   .st_dc_rot_sel(st_dc_rot_sel),
-  .st_dc_boundary(st_dc_boundary),
+  // 2026-10-15 停用: .st_dc_boundary(st_dc_boundary),
   .st_dc_addr0(st_dc_addr0),
   //.st_dc_sdid(st_dc_sdid),
   .st_dc_sq_create_vld(st_dc_sq_create_vld),
   .st_dc_sq_create_dp_vld(st_dc_sq_create_dp_vld),
   .st_dc_sq_create_gateclk_en(st_dc_sq_create_gateclk_en),
   .st_dc_sq_data_vld(st_dc_sq_data_vld),
-  .st_dc_boundary_first(st_dc_boundary_first),
+  // 2026-10-15 停用: .st_dc_boundary_first(st_dc_boundary_first),
   .st_dc_chk_st_inst_vld(st_dc_chk_st_inst_vld),
   .st_dc_rot_sel_rev(st_dc_rot_sel_rev),
   .st_dc_da_inst_vld(st_dc_da_inst_vld),
@@ -1432,7 +1451,7 @@ ct_lsu_st_da #(
   .rtu_yy_xx_flush(rtu_yy_xx_flush),
   .st_dc_addr0(st_dc_addr0),
   .st_dc_borrow_vld(st_dc_borrow_vld),
-  .st_dc_boundary(st_dc_boundary),
+  // 2026-10-15 停用: .st_dc_boundary(st_dc_boundary),
   .st_dc_bytes_vld(st_dc_bytes_vld),
   .st_dc_da_dcache_dirty_array(st_dc_da_dcache_dirty_array),
   .st_dc_da_dcache_tag_array(st_dc_da_dcache_tag_array),
@@ -1446,7 +1465,7 @@ ct_lsu_st_da #(
   .st_dc_lsid(st_dc_lsid),
   .st_dc_old(st_dc_old),
   .st_dc_expt(st_dc_expt),
-  .st_dc_secd(st_dc_secd),
+  // 2026-10-15 停用: .st_dc_secd(st_dc_secd),
   .st_dc_spec_fail(st_dc_spec_fail),
   .st_da_borrow_vld(st_da_borrow_vld),
   .st_da_dcache_dirty(st_da_dcache_dirty),
@@ -1459,7 +1478,7 @@ ct_lsu_st_da #(
   .st_da_idu_pop_vld(st_da_idu_pop_vld),
   .st_da_idu_pop_entry(st_da_idu_pop_entry),
   .st_da_idu_rb_full(st_da_idu_rb_full),
-  .st_da_idu_secd(st_da_idu_secd),
+  // 2026-10-15 停用: .st_da_idu_secd(st_da_idu_secd),
   .st_da_iid(st_da_iid),
   .st_da_inst_vld(st_da_inst_vld),
   .st_da_old(st_da_old),
@@ -1467,7 +1486,7 @@ ct_lsu_st_da #(
   .st_da_rb_create_dp_vld(st_da_rb_create_dp_vld),
   .st_da_rb_create_gateclk_en(st_da_rb_create_gateclk_en),
   .st_da_rb_create_vld(st_da_rb_create_vld),
-  .st_da_secd(st_da_secd),
+  // 2026-10-15 停用: .st_da_secd(st_da_secd),
   .st_da_sq_dcache_dirty(st_da_sq_dcache_dirty),
   .st_da_sq_dcache_valid(st_da_sq_dcache_valid),
   .st_da_sq_dcache_way(st_da_sq_dcache_way),
@@ -1477,7 +1496,7 @@ ct_lsu_st_da #(
   .st_da_wb_expt_addr(st_da_wb_expt_addr),
   .st_da_wb_spec_fail(st_da_wb_spec_fail),
   .st_da_addr(st_da_addr),
-  .st_da_boundary(st_da_boundary),
+  // 2026-10-15 停用: .st_da_boundary(st_da_boundary),
   .st_da_bytes_vld(st_da_bytes_vld),
   .st_da_sq_no_restart(st_da_sq_no_restart)
 );
@@ -1540,7 +1559,7 @@ logic               wmb_ce_create_vld;
 logic               wmb_ce_create_merge;
 logic [WMB_ENTRY-1:0] wmb_ce_create_merge_ptr;
 logic               wmb_ce_create_stall;
-logic               wmb_ce_bytes_vld_full;
+// 2026-10-15 停用: 死亡声明 (无驱动无负载, 与本次非对齐摘除无关的既有残留): logic               wmb_ce_bytes_vld_full;
 logic               wmb_ce_dcache_dirty;
 logic               wmb_ce_dcache_valid;
 logic               wmb_ce_merge_wmb_wait_not_vld_req;
@@ -1565,11 +1584,11 @@ ct_lsu_sq #(
   .ld_da_sq_fwd_multi_vld(ld_da_sq_fwd_multi_vld),
   .ld_da_sq_global_discard_vld(ld_da_sq_global_discard_vld),
   .ld_dc_addr0(ld_dc_addr0),
-  .ld_dc_addr1_11to4(ld_dc_addr1_11to4),
+  // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): .ld_dc_addr1_11to4(ld_dc_addr1_11to4),
   .ld_dc_bytes_vld(ld_dc_bytes_vld),
-  .ld_dc_bytes_vld1(ld_dc_bytes_vld1),
-  .ld_dc_chk_ld_addr1_vld(ld_dc_chk_ld_addr1_vld),
-  .ld_dc_chk_ld_bypass_vld(ld_dc_chk_ld_bypass_vld),
+  // 2026-10-15 停用: .ld_dc_bytes_vld1(ld_dc_bytes_vld1),
+  // 2026-10-15 停用: .ld_dc_chk_ld_addr1_vld(ld_dc_chk_ld_addr1_vld),
+  // 2026-10-15 停用: bypass 通路在本仓没实现 (ld_dc_chk_ld_bypass_vld 无人使用), 整条摘掉: .ld_dc_chk_ld_bypass_vld(ld_dc_chk_ld_bypass_vld),
   .ld_dc_chk_ld_inst_vld(ld_dc_chk_ld_inst_vld),
   .ld_dc_iid(ld_dc_iid),
   .rb_sq_pop_hit_idx(rb_sq_pop_hit_idx),
@@ -1586,20 +1605,20 @@ ct_lsu_sq #(
   .idu_lsu_rf_pipe5_sdiq_entry(idu_lsu_rf_pipe5_sdiq_entry),  //in
   .st_da_iid(st_da_iid),
   .st_da_inst_vld(st_da_inst_vld),
-  .st_da_secd(st_da_secd),
+  // 2026-10-15 停用: .st_da_secd(st_da_secd),
   .st_da_sq_dcache_dirty(st_da_sq_dcache_dirty),
   .st_da_sq_dcache_valid(st_da_sq_dcache_valid),
   .st_da_sq_dcache_way(st_da_sq_dcache_way),
   .st_da_sq_no_restart(st_da_sq_no_restart),
   .st_dc_addr0(st_dc_addr0),
-  .st_dc_boundary(st_dc_boundary),
-  .st_dc_boundary_first(st_dc_boundary_first),
+  // 2026-10-15 停用: .st_dc_boundary(st_dc_boundary),
+  // 2026-10-15 停用: .st_dc_boundary_first(st_dc_boundary_first),
   .st_dc_bytes_vld(st_dc_bytes_vld),
   .st_dc_iid(st_dc_iid),
   .st_dc_old(st_dc_old),
   .st_dc_rot_sel_rev(st_dc_rot_sel_rev),
   .st_dc_sdid(st_dc_sdid_oh),
-  .st_dc_secd(st_dc_secd),
+  // 2026-10-15 停用: .st_dc_secd(st_dc_secd),
   .st_dc_sq_create_vld(st_dc_sq_create_vld),
   .st_dc_sq_data_vld(st_dc_sq_data_vld),
   .wmb_ce_addr(wmb_ce_addr),
@@ -1609,8 +1628,8 @@ ct_lsu_sq #(
   .sq_data_depd_wakeup(sq_data_depd_wakeup),  // out
   .sq_global_depd_wakeup(sq_global_depd_wakeup),  // out
   .sq_ld_da_fwd_data(sq_ld_da_fwd_data),
-  .sq_ld_dc_addr1_dep_discard(sq_ld_dc_addr1_dep_discard),
-  .sq_ld_dc_cancel_acc_req(sq_ld_dc_cancel_acc_req),
+  // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): .sq_ld_dc_addr1_dep_discard(sq_ld_dc_addr1_dep_discard),
+  // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): .sq_ld_dc_cancel_acc_req(sq_ld_dc_cancel_acc_req),
   .sq_ld_dc_data_discard_req(sq_ld_dc_data_discard_req),
   .sq_ld_dc_fwd_id(sq_ld_dc_fwd_id),
   .sq_ld_dc_fwd_multi(sq_ld_dc_fwd_multi),
@@ -1640,13 +1659,13 @@ ct_lsu_lq u_lsu_lq (
   .cpurst_b(cpurst_b),
   .forever_cpuclk(forever_cpuclk),
   .ld_dc_addr0(ld_dc_addr0),
-  .ld_dc_addr1_to4(ld_dc_addr1_to4),
+  // 2026-10-15 停用: .ld_dc_addr1_to4(ld_dc_addr1_to4),
   .ld_dc_bytes_vld(ld_dc_bytes_vld),
-  .ld_dc_bytes_vld1(ld_dc_bytes_vld1),
+  // 2026-10-15 停用: .ld_dc_bytes_vld1(ld_dc_bytes_vld1),
   .ld_dc_iid(ld_dc_iid),
-  .ld_dc_lq_create1_vld(ld_dc_lq_create1_vld),
+  // 2026-10-15 停用: .ld_dc_lq_create1_vld(ld_dc_lq_create1_vld),
   .ld_dc_lq_create_vld(ld_dc_lq_create_vld),
-  .ld_dc_secd(ld_dc_secd),
+  // 2026-10-15 停用: .ld_dc_secd(ld_dc_secd),
   .rtu_yy_xx_commit0(rtu_yy_xx_commit0),
   .rtu_yy_xx_commit0_iid(rtu_yy_xx_commit0_iid),
   .rtu_yy_xx_commit1(rtu_yy_xx_commit1),
@@ -1660,7 +1679,7 @@ ct_lsu_lq u_lsu_lq (
   .st_dc_iid(st_dc_iid),
   .lq_ld_dc_full(lq_ld_dc_full),
   .lq_ld_dc_inst_hit(lq_ld_dc_inst_hit),
-  .lq_ld_dc_less2(lq_ld_dc_less2),
+  // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): .lq_ld_dc_less2(lq_ld_dc_less2),
   .lq_st_dc_spec_fail(lq_st_dc_spec_fail),
   .lsu_idu_lq_not_full(lsu_idu_lq_not_full)  // out
 );
@@ -2199,7 +2218,7 @@ lsu_mshr #(
   .wmb_ce_addr(wmb_ce_addr),
   .bus_arb_rb_ar_grnt(bus_arb_rb_ar_grnt),  // in
   .ld_da_addr(ld_da_addr),
-  .ld_da_boundary_after_mask(ld_da_boundary_after_mask),
+  // 2026-10-15 停用: .ld_da_boundary_after_mask(ld_da_boundary_after_mask),
   .ld_da_bytes_vld(ld_da_bytes_vld),
   .ld_da_data_ori(ld_da_wb_data),  
   .ld_da_data_rot_sel(ld_da_data_rot_sel),  
@@ -2212,7 +2231,7 @@ lsu_mshr #(
   .ld_da_rb_create_vld(ld_da_rb_create_vld),  
   .ld_da_rb_data_vld(ld_da_rb_data_vld),
   .ld_da_rb_discard_grnt(ld_da_rb_discard_grnt),
-  .ld_da_rb_merge_vld(ld_da_rb_merge_vld),
+  // 2026-10-15 停用: .ld_da_rb_merge_vld(ld_da_rb_merge_vld),
   .ld_da_sign_extend(ld_da_sign_extend),
   .ld_wb_rb_cmplt_grnt(ld_wb_rb_cmplt_grnt),
   .ld_wb_rb_data_grnt(ld_wb_rb_data_grnt),
@@ -2230,7 +2249,7 @@ lsu_mshr #(
   .sq_pop_addr(sq_pop_addr), 
   .st_da_addr(st_da_addr),
   .st_da_bytes_vld(st_da_bytes_vld),
-  .st_da_dcache_hit(st_da_dcache_hit),
+  // 2026-10-15 停用: 对应端口已摘, 连线一并注释: .st_da_dcache_hit(st_da_dcache_hit),
   .st_da_iid(st_da_iid),
   .st_da_old(st_da_old),
   .st_da_rb_cmit(st_da_rb_cmit),
@@ -2248,7 +2267,7 @@ lsu_mshr #(
   .rb_biu_ar_req(rb_biu_ar_req),
   .rb_ld_da_full(rb_ld_da_full),
   .rb_ld_da_hit_idx(rb_ld_da_hit_idx),
-  .rb_ld_da_merge_fail(rb_ld_da_merge_fail),
+  // 2026-10-15 停用: 非对齐通路摘除后的残留 (无消费者): .rb_ld_da_merge_fail(rb_ld_da_merge_fail),
   .rb_st_da_full(rb_st_da_full),
   .rb_st_da_hit_idx(rb_st_da_hit_idx),
   .rb_ld_wb_bus_err(rb_ld_wb_bus_err),

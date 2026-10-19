@@ -128,34 +128,44 @@ module ct_biu_req_arbiter #(
     input  logic                  vict_wready
 );
 
-    //---------------------------------------------------------
-    // Read AR arbitration: LSU priority
-    //---------------------------------------------------------
-    assign arvalid = lsu_biu_arvalid | ifu_biu_arvalid;
+    //==========================================================
+    // condition to create accept req from ifu/lsu
+    // lsu rd has higher priority than ifu rd
+    // 原版: ifu_ar_req = ifu_biu_rd_req && !lsu_biu_ar_dp_req
+    //       lsu_ar_req = lsu_biu_ar_req && lsu_biu_ar_dp_req
+    // 本接口没有 _dp_req, AXI 的 arvalid 同时承担 req/dp_req
+    //==========================================================
+    wire ifu_ar_req;
+    wire lsu_ar_req;
+
+    assign ifu_ar_req = ifu_biu_arvalid && !lsu_biu_arvalid;
+    assign lsu_ar_req = lsu_biu_arvalid;
+    assign arvalid    = ifu_ar_req || lsu_ar_req;
 
     always_comb begin
-        if (lsu_biu_arvalid) begin
-            araddr  = lsu_biu_araddr;
-            arid    = lsu_biu_arid;
-            arlen   = lsu_biu_arlen;
-            arsize  = lsu_biu_arsize;
-            arburst = lsu_biu_arburst;
-            arcache = lsu_biu_arcache;
-            arprot  = lsu_biu_arprot;
-        end else begin
-            araddr  = ifu_biu_araddr;
-            // IFU 原始 1-bit ID 映射到 4-bit AXI ID
+        if (!lsu_biu_arvalid) begin
             arid    = {3'b100, ifu_biu_rid};
+            araddr  = ifu_biu_araddr;
             arlen   = ifu_biu_arlen;
             arsize  = ifu_biu_arsize;
             arburst = ifu_biu_arburst;
             arcache = ifu_biu_arcache;
             arprot  = ifu_biu_arprot;
+        end else begin
+            arid    = lsu_biu_arid;
+            araddr  = lsu_biu_araddr;
+            arlen   = lsu_biu_arlen;
+            arsize  = lsu_biu_arsize;
+            arburst = lsu_biu_arburst;
+            arcache = lsu_biu_arcache;
+            arprot  = lsu_biu_arprot;
         end
     end
 
-    assign lsu_biu_arready = lsu_biu_arvalid & arready;
-    assign ifu_biu_arready = ~lsu_biu_arvalid & ifu_biu_arvalid & arready;
+    // 原版: biu_ifu_rd_grnt = ifu_ar_req && arready;
+    //       biu_lsu_ar_ready = arready;
+    assign ifu_biu_arready = ifu_ar_req && arready;
+    assign lsu_biu_arready = arready;
 
     //---------------------------------------------------------
     // Store channel direct pass-through

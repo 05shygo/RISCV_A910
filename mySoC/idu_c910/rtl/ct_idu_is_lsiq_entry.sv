@@ -50,10 +50,11 @@ module ct_idu_is_lsiq_entry #(
   input  logic         x_rb_full_set,
   output logic         x_rdy,
   output logic [59:0]  x_read_data,
-  output logic         unalign_2nd,
+  // 2026-10-15 停用: 非对齐"第二半"标记 —— 喂它的 lsu_idu_secd 恒 0, 整条链摘掉
+  //output logic         unalign_2nd,
   input  logic         x_sq_full_set,
   output logic         x_store,
-  input  logic         x_unalign_2nd_set,
+  //input  logic         x_unalign_2nd_set,
   output logic         x_vld,
   output logic         old
 );
@@ -101,10 +102,10 @@ logic        rb_full_wakeup;
 
 logic [6:0]  create_src0_data;
 logic [6:0]  read_src0_data;
-logic [6:0]  create_src1_data;
-logic [6:0]  read_src1_data;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [6:0]  create_src1_data;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic [6:0]  read_src1_data;
 logic        src0_rdy_for_issue;
-logic        src1_rdy_for_issue;
+// 2026-10-15 停用: 既有死声明 (无驱动无负载, 与本仓非对齐摘除无关的移植残留): logic        src1_rdy_for_issue;
 logic        older_entry_rdy_mask;
 
 
@@ -139,7 +140,8 @@ begin
     frz <= 1'b0;
   else if(x_issue_en)
     frz <= 1'b1;
-  else if(lsu_frz_clr | x_unalign_2nd_set | lsu_idu_imme_wakeup)
+  // 2026-10-15 停用: 去掉 x_unalign_2nd_set (非对齐第二半的解锁, 恒 0)
+  else if(lsu_frz_clr /*| x_unalign_2nd_set*/ | lsu_idu_imme_wakeup)
     frz <= 1'b0;
   else
     frz <= frz;
@@ -309,6 +311,8 @@ assign lsu_frz_clr  =  (lq_full || sq_full || rb_full)
 //==========================================================
 //                    LSU Pass Signals
 //==========================================================
+// 2026-10-15 停用: 非对齐"第二半"标记寄存器 (整条链摘掉)
+/*
 always @(posedge forever_cpuclk or negedge cpurst_b)
 begin
   if(!cpurst_b)
@@ -320,6 +324,7 @@ begin
   else
     unalign_2nd         <=  unalign_2nd;
 end
+*/
 
 
 //==========================================================
