@@ -192,10 +192,13 @@ if {$MODE eq "impl"} {
     # (内含 phys_opt_design -force_replication_on_nets 与 route_design)。
     launch_runs impl_1 -to_step phys_opt_design -jobs 8
     wait_on_run impl_1
-    if {[get_property PROGRESS [get_runs impl_1]] ne "100%"} {
-        error "impl_1 FAILED: [get_property STATUS [get_runs impl_1]]"
-    }
+    # ⚠️ -to_step phys_opt_design 后 route_design 仍是 "Not started", PROGRESS
+    #    不会是 100% (原脚本的 PROGRESS==100% 判据在本设计上必然误报)。
+    #    以 physopt DCP 是否产出为准。
     set physopt_dcp [file join $PROJ_DIR ${PROJ_NAME}.runs impl_1 top_a910_fmax_physopt.dcp]
+    if {![file exists $physopt_dcp]} {
+        error "impl_1 phys_opt_design 未产出 DCP: [get_property STATUS [get_runs impl_1]]"
+    }
     open_checkpoint $physopt_dcp
     source [file join $SP lsu_repl.tcl]
 } else {
@@ -235,6 +238,14 @@ set rtu_worst [get_property SLACK [get_timing_paths -delay_type max -max_paths 1
 puts "RTU_INT_WORST=$rtu_worst"
 report_timing -delay_type max -from $rtu_cells -to $rtu_cells \
     -max_paths 100 -file [file join $PROJ_DIR rtu_int.rpt]
+
+# IFU 内部 (u_cpu/u_rv32ifu2_top 内含 BPU/ICache/IBUF/FTQ) 的最差 slack。
+set ifu_cells [get_cells -hier -quiet -filter {NAME =~ "u_cpu/u_rv32ifu2_top/*"}]
+set ifu_worst [get_property SLACK [get_timing_paths -delay_type max -max_paths 1 \
+                   -from $ifu_cells -to $ifu_cells]]
+puts "IFU_INT_WORST=$ifu_worst"
+report_timing -delay_type max -from $ifu_cells -to $ifu_cells \
+    -max_paths 100 -file [file join $PROJ_DIR ifu_int.rpt]
 
 set wns  [get_property SLACK [get_timing_paths -delay_type max -max_paths 1]]
 set fmax [expr {1000.0 / ($PERIOD - $wns)}]

@@ -1,0 +1,179 @@
+# Vivado 时序收敛三大痛点总结
+痛点1：综合策略选错了——默认策略不是万能药
+现象
+项目用了默认的综合策略，综合报告看起来资源利用率还可以，但实现后时序一直不收敛。试了各种约束，都不见效。换成Vivado Synthesis Defaults以外的策略，时序突然过了。
+
+错误做法
+· 所有项目都用默认策略：以为Vivado的默认策略是“最优的”
+· 不知道有哪些策略可选：以为只有一种综合方式
+· 综合策略和实现策略不匹配：综合用性能优先，实现用面积优先，互相打架
+· 不分析综合后的逻辑结构：综合报告只看资源，不看LUT打包率和逻辑深度
+
+正确做法
+Vivado综合策略一览 (可通过 list_synth_strategies 查看完整列表)：
+
+策略名称	适用场景
+Vivado Synthesis Defaults	面积/速度平衡，适合多数项目
+Area_Exploration*	资源紧张 (>85%利用率)
+Area_Exploration_Extra	资源极度紧张，Extra=内置LUT重映射增强
+Performance_Explore	时序不收敛时首选
+Performance_Explore_Extra	时序极度困难，Extra=内置LUT重映射增强
+Performance_NetDelay_high	布线延迟主导
+Performance_NetDelay_low	逻辑延迟主导
+Runtime_Optimized*	快速原型验证，不适合最终交付
+
+综合+实现配套策略组合速查:
+综合策略	推荐实现策略	适用场景
+Defaults	Defaults	一般项目，时序压力小
+Performance_Explore	Performance_Explore	时序紧张，需性能优先
+Performance_Explore_Extra	Performance_ExplorePostRoutePhysOpt	时序极度困难
+Area_Exploration	Area_Exploration	资源利用率>85%
+Runtime_Optimized	Runtime_Optimized	快速原型验证
+
+策略选择决策树:
+项目情况:
+├─ 资源利用率 > 85%?
+│  ├─ 是 → Area_Exploration 或 Area_Exploration_Extra
+│  └─ 否 → 继续判断
+├─ 时序违例 > 0?
+│  ├─ 否 (时序全绿) → Vivado Synthesis Defaults
+│  └─ 是 → 继续判断
+├─ 时序违例原因?
+│  ├─ 逻辑延迟主导 (Logic Delay > 70%)
+│  │  └─ Performance_Explore 或 Performance_Explore_Extra
+│  └─ 布线延迟主导 (Net Delay > 70%)
+│     └─ Performance_NetDelay_high
+└─ 都不明显 → Performance_Explore (通用性能策略)
+
+建议: 综合后先运行 report_timing_summary 分析违例路径数量，再根据上表选择策略。
+
+综合策略的设置方法:
+tcl
+# 方法1: 在综合运行前设置
+synth_design -top my_top -part xcku085 -strategy Performance_Explore
+# 方法2: 在工程中设置默认策略
+set_property strategy Performance_Explore [get_runs synth_1]
+
+----------------------------------------------------------------------
+痛点2：实现ELTP时序优化策略 | 默认仅基础优化，收敛能力有限
+现象
+实现后的时序违例有200多条，换了几次布局布线随机种子都没用。以为设计本身有问题，后来发现用Performance_ExplorePostRoutePhysOpt策略一次就过了。
+
+错误做法
+· 只用默认实现策略：以为默认就是最优
+· 不知道ELTP是什么：Extra Level Timing Optimization，工具的多级时序优化引擎
+· 多次跑同一个策略：以为随机种子能解决根本问题
+· 不分析时序违例类型：违例原因不同，策略选择也不同
+
+正确做法
+Vivado实现策略一览 (可通过 list_impl_strategies 查看完整列表)：
+
+策略分类	策略名称	说明
+标准	Vivado Implementation Defaults	默认流程: opt→place→route→phys_opt
+性能	Performance_Explore	多轮探索，中等难度时序首选
+性能	Performance_ExplorePostRoutePhysOpt	最激进，时序困难时使用，编译时间最长
+性能	Performance_EarlyBlockPlacement	有Pblock约束时推荐
+性能	Performance_NetDelay_high	布线延迟主导
+性能	Performance_NetDelay_low	逻辑延迟主导
+面积	Area_Exploration	减少LUT/FF使用
+面积	Area_Exploration_Extra	最激进面积优化
+功耗	Power_DefaultOpt	功耗优先
+运行时间	Runtime_Optimized	快速实现，适合原型验证
+
+ELTP的定义与作用:
+ELTP (Extra Level Timing Optimization) 是一组分层时序优化开关集合:
+- 布局前优化 (opt_design -extra_net_delay): 预判布线延迟
+- 布局中优化 (place_design -extra_effort): 更激进的布局搜索
+- 布线中优化 (route_design -extra_effort): 多轮布线迭代
+- 布线后优化 (phys_opt_design): 物理层重映射
+
+Performance_Explore 类策略内置多层ELTP优化，不是只有 PostRoutePhysOpt 才使用 ELTP。
+
+ELTP的启用方式:
+# 方法1: 选择性能策略 (自动启用ELTP)
+set_property strategy Performance_ExplorePostRoutePhysOpt [get_runs impl_1]
+
+# 方法2: 在tcl脚本中显式启用关键选项
+opt_design -retarget -remap -propconst -aggressive_remap
+place_design -timing_driven -extra_effort
+route_design -timing_driven -extra_effort
+phys_opt_design -placement_opt -retime -rewire
+
+实现策略选择矩阵:
+时序情况	推荐策略	预期效果
+违例<10条，slack>-0.5ns	Defaults 或 Performance_Explore	基本能过
+违例10-100条，slack>-1ns	Performance_Explore	大概率能过
+违例>100条，slack<-1ns	Performance_ExplorePostRoutePhysOpt	需配合约束调整
+违例>500条	先修改设计	策略救不了
+布线延迟>70%	Performance_NetDelay_high	针对布线
+逻辑延迟>70%	Performance_Explore_Extra	重新映射逻辑
+
+多策略并行运行 (注意硬件资源需求，单run约4-8GB内存，多run叠加翻倍):
+# 创建多个实现run
+create_run impl_perf_explore -strategy Performance_Explore
+create_run impl_perf_postroute -strategy Performance_ExplorePostRoutePhysOpt
+
+# 并行运行 (jobs数=CPU核数-2)
+launch_runs impl_perf_explore impl_perf_postroute -jobs 4
+wait_on_run impl_perf_explore
+wait_on_run impl_perf_postroute
+
+# 对比结果
+report_timing_summary -run impl_perf_explore
+report_timing_summary -run impl_perf_postroute
+
+----------------------------------------------------------------------
+痛点3：随机种子 (Random Seed) 的误区——换了种子就过了？那是运气
+现象
+时序违例不多，换个随机种子就过了。以为问题解决了，但下一次改动又不行了。最终发现: 依赖随机种子掩盖了设计的时序余量不足问题。
+
+错误做法
+· 把换种子当时序收敛的常规手段: 每次跑不通过就换种子
+· 不分析为什么换种子能过: 以为就是“运气”
+· 换了几十次种子还是不过时不知道怎么办: 种子不是万能的
+· 以为换种子能解决根本问题: 只能掩盖问题，不能解决问题
+
+正确做法
+随机种子的作用机制:
+随机种子影响的地方:
+1. 初始布局位置 (place_design的起始点)
+2. 布线路径选择 (route_design的优先级)
+3. 优化迭代顺序 (phys_opt_design的优化序列)
+
+换种子能解决的问题:
+√ 时序违例 < 5条，slack > -0.3ns
+√ 违例路径逻辑本身没问题，只是布局“差一点点”
+√ 综合后资源利用率 < 80%
+
+换种子解决不了的问题:
+× 时序违例 > 20条
+× slack < -1ns
+× 逻辑延迟占比 > 80% (逻辑本身太深)
+× 资源利用率 > 90% (布局空间不足)
+
+随机种子的合理使用:
+tcl
+# 探索多个种子 (建议不超过10个)
+set seeds [list 1 100 500 1000 5000 10000]
+foreach seed $seeds {
+    set run_name "impl_seed_${seed}"
+    create_run $run_name -parent_run impl_1
+    set_property SEED $seed [get_runs $run_name]
+    launch_run $run_name
+    wait_on_run $run_name
+    report_timing_summary -file "timing_seed_${seed}.txt" -run $run_name
+}
+
+“依赖种子”的危险信号:
+如果出现以下情况，说明设计本身有时序风险:
+1. 同一个种子，不同编译机器结果不同
+2. 同一个种子，改了不相关的代码后时序变了
+3. 需要换 >5个种子才能勉强过
+4. 换种子后过0.01ns，加0.1ns余量就又不过了
+
+正确的处理:
+不要依赖种子，而是:
+1. 分析违例路径的瓶颈 (逻辑深度、布线拥塞)
+2. 增加流水线或调整逻辑结构
+3. 使用Pblock约束减少布局随机性
+

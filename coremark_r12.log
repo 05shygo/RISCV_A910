@@ -1,0 +1,656 @@
+✅ Verdi/FSDB 已启用: /usr/tools/synopsys/Verdi2022/verdi/T-2022.06
+Chronologic VCS simulator copyright 1991-2022
+Contains Synopsys proprietary information.
+Compiler version T-2022.06_Full64; Runtime version T-2022.06_Full64;  Oct 18 22:37 2026
+[IFU3-TOP] FTQ=16 BP_EN=1 IC_BYTES=1024 IC_LINE=16 IC_WAYS=2
+[IFU2-ICACHE] BYTES=1024 LINE=16 WAYS=2 SETS=32 SET_BITS=5 TAG_BITS=23 ROW_W=24 REPL=0(LRU)
+[IFU2-SPRAM] ADDR_W=5 DATA_W=24 (契约: 同步读 + 写穿透 + 无 rd_en + 无复位)
+[IFU2-SPRAM] ADDR_W=5 DATA_W=24 (契约: 同步读 + 写穿透 + 无 rd_en + 无复位)
+[IFU2-SPRAM] ADDR_W=5 DATA_W=128 (契约: 同步读 + 写穿透 + 无 rd_en + 无复位)
+[IFU2-SPRAM] ADDR_W=5 DATA_W=128 (契约: 同步读 + 写穿透 + 无 rd_en + 无复位)
+[IDU-LSIQ] ENTRY=12 CNT_W=4  (判据: 应与 +define+LSIQ_ENTRY 一致; 不给 = 默认 12)
+[1;34mPeripheral name: MONITOR	base: 0x80000000	addr len: 0x00000008	
+[0m[1;34mPeripheral name: Digit	base: 0xfffff000	addr len: 0x00000004	
+[0m[1;34mPeripheral name: TIMER	base: 0xfffff040	addr len: 0x00000010	
+[0m[1;34mPeripheral name: NPU	base: 0x40000000	addr len: 0x00001000	
+[0m
+==================================================
+  A910_cpu difftest 台   TEST=coremark  (MAX_CYCLES=15000000)
+==================================================
+  [CEM] T7370 vld=0 addr=0000fb06 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbaa bv=0c00
+     E: vld=0000 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fba8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb06 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fba6 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb04 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7371 vld=0 addr=0000fb06 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbaa bv=0c00
+     E: vld=0000 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fba8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb06 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fba6 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb04 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7372 vld=0 addr=0000fb06 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbaa bv=0c00
+     E: vld=0000 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fba8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb06 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fba6 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb04 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7373 vld=0 addr=0000fb06 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbaa bv=0c00
+     E: vld=0000 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fba8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb06 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fba6 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb04 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7374 vld=0 addr=0000fb06 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbaa bv=0c00
+     E: vld=0000 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fba8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb06 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fba6 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb04 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7375 vld=1 addr=0000fbaa merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=1 | sqpop=0000fbaa bv=0c00
+     E: vld=0000 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fba8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb06 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fba6 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb04 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7376 vld=0 addr=0000fbaa merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fb08 bv=0300
+     E: vld=0100 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fba8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb06 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=1 a=0000fbaa ws=0 wreq=1 dptr=0 ahit=0 | e3 v=0 a=0000fb04 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7377 vld=1 addr=0000fb08 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=1 | sqpop=0000fb08 bv=0300
+     E: vld=0100 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fba8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb06 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=1 a=0000fbaa ws=0 wreq=1 dptr=0 ahit=0 | e3 v=0 a=0000fb04 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7378 vld=0 addr=0000fb08 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbac bv=3000
+     E: vld=1100 wp=1000 dp=0100 dvld=0000 | e0 v=0 a=0000fba8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb06 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=1 a=0000fbaa ws=1 wreq=0 dptr=0 ahit=1 | e3 v=1 a=0000fb08 ws=0 wreq=1 dptr=0 ahit=0
+  [CEM] T7379 vld=0 addr=0000fb08 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbac bv=3000
+     E: vld=1100 wp=1000 dp=1000 dvld=0000 | e0 v=0 a=0000fba8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb06 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=1 a=0000fbaa ws=1 wreq=0 dptr=0 ahit=1 | e3 v=1 a=0000fb08 ws=0 wreq=1 dptr=0 ahit=0
+  [CEM] T7380 vld=0 addr=0000fb08 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbac bv=3000
+     E: vld=1100 wp=1000 dp=1000 dvld=0000 | e0 v=0 a=0000fba8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb06 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=1 a=0000fbaa ws=1 wreq=0 dptr=0 ahit=1 | e3 v=1 a=0000fb08 ws=0 wreq=1 dptr=0 ahit=0
+  [CEM] T7381 vld=0 addr=0000fb08 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbac bv=3000
+     E: vld=1000 wp=0001 dp=1000 dvld=0000 | e0 v=0 a=0000fba8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb06 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbaa ws=1 wreq=0 dptr=0 ahit=0 | e3 v=1 a=0000fb08 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7382 vld=0 addr=0000fb08 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbac bv=3000
+     E: vld=1000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fba8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb06 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbaa ws=1 wreq=0 dptr=0 ahit=0 | e3 v=1 a=0000fb08 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7383 vld=0 addr=0000fb08 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbac bv=3000
+     E: vld=1000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fba8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb06 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbaa ws=1 wreq=0 dptr=0 ahit=0 | e3 v=1 a=0000fb08 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7384 vld=0 addr=0000fb08 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbac bv=3000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fba8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb06 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbaa ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb08 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7385 vld=0 addr=0000fb08 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbac bv=3000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fba8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb06 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbaa ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb08 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7386 vld=0 addr=0000fb08 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbac bv=3000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fba8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb06 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbaa ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb08 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7387 vld=0 addr=0000fb08 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbac bv=3000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fba8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb06 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbaa ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb08 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7388 vld=0 addr=0000fb08 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbac bv=3000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fba8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb06 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbaa ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb08 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7389 vld=0 addr=0000fb08 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbac bv=3000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fba8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb06 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbaa ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb08 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7390 vld=1 addr=0000fbac merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=1 | sqpop=0000fbac bv=3000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fba8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb06 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbaa ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb08 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7391 vld=0 addr=0000fbac merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fb0a bv=0c00
+     E: vld=0001 wp=0001 dp=0001 dvld=0000 | e0 v=1 a=0000fbac ws=0 wreq=1 dptr=0 ahit=0 | e1 v=0 a=0000fb06 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbaa ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb08 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7392 vld=1 addr=0000fb0a merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=1 | sqpop=0000fb0a bv=0c00
+     E: vld=0001 wp=0001 dp=0001 dvld=0000 | e0 v=1 a=0000fbac ws=0 wreq=1 dptr=0 ahit=0 | e1 v=0 a=0000fb06 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbaa ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb08 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7393 vld=0 addr=0000fb0a merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbae bv=c000
+     E: vld=0011 wp=0010 dp=0001 dvld=0000 | e0 v=1 a=0000fbac ws=1 wreq=0 dptr=0 ahit=1 | e1 v=1 a=0000fb0a ws=0 wreq=1 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbaa ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb08 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7394 vld=0 addr=0000fb0a merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbae bv=c000
+     E: vld=0011 wp=0010 dp=0010 dvld=0000 | e0 v=1 a=0000fbac ws=1 wreq=0 dptr=0 ahit=1 | e1 v=1 a=0000fb0a ws=0 wreq=1 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbaa ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb08 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7395 vld=0 addr=0000fb0a merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbae bv=c000
+     E: vld=0011 wp=0010 dp=0010 dvld=0000 | e0 v=1 a=0000fbac ws=1 wreq=0 dptr=0 ahit=1 | e1 v=1 a=0000fb0a ws=0 wreq=1 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbaa ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb08 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7396 vld=0 addr=0000fb0a merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbae bv=c000
+     E: vld=0010 wp=0100 dp=0010 dvld=0000 | e0 v=0 a=0000fbac ws=1 wreq=0 dptr=0 ahit=0 | e1 v=1 a=0000fb0a ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbaa ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb08 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7397 vld=0 addr=0000fb0a merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbae bv=c000
+     E: vld=0010 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbac ws=1 wreq=0 dptr=0 ahit=0 | e1 v=1 a=0000fb0a ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbaa ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb08 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7398 vld=0 addr=0000fb0a merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbae bv=c000
+     E: vld=0010 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbac ws=1 wreq=0 dptr=0 ahit=0 | e1 v=1 a=0000fb0a ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbaa ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb08 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7399 vld=0 addr=0000fb0a merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbae bv=c000
+     E: vld=0000 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbac ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0a ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbaa ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb08 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7400 vld=0 addr=0000fb0a merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbae bv=c000
+     E: vld=0000 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbac ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0a ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbaa ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb08 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7401 vld=0 addr=0000fb0a merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbae bv=c000
+     E: vld=0000 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbac ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0a ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbaa ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb08 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7402 vld=0 addr=0000fb0a merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbae bv=c000
+     E: vld=0000 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbac ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0a ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbaa ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb08 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7403 vld=0 addr=0000fb0a merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbae bv=c000
+     E: vld=0000 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbac ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0a ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbaa ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb08 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7404 vld=0 addr=0000fb0a merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbae bv=c000
+     E: vld=0000 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbac ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0a ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbaa ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb08 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7405 vld=0 addr=0000fb0a merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbae bv=c000
+     E: vld=0000 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbac ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0a ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbaa ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb08 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7406 vld=1 addr=0000fbae merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=1 | sqpop=0000fbae bv=c000
+     E: vld=0000 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbac ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0a ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbaa ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb08 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7407 vld=0 addr=0000fbae merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fb0c bv=3000
+     E: vld=0100 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbac ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0a ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=1 a=0000fbae ws=0 wreq=1 dptr=0 ahit=0 | e3 v=0 a=0000fb08 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7408 vld=1 addr=0000fb0c merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=1 | sqpop=0000fb0c bv=3000
+     E: vld=0100 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbac ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0a ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=1 a=0000fbae ws=0 wreq=1 dptr=0 ahit=0 | e3 v=0 a=0000fb08 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7409 vld=0 addr=0000fb0c merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb0 bv=0003
+     E: vld=1100 wp=1000 dp=0100 dvld=0000 | e0 v=0 a=0000fbac ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0a ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=1 a=0000fbae ws=1 wreq=0 dptr=0 ahit=0 | e3 v=1 a=0000fb0c ws=0 wreq=1 dptr=0 ahit=0
+  [CEM] T7410 vld=0 addr=0000fb0c merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb0 bv=0003
+     E: vld=1100 wp=1000 dp=1000 dvld=0000 | e0 v=0 a=0000fbac ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0a ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=1 a=0000fbae ws=1 wreq=0 dptr=0 ahit=0 | e3 v=1 a=0000fb0c ws=0 wreq=1 dptr=0 ahit=0
+  [CEM] T7411 vld=0 addr=0000fb0c merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb0 bv=0003
+     E: vld=1100 wp=1000 dp=1000 dvld=0000 | e0 v=0 a=0000fbac ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0a ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=1 a=0000fbae ws=1 wreq=0 dptr=0 ahit=0 | e3 v=1 a=0000fb0c ws=0 wreq=1 dptr=0 ahit=0
+  [CEM] T7412 vld=0 addr=0000fb0c merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb0 bv=0003
+     E: vld=1000 wp=0001 dp=1000 dvld=0000 | e0 v=0 a=0000fbac ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0a ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbae ws=1 wreq=0 dptr=0 ahit=0 | e3 v=1 a=0000fb0c ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7413 vld=0 addr=0000fb0c merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb0 bv=0003
+     E: vld=1000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fbac ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0a ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbae ws=1 wreq=0 dptr=0 ahit=0 | e3 v=1 a=0000fb0c ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7414 vld=0 addr=0000fb0c merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb0 bv=0003
+     E: vld=1000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fbac ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0a ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbae ws=1 wreq=0 dptr=0 ahit=0 | e3 v=1 a=0000fb0c ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7415 vld=0 addr=0000fb0c merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb0 bv=0003
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fbac ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0a ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbae ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb0c ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7416 vld=0 addr=0000fb0c merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb0 bv=0003
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fbac ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0a ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbae ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb0c ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7417 vld=0 addr=0000fb0c merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb0 bv=0003
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fbac ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0a ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbae ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb0c ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7418 vld=0 addr=0000fb0c merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb0 bv=0003
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fbac ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0a ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbae ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb0c ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7419 vld=0 addr=0000fb0c merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb0 bv=0003
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fbac ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0a ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbae ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb0c ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7420 vld=0 addr=0000fb0c merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb0 bv=0003
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fbac ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0a ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbae ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb0c ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7421 vld=1 addr=0000fbb0 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=1 | sqpop=0000fbb0 bv=0003
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fbac ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0a ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbae ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb0c ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7422 vld=0 addr=0000fbb0 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fb0e bv=c000
+     E: vld=0001 wp=0001 dp=0001 dvld=0000 | e0 v=1 a=0000fbb0 ws=0 wreq=1 dptr=0 ahit=0 | e1 v=0 a=0000fb0a ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbae ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb0c ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7423 vld=1 addr=0000fb0e merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=1 | sqpop=0000fb0e bv=c000
+     E: vld=0001 wp=0001 dp=0001 dvld=0000 | e0 v=1 a=0000fbb0 ws=0 wreq=1 dptr=0 ahit=0 | e1 v=0 a=0000fb0a ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbae ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb0c ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7424 vld=0 addr=0000fb0e merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb2 bv=000c
+     E: vld=0011 wp=0010 dp=0001 dvld=0000 | e0 v=1 a=0000fbb0 ws=1 wreq=0 dptr=0 ahit=1 | e1 v=1 a=0000fb0e ws=0 wreq=1 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbae ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb0c ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7425 vld=0 addr=0000fb0e merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb2 bv=000c
+     E: vld=0011 wp=0010 dp=0010 dvld=0000 | e0 v=1 a=0000fbb0 ws=1 wreq=0 dptr=0 ahit=1 | e1 v=1 a=0000fb0e ws=0 wreq=1 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbae ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb0c ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7426 vld=0 addr=0000fb0e merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb2 bv=000c
+     E: vld=0011 wp=0010 dp=0010 dvld=0000 | e0 v=1 a=0000fbb0 ws=1 wreq=0 dptr=0 ahit=1 | e1 v=1 a=0000fb0e ws=0 wreq=1 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbae ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb0c ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7427 vld=0 addr=0000fb0e merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb2 bv=000c
+     E: vld=0010 wp=0100 dp=0010 dvld=0000 | e0 v=0 a=0000fbb0 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=1 a=0000fb0e ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbae ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb0c ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7428 vld=0 addr=0000fb0e merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb2 bv=000c
+     E: vld=0010 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbb0 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=1 a=0000fb0e ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbae ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb0c ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7429 vld=0 addr=0000fb0e merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb2 bv=000c
+     E: vld=0010 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbb0 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=1 a=0000fb0e ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbae ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb0c ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7430 vld=0 addr=0000fb0e merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb2 bv=000c
+     E: vld=0000 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbb0 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0e ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbae ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb0c ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7431 vld=0 addr=0000fb0e merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb2 bv=000c
+     E: vld=0000 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbb0 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0e ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbae ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb0c ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7432 vld=0 addr=0000fb0e merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb2 bv=000c
+     E: vld=0000 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbb0 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0e ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbae ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb0c ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7433 vld=0 addr=0000fb0e merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb2 bv=000c
+     E: vld=0000 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbb0 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0e ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbae ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb0c ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7434 vld=0 addr=0000fb0e merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb2 bv=000c
+     E: vld=0000 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbb0 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0e ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbae ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb0c ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7435 vld=0 addr=0000fb0e merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb2 bv=000c
+     E: vld=0000 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbb0 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0e ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbae ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb0c ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7436 vld=1 addr=0000fbb2 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=1 | sqpop=0000fbb2 bv=000c
+     E: vld=0000 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbb0 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0e ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbae ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb0c ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7437 vld=0 addr=0000fbb2 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fb10 bv=0003
+     E: vld=0100 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbb0 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0e ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=1 a=0000fbb2 ws=0 wreq=1 dptr=0 ahit=0 | e3 v=0 a=0000fb0c ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7438 vld=1 addr=0000fb10 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=1 | sqpop=0000fb10 bv=0003
+     E: vld=0100 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbb0 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0e ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=1 a=0000fbb2 ws=0 wreq=1 dptr=0 ahit=0 | e3 v=0 a=0000fb0c ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7439 vld=0 addr=0000fb10 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb4 bv=0030
+     E: vld=1100 wp=1000 dp=0100 dvld=0000 | e0 v=0 a=0000fbb0 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0e ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=1 a=0000fbb2 ws=1 wreq=0 dptr=0 ahit=1 | e3 v=1 a=0000fb10 ws=0 wreq=1 dptr=0 ahit=0
+  [CEM] T7440 vld=0 addr=0000fb10 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb4 bv=0030
+     E: vld=1100 wp=1000 dp=1000 dvld=0000 | e0 v=0 a=0000fbb0 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0e ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=1 a=0000fbb2 ws=1 wreq=0 dptr=0 ahit=1 | e3 v=1 a=0000fb10 ws=0 wreq=1 dptr=0 ahit=0
+  [CEM] T7441 vld=0 addr=0000fb10 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb4 bv=0030
+     E: vld=1100 wp=1000 dp=1000 dvld=0000 | e0 v=0 a=0000fbb0 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0e ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=1 a=0000fbb2 ws=1 wreq=0 dptr=0 ahit=1 | e3 v=1 a=0000fb10 ws=0 wreq=1 dptr=0 ahit=0
+  [CEM] T7442 vld=0 addr=0000fb10 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb4 bv=0030
+     E: vld=1000 wp=0001 dp=1000 dvld=0000 | e0 v=0 a=0000fbb0 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0e ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb2 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=1 a=0000fb10 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7443 vld=0 addr=0000fb10 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb4 bv=0030
+     E: vld=1000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fbb0 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0e ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb2 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=1 a=0000fb10 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7444 vld=0 addr=0000fb10 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb4 bv=0030
+     E: vld=1000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fbb0 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0e ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb2 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=1 a=0000fb10 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7445 vld=0 addr=0000fb10 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb4 bv=0030
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fbb0 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0e ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb2 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb10 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7446 vld=0 addr=0000fb10 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb4 bv=0030
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fbb0 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0e ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb2 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb10 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7447 vld=0 addr=0000fb10 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb4 bv=0030
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fbb0 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0e ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb2 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb10 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7448 vld=0 addr=0000fb10 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb4 bv=0030
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fbb0 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0e ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb2 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb10 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7449 vld=0 addr=0000fb10 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb4 bv=0030
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fbb0 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0e ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb2 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb10 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7450 vld=0 addr=0000fb10 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb4 bv=0030
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fbb0 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0e ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb2 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb10 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7451 vld=1 addr=0000fbb4 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=1 | sqpop=0000fbb4 bv=0030
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fbb0 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb0e ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb2 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb10 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7452 vld=0 addr=0000fbb4 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fb12 bv=000c
+     E: vld=0001 wp=0001 dp=0001 dvld=0000 | e0 v=1 a=0000fbb4 ws=0 wreq=1 dptr=0 ahit=0 | e1 v=0 a=0000fb0e ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb2 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb10 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7453 vld=1 addr=0000fb12 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=1 | sqpop=0000fb12 bv=000c
+     E: vld=0001 wp=0001 dp=0001 dvld=0000 | e0 v=1 a=0000fbb4 ws=0 wreq=1 dptr=0 ahit=0 | e1 v=0 a=0000fb0e ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb2 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb10 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7454 vld=0 addr=0000fb12 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb6 bv=00c0
+     E: vld=0011 wp=0010 dp=0001 dvld=0000 | e0 v=1 a=0000fbb4 ws=1 wreq=0 dptr=0 ahit=1 | e1 v=1 a=0000fb12 ws=0 wreq=1 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb2 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb10 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7455 vld=0 addr=0000fb12 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb6 bv=00c0
+     E: vld=0011 wp=0010 dp=0010 dvld=0000 | e0 v=1 a=0000fbb4 ws=1 wreq=0 dptr=0 ahit=1 | e1 v=1 a=0000fb12 ws=0 wreq=1 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb2 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb10 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7456 vld=0 addr=0000fb12 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb6 bv=00c0
+     E: vld=0011 wp=0010 dp=0010 dvld=0000 | e0 v=1 a=0000fbb4 ws=1 wreq=0 dptr=0 ahit=1 | e1 v=1 a=0000fb12 ws=0 wreq=1 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb2 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb10 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7457 vld=0 addr=0000fb12 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb6 bv=00c0
+     E: vld=0010 wp=0100 dp=0010 dvld=0000 | e0 v=0 a=0000fbb4 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=1 a=0000fb12 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb2 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb10 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7458 vld=0 addr=0000fb12 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb6 bv=00c0
+     E: vld=0010 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbb4 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=1 a=0000fb12 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb2 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb10 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7459 vld=0 addr=0000fb12 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb6 bv=00c0
+     E: vld=0010 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbb4 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=1 a=0000fb12 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb2 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb10 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7460 vld=0 addr=0000fb12 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb6 bv=00c0
+     E: vld=0000 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbb4 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb12 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb2 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb10 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7461 vld=0 addr=0000fb12 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb6 bv=00c0
+     E: vld=0000 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbb4 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb12 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb2 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb10 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7462 vld=0 addr=0000fb12 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb6 bv=00c0
+     E: vld=0000 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbb4 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb12 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb2 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb10 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7463 vld=0 addr=0000fb12 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb6 bv=00c0
+     E: vld=0000 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbb4 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb12 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb2 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb10 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7464 vld=0 addr=0000fb12 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb6 bv=00c0
+     E: vld=0000 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbb4 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb12 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb2 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb10 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7465 vld=0 addr=0000fb12 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb6 bv=00c0
+     E: vld=0000 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbb4 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb12 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb2 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb10 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7466 vld=1 addr=0000fbb6 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=1 | sqpop=0000fbb6 bv=00c0
+     E: vld=0000 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbb4 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb12 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb2 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb10 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7467 vld=0 addr=0000fbb6 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fb14 bv=0030
+     E: vld=0100 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbb4 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb12 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=1 a=0000fbb6 ws=0 wreq=1 dptr=0 ahit=0 | e3 v=0 a=0000fb10 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7468 vld=1 addr=0000fb14 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=1 | sqpop=0000fb14 bv=0030
+     E: vld=0100 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbb4 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb12 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=1 a=0000fbb6 ws=0 wreq=1 dptr=0 ahit=0 | e3 v=0 a=0000fb10 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7469 vld=0 addr=0000fb14 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb8 bv=0300
+     E: vld=1100 wp=1000 dp=0100 dvld=0000 | e0 v=0 a=0000fbb4 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb12 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=1 a=0000fbb6 ws=1 wreq=0 dptr=0 ahit=1 | e3 v=1 a=0000fb14 ws=0 wreq=1 dptr=0 ahit=0
+  [CEM] T7470 vld=0 addr=0000fb14 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb8 bv=0300
+     E: vld=1100 wp=1000 dp=1000 dvld=0000 | e0 v=0 a=0000fbb4 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb12 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=1 a=0000fbb6 ws=1 wreq=0 dptr=0 ahit=1 | e3 v=1 a=0000fb14 ws=0 wreq=1 dptr=0 ahit=0
+  [CEM] T7471 vld=0 addr=0000fb14 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb8 bv=0300
+     E: vld=1100 wp=1000 dp=1000 dvld=0000 | e0 v=0 a=0000fbb4 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb12 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=1 a=0000fbb6 ws=1 wreq=0 dptr=0 ahit=1 | e3 v=1 a=0000fb14 ws=0 wreq=1 dptr=0 ahit=0
+  [CEM] T7472 vld=0 addr=0000fb14 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb8 bv=0300
+     E: vld=1000 wp=0001 dp=1000 dvld=0000 | e0 v=0 a=0000fbb4 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb12 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb6 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=1 a=0000fb14 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7473 vld=0 addr=0000fb14 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb8 bv=0300
+     E: vld=1000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fbb4 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb12 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb6 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=1 a=0000fb14 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7474 vld=0 addr=0000fb14 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb8 bv=0300
+     E: vld=1000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fbb4 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb12 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb6 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=1 a=0000fb14 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7475 vld=0 addr=0000fb14 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb8 bv=0300
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fbb4 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb12 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb6 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb14 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7476 vld=0 addr=0000fb14 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb8 bv=0300
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fbb4 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb12 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb6 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb14 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7477 vld=0 addr=0000fb14 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb8 bv=0300
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fbb4 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb12 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb6 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb14 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7478 vld=0 addr=0000fb14 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb8 bv=0300
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fbb4 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb12 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb6 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb14 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7479 vld=0 addr=0000fb14 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb8 bv=0300
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fbb4 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb12 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb6 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb14 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7480 vld=0 addr=0000fb14 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbb8 bv=0300
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fbb4 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb12 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb6 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb14 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7481 vld=1 addr=0000fbb8 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=1 | sqpop=0000fbb8 bv=0300
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fbb4 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb12 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb6 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb14 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7482 vld=0 addr=0000fbb8 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fb16 bv=00c0
+     E: vld=0001 wp=0001 dp=0001 dvld=0000 | e0 v=1 a=0000fbb8 ws=0 wreq=1 dptr=0 ahit=0 | e1 v=0 a=0000fb12 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb6 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb14 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7483 vld=1 addr=0000fb16 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=1 | sqpop=0000fb16 bv=00c0
+     E: vld=0001 wp=0001 dp=0001 dvld=0000 | e0 v=1 a=0000fbb8 ws=0 wreq=1 dptr=0 ahit=0 | e1 v=0 a=0000fb12 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb6 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb14 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7484 vld=0 addr=0000fb16 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbba bv=0c00
+     E: vld=0011 wp=0010 dp=0001 dvld=0000 | e0 v=1 a=0000fbb8 ws=1 wreq=0 dptr=0 ahit=1 | e1 v=1 a=0000fb16 ws=0 wreq=1 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb6 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb14 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7485 vld=0 addr=0000fb16 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbba bv=0c00
+     E: vld=0011 wp=0010 dp=0010 dvld=0000 | e0 v=1 a=0000fbb8 ws=1 wreq=0 dptr=0 ahit=1 | e1 v=1 a=0000fb16 ws=0 wreq=1 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb6 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb14 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7486 vld=0 addr=0000fb16 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbba bv=0c00
+     E: vld=0011 wp=0010 dp=0010 dvld=0000 | e0 v=1 a=0000fbb8 ws=1 wreq=0 dptr=0 ahit=1 | e1 v=1 a=0000fb16 ws=0 wreq=1 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb6 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb14 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7487 vld=0 addr=0000fb16 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbba bv=0c00
+     E: vld=0010 wp=0100 dp=0010 dvld=0000 | e0 v=0 a=0000fbb8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=1 a=0000fb16 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb6 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb14 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7488 vld=0 addr=0000fb16 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbba bv=0c00
+     E: vld=0010 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbb8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=1 a=0000fb16 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb6 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb14 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7489 vld=0 addr=0000fb16 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbba bv=0c00
+     E: vld=0010 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbb8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=1 a=0000fb16 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb6 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb14 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7490 vld=0 addr=0000fb16 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbba bv=0c00
+     E: vld=0000 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbb8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb16 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb6 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb14 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7491 vld=0 addr=0000fb16 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbba bv=0c00
+     E: vld=0000 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbb8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb16 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb6 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb14 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7492 vld=0 addr=0000fb16 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbba bv=0c00
+     E: vld=0000 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbb8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb16 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb6 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb14 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7493 vld=0 addr=0000fb16 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbba bv=0c00
+     E: vld=0000 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbb8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb16 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb6 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb14 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7494 vld=0 addr=0000fb16 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbba bv=0c00
+     E: vld=0000 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbb8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb16 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb6 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb14 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7495 vld=0 addr=0000fb16 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbba bv=0c00
+     E: vld=0000 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbb8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb16 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb6 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb14 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7496 vld=1 addr=0000fbba merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=1 | sqpop=0000fbba bv=0c00
+     E: vld=0000 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbb8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb16 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbb6 ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb14 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7497 vld=0 addr=0000fbba merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fb18 bv=0300
+     E: vld=0100 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbb8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb16 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=1 a=0000fbba ws=0 wreq=1 dptr=0 ahit=0 | e3 v=0 a=0000fb14 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7498 vld=1 addr=0000fb18 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=1 | sqpop=0000fb18 bv=0300
+     E: vld=0100 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbb8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb16 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=1 a=0000fbba ws=0 wreq=1 dptr=0 ahit=0 | e3 v=0 a=0000fb14 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7499 vld=0 addr=0000fb18 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbbc bv=3000
+     E: vld=1100 wp=1000 dp=0100 dvld=0000 | e0 v=0 a=0000fbb8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb16 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=1 a=0000fbba ws=1 wreq=0 dptr=0 ahit=1 | e3 v=1 a=0000fb18 ws=0 wreq=1 dptr=0 ahit=0
+  [CEM] T7500 vld=0 addr=0000fb18 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbbc bv=3000
+     E: vld=1100 wp=1000 dp=1000 dvld=0000 | e0 v=0 a=0000fbb8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb16 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=1 a=0000fbba ws=1 wreq=0 dptr=0 ahit=1 | e3 v=1 a=0000fb18 ws=0 wreq=1 dptr=0 ahit=0
+  [CEM] T7501 vld=0 addr=0000fb18 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbbc bv=3000
+     E: vld=1100 wp=1000 dp=1000 dvld=0000 | e0 v=0 a=0000fbb8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb16 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=1 a=0000fbba ws=1 wreq=0 dptr=0 ahit=1 | e3 v=1 a=0000fb18 ws=0 wreq=1 dptr=0 ahit=0
+  [CEM] T7502 vld=0 addr=0000fb18 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbbc bv=3000
+     E: vld=1000 wp=0001 dp=1000 dvld=0000 | e0 v=0 a=0000fbb8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb16 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbba ws=1 wreq=0 dptr=0 ahit=0 | e3 v=1 a=0000fb18 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7503 vld=0 addr=0000fb18 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbbc bv=3000
+     E: vld=1000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fbb8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb16 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbba ws=1 wreq=0 dptr=0 ahit=0 | e3 v=1 a=0000fb18 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7504 vld=0 addr=0000fb18 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbbc bv=3000
+     E: vld=1000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fbb8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb16 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbba ws=1 wreq=0 dptr=0 ahit=0 | e3 v=1 a=0000fb18 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7505 vld=0 addr=0000fb18 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbbc bv=3000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fbb8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb16 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbba ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb18 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7506 vld=0 addr=0000fb18 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbbc bv=3000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fbb8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb16 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbba ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb18 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7507 vld=0 addr=0000fb18 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbbc bv=3000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fbb8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb16 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbba ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb18 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7508 vld=0 addr=0000fb18 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbbc bv=3000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fbb8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb16 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbba ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb18 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7509 vld=0 addr=0000fb18 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbbc bv=3000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fbb8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb16 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbba ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb18 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7510 vld=0 addr=0000fb18 merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbbc bv=3000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fbb8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb16 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbba ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb18 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7511 vld=1 addr=0000fbbc merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=1 | sqpop=0000fbbc bv=3000
+     E: vld=0000 wp=0001 dp=0001 dvld=0000 | e0 v=0 a=0000fbb8 ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb16 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbba ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb18 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7512 vld=0 addr=0000fbbc merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fb1a bv=0c00
+     E: vld=0001 wp=0001 dp=0001 dvld=0000 | e0 v=1 a=0000fbbc ws=0 wreq=1 dptr=0 ahit=0 | e1 v=0 a=0000fb16 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbba ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb18 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7513 vld=1 addr=0000fb1a merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=1 | sqpop=0000fb1a bv=0c00
+     E: vld=0001 wp=0001 dp=0001 dvld=0000 | e0 v=1 a=0000fbbc ws=0 wreq=1 dptr=0 ahit=0 | e1 v=0 a=0000fb16 ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbba ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb18 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7514 vld=0 addr=0000fb1a merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbbe bv=c000
+     E: vld=0011 wp=0010 dp=0001 dvld=0000 | e0 v=1 a=0000fbbc ws=1 wreq=0 dptr=0 ahit=1 | e1 v=1 a=0000fb1a ws=0 wreq=1 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbba ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb18 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7515 vld=0 addr=0000fb1a merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbbe bv=c000
+     E: vld=0011 wp=0010 dp=0010 dvld=0000 | e0 v=1 a=0000fbbc ws=1 wreq=0 dptr=0 ahit=1 | e1 v=1 a=0000fb1a ws=0 wreq=1 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbba ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb18 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7516 vld=0 addr=0000fb1a merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbbe bv=c000
+     E: vld=0011 wp=0010 dp=0010 dvld=0000 | e0 v=1 a=0000fbbc ws=1 wreq=0 dptr=0 ahit=1 | e1 v=1 a=0000fb1a ws=0 wreq=1 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbba ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb18 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7517 vld=0 addr=0000fb1a merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbbe bv=c000
+     E: vld=0010 wp=0100 dp=0010 dvld=0000 | e0 v=0 a=0000fbbc ws=1 wreq=0 dptr=0 ahit=0 | e1 v=1 a=0000fb1a ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbba ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb18 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7518 vld=0 addr=0000fb1a merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbbe bv=c000
+     E: vld=0010 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbbc ws=1 wreq=0 dptr=0 ahit=0 | e1 v=1 a=0000fb1a ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbba ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb18 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7519 vld=0 addr=0000fb1a merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbbe bv=c000
+     E: vld=0010 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbbc ws=1 wreq=0 dptr=0 ahit=0 | e1 v=1 a=0000fb1a ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbba ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb18 ws=1 wreq=0 dptr=0 ahit=0
+  [CEM] T7520 vld=0 addr=0000fb1a merge=0 mptr=0000 stall=0 mnotvld=0 mreq=0 mstall=0 ahit=0 | sqpop=0000fbbe bv=c000
+     E: vld=0000 wp=0100 dp=0100 dvld=0000 | e0 v=0 a=0000fbbc ws=1 wreq=0 dptr=0 ahit=0 | e1 v=0 a=0000fb1a ws=1 wreq=0 dptr=0 ahit=0
+     E2: e2 v=0 a=0000fbba ws=1 wreq=0 dptr=0 ahit=0 | e3 v=0 a=0000fb18 ws=1 wreq=0 dptr=0 ahit=0
+  [LFPE] T150530 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150530 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150530 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150531 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150531 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150531 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150532 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150532 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150532 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150533 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150533 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150533 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150534 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150534 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150534 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150535 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150535 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150535 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150536 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150536 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150536 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150537 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150537 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150537 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150538 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150538 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150538 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150539 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150539 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150539 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150540 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150540 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150540 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150541 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150541 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150541 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150542 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150542 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150542 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150543 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150543 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150543 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150544 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150544 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150544 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150545 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150545 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150545 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150546 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150546 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150546 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150547 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150547 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150547 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150548 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150548 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150548 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150549 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150549 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150549 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=1 | aevld=000
+  [LFPE] T150550 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150550 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150550 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150551 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150551 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150551 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150552 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150552 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150552 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150553 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150553 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150553 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150554 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150554 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150554 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150555 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150555 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150555 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150556 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150556 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150556 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150557 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150557 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150557 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150558 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150558 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150558 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150559 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150559 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150559 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150560 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150560 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150560 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150561 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150561 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150561 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150562 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150562 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150562 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150563 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150563 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150563 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=1 | aevld=000
+  [LFPE] T150564 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150564 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150564 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150565 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150565 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150565 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150566 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150566 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150566 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150567 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150567 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150567 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150568 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150568 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150568 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150569 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150569 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150569 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150570 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150570 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150570 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150571 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150571 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150571 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150572 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150572 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150572 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150573 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150573 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150573 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150574 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150574 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150574 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150575 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150575 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150575 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150576 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150576 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150576 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150577 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150577 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150577 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150578 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150578 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150578 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150579 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150579 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150579 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150580 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150580 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150580 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150581 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150581 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150581 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150582 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150582 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150582 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150583 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150583 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150583 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150584 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150584 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150584 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150585 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150585 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150585 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150586 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150586 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150586 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150587 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150587 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150587 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150588 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150588 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150588 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150589 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150589 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150589 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+  [LFPE] T150590 rcl_done=011 dcache_hit=000 refill_way=011 | de_id=0 r_id=8 | vb_vld=0 vb_rcl_done=0 vb_sm=0 vb_aw=0
+  [LFPD] T150590 de_vld=0 success=1 linefill_permit=1 lfsm_req=0 | addr_permit=011 addr_vld=000 addr_depd=010 | de_id=0 r_id=8 r_ready=1
+  [LFBP] T150590 lfsm_vld=0 lfsm_create=0 ld_grnt=0 | de_vld=0 de_create=0 tag_req=0 arready=1 | r_id_hit=0 r_vld=0 | aflush=0 yyflush=0 | aevld=000
+make: *** [a910-difftest] Error 255
